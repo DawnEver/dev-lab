@@ -34,6 +34,7 @@ from typing import Any, Final
 import pytest
 
 __all__ = [
+    'BUDGET_KEYS',
     'BUDGET_TABLE',
     'DEADLINE_FACTOR',
     'DEADLINE_FLOOR_S',
@@ -42,6 +43,7 @@ __all__ = [
     'Budget',
     'Plan',
     'beyond_budget',
+    'budget_defects',
     'budget_of',
     'killed_at',
     'plan',
@@ -52,6 +54,8 @@ __all__ = [
 
 #: The machine-file table (family layer merged under it) declaring this host's test budget.
 BUDGET_TABLE: Final = 'test_budget'
+#: Every key ``[test_budget]`` declares: its kind and its unit -- each a positive number, none optional.
+BUDGET_KEYS: Final = {'test_s': (float, 'seconds'), 'cores': (int, 'cores'), 'memory_gb': (float, 'GB')}
 #: A measured test's deadline is this many times its newest reading (dimensionless): a box under load runs
 #: slower than the box that measured it, and three times is the margin before a hang is called a hang.
 DEADLINE_FACTOR: Final = 3.0
@@ -74,23 +78,40 @@ class Budget:
     memory_gb: float
 
 
-def _number(table: Mapping[str, Any], key: str, kind: type[float | int]) -> float:
+def _defect(table: Mapping[str, Any], key: str) -> str:
+    """Why *key* of *table* is no positive number of its kind (:data:`BUDGET_KEYS`); ``''`` when it is one."""
+    kind, unit = BUDGET_KEYS[key]
     value = table.get(key)
     if isinstance(value, bool) or not isinstance(value, kind | int) or value <= 0:
-        msg = f'[{BUDGET_TABLE}] {key} = {value!r}: a positive {kind.__name__} (dev_lab.dev.testcost)'
-        raise ValueError(msg)
-    return kind(value)
+        return f'[{BUDGET_TABLE}] {key} = {value!r}: a positive {kind.__name__}, in {unit} (dev_lab.dev.testcost)'
+    return ''
+
+
+def budget_defects(table: object) -> list[str]:
+    """Every refusal of a ``[test_budget]`` table, each naming its key; ``[]`` for a sound or an empty one.
+
+    The one schema of the table: :func:`budget_of` refuses with it on the host, ``configcheck`` in the config source.
+    """
+    if not isinstance(table, Mapping):
+        return [f'[{BUDGET_TABLE}] must be a table of {", ".join(BUDGET_KEYS)} (dev_lab.dev.testcost)']
+    if not table:
+        return []
+    declared = ', '.join(BUDGET_KEYS)
+    found = [
+        f'[{BUDGET_TABLE}] {key} is not a declared key: the table declares {declared} (dev_lab.dev.testcost)'
+        for key in table
+        if key not in BUDGET_KEYS
+    ]
+    return found + [why for key in BUDGET_KEYS if (why := _defect(table, key))]
 
 
 def budget_of(table: Mapping[str, Any]) -> Budget | None:
-    """The :class:`Budget` *table* declares; ``None`` when it declares none; a malformed key is refused by name."""
+    """The :class:`Budget` *table* declares; ``None`` when it declares none; a malformed table is refused by name."""
+    if found := budget_defects(table):
+        raise ValueError('; '.join(found))
     if not table:
         return None
-    return Budget(
-        test_s=_number(table, 'test_s', float),
-        cores=_number(table, 'cores', int),
-        memory_gb=_number(table, 'memory_gb', float),
-    )
+    return Budget(test_s=float(table['test_s']), cores=int(table['cores']), memory_gb=float(table['memory_gb']))
 
 
 def read_budget(section: Callable[[str], Mapping[str, Any]] | None = None) -> Budget | None:
