@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, NamedTuple
 
+import pytest
+
 from dev_lab.supervise.cgroup import CGROUP_MOUNT
 from dev_lab.supervise.consumers import consumers, tree_bytes
 from dev_lab.supervise.pressure import (
@@ -242,7 +244,7 @@ def test_a_workstation_averages_psutil_over_a_window_and_never_reads_psi() -> No
 
     busy = measure(Declared(), {}, now=0.0, linux=False, psutil=fake(97.0, 50.0))
     assert [f.kind for f in busy.findings] == ['cpu:percent']
-    assert asked == [THRESHOLDS['psutil_window_s']]
+    assert asked == [THRESHOLDS['psutil_window']]
     assert busy.readings['psi:memory:some_avg60'] is None
     assert measure(Declared(), {}, now=0.0, linux=False, psutil=fake(20.0, 50.0)).findings == []
     assert measure(Declared(), {}, now=0.0, linux=False, psutil=lambda: None).readings['cpu:percent'] is None
@@ -251,8 +253,48 @@ def test_a_workstation_averages_psutil_over_a_window_and_never_reads_psi() -> No
 def test_every_threshold_is_overridable_by_its_name_in_the_machine_file() -> None:
     declared = Declared.of({'paths': ['/'], 'services': ['x.service'], 'psi_cpu_some_avg60': 5})
     assert declared.limits['psi_cpu_some_avg60'] == 5.0
-    assert declared.limits['disk_free_floor_gb'] == THRESHOLDS['disk_free_floor_gb']
+    assert declared.limits['disk_free_floor'] == THRESHOLDS['disk_free_floor'] == 10 * GB
     assert (declared.paths, declared.services) == ((Path('/'),), ('x.service',))
+
+
+def test_a_size_or_duration_threshold_carries_its_unit() -> None:
+    """User ruling 2026-11-25: the value carries its unit, read to bytes or seconds; a bare number is refused."""
+    declared = Declared.of(
+        {'disk_free_floor': '20 GiB', 'full_horizon': '2 d', 'psutil_window': '10 s', 'disk_ceiling': '80 %'}
+    )
+    assert declared.limits['disk_free_floor'] == 20 * GB
+    assert declared.limits['full_horizon'] == 2 * 86400.0
+    assert declared.limits['disk_ceiling'] == 0.8
+    assert declared.limits['psutil_window'] == 10.0
+    with pytest.raises(ValueError, match=r'\[pressure\] disk_free_floor = 20 is a bare number'):
+        Declared.of({'disk_free_floor': 20})
+    with pytest.raises(ValueError, match=r'disk_ceiling'):
+        Declared.of({'disk_ceiling': 90})
+
+
+@pytest.mark.parametrize(
+    ('old', 'line'),
+    [
+        ({'disk_free_floor_gb': 10}, 'write disk_free_floor = "10 GiB"'),
+        ({'days_to_full_floor': 3}, 'write full_horizon = "3 d"'),
+        ({'disk_percent_ceiling': 90}, 'write disk_ceiling = "90 %"'),
+        ({'cpu_percent_ceiling': 90}, 'write cpu_ceiling = "90 %"'),
+        ({'memory_percent_ceiling': 95}, 'write memory_ceiling = "95 %"'),
+        ({'psutil_window_s': 5}, 'write psutil_window = "5 s"'),
+        ({'interval_s': 60}, 'write interval = "60 s"'),
+        ({'slope_span_s': 3600}, 'write slope_span = "3600 s"'),
+    ],
+)
+def test_a_unit_suffixed_threshold_is_refused_with_its_new_line(old: dict[str, int], line: str) -> None:
+    """FORMATS-MIGRATE-ONCE: the old key is never read; its refusal is the migration."""
+    with pytest.raises(ValueError, match=line):
+        Declared.of(old)
+
+
+def test_a_writer_cadence_is_the_default_a_declared_interval_overrides() -> None:
+    assert Declared.of({}, interval=60.0).limits['interval'] == 60.0
+    assert Declared.of({'interval': '2 min'}, interval=60.0).limits['interval'] == 120.0
+    assert Declared.of({}).limits['interval'] == THRESHOLDS['interval'], 'control: no writer, the default'
 
 
 def test_consumers_name_an_owned_tree_per_child(tmp_path: Path) -> None:
@@ -344,5 +386,5 @@ def test_days_to_full_warns_at_the_real_cadence(tmp_path: Path) -> None:
 
     filling = run(50 * GB / 3600)
     assert 'warning' in filling
-    assert filling[: int(THRESHOLDS['slope_span_s'] // 300)] == [None] * int(THRESHOLDS['slope_span_s'] // 300)
+    assert filling[: int(THRESHOLDS['slope_span'] // 300)] == [None] * int(THRESHOLDS['slope_span'] // 300)
     assert run(0.0) == [None] * 20

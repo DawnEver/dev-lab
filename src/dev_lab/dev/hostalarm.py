@@ -135,7 +135,7 @@ def step(
     cadence = float(section('schedule').get('tick_minutes', 5)) * 60  # the tick reads at its own cadence
     if _supervised(cadence):
         return hostalarms.read()  # ONE OWNER: supervision measures and sounds this host
-    declared = Declared.of({'paths': [str(root)], 'interval_s': cadence, **table})
+    declared = Declared.of({'paths': [str(root)], **table}, interval=cadence)
     previous = hostalarms.memo(hostalarms.FORGE)
     owner = str(table.get('owner', hostalarms.AGENTS))
     measured = measuring(declared, previous, now=time.time(), psutil=psutil_module)
