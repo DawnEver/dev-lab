@@ -195,8 +195,8 @@ def _named(args: argparse.Namespace) -> int | None:
         return 1 if any(not line.startswith(('made', 'removed')) for line in lines) else 0
     if not (args.salvage or args.reap_orphans or args.remove):
         return None
-    done = [salvage(args.root, name) for name in args.salvage]
-    reaped = reap_orphans(args.root) if args.reap_orphans else ()
+    done = [salvage(args.root, name) for name in args.salvage or ()]
+    reaped = reap_orphans(args.root, salvage=args.salvage is not None) if args.reap_orphans else ()
     done += [remove(args.root, name) for name in args.remove]
     for line in (*(line for _, line in done), *reaped):
         emit(line)
@@ -242,11 +242,13 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     )
     parser.add_argument(
         '--salvage',
-        action='append',
-        default=[],
+        action='extend',
+        nargs='*',
+        default=None,
         metavar='NAME',
         help="record worktree NAME's work (tracked + untracked, ignored excluded) as a commit on salvage/NAME; "
-        'no hook, nothing pushed, the tree untouched',
+        "no hook, nothing pushed, the tree untouched. Bare, with --reap-orphans: record each orphan's "
+        'unreachable files on salvage/<dir> first, then reap it',
     )
     parser.add_argument(
         '--reap-orphans',

@@ -171,6 +171,51 @@ def test_an_orphan_holding_unreachable_content_is_kept_and_named(work: Path) -> 
     assert (aside / 'only-here.txt').is_file()
 
 
+def test_a_kept_orphan_names_every_unreachable_file(work: Path) -> None:
+    """Wall 2026-11-25: naming only the first unreachable file made rescue one commit per file."""
+    aside = _orphan(work)
+    for name in ('a.txt', 'b.txt'):
+        (aside / name).write_text(f'only {name}', encoding='utf-8')
+    lines = reap_orphans(work, census=_idle)
+    kept = next(line for line in lines if line.startswith('kept'))
+    assert '2 files' in kept
+    assert 'a.txt' in kept
+    assert 'b.txt' in kept
+
+
+def test_salvage_then_reap_records_every_unreachable_file_and_removes_the_orphan(work: Path) -> None:
+    aside = _orphan(work)
+    (aside / 'a.txt').write_text('only a', encoding='utf-8')
+    (aside / 'sub').mkdir()
+    (aside / 'sub' / 'b.txt').write_text('only b', encoding='utf-8')
+    lines = reap_orphans(work, census=_idle, salvage=True)
+    assert any(line.startswith('salvaged') and 'salvage/lane.reclaiming' in line for line in lines), lines
+    assert any(line.startswith('removed') for line in lines), lines
+    assert not aside.exists()
+    files = _git(work, 'ls-tree', '-r', '--name-only', 'salvage/lane.reclaiming').splitlines()
+    assert sorted(files) == ['a.txt', 'sub/b.txt'], 'only the unreachable files, nothing reachable copied'
+    assert _git(work, 'show', 'salvage/lane.reclaiming:sub/b.txt') == 'only b'
+
+
+def test_salvage_never_reaps_a_live_orphan(work: Path) -> None:
+    """PLANTED CONTROL: a live orphan is neither salvaged nor removed."""
+    aside = _orphan(work)
+    (aside / 'a.txt').write_text('only a', encoding='utf-8')
+    holder = Process(79, 1, 'C:/py/python.exe', 'python x', 600.0, str(aside))
+    lines = reap_orphans(work, census=lambda: (holder,), salvage=True)
+    assert any('pid 79' in line for line in lines), lines
+    assert aside.is_dir()
+    assert not _git(work, 'branch', '--list', 'salvage/lane.reclaiming')
+
+
+def test_reap_orphans_salvage_through_the_cli(work: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    aside = _orphan(work)
+    (aside / 'a.txt').write_text('only a', encoding='utf-8')
+    assert main(['--root', str(work), '--reap-orphans', '--salvage']) == 0
+    assert 'salvaged' in capsys.readouterr().out
+    assert not aside.exists()
+
+
 def test_a_registered_tree_is_never_an_orphan(work: Path) -> None:
     """PLANTED CONTROL: a tree git lists is ``--remove``'s, never reaped."""
     lines = reap_orphans(work, census=_idle)

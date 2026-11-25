@@ -144,21 +144,50 @@ def _orphans(main: Path) -> Iterator[Path]:
             yield directory
 
 
-def _unheld_file(main: Path, directory: Path, reachable: frozenset[str]) -> str | None:
-    """The first not-ignored file of *directory* no reachable blob holds; ``''`` when none; ``None``: unread."""
+def _where(main: Path, directory: Path) -> tuple[str, str]:
+    return f'--git-dir={main / ".git"}', f'--work-tree={directory}'
+
+
+def _unheld_files(main: Path, directory: Path, reachable: frozenset[str]) -> list[tuple[str, str]] | None:
+    """Every not-ignored ``(path, blob)`` of *directory* no reachable blob holds; ``None``: unread."""
     with tempfile.TemporaryDirectory() as scratch:
         index = Path(scratch) / 'index'
-        where = (f'--git-dir={main / ".git"}', f'--work-tree={directory}')
-        listed = _git(directory, *where, 'ls-files', '--others', '--exclude-standard', '-z', index=index)
+        listed = _git(
+            directory, *_where(main, directory), 'ls-files', '--others', '--exclude-standard', '-z', index=index
+        )
         if listed is None:
             return None
         files = [name for name in listed.split('\0') if name and name != '.git']
         if not files:
-            return ''
-        hashed = _git(directory, *where, 'hash-object', '--stdin-paths', stdin='\n'.join(files) + '\n', index=index)
+            return []
+        stdin = '\n'.join(files) + '\n'
+        hashed = _git(directory, *_where(main, directory), 'hash-object', '--stdin-paths', stdin=stdin, index=index)
     if hashed is None:
         return None
-    return next((path for path, blob in zip(files, hashed.split(), strict=False) if blob not in reachable), '')
+    return [(path, blob) for path, blob in zip(files, hashed.split(), strict=False) if blob not in reachable]
+
+
+def _salvaged_orphan(main: Path, directory: Path, unheld: list[tuple[str, str]]) -> str:
+    """Record *unheld* as one parentless commit on ``salvage/<dir name>``; its sha, or ``''`` when git failed."""
+    paths = '\n'.join(path for path, _ in unheld) + '\n'
+    where = _where(main, directory)
+    if _git(directory, *where, 'hash-object', '-w', '--stdin-paths', stdin=paths) is None:
+        return ''
+    with tempfile.TemporaryDirectory() as scratch:
+        index = Path(scratch) / 'index'
+        rows = ''.join(f'100644 {blob}\t{path}\0' for path, blob in unheld)  # NUL: text mode turns \n into \r\n
+        if _git(main, 'update-index', '-z', '--index-info', stdin=rows, index=index) is None:
+            return ''
+        made = (_git(main, 'write-tree', index=index) or '').strip()
+    message = f'chore(salvage): orphan {directory.name} unreachable files\n'
+    sha = (_git(main, 'commit-tree', made, stdin=message) or '').strip() if made else ''
+    ref = f'refs/heads/{BRANCH.format(name=directory.name)}'
+    return sha if sha and _git(main, 'update-ref', ref, sha) is not None else ''
+
+
+def _shown(unheld: list[tuple[str, str]], most: int = 5) -> str:
+    names = ', '.join(path for path, _ in unheld[:most])
+    return f'{len(unheld)} files held by no reachable object: {names}' + (', ...' if len(unheld) > most else '')
 
 
 def _reachable_blobs(main: Path) -> frozenset[str] | None:
@@ -174,8 +203,33 @@ def _reachable_blobs(main: Path) -> frozenset[str] | None:
     return frozenset(blobs)
 
 
-def reap_orphans(root: Path, *, census: Census = processes) -> tuple[str, ...]:
-    """THE ORPHAN DOOR: remove every orphan tree directory whose content some ref reaches; one line each."""
+def _reaped(main: Path, directory: Path, reachable: frozenset[str], census: Census, *, salvage: bool) -> list[str]:
+    """The lines for one orphan: kept with its reason, or salvaged and/or removed."""
+    if live := removal_holders(directory, census=census):
+        return [f'kept     {directory}  (live; nothing was deleted)\n{describe(live)}']
+    unheld = _unheld_files(main, directory, reachable)
+    if unheld is None:
+        return [f'kept     {directory}  (git could not read its files; nothing was deleted)']
+    lines = []
+    if unheld and not salvage:
+        return [f'kept     {directory}  ({_shown(unheld)}; nothing was deleted)']
+    if unheld:
+        sha = _salvaged_orphan(main, directory, unheld)
+        if not sha:
+            return [f'kept     {directory}  (git could not record its {len(unheld)} unreachable files)']
+        lines.append(
+            f'salvaged {directory.name} -> {BRANCH.format(name=directory.name)} {sha[:10]} ({len(unheld)} files)'
+        )
+    if refused := repository_at(main, directory) or _removed(directory):
+        return [*lines, refused.replace('{label}', str(directory))]
+    return [*lines, f'removed  {directory}  (an orphan: its gitdir vanished, every file reachable)']
+
+
+def reap_orphans(root: Path, *, census: Census = processes, salvage: bool = False) -> tuple[str, ...]:
+    """THE ORPHAN DOOR: remove every orphan tree directory whose content some ref reaches; one line each.
+
+    With *salvage*, an orphan's unreachable files are first recorded as one commit on ``salvage/<dir name>``.
+    """
     main = root.resolve()
     orphans = list(_orphans(main))
     if not orphans:
@@ -183,18 +237,4 @@ def reap_orphans(root: Path, *, census: Census = processes) -> tuple[str, ...]:
     reachable = _reachable_blobs(main)
     if reachable is None:
         return (f'refused  git could not list the reachable blobs of {main}; nothing was removed',)
-    lines = []
-    for directory in orphans:
-        if live := removal_holders(directory, census=census):
-            lines.append(f'kept     {directory}  (live; nothing was deleted)\n{describe(live)}')
-            continue
-        unheld = _unheld_file(main, directory, reachable)
-        if unheld is None:
-            lines.append(f'kept     {directory}  (git could not read its files; nothing was deleted)')
-        elif unheld:
-            lines.append(f'kept     {directory}  ({unheld} is held by no reachable object; nothing was deleted)')
-        elif refused := repository_at(main, directory) or _removed(directory):
-            lines.append(refused.replace('{label}', str(directory)))
-        else:
-            lines.append(f'removed  {directory}  (an orphan: its gitdir vanished, every file reachable)')
-    return tuple(lines)
+    return tuple(line for directory in orphans for line in _reaped(main, directory, reachable, census, salvage=salvage))
