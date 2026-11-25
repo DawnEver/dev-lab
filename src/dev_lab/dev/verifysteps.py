@@ -1,6 +1,7 @@
 """THE VERIFY STEPS, run under one root into one log and folded into one verdict.
 
-:func:`run_verify` runs ruff check, ruff format --check, typos (:mod:`dev_lab.dev.spelling`) and pytest (in
+:func:`run_verify` runs ruff check, ruff format --check, typos (:mod:`dev_lab.dev.spelling`), pyright
+(:mod:`dev_lab.dev.typecheck`), the Rust lint base (:mod:`dev_lab.dev.cargolints`) and pytest (in
 the box, :mod:`dev_lab.dev.verifybox`),
 each streamed through :func:`_tee` into a fresh log, and :func:`build_verdict` folds their reports. The command
 around it -- the run cache, the box-wide single run, the producer's post -- is :mod:`dev_lab.dev.verify`.
@@ -85,11 +86,14 @@ LOG_KIND: Final = 'verify'
 #: so the checker that judges is the one installed in the interpreter that will run the suite -- a
 #: bare ``ruff`` on ``PATH`` can be a different version from the one the ``test`` extra resolved,
 #: and a verdict carrying an env key must have been earned under that env. ``typos`` is the
-#: US-SPELLING-IS-CHECKED step (user ruling 2026-11-24).
+#: US-SPELLING-IS-CHECKED step (user ruling 2026-11-24). ``pyright`` is TYPES-RATCHET (:mod:`dev_lab.dev.typecheck`)
+#: and ``cargo lints`` RUST-LINTS (:mod:`dev_lab.dev.cargolints`), both family mechanisms (consumer v1 D107).
 LINT_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ('ruff check .', ('ruff', 'check', '.')),
     ('ruff format --check .', ('ruff', 'format', '--check', '.')),
     ('typos', ('dev_lab.dev.spelling',)),
+    ('pyright', ('dev_lab.dev.typecheck',)),
+    ('cargo lints', ('dev_lab.dev.cargolints',)),
 )
 
 #: What pytest is always given, before anything the caller forwards. None of these three letters is

@@ -43,11 +43,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from dev_lab.dev._famconfig_cargo_rows import CARGO_SECTION_PREFIX, CARGO_SECTION_ROWS
 from dev_lab.dev._famconfig_pyproject_rows import PYPROJECT_SECTION_PREFIX, PYPROJECT_SECTION_ROWS
 from dev_lab.dev._famconfig_ruff_rows import RUFF_CONFIG_NAMES, RUFF_SECTION_PREFIX, RUFF_SECTION_ROWS
 from dev_lab.dev._famconfig_survey import assert_base_floor
 
 __all__ = [
+    'CARGO_SECTIONS',
     'DIVERGED',
     'NO_FILE',
     'NO_TABLE',
@@ -186,6 +188,11 @@ PYPROJECT_SECTIONS: Final[dict[str, SectionBase]] = _bases(PYPROJECT_SECTION_ROW
 #: function would be the dual entry point this codebase refuses.
 SECTION_BASES: Final[dict[str, SectionBase]] = {**RUFF_SECTIONS, **PYPROJECT_SECTIONS}
 
+#: Every workspace ``Cargo.toml`` table this package owns. NOT in :data:`SECTION_BASES`: those are judged once per
+#: repo against its declared deltas, and a repo with no Rust has no manifest to hold these -- they are judged per
+#: workspace manifest, by :mod:`dev_lab.dev.cargolints`.
+CARGO_SECTIONS: Final[dict[str, SectionBase]] = _bases(CARGO_SECTION_ROWS, CARGO_SECTION_PREFIX)
+
 
 def section_base(artifact: str) -> SectionBase:
     """The base for *artifact*, or a refusal naming the ones that exist.
@@ -194,10 +201,10 @@ def section_base(artifact: str) -> SectionBase:
     package does not own fails HERE, with the set it could have meant, instead of at the point a
     caller indexes ``None``.
     """
-    base = SECTION_BASES.get(artifact)
+    base = SECTION_BASES.get(artifact) or CARGO_SECTIONS.get(artifact)
     if base is None:
         msg = (
-            f'no family section base for {artifact!r}. Declared sections: {sorted(SECTION_BASES)}. A '
+            f'no family section base for {artifact!r}. Declared: {sorted({*SECTION_BASES, *CARGO_SECTIONS})}. A '
             f'config table with no base is not shared by default -- add the row to '
             f'dev_lab.dev._famconfig_ruff_rows or _famconfig_pyproject_rows with the measurement '
             f'that says it is, or record it in PYPROJECT_DECLINED with the number that declined it.'

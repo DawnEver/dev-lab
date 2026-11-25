@@ -43,6 +43,7 @@ __all__ = [
     'PYPROJECT_SECTION_PREFIX',
     'PYPROJECT_SECTION_ROWS',
     'PYPROJECT_TABLE_FLOOR',
+    'PYRIGHT',
     'PYTEST_INI',
     'README_NAME',
 ]
@@ -61,6 +62,13 @@ BUILD_SYSTEM: Final = '[build-system]'
 HATCH_VERSION: Final = '[tool.hatch.version]'
 #: The coverage HTML report under output/cache/<tool>/ (every tool cache and report under output/).
 COVERAGE_HTML: Final = '[tool.coverage.html]'
+#: PROMOTED 2026-11-25 (consumer v1 ledger D107, user-agreed): type checking is a family mechanism -- src strict,
+#: tests basic, run by ``verify`` through :mod:`dev_lab.dev.typecheck` with per-owner counts as a ratchet.
+#: It was DECLINED 2026-09-19 as "ONE REPO ... a base over one repo agrees with everything it reads and refuses
+#: nothing". That held while one consumer declared it with paths into its own tree. It no longer holds: two
+#: consumers (dev-lab and the v1 consumer) take the SAME base, and the base names no repo's path -- ``src`` and
+#: ``tests`` are the family layout -- so a consumer that drifts from it is refused by a base it did not write.
+PYRIGHT: Final = '[tool.pyright]'
 
 #: There is NO dedicated-file spelling for these tables, so the prefix a `SectionBase` strips is
 #: EMPTY. Stated rather than left out: `SectionBase.prefix` is what lets the ruff base read both
@@ -88,13 +96,16 @@ PYPROJECT_SECTION_ROWS: Final[dict[str, tuple[tuple[str, ...], dict[str, object]
     BUILD_SYSTEM: (('build-system',), {'build-backend': 'hatchling.build'}, {'requires': ('hatch-vcs', 'hatchling')}),
     HATCH_VERSION: (('tool', 'hatch', 'version'), {'source': 'vcs'}, {}),
     COVERAGE_HTML: (('tool', 'coverage', 'html'), {'directory': 'output/cache/coverage/html'}, {}),
+    PYRIGHT: (('tool', 'pyright'), {'typeCheckingMode': 'basic'}, {'include': ('src', 'tests'), 'strict': ('src',)}),
 }
 
 #: The floor under how many tables this file DECIDES. A registry of declines is only evidence that
 #: somebody looked if it is bigger than the handful anybody would name from memory, and the live
 #: measurement enumerated 39 tables across the four repos. SEVEN is the count of the decline ROWS
 #: below, each of which covers a table family; the suite asserts the rows against the live files.
-PYPROJECT_TABLE_FLOOR: Final = 6  # 2026-11-24: build-system left by PROMOTION, the one way out
+PYPROJECT_TABLE_FLOOR: Final = (
+    5  # build-system (2026-11-24) and pyright (2026-11-25) left by PROMOTION, the one way out
+)
 
 #: EVERY TABLE MEASURED AND NOT PROMOTED, with the number that decided it. Recorded rather than
 #: omitted: an absent table and a table nobody looked at read identically, and this family has
@@ -121,12 +132,6 @@ PYPROJECT_DECLINED: Final[dict[tuple[str, ...], str]] = {
         '`report.omit` and `report.exclude_lines` each differ in two of the three. So this is not '
         'even a consumer agreement worth arguing about -- it is three repos naming their own package.'
     ),
-    ('tool', 'pyright'): (
-        'ONE REPO. Only consumer-a declares it, over six keys, three of which name paths into '
-        'that tree (`include = ["src/consumer_a/contracts", "src/consumer_a/core"]`, `exclude` naming '
-        'its `attic/`). A base over one repo agrees with everything it reads and refuses nothing, '
-        'which is the vacuous green every floor in this package exists to stop.'
-    ),
     ('tool', 'lab_commons'): (
         'ONE REPO, AND THE KIT ALREADY OWNS IT IN CODE. Only consumer-b declares '
         '`[tool.dev_lab.verify]`, and its schema is defined by `dev_lab.dev.verify` in this '
@@ -139,7 +144,7 @@ PYPROJECT_DECLINED: Final[dict[tuple[str, ...], str]] = {
         '`[tool.setuptools_scm]` are present in the two setuptools repos and meaningless here. '
         'Declining the backend declines both of its consequences; promoting either would be the '
         'base taking a side in a split it has already recorded as per-repo. `[tool.maturin]` and '
-        '`[tool.uv]` are one repo apiece and decline for the `[tool.pyright]` reason.'
+        '`[tool.uv]` are one repo apiece: a base over one repo agrees with everything it reads.'
     ),
     ('project', 'optional-dependencies'): (
         'IT IS THE DEPENDENCY GRAPH, AND `dev` IS THE NEAR MISS WORTH NAMING. All four declare a '
