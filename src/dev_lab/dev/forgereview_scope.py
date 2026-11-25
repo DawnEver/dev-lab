@@ -5,8 +5,8 @@ its paths earn.
 
 A HEAD IS NEVER HELD, AND NEVER REVIEWED WITHOUT A DIFF (D123, user rulings 2026-10-31 and 2026-11-06). Every
 slice names its paths, so every call is a diff review -- the one call mode the forge's headless run allows. The
-budget bounds a SLICE (``max_diff_bytes``; one file over it is a slice of its own) and the TOTAL
-(``max_total_bytes``): slices are taken strictest lens first (code that refuses or declares before the rest, prose
+budget bounds a SLICE (``max_diff``; one file over it is a slice of its own) and the TOTAL
+(``max_total``): slices are taken strictest lens first (code that refuses or declares before the rest, prose
 last), and what the total leaves out is LISTED (:attr:`Scope.unread`) in the review comment. There is no
 whole-range "structure" review: its path-less slice was rendered by ai-lab as an ``agent`` call the headless run
 mode refuses, so every reviewer reported ``unsupported`` and the head was never reviewed.
@@ -112,7 +112,7 @@ class Scope:
 
     range: str
     slices: tuple[Slice, ...] = ()
-    unread: tuple[str, ...] = ()  # code paths past ``max_total_bytes``: listed in the comment, never read
+    unread: tuple[str, ...] = ()  # code paths past ``max_total``: listed in the comment, never read
     outside: int = 0  # changed files that are not code: counted, never read
     moved: tuple[str, ...] = ()  # pure moves (new paths): read for their path change, cost ~0
 

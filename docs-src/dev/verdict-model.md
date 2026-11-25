@@ -98,7 +98,7 @@ complete part or the forge's acceptance gates.
   `verifybox.selection_width`: one worker a file, at most the box's free cores, narrowed by its free memory, unless the caller names a width -- the memory its files measured, `verifybox.selection_mem_gb`, and the wall `[tool.dev_lab.verify] wall_s` declares, else `SELECTION_WALL_S`) beside whatever else fits; a producer runs
   at the demand serve admitted it at ([box resources](box-resources.md)).
 - Where nothing was learned (a hosted runner: the table lives beside the machine config, not in the checkout) a
-  worker is priced at `[tool.dev_lab.verify] worker_mem_gb`, the peak the repo's last run measured, times the box
+  worker is priced at `[tool.dev_lab.verify] worker_mem` (a size), the peak the repo's last run measured, times the box
   headroom (`verifybox.declared_worker_gb`); a learned price above it still wins.
 - A test marked `serial` (`dev_lab.dev.serialpass`, the family's one marker for a bar that cannot shrink) is
   deselected from that step and runs after it in a second boxed step at `-n 0`, alone; the two halves of the log

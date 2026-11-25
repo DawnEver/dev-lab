@@ -1642,7 +1642,7 @@ def test_a_hosted_part_carries_a_job_timeout_derived_from_the_repo_s_selection_w
     default = workflows(tmp_path)['ci.yml']['jobs']['part']['timeout-minutes']
     assert default == ciworkflows.part_timeout_minutes(3600) == 60 + ciworkflows.PART_MARGIN_MIN
     # PLANTED CONTROL: a repo declaring a longer wall renders a longer timeout, so the value is read, not constant.
-    pyproject.write_text(ACTIONS_REPO + '[tool.dev_lab.verify]\nwall_s = 7230\n', encoding='utf-8')
+    pyproject.write_text(ACTIONS_REPO + '[tool.dev_lab.verify]\nwall = "7230 s"\n', encoding='utf-8')
     assert workflows(tmp_path)['ci.yml']['jobs']['part']['timeout-minutes'] == 121 + ciworkflows.PART_MARGIN_MIN
     assert isinstance(default, int), 'GitHub reads timeout-minutes as a number'
 

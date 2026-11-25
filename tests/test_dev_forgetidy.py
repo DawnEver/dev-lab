@@ -111,7 +111,7 @@ def test_nothing_declared_is_every_rule_on(tmp_path: Path) -> None:
     assert load_hygiene(tmp_path) == ALL
     assert ALL.host_duplicates
     assert ALL.green_areas
-    assert ALL.work_max_idle_days == ALL.request_max_age_days == 14
+    assert ALL.work_max_idle == ALL.request_max_age == 14 * 86400.0
 
 
 def test_a_failed_listing_removes_nothing() -> None:
@@ -124,7 +124,7 @@ def test_a_failed_listing_removes_nothing() -> None:
 
 def test_planted_control_a_rule_that_is_off_removes_nothing_of_its_kind() -> None:
     forge, named = _flooded()
-    tidy(forge, Hygiene(green_areas=False, request_max_age_days=10_000, work_max_idle_days=10_000))
+    tidy(forge, Hygiene(green_areas=False, request_max_age=10_000 * 86400.0, work_max_idle=10_000 * 86400.0))
     assert _states(forge, named)['green'] == 'open'
     assert _states(forge, named)['old'] == 'open'
     assert _states(forge, named)['idle'] == 'open'
@@ -133,8 +133,14 @@ def test_planted_control_a_rule_that_is_off_removes_nothing_of_its_kind() -> Non
 
 def test_the_declaration_is_read_from_pyproject_and_an_unknown_key_refused(tmp_path: Path) -> None:
     manifest = tmp_path / 'pyproject.toml'
+    manifest.write_text('[tool.dev_lab.forge.issue_hygiene]\nwork_max_idle = "7 d"\n', encoding='utf-8')
+    assert load_hygiene(tmp_path) == Hygiene(work_max_idle=7 * 86400.0)
+    manifest.write_text('[tool.dev_lab.forge.issue_hygiene]\nwork_max_idle = 7\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='work_max_idle = 7 is a bare number'):
+        load_hygiene(tmp_path)
     manifest.write_text('[tool.dev_lab.forge.issue_hygiene]\nwork_max_idle_days = 7\n', encoding='utf-8')
-    assert load_hygiene(tmp_path) == Hygiene(work_max_idle_days=7)
+    with pytest.raises(ValueError, match=r'work_max_idle_days = 7 is retired.*write work_max_idle = "7 d"'):
+        load_hygiene(tmp_path)
     manifest.write_text('[tool.dev_lab.forge.issue_hygiene]\ndelete = true\n', encoding='utf-8')
     with pytest.raises(ValueError, match='unknown key'):
         load_hygiene(tmp_path)

@@ -50,15 +50,13 @@ def store_outputs(
     config = load_config(root)
     members, index_bytes, path_bytes = (
         config.member_index_max_members,
-        config.member_index_max_bytes,
-        config.member_index_max_path_bytes,
+        config.member_index_max,
+        config.member_index_max_path,
     )
     if members is None or index_bytes is None or path_bytes is None:
         msg = 'output index budget refused: all three member_index limits must be explicitly declared'
         raise OutputBudgetRefused(msg)
-    files = collect(
-        tree, outputs, max_entries=config.expanded_output_max_entries, max_bytes=config.expanded_output_max_bytes
-    )
+    files = collect(tree, outputs, max_entries=config.expanded_output_max_entries, max_bytes=config.expanded_output_max)
     packed = pack(
         tree,
         files,
@@ -84,7 +82,7 @@ def store_outputs(
 
 
 def tidy(root: Path, client: Client, *, account: str, say: Callable[[str], None]) -> tuple[str, ...]:
-    """Clean *account*'s runs in every store this repo writes: past ``retain_days``, then down to ``cap_gb``."""
+    """Clean *account*'s runs in every store this repo writes: past ``retain``, then down to ``cap``."""
     config = load_config(root)
     stores: list[ArtifactStore] = [ForgeStore(client)]
     large = large_store(config, forge_from_remote(root).repo)
@@ -92,8 +90,9 @@ def tidy(root: Path, client: Client, *, account: str, say: Callable[[str], None]
     keep, now = pinned(client, say=say), forge_now(client)
     gone = []
     for store in stores:
-        cap = config.cap_bytes if store is large else 0
-        for ref in clean(store, account=account, now=now, retain_days=config.retain_days, cap_bytes=cap, pinned=keep):
+        cap = config.cap if store is large else 0
+        retain_days = config.retain / 86400
+        for ref in clean(store, account=account, now=now, retain_days=retain_days, cap_bytes=cap, pinned=keep):
             gone.append(f'{ref.backend}:{ref.ref}')
             say(f'[artifacts] deleted {ref.backend}:{ref.ref}')
     return tuple(gone)

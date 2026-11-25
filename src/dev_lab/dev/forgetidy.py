@@ -6,8 +6,8 @@ only TUNES them, once, as data in its pyproject -- absent, the defaults below ap
     [tool.dev_lab.forge.issue_hygiene]
     host_duplicates = true         # DELETE every machine-made `forge hosts` issue but the OLDEST (the one home)
     green_areas = true             # close an open `area:<name>` issue with no `- [ ]` red row left
-    request_max_age_days = 14      # close an open request issue (`forge:request`) older than this
-    work_max_idle_days = 14        # close an open WORK issue not updated for longer than this
+    request_max_age = "14 d"       # close an open request issue (`forge:request`) older than this
+    work_max_idle = "14 d"         # close an open WORK issue not updated for longer than this
 
 A WORK issue is one no machinery keeps: not a hosts issue, not an ``area:`` issue, not a request, and carrying
 no hidden marker. A comment, a claim or an edit updates it, so only an issue nobody touched goes.
@@ -41,6 +41,7 @@ from typing import Any, Final
 
 from lab_commons.compute.model import Schedule
 from lab_commons.log import emit
+from lab_commons.quantity import Renamed, parse, refuse_renamed
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgeclaim import forge_now
@@ -57,16 +58,24 @@ __all__ = ['Closing', 'Hygiene', 'apply', 'load_hygiene', 'main', 'plan', 'retir
 _AREA_PREFIX: Final = title_of('')
 _MACHINE_PREFIXES: Final = (_AREA_PREFIX,)
 _LIVE_KINDS: Final = frozenset(str(kind) for kind in Marker)
+_DAY_S: Final = 86400.0
+#: The ages a repo declares as durations (``"14 d"``), held in seconds.
+_DURATIONS: Final = ('request_max_age', 'work_max_idle')
+#: Unit-suffixed keys retired by the 2026-11-25 ruling (a value carries its unit), refused with their new line.
+_UNIT_RENAMED: Final = {
+    'request_max_age_days': Renamed('request_max_age', 'd'),
+    'work_max_idle_days': Renamed('work_max_idle', 'd'),
+}
 
 
 @dataclass(frozen=True)
 class Hygiene:
-    """What ``forge tidy`` removes; every rule is on, a repo only tunes it."""
+    """What ``forge tidy`` removes; every rule is on, a repo only tunes it (the two ages in seconds)."""
 
     host_duplicates: bool = True
     green_areas: bool = True
-    request_max_age_days: float = 14
-    work_max_idle_days: float = 14
+    request_max_age: float = 14 * _DAY_S
+    work_max_idle: float = 14 * _DAY_S
     request_label: str = Schedule.request_label
 
 
@@ -95,13 +104,17 @@ def load_hygiene(root: Path) -> Hygiene:
         return Hygiene()
     with manifest.open('rb') as handle:
         table = declared_table(tomllib.load(handle), 'forge', {})
-    declared = table.get('issue_hygiene', {})
+    declared = dict(table.get('issue_hygiene', {}))
+    where = f'[tool.dev_lab.forge.issue_hygiene] in {manifest}'
+    refuse_renamed(f'{where}:', declared, _UNIT_RENAMED)
     known = {field.name for field in dataclasses.fields(Hygiene)}
     unknown = sorted(set(declared) - known)
     if unknown:
-        where = f'[tool.dev_lab.forge.issue_hygiene] in {manifest}'
         msg = f'{where} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
+    for key in _DURATIONS:
+        if key in declared:
+            declared[key] = parse(f'{where}: {key}', declared[key], 'duration', positive=True)
     return Hygiene(**declared)
 
 
@@ -161,13 +174,13 @@ def plan(
         idle = now - datetime.fromisoformat(raw.get('updated_at') or raw['created_at'])
         if hygiene.green_areas and title.startswith(_AREA_PREFIX) and not still_red(body):
             closing.append(Closing(number, title, 'area issue with no red row left'))
-        elif hygiene.request_label in _labels(raw) and age > timedelta(days=hygiene.request_max_age_days):
+        elif hygiene.request_label in _labels(raw) and age > timedelta(seconds=hygiene.request_max_age):
             closing.append(
-                Closing(number, title, f'request open {age.days} d, past {hygiene.request_max_age_days:g} d')
+                Closing(number, title, f'request open {age.days} d, past {hygiene.request_max_age / _DAY_S:g} d')
             )
-        elif _work(raw, hygiene) and idle > timedelta(days=hygiene.work_max_idle_days):
+        elif _work(raw, hygiene) and idle > timedelta(seconds=hygiene.work_max_idle):
             closing.append(
-                Closing(number, title, f'work issue idle {idle.days} d, past {hygiene.work_max_idle_days:g} d')
+                Closing(number, title, f'work issue idle {idle.days} d, past {hygiene.work_max_idle / _DAY_S:g} d')
             )
     return tuple(closing)
 

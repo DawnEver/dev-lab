@@ -245,9 +245,7 @@ class ClaimPass:
         if why := self._not_here(one, wanted):
             self.unservable.add(wanted.key)
             return one, why
-        return dataclasses.replace(
-            one, argv=declared.argv, producer=declared.name, wall_s=round(declared.wall_h * 3600)
-        ), ''
+        return dataclasses.replace(one, argv=declared.argv, producer=declared.name, wall_s=round(declared.wall)), ''
 
     def _not_here(self, one: Work, wanted: Candidate) -> str:
         """Why THIS host does not run the request *one*, ``''`` when it does (its sources probed once a tick)."""
@@ -291,7 +289,7 @@ class ClaimPass:
 
     def _wall_s(self, wanted: Candidate) -> int:
         """How long *wanted*'s box claim holds: a request's declared wall, else a part's day."""
-        return round(self._declared(wanted).wall_h * 3600) if wanted.kind == REQUEST else BOX_WALL_S
+        return round(self._declared(wanted).wall) if wanted.kind == REQUEST else BOX_WALL_S
 
     def _behind(self, wanted: Candidate, demand: Mapping[str, float]) -> str:
         """Why *wanted*, admitted, still waits: claiming it would delay a higher-ranked part's start (``''``: never)."""
@@ -312,7 +310,7 @@ class ClaimPass:
 
     def _take(self, one: Work, wanted: Candidate, needed: frozenset[str]) -> tuple[Work, str]:
         if one.cluster is not None and one.cluster.outputs and self.store_why:
-            why = f'its declared outputs could exceed threshold_mb and {self.store_why}'
+            why = f'its declared outputs could exceed threshold and {self.store_why}'
             self.refused.append(f'{one.context}: not claimed -- {why}')
             return one, why
         one = dataclasses.replace(one, demand=self.size(wanted, needed))

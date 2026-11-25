@@ -13,18 +13,19 @@ trunk = 'main'                 # required
 sessions = ['integrate/main']  # one per session or lane owner; [] when there are none
 ephemeral = ['pr/*']           # default []: glob namespaces of short-lived PR heads, pushable with no row
 prune_merged = true            # default false: the prune role's executor deletes merged idle origin branches
-max_idle_hours = 24            # default 24: idle time before a branch is pruned (merged) or STALE (unmerged)
+max_idle = "24 h"              # default "24 h": idle time before a branch is pruned (merged) or STALE (unmerged)
 max_ahead = 10                 # default unjudged: unlanded commits a branch may hold
 ```
 
-`grace_hours` is retired: renamed `max_idle_hours` (D46), refused by name.
+`grace_hours` is retired: renamed `max_idle` (D46), refused by name; so is `max_idle` (user ruling
+2026-11-25: a value carries its unit), refused with its replacement line.
 
 Read by `dev_lab.dev.branchset.declared_branchset(root)`; a missing or malformed table, or an unknown key,
 raises `BranchSetNotDeclared`. Adding a long-lived branch is a reviewed edit of `sessions`.
 
 A branch in an `ephemeral` namespace is the head of ONE pull request: the push hook and the census accept it
 without a row, and the forge deletes it once it is MERGED, no open PR has it as head and it has sat idle
-`max_idle_hours` (`branchprune`'s `ephemeral-done` rule, no `prune_merged` needed). A forge merge deletes it at once.
+`max_idle` (`branchprune`'s `ephemeral-done` rule, no `prune_merged` needed). A forge merge deletes it at once.
 An UNMERGED one is never deleted by the survey (D30): it is listed and alarmed with its two doors -- MERGE it
 through a PR, or LAND it with a declared `git merge -s ours` PR, then `branchprune delete`.
 Registering a branch in `sessions` to get it pushed is never the remedy; push it under `pr/` instead.
@@ -37,7 +38,7 @@ The `prune` role's executor (`dev_lab.dev.roles`: an hpc tick, or the forge feed
 | row | when | doors |
 |---|---|---|
 | `over-ahead` | the branch holds more than `max_ahead` commits integration lacks | land it now, and record why it ran past the limit (no test producer, nobody integrating, lane withheld finished work) -- never split it |
-| `stale` | its tip is idle `max_idle_hours` | land it through a PR, or retire it |
+| `stale` | its tip is idle `max_idle` | land it through a PR, or retire it |
 
 Each row is an `integration` ALARM on the host card and the session feed, never an issue (user ruling 2026-11-19:
 issues neither record events nor fan out), keyed `<kind> <branch>` -- no sha, so a moved branch repeats as the same
@@ -93,12 +94,12 @@ the pruner below alarms or deletes an undeclared origin branch.
 ## Pruning origin
 
 Finished branches still pile up on origin, so the `prune` role's executor prunes them (`dev_lab.dev.branchprune`),
-after its `git fetch --prune`; a deletion is pinned to the judged sha, so a raced second delete is a no-op. Undeclared branches whose tip has been idle for at least `max_idle_hours` are judged:
+after its `git fetch --prune`; a deletion is pinned to the judged sha, so a raced second delete is a no-op. Undeclared branches whose tip has been idle for at least `max_idle` are judged:
 
 | origin branch | rule | what happens |
 |---|---|---|
 | declared (`trunk`, `sessions`, the integration branch) | none | never touched |
-| idle less than `max_idle_hours` | none | never touched |
+| idle less than `max_idle` | none | never touched |
 | head of an open pull request | none | never touched |
 | tip is an ancestor of `origin/<integration>` or `origin/<trunk>` | `merged-idle` | DELETED through the forge API when `prune_merged = true`; otherwise listed as `deletable` |
 | anything else | `unmerged-stale` | ALARMED (`stale-branch`) with its age, never deleted |
@@ -115,7 +116,7 @@ after its `git fetch --prune`; a deletion is pinned to the judged sha, so a race
 - **Each deletion is logged** as one line, `{"event": "lab_commons.forge.prune", "ref", "sha", "rule"}`. The
   tick then raises one `pruned` alarm naming every deleted branch and its sha, so a deletion can be undone by
   pushing that sha back.
-- **Idle means the tip's committer date.** A branch nobody has committed to for `max_idle_hours` is idle, whenever
+- **Idle means the tip's committer date.** A branch nobody has committed to for `max_idle` is idle, whenever
   it was pushed.
 
 ### Landed pull requests close

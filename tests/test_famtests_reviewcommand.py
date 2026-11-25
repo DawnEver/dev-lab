@@ -61,7 +61,7 @@ def test_the_rule_ids_are_given_to_the_method_from_the_registry() -> None:
 
 def test_a_repo_overrides_only_the_model_and_still_slices() -> None:
     """A multi-slice head is SLICED, not held: the default carries ``{paths}`` whatever the repo overrides."""
-    review = review_from("[tool.dev_lab.review]\nmodel = 'other'\nmax_diff_bytes = 5\n", 'p')
+    review = review_from("[tool.dev_lab.review]\nmodel = 'other'\nmax_diff = '5 B'\n", 'p')
     assert PATHS_FIELD in review.command
     assert review.budget.slice_bytes == 5
     assert command_for(review, 'a..b', _HOST, paths=('x.py',))[7:9] == ['--model', 'other']

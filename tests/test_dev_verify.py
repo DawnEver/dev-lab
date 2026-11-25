@@ -1793,13 +1793,13 @@ def test_a_selection_declares_the_memory_its_files_measured_never_a_fixed_figure
 
 
 def test_a_declared_worker_peak_prices_a_worker_where_nothing_was_learned(tmp_path: Path) -> None:
-    """D101: a hosted runner has no learned table, so the repo's measured ``worker_mem_gb`` is the price.
+    """D101: a hosted runner has no learned table, so the repo's measured ``worker_mem`` is the price.
 
     PLANTED CONTROL: without the declaration the same unmeasured selection is priced at the 1 GB floor; with
     it each worker carries the declared peak x the box headroom, and a learned price above it still wins.
     """
     assert verifybox.declared_worker_gb(tmp_path) == 0.0, 'no pyproject declares nothing'
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem_gb = 4.0\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem = "4 GiB"\n', encoding='utf-8')
     declared = verifybox.declared_worker_gb(tmp_path)
     assert declared == 4.0
     assert verifybox.selection_mem_gb('https://g/hosted.git', ['tests/x.py'], 2) == 2.0
@@ -1809,8 +1809,11 @@ def test_a_declared_worker_peak_prices_a_worker_where_nothing_was_learned(tmp_pa
     assert (
         verifybox.selection_mem_gb('https://g/big.git', ['tests/x.py'], 1, declared_gb=1.0) == 8 * learned.BOX_HEADROOM
     )
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem_gb = "4"\n', encoding='utf-8')
-    with pytest.raises(ValueError, match='worker_mem_gb'):
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem = "4"\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='worker_mem = "4" is a bare number'):
+        verifybox.declared_worker_gb(tmp_path)
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem_gb = 3.5\n', encoding='utf-8')
+    with pytest.raises(ValueError, match=r'worker_mem_gb = 3.5 is retired.*write worker_mem = "3.5 GiB"'):
         verifybox.declared_worker_gb(tmp_path)
 
 
@@ -2153,13 +2156,16 @@ def test_an_unstaged_edit_to_any_tracked_file_moves_the_run_key(tmp_path: Path) 
 def test_a_repo_declares_its_selection_wall_and_the_box_holds_the_selection_to_it(tmp_path: Path) -> None:
     """learn-lab's full selection outgrew the one hard-coded 3600 s wall and was killed every night (2026-11-18).
 
-    ``[tool.dev_lab.verify] wall_s`` is the repo's declared wall; undeclared is :data:`SELECTION_WALL_S`. A wall that
-    is not a positive number of seconds is refused naming the key. PLANTED CONTROL: undeclared stays the default.
+    ``[tool.dev_lab.verify] wall`` is the repo's declared wall; undeclared is :data:`SELECTION_WALL_S`. A wall that
+    is not a positive duration is refused naming the key. PLANTED CONTROL: undeclared stays the default.
     """
     assert verifybox.declared_wall_s(tmp_path) == verifybox.SELECTION_WALL_S, 'PLANTED CONTROL: undeclared'
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nwall_s = 7200\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nwall = "2 h"\n', encoding='utf-8')
     assert verifybox.declared_wall_s(tmp_path) == 7200
-    for bad in ('"2h"', '0', '-5', 'true', '1.5'):
-        (tmp_path / 'pyproject.toml').write_text(f'[tool.dev_lab.verify]\nwall_s = {bad}\n', encoding='utf-8')
-        with pytest.raises(ValueError, match='wall_s'):
+    for bad in ('"0 s"', '"-5 min"', 'true', '7200', '"7200"', '"2 GiB"'):
+        (tmp_path / 'pyproject.toml').write_text(f'[tool.dev_lab.verify]\nwall = {bad}\n', encoding='utf-8')
+        with pytest.raises(ValueError, match='wall = '):
             verifybox.declared_wall_s(tmp_path)
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nwall_s = 7200\n', encoding='utf-8')
+    with pytest.raises(ValueError, match=r'wall_s = 7200 is retired.*write wall = "7200 s"'):
+        verifybox.declared_wall_s(tmp_path)

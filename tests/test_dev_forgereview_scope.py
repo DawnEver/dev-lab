@@ -157,7 +157,7 @@ def test_a_head_past_one_slice_is_read_in_slices_each_under_one_lens(tmp_path: P
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
     called_due(forge, head)  # the merge decision called its review due
     command = Recorder()
-    review = Review(command=_SLICED, max_diff_bytes=400)
+    review = Review(command=_SLICED, max_diff=400)
     review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
     assert [argv[4] for argv in command.ran] == ['strict', 'standard', 'standard', 'standard']
     read = sorted(path for argv in command.ran for path in argv[6:])
@@ -175,7 +175,7 @@ def test_a_synthesis_reads_the_merged_slices_once(tmp_path: Path) -> None:
         forge.add_pull('pr/x', 'integrate/main', sha=head)
         called_due(forge, head)  # the merge decision called its review due
         command = Recorder()
-        review = Review(command=_SLICED, synthesis=synthesis, max_diff_bytes=400)
+        review = Review(command=_SLICED, synthesis=synthesis, max_diff=400)
         review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
         assert len(command.ran) == runs
     assert command.ran[-1][0] == 'synth'
@@ -193,8 +193,8 @@ def test_an_oversize_head_is_read_in_diff_slices_and_the_rest_is_listed(tmp_path
     """
     work, head = _many(tmp_path)
     for review, unread in (
-        (Review(command=_SLICED, max_diff_bytes=400, max_total_bytes=500), True),
-        (Review(command=_SLICED, max_diff_bytes=100), False),
+        (Review(command=_SLICED, max_diff=400, max_total=500), True),
+        (Review(command=_SLICED, max_diff=100), False),
     ):
         forge = StateForge()
         number = forge.add_pull('pr/x', 'integrate/main', sha=head)
@@ -415,7 +415,7 @@ def test_a_derived_glob_matches_whole_paths_on_the_declared_minimum_python() -> 
 
 
 def test_a_large_head_is_read_strictest_first_up_to_the_family_total_and_the_rest_listed(tmp_path: Path) -> None:
-    """Review spend 2026-11-03 and 2026-11-06: past ``max_total_bytes``, slices up to the total, the rest listed.
+    """Review spend 2026-11-03 and 2026-11-06: past ``max_total``, slices up to the total, the rest listed.
 
     A head past the total reads slices up to it, never a
     path-less review, and lists what it left out. PLANTED CONTROL: the old 4 MB total reads every directory.
@@ -435,7 +435,7 @@ def test_a_large_head_is_read_strictest_first_up_to_the_family_total_and_the_res
 
 
 def test_the_family_budget_packs_a_mid_size_head_into_fewer_larger_slices(tmp_path: Path) -> None:
-    """Under ``max_total_bytes`` a head packs into slices of the raised ``max_diff_bytes``: fewer fixed prompts.
+    """Under ``max_total`` a head packs into slices of the raised ``max_diff``: fewer fixed prompts.
 
     PLANTED CONTROL: the same head under the old 200 kB slice needs twice the slices.
     """

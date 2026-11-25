@@ -7,7 +7,7 @@ User ruling D46 (integrator, 2026-11-19): the branch policy is a per-repo DECLAR
   is absent). Its doors (user correction 2026-11-19): LAND IT NOW, and RECORD WHY it ran past the limit -- no test
   producer, nobody integrating, or the lane withheld finished work. Never "split it": the work is done, and the
   cause of the backlog is what is recorded.
-* :data:`STALE` -- its tip has sat idle for ``max_idle_hours`` (the same bound the prune deletes a merged branch
+* :data:`STALE` -- its tip has sat idle for ``max_idle`` (the same bound the prune deletes a merged branch
   by). Its doors: LAND it through a PR, or RETIRE it.
 
 RETIRING is the user's call, never the observer's: LAND the branch with a declared ``git merge -s ours`` PR into a
@@ -139,7 +139,7 @@ def derive(root: Path, branchset: BranchSet, policy: Policy, *, now: datetime) -
         idle_h = (now - datetime.fromtimestamp(int(stamp), tz=UTC)).total_seconds() / _HOUR_S
         if branchset.max_ahead is not None and ahead > branchset.max_ahead:
             rows.append(PolicyRow(OVER_AHEAD, name, sha, ahead, behind, idle_h))
-        if idle_h >= branchset.max_idle_hours:
+        if idle_h * _HOUR_S >= branchset.max_idle:
             rows.append(PolicyRow(STALE, name, sha, ahead, behind, idle_h))
     return tuple(sorted(rows, key=lambda row: (row.branch, row.kind)))
 
@@ -148,7 +148,7 @@ def wanted(rows: tuple[PolicyRow, ...], branchset: BranchSet, integration: str) 
     """Title -> body of the one issue each row keeps open."""
     bounds = {
         OVER_AHEAD: f'max_ahead = {branchset.max_ahead}',
-        STALE: f'max_idle_hours = {branchset.max_idle_hours:g}',
+        STALE: f'max_idle = "{branchset.max_idle / _HOUR_S:g} h"',
     }
     return {row.title: row.body(integration, bounds[row.kind]) for row in rows}
 
