@@ -72,7 +72,8 @@ SCAN_FLOOR: Final = 80
 #: RE-MEASURED 2026-10-08 at **167** after the root-capability split removed one sibling mention.
 #: RE-MEASURED 2026-10-15 at **162** after box P3 deleted the lease/seat prose.
 #: RE-MEASURED 2026-10-22 at **141** over src/dev_lab after the split (the scan root moved off src/lab_commons).
-PROSE_CEILING: Final = 141
+#: RE-MEASURED 2026-11-25 at **134** on the 1124 wave (its prose rewrites dropped seven sibling mentions).
+PROSE_CEILING: Final = 134
 
 #: ``'<repo-relative module>::<kind>' -> why the deletion is not in this pass``. One handle per
 #: module per kind, so a new module or a new kind cannot arrive under an existing waiver.
@@ -169,6 +170,10 @@ SYNTHETIC: Final[dict[str, str]] = {
     'src/dev_lab/dev/famtests/ephemeralrefs.py::path': (
         'the planted tree`s files -- `scratch/probe.py`, `output/...` artifacts, `src/pkg/a.py` -- which '
         'the control writes into a tmp repo and convicts; they name no file in any checkout.'
+    ),
+    'src/dev_lab/dev/claudelayout.py::path': (
+        'CLAUDE_ENTRIES, the closed `.claude/` inventory (`hooks/deny-commands.js` and its siblings): the '
+        'family-managed names every adopting checkout holds; they name no file of a particular sibling.'
     ),
     'src/dev_lab/dev/famfiles.py::path': (
         'the PROJECT_FILES list names family-managed files (`.claude/settings.json`, the hook files) that '
