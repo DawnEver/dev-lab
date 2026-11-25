@@ -6,8 +6,8 @@
    ``<slug>/`` and each ``archive/<date>/<slug>/`` -- is a UNIT, read from the working tree (tracked and untracked
    files alike; the retired ``.bindings`` and every dot entry skipped). The checkouts are planned in order against
    the ledger AS IT WILL BE: a file it lacks is added; a ``JOURNAL.md`` that differs is UNION-merged (the ledger's
-   ``.gitattributes`` ``merge=union``: its lines, then each line it lacks); any other differing file refuses the
-   WHOLE run, by name, before any write. A unit with nothing new is skipped;
+   ``.gitattributes`` ``merge=union``: its lines, then each line it lacks and never amended); any other differing
+   file refuses the WHOLE run, by name, before any write. A unit with nothing new is skipped;
 2. the planned files are written into :func:`~dev_lab.dev.taskledger.ledger` and committed there (local only);
 3. each checkout's retired rem authority history (``~/.claude/rem/authority/<key>.jsonl``, keyed by the checkout's
    path or its store's) is folded into the one store (:func:`dev_lab.dev.taskauthority.fold`);
@@ -20,6 +20,7 @@ lists everything it would do.
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Final
 
@@ -35,6 +36,8 @@ __all__ = ['RETIRED_AUTHORITY', 'migrate', 'units']
 RETIRED_AUTHORITY: Final = ('.claude', 'rem', 'authority')
 _SKIPPED: Final = '.bindings'
 _JOURNAL: Final = 'JOURNAL.md'
+#: The audit tail ``task amend`` writes: the replaced line's digest.
+_AMENDED: Final = re.compile(r'\(was sha256:([0-9a-f]{12})\)')
 
 
 def _files(folder: Path) -> dict[str, Path]:
@@ -56,9 +59,17 @@ def units(store: Path) -> list[str]:
 
 
 def _union(held: str, incoming: str) -> str:
-    """*held*, then each line of *incoming* it lacks -- git's ``merge=union`` for a journal."""
-    have = set(held.splitlines())
-    added = [line for line in incoming.splitlines() if line not in have]
+    """*held*, then each line of *incoming* it lacks -- git's ``merge=union`` for a journal.
+
+    A line the ledger AMENDED is held too: ``task amend`` replaced it and recorded ``(was sha256:<d>)``, its digest
+    over the line without its carriage return (:func:`dev_lab.dev.task.amend`); appending it back undoes the amend.
+    """
+    have, amended = set(held.splitlines()), set(_AMENDED.findall(held))
+    added = [
+        line
+        for line in incoming.splitlines()
+        if line not in have and hashlib.sha256(line.encode('utf-8')).hexdigest()[:12] not in amended
+    ]
     base = held if not held or held.endswith('\n') else held + '\n'
     return base + ''.join(f'{line}\n' for line in added)
 

@@ -276,6 +276,28 @@ def test_migrate_union_merges_journals_across_checkouts(ledger: Path, tmp_path: 
     assert 'skipped a' in migrate(one, two, user_home=home), 'a merged journal is a fixed point'
 
 
+def test_migrate_never_restores_a_line_the_ledger_amended(ledger: Path, tmp_path: Path) -> None:
+    _open(ledger)
+    task.append('toolchain', 'decide', 'the old wording', date=_DAY)
+    checkout = on_branch(tmp_path / 'repo', 'pr/toolchain/x')
+    store = _store(checkout) / 'toolchain'
+    store.mkdir(parents=True)
+    shutil.copy(ledger / 'toolchain' / 'TASK.md', store / 'TASK.md')
+    journal = (ledger / 'toolchain' / 'JOURNAL.md').read_text(encoding='utf-8')
+    (store / 'JOURNAL.md').write_bytes(journal.replace('\n', '\r\n').encode('utf-8'))  # a CRLF checkout
+    task.amend('toolchain', 2, f'- {_DAY} D1: the new wording', reason='typo', date=_DAY)
+    held = (ledger / 'toolchain' / 'JOURNAL.md').read_text(encoding='utf-8')
+    home = tmp_path / 'user'
+    assert 'skipped toolchain' in migrate(checkout, dry_run=True, user_home=home), 'the amended line counts as held'
+    fresh = f'- {_DAY} O1 open: only in the checkout'
+    (store / 'JOURNAL.md').write_text(f'{journal}{fresh}\n', encoding='utf-8')
+    assert 'would merge toolchain/JOURNAL.md (+1 line)' in migrate(checkout, dry_run=True, user_home=home)
+    migrate(checkout, user_home=home)
+    assert (ledger / 'toolchain' / 'JOURNAL.md').read_text(encoding='utf-8') == f'{held}{fresh}\n', (
+        'planted control: an unamended new line is still appended; the amended one is not restored'
+    )
+
+
 def test_the_ledger_is_written_only_through_its_door(ledger: Path, tmp_path: Path) -> None:
     refused = ledgerguard.refuse_write(ledger / 't' / 'JOURNAL.md')
     assert refused is not None
