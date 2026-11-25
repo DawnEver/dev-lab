@@ -124,6 +124,43 @@ def test_a_mirror_row_declares_exactly_the_twins_of_its_mirrored_root(tmp_path) 
     ]
 
 
+_SHALLOW = f"""[layout]
+{_HOMES}rust = []
+apps = []
+'apps/motor' = ['.py']
+'apps/motor/sim' = ['.py']
+'cases/*/*' = ['.toml']
+'cases-deep' = {{ mirror = 'apps', allow = ['.toml'], depth = 1 }}
+'cases' = {{ mirror = 'apps', allow = ['.toml'], depth = 1 }}
+"""
+
+
+def test_a_mirror_row_with_a_depth_requires_twins_only_that_deep(tmp_path) -> None:
+    """``depth = N`` (D55): the twin requirement binds the first N levels; deeper ones are the ordinary rows'.
+
+    PLANTED CONTROLS: a free-named dir under a twinned one is admitted by ``cases/*/*``; an untwinned first-level
+    dir is still refused; and under ``cases-deep`` (no ordinary row) a TWINNED second-level dir is refused, so the
+    depth really stops the mirror rather than the ordinary row merely winning.
+    """
+    root = _checkout(tmp_path, _SHALLOW)
+    for rel in ('apps/motor/sim/m.py', 'cases/motor/c.toml', 'cases/motor/free-run/r.toml', 'cases-deep/motor/c.toml'):
+        _plant(root, rel)
+    assert layout_violations(root)[1] == []
+    _plant(root, 'cases/ghost/g.toml')
+    _plant(root, 'cases-deep/motor/sim/s.toml')
+    assert layout_violations(root)[1] == [
+        f'cases-deep/motor/sim/: {layout._undeclared("cases-deep/motor/sim")}',
+        f'cases/ghost/: {layout._undeclared("cases/ghost")}',
+    ]
+
+
+@pytest.mark.parametrize('depth', ['0', "'1'", 'true'])
+def test_a_mirror_depth_that_is_no_positive_integer_is_REFUSED(tmp_path, depth) -> None:
+    root = _checkout(tmp_path, f"[layout]\n{_HOMES}'tests/unit' = {{ mirror = 'apps', allow = [], depth = {depth} }}\n")
+    with pytest.raises(LayoutNotDeclared, match='depth'):
+        declared_layout(root)
+
+
 @pytest.mark.parametrize(
     'row', ["{ mirror = 'apps' }", "{ mirror = 'apps', allow = ['.py'], extras = [] }", "{ allow = ['.py'] }"]
 )

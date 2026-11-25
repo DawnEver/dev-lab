@@ -24,8 +24,10 @@ NO INHERITANCE (user ruling 2026-11-24): EVERY directory matches a row of its ow
 directory no row matches is refused by name (and not descended), and a file is judged only by its own directory's
 row. A MIRROR row ``'tests/unit' = { mirror = 'src/pkg', allow = ['.py'], extra = ['verification'] }`` declares
 a directory below it iff its twin under the mirrored root is declared (a mirror of a mirror follows the chain;
-``extra`` names directories with no twin). Among the rows matching one directory, a row with no glob character
-beats a globbed one, then the row with fewer wildcards wins, and rows still tied are refused by name as ambiguous.
+``extra`` names directories with no twin; ``depth = N`` binds the twin requirement to the first N levels below the
+row only, deeper ones being judged by the ordinary rows -- recursive by default). Among the rows matching one
+directory, a row with no glob character beats a globbed one, then the row with fewer wildcards wins, and rows still
+tied are refused by name as ambiguous.
 Nothing is allowed by default: a new directory or format is refused until it is declared on purpose.
 
 THE FAMILY HOLDS THREE THINGS, NOT THE TREE (a repo's formats are its own): every family home
@@ -144,14 +146,14 @@ class Layout:
     pruned_paths: tuple[str, ...] = ()
     read_only: tuple[str, ...] = ()
     tool_caches: tuple[str, ...] = ()
-    #: MIRROR rows: pattern -> (the mirrored root, the explicit extra names below the row).
-    mirrors: dict[str, tuple[str, tuple[str, ...]]] = dataclasses.field(default_factory=dict)
+    #: MIRROR rows: pattern -> (the mirrored root, the explicit extra names below the row, the depth or None).
+    mirrors: dict[str, tuple[str, tuple[str, ...], int | None]] = dataclasses.field(default_factory=dict)
 
     @property
     def digest(self) -> str:
         """The declaration's fingerprint: a changed table invalidates every journalled verdict."""
         rows = sorted((k, sorted(v)) for k, v in self.rows.items())
-        mirrors = sorted((k, v[0], list(v[1])) for k, v in self.mirrors.items())
+        mirrors = sorted((k, v[0], list(v[1]), v[2]) for k, v in self.mirrors.items())
         text = json.dumps([rows, self.pruned_paths, self.read_only, self.tool_caches, mirrors])
         return hashlib.sha256(text.encode()).hexdigest()[:16]
 
@@ -203,10 +205,10 @@ def declared_layout(root: Path) -> Layout:
 
 def _declared_rows(
     manifest: Path, table: dict
-) -> tuple[dict[str, frozenset[str]], dict[str, tuple[str, tuple[str, ...]]]]:
+) -> tuple[dict[str, frozenset[str]], dict[str, tuple[str, tuple[str, ...], int | None]]]:
     """``(pattern -> allowed formats, pattern -> mirror)`` of the ``[layout]`` table."""
     rows: dict[str, frozenset[str]] = {}
-    mirrors: dict[str, tuple[str, tuple[str, ...]]] = {}
+    mirrors: dict[str, tuple[str, tuple[str, ...], int | None]] = {}
     for pattern, value in table.items():
         key = pattern.strip('/') or '.'
         allows = value
@@ -218,14 +220,21 @@ def _declared_rows(
     return rows, mirrors
 
 
-def _mirror_row(manifest: Path, pattern: str, value: dict) -> tuple[object, tuple[str, tuple[str, ...]]]:
-    """``(allow, (mirror, extra))`` of a MIRROR row ``{ mirror = '<root>', allow = [...], extra = [...] }``."""
-    target, extra = value.get('mirror'), value.get('extra', [])
-    if set(value) - {'mirror', 'allow', 'extra'} or 'allow' not in value or not isinstance(target, str) or not target:
-        raise _refuse(manifest, f'{pattern} = {value!r} is not a mirror row {{ mirror, allow[, extra] }}')
+def _mirror_row(manifest: Path, pattern: str, value: dict) -> tuple[object, tuple[str, tuple[str, ...], int | None]]:
+    """``(allow, (mirror, extra, depth))`` of a MIRROR row ``{ mirror, allow[, extra][, depth] }``."""
+    target, extra, depth = value.get('mirror'), value.get('extra', []), value.get('depth')
+    if (
+        set(value) - {'mirror', 'allow', 'extra', 'depth'}
+        or 'allow' not in value
+        or not isinstance(target, str)
+        or not target
+    ):
+        raise _refuse(manifest, f'{pattern} = {value!r} is not a mirror row {{ mirror, allow[, extra][, depth] }}')
+    if depth is not None and (type(depth) is not int or depth < 1):
+        raise _refuse(manifest, f'{pattern} mirror depth = {depth!r} must be a positive integer (levels twinned)')
     if not isinstance(extra, list) or not all(isinstance(e, str) and e.strip('/') for e in extra):
         raise _refuse(manifest, f'{pattern} mirror extra = {extra!r} must list relative directory names')
-    return value['allow'], (target.strip('/'), tuple(e.strip('/') for e in extra))
+    return value['allow'], (target.strip('/'), tuple(e.strip('/') for e in extra), depth)
 
 
 def _within(rel: str, prefixes: tuple[str, ...]) -> bool:
@@ -265,7 +274,9 @@ def _mirrored(parts: list[str], pattern: str, layout: Layout, hops: int) -> bool
     segs = pattern.split('/')
     if len(segs) >= len(parts) or not all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False)):
         return False
-    target, extra = layout.mirrors[pattern]
+    target, extra, depth = layout.mirrors[pattern]
+    if depth is not None and len(parts) - len(segs) > depth:
+        return False  # below the twinned levels: the ordinary rows judge it
     rel = '/'.join(parts[len(segs) :])
     if rel in extra:
         return True
