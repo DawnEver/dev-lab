@@ -337,6 +337,11 @@ def _layout() -> ModuleType:
     return importlib.import_module('dev_lab.dev.layout')
 
 
+def _layout_vendor() -> ModuleType:
+    """:mod:`dev_lab.dev._layout_vendor` reads this module`s ``LAYOUT_FILE``, so it loads when the hook runs."""
+    return importlib.import_module('dev_lab.dev._layout_vendor')
+
+
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     """The ``PreToolUse`` agent hook on Write/Edit/MultiEdit/NotebookEdit; the payload is *stdin*.
 
@@ -360,8 +365,10 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         path = Path(payload.get('cwd') or Path.cwd()) / path
     # A report under output/ is lost to the next cleanup, and a write outside every checkout outlives the session
     # (WRITES-STAY-IN-THE-TREE), so both are refused; a misplaced code file is a style
-    # finding the forge's placement test reds on anyway, so it is a HINT (toolchain plan P3).
-    refused = refuse_report(path) or refuse_machine_file_write(path) or refuse_code_in_output(path)
+    # finding the forge's placement test reds on anyway, so it is a HINT (toolchain plan P3). A vendor job is asked
+    # before OUTPUT-HOLDS-NO-CODE so an emitted script's refusal names its door, the program's driver.
+    refused = refuse_report(path) or refuse_machine_file_write(path) or _layout_vendor().refuse_vendor_job(path)
+    refused = refused or refuse_code_in_output(path)
     refused = refused or refuse_ledger_write(path) or refuse_outside_tree(path) or refuse_consent_write(path)
     refused = refused or _layout().refuse_layout(path)
     refused = refused or refuse_frozen_write(path)

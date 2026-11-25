@@ -7,16 +7,16 @@ table into rows and refuses a malformed one; that module judges a tree against t
 from __future__ import annotations
 
 import dataclasses
+import fnmatch
 import hashlib
 import json
 import re
-from typing import TYPE_CHECKING, Final
+from pathlib import Path
+from typing import Final
 
+from dev_lab.dev import gitdirs
 from dev_lab.dev._deny_outputcode_row import CODE_SUFFIXES
 from dev_lab.dev.codeplace import FAMILY_HOMES, LAYOUT_FILE, PlacementNotDeclared, placement_table
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 __all__ = [
     'ANY',
@@ -25,8 +25,10 @@ __all__ = [
     'RULE_ID',
     'TABLE',
     'TOOL_CACHE_ROOT',
+    'VENDOR_JOB_ROOT',
     'Layout',
     'LayoutNotDeclared',
+    'declared_at',
     'declared_layout',
 ]
 
@@ -39,7 +41,9 @@ REQUIRED: Final = frozenset(home.split('/', 1)[0] for home in FAMILY_HOMES.value
 ANY: Final = '*'
 #: Where a named tool's cache lives: ``output/cache/<tool>/`` (user ruling 2026-11-24).
 TOOL_CACHE_ROOT: Final = 'output/cache'
-#: One tool's name: a plain word, so an entry can never widen into a glob or a path.
+#: Where a named program's job tree lives: ``output/logs/<yy>/<mm>/<dd>/vendor/<program>/`` (D95, 2026-11-25).
+VENDOR_JOB_ROOT: Final = 'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/vendor'
+#: One tool's or program's name: a plain word, so an entry can never widen into a glob or a path.
 _TOOL: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*')
 #: ONE-FORMAT-PER-NEED: configuration is TOML, so a second configuration format is never declared -- except where a
 #: forge dictates its own (its workflow directories) and in ``output/``, which holds what a program writes.
@@ -60,6 +64,7 @@ class Layout:
     pruned_paths: tuple[str, ...] = ()
     read_only: tuple[str, ...] = ()
     tool_caches: tuple[str, ...] = ()
+    vendor_jobs: tuple[str, ...] = ()
     #: MIRROR rows: pattern -> (the mirrored root, the explicit extra names below the row, the depth or None).
     mirrors: dict[str, tuple[str, tuple[str, ...], int | None]] = dataclasses.field(default_factory=dict)
 
@@ -68,12 +73,42 @@ class Layout:
         """The declaration's fingerprint: a changed table invalidates every journalled verdict."""
         rows = sorted((k, sorted(v)) for k, v in self.rows.items())
         mirrors = sorted((k, v[0], list(v[1]), v[2]) for k, v in self.mirrors.items())
-        text = json.dumps([rows, self.pruned_paths, self.read_only, self.tool_caches, mirrors])
+        text = json.dumps([rows, self.pruned_paths, self.read_only, self.tool_caches, mirrors, self.vendor_jobs])
         return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+    def in_tool_cache(self, rel: str) -> bool:
+        """Whether repo-relative POSIX *rel* is at or below a NAMED tool's cache (``tool_caches``)."""
+        return _below(rel, TOOL_CACHE_ROOT, self.tool_caches)
+
+    def in_vendor_job(self, rel: str) -> bool:
+        """Whether repo-relative POSIX *rel* is at or below a NAMED program's job tree (``vendor_jobs``)."""
+        return _below(rel, VENDOR_JOB_ROOT, self.vendor_jobs)
+
+
+def _below(rel: str, root: str, names: tuple[str, ...]) -> bool:
+    """Whether *rel* is at or below ``<root>/<name>`` for one of *names*; *root* is a per-segment glob."""
+    parts, segs = rel.split('/'), root.split('/')
+    return (
+        len(parts) > len(segs)
+        and parts[len(segs)] in names
+        and all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False))
+    )
 
 
 def _refuse(manifest: Path, what: str) -> LayoutNotDeclared:
     return LayoutNotDeclared(f'{TABLE} in {manifest}: {what} ({RULE_ID})')
+
+
+def declared_at(path: Path) -> tuple[Path, Layout, str] | None:
+    """``(checkout, its layout, repo-relative POSIX path)`` of *path*; ``None`` outside a checkout declaring one."""
+    target = Path(path).resolve()
+    root = gitdirs.checkout_of(target.parent)
+    if root is None:
+        return None
+    try:
+        return root, declared_layout(root), target.relative_to(root).as_posix()
+    except LayoutNotDeclared:
+        return None
 
 
 def declared_layout(root: Path) -> Layout:
@@ -111,10 +146,17 @@ def declared_layout(root: Path) -> Layout:
             )
     pruned = tuple(p.strip('/') for p in placement.get('pruned_paths', []) if isinstance(p, str))
     read_only = tuple(p.strip('/') for p in placement.get('read_only', []) if isinstance(p, str))
-    tools = placement.get('tool_caches', [])
-    if not isinstance(tools, list) or not all(isinstance(t, str) and _TOOL.fullmatch(t) for t in tools):
-        raise _refuse(manifest, f'tool_caches = {tools!r} must name tools one by one (no glob, path or empty name)')
-    return Layout(rows, pruned, read_only, tuple(tools), mirrors)
+    tools = _named(manifest, placement, 'tool_caches', 'tools')
+    vendor_jobs = _named(manifest, placement, 'vendor_jobs', 'programs')
+    return Layout(rows, pruned, read_only, tools, vendor_jobs=vendor_jobs, mirrors=mirrors)
+
+
+def _named(manifest: Path, placement: dict, key: str, what: str) -> tuple[str, ...]:
+    """The names under *key* (``tool_caches``, ``vendor_jobs``): each ONE name, never a glob, a path or ``''``."""
+    names = placement.get(key, [])
+    if not isinstance(names, list) or not all(isinstance(n, str) and _TOOL.fullmatch(n) for n in names):
+        raise _refuse(manifest, f'{key} = {names!r} must name {what} one by one (no glob, path or empty name)')
+    return tuple(names)
 
 
 def _declared_rows(

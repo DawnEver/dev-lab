@@ -13,6 +13,7 @@ the root's own files), each value the list of what a file there may be -- a ``.s
     # layout.toml
     read_only = ['temp']                      # user-maintained input: never written, never cleaned, never judged
     tool_caches = ['pytest', 'ruff']          # output/cache/<tool>/ of each NAMED tool holds what the tool writes
+    vendor_jobs = ['femm', 'matlab']          # output/logs/<yy>/<mm>/<dd>/vendor/<program>/: a NAMED program's jobs
     [layout]
     '.' = ['.toml', '.md', '.lock', '.gitignore']
     src = ['.py', '.typed']
@@ -37,11 +38,16 @@ is refused whatever the table says -- a directory holding ``.git`` (a clone or w
 beside a ``src/`` (an exported tree), or a :data:`BACKUP_SUFFIXES` file (a bundle or patch parked as a backup).
 Its door is MERGE-OR-DELETE: land the work through its branch, or delete it.
 
-TWO EXEMPTIONS, BOTH NAMED (user rulings 2026-11-24). A ``read_only`` path is user input of whatever format the
-user keeps: the scan never judges or descends it, and the write hook refuses any write into it. A tool in
-``tool_caches`` owns ``output/cache/<tool>/`` (every tool cache lives there, never at the root): the scan and the
-hook leave its files unjudged. Each entry is ONE tool's name -- a glob, a path or an empty name is refused, so an
-unnamed tool's cache is judged like any undeclared directory.
+THREE EXEMPTIONS, ALL NAMED (user rulings 2026-11-24 and D95, 2026-11-25). A ``read_only`` path is user input of
+whatever format the user keeps: the scan never judges or descends it, and the write hook refuses any write into it.
+A tool in ``tool_caches`` owns ``output/cache/<tool>/`` (every tool cache lives there, never at the root): the scan
+and the hook leave its files unjudged. Each entry is ONE tool's name -- a glob, a path or an empty name is refused,
+so an unnamed tool's cache is judged like any undeclared directory. A program in ``vendor_jobs`` (entries validated
+as ``tool_caches``' are) owns its job tree ``output/logs/<yy>/<mm>/<dd>/vendor/<program>/``: the program reads the
+model and driver scripts its driver emits (``.py`` for AEDT, ``.lua`` for FEMM, ``.m`` for MATLAB) from disk beside
+its own files, so the scan leaves that tree unjudged, code suffixes included. The write hook sees an AGENT's tool
+call, never the driver writing at run time, so it cannot admit per writer: it refuses an agent's Write/Edit there
+whatever the suffix, naming the driver as the door (:mod:`dev_lab.dev._layout_vendor`).
 
 ONE TABLE, ONE PREDICATE, THREE CALLERS: the scan :func:`layout_violations`, the write hook's
 :func:`refuse_layout`, and the scan entry :func:`main` that ``verify`` and every forge tick run.
@@ -70,7 +76,8 @@ from typing import Final
 from lab_commons.log import emit
 
 from dev_lab.dev import floors, gitdirs
-from dev_lab.dev._layout_table import ANY, RULE_ID, TABLE, TOOL_CACHE_ROOT, Layout, LayoutNotDeclared, declared_layout
+from dev_lab.dev._layout_table import ANY, RULE_ID, TABLE, Layout, LayoutNotDeclared, declared_at, declared_layout
+from dev_lab.dev._layout_vendor import vendor_refusal
 from dev_lab.dev.codeplace import FAMILY_HOMES, LAYOUT_FILE, PRUNED_NAMES
 from dev_lab.dev.disclosure import details_for
 
@@ -123,14 +130,14 @@ def _within(rel: str, prefixes: tuple[str, ...]) -> bool:
 
 
 def _skipped(rel_dir: str, layout: Layout) -> bool:
-    """A directory never judged: tool state by name, a pruned path, a read_only input, or a named tool cache."""
+    """A directory never judged: tool state by name, a pruned path, a read_only input, a named tool cache or job."""
     parts = [] if rel_dir == '.' else rel_dir.split('/')
-    caches = tuple(f'{TOOL_CACHE_ROOT}/{tool}' for tool in layout.tool_caches)
     return (
         bool(PRUNED_NAMES.intersection(parts))
         or _within(rel_dir, layout.pruned_paths)
         or _within(rel_dir, layout.read_only)
-        or _within(rel_dir, caches)
+        or layout.in_tool_cache(rel_dir)
+        or layout.in_vendor_job(rel_dir)
     )
 
 
@@ -368,15 +375,11 @@ def layout_violations(root: Path, layout: Layout | None = None, *, incremental: 
 
 def refuse_layout(path: Path) -> str | None:
     """The write hook's refusal for *path*; ``None`` when admitted or the checkout declares no layout."""
-    target = Path(path).resolve()
-    root = gitdirs.checkout_of(target.parent)
-    if root is None:
+    if (declared := declared_at(path)) is None:
         return None
-    try:
-        layout = declared_layout(root)
-    except LayoutNotDeclared:
-        return None
-    rel = target.relative_to(root).as_posix()
+    root, layout, rel = declared
+    if layout.in_vendor_job(rel):
+        return vendor_refusal(root, rel)
     if _within(rel, layout.read_only):
         return (
             f'{RULE_ID}: {rel} -- {rel.split("/", 1)[0]}/ is declared read_only in '
