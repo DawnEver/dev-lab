@@ -7,7 +7,6 @@
 /.venv/
 /.venvs/
 /build/
-/config/
 /dist/
 /output/
 /src/**/__version__.py

@@ -87,7 +87,6 @@ GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
     '/dist/': 'the built wheels and sdists, at the root of every repo that builds one.',
     '/src/**/__version__.py': 'the version file hatch-vcs / setuptools-scm write into the package at build time.',
     '/output/': 'the dated artifact tree (dev_lab.dev.datedlog) and every redirected tool cache.',
-    '/config/': 'the dev-mode in-repo config root a consumer generates from packaged defaults.',
     '/temp/': 'the root temporary directory a run may create; a source package named `temp` is not it.',
     '**/.DS_Store': 'macOS Finder state; a platform artifact at any depth.',
 }

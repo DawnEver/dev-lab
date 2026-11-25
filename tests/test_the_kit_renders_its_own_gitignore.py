@@ -22,7 +22,7 @@ from typing import Final
 from _famconfig_delta import DELTAS, GITIGNORE, REPO
 
 from dev_lab.dev._famconfig_rows import GITATTRIBUTES_BASE
-from dev_lab.dev.famconfig import RENDERED
+from dev_lab.dev.famconfig import RENDERED, Delta, artifact_base, render
 from dev_lab.dev.famtests.configrender import (
     assert_artifact_is_rendered,
     assert_delta_is_not_a_fork,
@@ -112,7 +112,6 @@ _IGNORED: Final = (
     'src/pkg/__version__.py',
     'output/logs/26/11/24/verify/x.log',
     'output/cache/pytest/v/cache/nodeids',
-    'config/x.toml',
     'temp/x.txt',
     'docs/.DS_Store',
     '.claude/settings.local.json',
@@ -145,6 +144,7 @@ _VISIBLE: Final = (
     'src/pkg/output/x.py',
     'src/pkg/temp/x.py',
     'src/pkg/x.c',
+    'config/x.toml',  # D113: no family repo tracks a config/ root; a stray one stays visible
 )
 
 
@@ -174,3 +174,13 @@ def test_only_legitimate_untracked_paths_are_ignored(tmp_path: Path) -> None:
     assert [path for path in _TRACKED if _ignored(tmp_path, path)] == []
     assert [path for path in _IGNORED if not _ignored(tmp_path, path)] == []
     assert [path for path in _VISIBLE if _ignored(tmp_path, path)] == []
+
+
+def test_a_repo_with_a_config_root_ignores_it_through_its_own_delta(tmp_path: Path) -> None:
+    """THE PLANTED PAIR beside `config/x.toml` in _VISIBLE: the same path is ignored once a delta adds `/config/`."""
+    git = shutil.which('git') or 'git'
+    subprocess.run([git, 'init', '-q', str(tmp_path)], check=True, timeout=60)
+    base = artifact_base(GITIGNORE)
+    delta = Delta(repo='consumer', added=('/config/',), dropped={}, ceiling=1)
+    (tmp_path / GITIGNORE).write_text(render(base, delta), encoding='utf-8')
+    assert _ignored(tmp_path, 'config/x.toml')
