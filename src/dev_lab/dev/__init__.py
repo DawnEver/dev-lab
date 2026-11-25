@@ -71,6 +71,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   notices) built through :mod:`dev_lab.dev.docsite`; no per-repo Python.
 * :mod:`dev_lab.dev.importedges` — the family's one static import-edge reader for architecture tests (every depth,
   both spellings, never executing the module).
+* :mod:`dev_lab.dev.rustsource` — the family's static Rust source reader: literals and test items blanked, use trees
+  expanded, top-level ``pub fn`` items read.
+* :mod:`dev_lab.dev.pyfacts` — per-file Python facts (dotted uses, forwards) read in one pass, cached by stat in the
+  checkout's git dir.
 * :mod:`dev_lab.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
   one measured caveat recorded in its docstring: ``resolve_home``'s auto-detection anchors on its
   own file, so a profile carries an ``anchor`` for the checkout it describes.
@@ -581,6 +585,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   recorded architecture decision; the core never imports an application, and the applications are acyclic.
 * :mod:`dev_lab.dev.nativefirst` -- NATIVE-FIRST: no numeric loop or stage twin under a declared orchestration
   path, and no test comparing a native stage against its Python twin.
+* :mod:`dev_lab.dev.deptable` -- a repo's root ``dependencies.toml`` (owner graph, packages, crates) read by its shape.
+* :mod:`dev_lab.dev.ownerdag` -- OWNER-DAG: actual Python imports against the declared owner graph;
+  :mod:`dev_lab.dev.rustdeps` is its Rust half (Cargo dependencies, std uses).
+* :mod:`dev_lab.dev.passthrough` -- NO-DETOUR: a module or crate file that only forwards names what the hop adds.
 * :mod:`dev_lab.dev.consentguard` -- CONSENT-CODE-FROM-THE-USER: where granted consent credentials live, and the
   refusal of an agent writing there (:mod:`dev_lab.ops.consent`).
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.

@@ -386,8 +386,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'escapes',  # the tick's census of writes that escaped every allowed root, new here
     'consentguard',  # CONSENT-CODE-FROM-THE-USER: the consent state dir and the planted-credential refusal, new here
     'frozen',  # USER-FROZEN-FILES: the user's frozen files and closed tracked inventory (2026-11-24), new here
-    'corechange',  # ZERO-CORE-CHANGE: application work leaves the core, else a recorded decision (2026-11-24), new here
-    'nativefirst',  # NATIVE-FIRST: Python orchestrates, the native stage computes (2026-11-25), new here
     'machineguard',  # MACHINE-FILE-IS-RENDERED: the machine file is written by its doors alone, new here
     'familyrepos',  # FAMILY-REPO-IS-CHECKED-OUT: [repos] against the family's repos, listed and enforced, new here
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
@@ -436,7 +434,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'fitting',  # ORIGINAL: 2026-11-23, the interpreter a bootstrap door names imports dev_lab and fits requires-python
     'layout',  # ORIGINAL: 2026-11-23, DECLARED-LAYOUT and NO-BACKUP-COPIES, a checkout's tree as an allow-list
     'changeselect',  # ORIGINAL: 2026-11-24, the tests a change reaches, run by verify --changed
-    'importedges',  # ORIGINAL: 2026-11-24, the family's one static import-edge reader for architecture tests
     'stallwatch',  # ORIGINAL: 2026-11-24, a test run ends when it is dead, not when the wall says so
     'worktreeseeds',  # ORIGINAL: 2026-11-24, the gitignored files a worktree is gated with, as data
     'cratefresh',  # ORIGINAL: 2026-11-24, the Rust side of dependency freshness
