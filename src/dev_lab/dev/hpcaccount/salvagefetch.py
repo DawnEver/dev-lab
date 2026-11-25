@@ -13,6 +13,9 @@ that bundle into a NAMED local repo as branches and touches no working tree, no 
   home-relative path (a ref component cannot begin with ``.``, so a leading dot is dropped: ``.claude`` ->
   ``claude``), ``<name>`` the bundle's ref without ``refs/heads/`` (else without ``refs/``): a branch keeps its name,
   ``tags/<t>``, ``stash``, ``r2/solid``, a detached ``HEAD``, another worktree's ``worktrees/<id>/HEAD``.
+* A bundle ref whose commit a ref of *repo* already reaches is SKIPPED, naming that ref: the repo holds that work
+  already, and ``UNPUSHED`` (``--all``) also bundles what the account fetched from a forge that is not a
+  remote-tracking ref -- measured 2026-11-25: release tags and ``refs/lab-commons/pulls/origin/<n>``.
 * The refspecs are never forced: a salvage branch already there at another commit is refused by git, named.
 
 Without ``--apply`` the bundle is verified against *repo* (``git bundle verify``: its prerequisite commits must be
@@ -128,6 +131,12 @@ def _verified(repo: Path, checkout: str, bundle: Path) -> None:
         raise _Refused(msg)
 
 
+def _reached(repo: Path, sha: str) -> str:
+    """The first ref of *repo* that reaches commit *sha*; ``''`` when none does (or *repo* lacks it)."""
+    code, said = _git(repo, 'for-each-ref', '--contains', sha, '--count=1', '--format=%(refname)')
+    return said.splitlines()[0] if code == 0 and said else ''
+
+
 def fetch(checkout: Path, repo: Path, *, apply: bool, say: Callable[[str], None] = emit) -> int:
     """Fetch salvaged *checkout*'s bundle into *repo* as salvage branches (*apply*), else verify and print; 0 or 2."""
     try:
@@ -143,17 +152,23 @@ def fetch(checkout: Path, repo: Path, *, apply: bool, say: Callable[[str], None]
     except (_Refused, OSError, ValueError, KeyError) as refused:
         say(f'salvage-fetch: refused -- {refused}')
         return 2
+    landing = []
     for sha, ref, branch in specs:
-        say(f'salvage-fetch: {name}: {ref} {sha[:10]} -> {branch}')
-    if not apply:
-        say(f'salvage-fetch: dry run -- the bundle verifies against {repo}; --apply fetches {len(specs)} branch(es)')
+        if held := _reached(repo, sha):
+            say(f'salvage-fetch: {name}: {ref} {sha[:10]} skipped -- {held} already reaches it')
+        else:
+            say(f'salvage-fetch: {name}: {ref} {sha[:10]} -> {branch}')
+            landing.append(f'{ref}:refs/heads/{branch}')
+    if not apply or not landing:
+        verdict = f'--apply fetches {len(landing)} branch(es)' if landing else f'{repo} already holds all of it'
+        say(f'salvage-fetch: {"dry run -- " if not apply else ""}the bundle verifies against {repo}; {verdict}')
         return 0
-    refspecs = [f'{ref}:refs/heads/{branch}' for _sha, ref, branch in specs]
+    refspecs = landing
     code, said = _git(repo, 'fetch', '--no-tags', '--no-write-fetch-head', str(bundle), *refspecs)
     if code:
         say(f'salvage-fetch: refused -- git fetch of {name} into {repo} failed: {said}')
         return 2
-    say(f'salvage-fetch: {name}: {len(specs)} branch(es) under salvage/{account}/ in {repo}; no working tree touched')
+    say(f'salvage-fetch: {name}: {len(landing)} branch(es) under salvage/{account}/ in {repo}; no working tree touched')
     return 0
 
 

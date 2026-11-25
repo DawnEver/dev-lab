@@ -180,6 +180,11 @@ def test_an_unpushed_commit_lands_and_fetches_into_a_matched_repo(
     assert salvagefetch.fetch(checkout, local, apply=True, say=said.append) == 0, said
     assert _git(local, 'rev-parse', 'salvage/u1/src/ahead/main').strip() == account.shas['ahead']
     assert (_git(local, 'rev-parse', 'HEAD'), _git(local, 'status', '--porcelain')) == (head, status), 'untouched'
+    again: list[str] = []
+    assert salvagefetch.fetch(checkout, local, apply=True, say=again.append) == 0, again
+    skipped = [line for line in again if 'skipped -- refs/heads/salvage/u1/src/ahead/' in line]
+    assert len(skipped) == len(again) - 1, 'held work is not landed twice'
+    assert again[-1].endswith('already holds all of it'), again
 
 
 def test_a_dirty_tracked_file_lands_in_the_diff(monkeypatch: pytest.MonkeyPatch, account: SimpleNamespace) -> None:
