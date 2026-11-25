@@ -659,3 +659,18 @@ def test_a_malformed_server_declaration_is_refused(tmp_path: Path, servers: str,
 def test_servers_are_a_family_fact_never_a_host_one(tmp_path: Path) -> None:
     clone = _clone(tmp_path, HOST.replace('os = "windows"\n', 'os = "windows"\nservers = {}\n'))
     assert any('servers' in line for line in check_host(clone / 'hosts/ws.toml', clone / 'family.toml'))
+
+
+def test_a_workstation_that_opts_out_renders_no_server(tmp_path: Path) -> None:
+    clone = _served(tmp_path)
+    _write(clone, 'hosts/ws.toml', HOST.replace('os = "windows"\n', 'os = "windows"\noperates_servers = false\n'))
+    assert check_host(clone / 'hosts/ws.toml', clone / 'family.toml') == []
+    rendered = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
+    assert 'server' not in rendered, 'a declared opt-out joins no server, not even its card'
+
+
+def test_an_opt_out_that_also_declares_keys_is_refused(tmp_path: Path) -> None:
+    key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA1dtjiBuQjg+mT4+rUmSfSrdgiwtUSw9TlircWVvVC0 u@ws'
+    text = HOST.replace('os = "windows"\n', f'os = "windows"\noperates_servers = false\nclient_keys = ["{key}"]\n')
+    clone = _clone(tmp_path, text)
+    assert any('operates_servers' in line for line in check_host(clone / 'hosts/ws.toml', clone / 'family.toml'))

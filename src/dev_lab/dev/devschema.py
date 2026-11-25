@@ -66,6 +66,7 @@ SCHEMA: Final = {
     'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
     'helpers': dict, 'channels': dict, 'bridge': dict, 'hooks': str, 'default': dict, 'apps': list,
     'client_keys': list, 'hostname': str, 'key_account': str, 'forge_reach': list, 'servers': dict,
+    'operates_servers': bool,
 }  # fmt: skip
 #: ``[dev] forge_reach``: the transports this machine reaches the forge's approval doors (consent, break-glass) by,
 #: in its order of preference -- ``ssh`` (port 22) and/or ``https`` (443, :mod:`dev_lab.ops.httpsdoor`). Undeclared
@@ -91,7 +92,7 @@ FAMILY_ONLY: Final = ('default', 'apps', 'servers')
 #: accounts (:mod:`dev_lab.ops.clientkeys`); ``hostname`` -- the machine's own host name, the part after ``@`` in
 #: every one of its key comments (:func:`key_comment_defects`); ``forge_reach`` -- the transports its own network lets
 #: it reach the forge by (:data:`FORGE_REACH`).
-HOST_ONLY: Final = ('channels', 'client_keys', 'hostname', 'forge_reach')
+HOST_ONLY: Final = ('channels', 'client_keys', 'hostname', 'forge_reach', 'operates_servers')
 #: ``[dev]`` keys the family declares for every machine and a host may OVERRIDE with a different value: ``forges`` --
 #: the workstation login is one person's, so another person's machine names its own; ``key_account`` -- the account
 #: named before ``@`` in every client key comment, likewise one person's. A host restating the family's value is still
@@ -241,6 +242,11 @@ def _shape(table: Mapping[str, Any], where: str) -> list[str]:
         found += channel_defects(table['channels'], f'{where}.channels')
     if 'client_keys' in table:
         found += clientkeys.defects(table['client_keys'], f'{where}.client_keys')
+    if table.get('operates_servers') is False and 'client_keys' in table:
+        found.append(
+            f'{where}.operates_servers = false declares this machine joins no server; its client_keys '
+            'would admit it to them: keep one of the two'
+        )
     if isinstance(table.get('servers'), dict):
         found += devservers.defects(table['servers'], f'{where}.servers')
     reach = table.get('forge_reach', list(FORGE_REACH[:1]))

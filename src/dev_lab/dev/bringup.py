@@ -37,7 +37,7 @@ from typing import Any, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import devprofile, familyrepos, forgecredential
+from dev_lab.dev import devprofile, devservers, familyrepos, forgecredential
 from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.gitenv import unlocated
@@ -214,10 +214,14 @@ def walls(
         found.append(kit(str(checkout), str(dev['ref']), measure=measure))
     drifted = devhost.drift(live, clone)
     found.append(Wall('machine-file', green=not drifted, said='; '.join(drifted) or 'is its render'))
-    found.append(keyed := _client_key(host, host_file, ssh_dir or Path.home() / '.ssh'))
-    family = tomllib.loads((clone / 'family.toml').read_text(encoding='utf-8'))
-    consent = {**family.get('consent', {}), **live.get('consent', {})}  # a family fact stays home
-    found.append(_issuer(consent, send, host, declared=keyed.green))
+    if not devservers.joins(dev):  # a declared opt-out: no key to authorize, no server or issuer to reach
+        said = f'hosts/{host}.toml declares {devservers.OPT_OUT} = false: this machine joins no server'
+        found += [Wall('client-key', green=True, said=said), Wall('issuer', green=True, said=said)]
+    else:
+        found.append(keyed := _client_key(host, host_file, ssh_dir or Path.home() / '.ssh'))
+        family = tomllib.loads((clone / 'family.toml').read_text(encoding='utf-8'))
+        consent = {**family.get('consent', {}), **live.get('consent', {})}  # a family fact stays home
+        found.append(_issuer(consent, send, host, declared=keyed.green))
     missing = credential(dev)
     said = '; '.join(missing) or 'every declared login is stored'
     found.append(Wall('forge-credential', green=not missing, said=said, code='forge.token' if missing else ''))

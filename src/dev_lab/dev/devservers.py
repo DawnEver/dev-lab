@@ -22,10 +22,15 @@ from typing import Any, Final
 
 from dev_lab.ops.caddy import Status
 
-__all__ = ['KEY', 'TABLE', 'defects', 'rows']
+__all__ = ['KEY', 'OPT_OUT', 'TABLE', 'defects', 'joins', 'rows']
 
 #: The family ``[dev]`` key naming each server and its address.
 KEY: Final = 'servers'
+#: The host ``[dev]`` key a workstation that cannot be registered DECLARES its non-participation with (user ruling
+#: 2026-11-25: a workstation that cannot be registered records that it does not join): ``false`` renders no
+#: ``[[server]]`` row, not even a status card, and owes no ``client_keys``. Undeclared is ``true``: a workstation
+#: without keys is then a bring-up wall.
+OPT_OUT: Final = 'operates_servers'
 #: The machine-file array of tables the rows render into (:func:`dev_lab.dev.opsserver.declared_servers`).
 TABLE: Final = 'server'
 #: Where a server's address is declared, spelled for a refusal.
@@ -44,6 +49,11 @@ def defects(servers: object, where: str = f'[dev].{KEY}') -> list[str]:
         elif not isinstance(address, str) or not address or any(c in address for c in '@ \t/'):
             found.append(f'{where}.{name}.address must be a bare host (no "@", "/" or space), got {address!r}')
     return found
+
+
+def joins(dev: Mapping[str, Any]) -> bool:
+    """Whether the machine of merged ``[dev]`` *dev* operates the family servers (no declared :data:`OPT_OUT`)."""
+    return dev.get(OPT_OUT, True) is not False
 
 
 def rows(clone: Path, servers: Mapping[str, Any]) -> list[dict[str, str]]:
