@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import io
 import json
-import shutil
 import subprocess
 import time
 import uuid
@@ -24,8 +23,6 @@ from dev_lab.dev._deny_frozen_row import USER_FROZEN_FILES
 from dev_lab.dev.famtests import alwayson
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.credential import params_hash, sign
-
-pytestmark = pytest.mark.skipif(shutil.which('git') is None, reason='needs git')
 
 _SETTINGS = '.vscode/settings.json'
 _DOCS = 'docs/guide'
