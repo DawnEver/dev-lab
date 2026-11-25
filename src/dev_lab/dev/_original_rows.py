@@ -365,6 +365,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
     'devschema',
     'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrollment (2026-11-16)
+    'devservers',  # ORIGINAL: every workstation renders the family servers as [[server]] rows (2026-11-25)
     'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)
     'liverun',
     'codexdeny',  # ORIGINAL: the deny registry rendered as Codex execpolicy rules, and its gaps (2026-11-16)
