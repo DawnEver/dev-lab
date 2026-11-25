@@ -18,7 +18,8 @@ from typing import Any
 
 import pytest
 
-from dev_lab.dev.ciworkflows import BASE_PATH, LIGHT, follow_checks, runner_labels, workflows, write
+from dev_lab.dev.ciworkflows import LIGHT, follow_checks, runner_labels, workflows, write
+from dev_lab.dev.ciworkflowshape import BASE_PATH
 
 #: A repo declares no placement: the roles are the kinds the test carries (_roles_fixtures; EVERY_CI by default).
 ACTIONS_REPO = ''

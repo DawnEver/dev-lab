@@ -800,6 +800,16 @@ ALLOWED: Final[dict[Site, str]] = {
         'from dev_lab.dev.lanepolicy import policy_at',
     ): 'only a pushing repo reads its lane policy, in the pre-push row',
     (
+        'src/dev_lab/dev/famfiles.py',
+        'PLC0415',
+        'from dev_lab.dev.ciworkflows import declared_paths',
+    ): 'the light merge job reaches famfiles (deletejudge reads GENERATED); ciworkflows pulls pytest through jobparts',
+    (
+        'src/dev_lab/dev/famfiles.py',
+        'PLC0415',
+        'from dev_lab.dev import agentsection',
+    ): 'the light merge job reaches famfiles; agentsection pulls the rules registry, which the light door lacks',
+    (
         'src/dev_lab/dev/_ir_codec.py',
         'PLR0911',
         'def _value_out(spec: object, value: object, units: Mapping[str, str], prefix: str) -> object:',

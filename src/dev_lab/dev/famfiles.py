@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import agentsection, ciworkflows
+from dev_lab.dev import ciworkflowshape
 from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artifact_base, inspect_file, render
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
@@ -218,8 +218,8 @@ RETIRED_PROJECT_FILES: Final[dict[str, str]] = {
 #: Not rows -- a repo keeps only the ones its ``[tool.dev_lab.ci]`` places (:func:`ciworkflows.declared_paths`).
 WORKFLOW_FILES: Final = frozenset(
     (directory / name).as_posix()
-    for forge, directory in ciworkflows.WORKFLOW_DIRS.items()
-    for name in ciworkflows.base_names(forge)
+    for forge, directory in ciworkflowshape.WORKFLOW_DIRS.items()
+    for name in ciworkflowshape.base_names(forge)
 )
 
 GENERATED: Final = frozenset(row.path for row in PROJECT_FILES.values() if row.generated) | WORKFLOW_FILES
@@ -388,7 +388,7 @@ def project_files_on_disk(root: Path) -> tuple[str, ...]:
 def _is_workflow(path: str) -> bool:
     return any(
         path.startswith(f'{directory.as_posix()}/') and path.count('/') == directory.as_posix().count('/') + 1
-        for directory in ciworkflows.WORKFLOW_DIRS.values()
+        for directory in ciworkflowshape.WORKFLOW_DIRS.values()
     )
 
 
@@ -403,7 +403,9 @@ def unplaced_workflows(root: Path) -> tuple[str, ...]:
     on_disk = [path for path in project_files_on_disk(root) if _is_workflow(path)]
     if not on_disk:
         return ()
-    allowed = ciworkflows.declared_paths(root)
+    from dev_lab.dev.ciworkflows import declared_paths  # noqa: PLC0415 -- the light merge job imports famfiles
+
+    allowed = declared_paths(root)
     return tuple(path for path in on_disk if path not in allowed)
 
 
@@ -445,11 +447,15 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
 
 def managed_sections() -> tuple[tuple[str, str], ...]:
     """The family sections every repo carries inside a file of its own: (repo-relative path, the section text)."""
+    from dev_lab.dev import agentsection  # noqa: PLC0415 -- the light merge job imports famfiles
+
     return ((agentsection.AGENTS_REL, agentsection.render_section()),)
 
 
 def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
     """The family section of AGENTS.md, re-rendered into *root*; one line. *write* false: the check mode."""
+    from dev_lab.dev import agentsection  # noqa: PLC0415 -- the light merge job imports famfiles
+
     return (agentsection.render_into(root, write=write),)
 
 

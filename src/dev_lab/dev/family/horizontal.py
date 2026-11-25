@@ -31,7 +31,7 @@ from typing import Final
 from lab_commons.hpc.needsets import read_vocabulary
 
 from dev_lab.dev.branchset import FAMILY_EPHEMERAL
-from dev_lab.dev.ciworkflows import WORKFLOW_DIRS
+from dev_lab.dev.ciworkflowshape import WORKFLOW_DIRS
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.family.members import Facts, Finding
 from dev_lab.dev.family.origin import Snapshot

@@ -29,7 +29,8 @@ from typing import Any, Final
 from lab_commons.compute.serves import SERVE_TABLE
 from lab_commons.hpc.needsets import BASE
 
-from dev_lab.dev.ciworkflows import WORKFLOW_DIRS, placed
+from dev_lab.dev.ciworkflows import placed
+from dev_lab.dev.ciworkflowshape import WORKFLOW_DIRS
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.hostedparts import hosted_parts
 from dev_lab.dev.roles import CI, TESTS, Roles, Unbound, optional_needs_from, producible, retired_placement, roles_at

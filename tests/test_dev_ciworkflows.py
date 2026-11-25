@@ -26,12 +26,10 @@ from _roles_fixtures import CI_REPO, EVERY_CI, carry
 
 from dev_lab.dev import ciworkflows, ciworkflowshape
 from dev_lab.dev.ciworkflows import (
-    BASE_PATH,
     RENDER_COMMAND,
     RUNNERS,
     SHARED,
     STAMP,
-    base_names,
     drift,
     main,
     render,
@@ -39,7 +37,7 @@ from dev_lab.dev.ciworkflows import (
     workflows,
     write,
 )
-from dev_lab.dev.ciworkflowshape import PR_EVENTS, USE_STEPS, _bare, expand, merge, ready_only
+from dev_lab.dev.ciworkflowshape import BASE_PATH, PR_EVENTS, USE_STEPS, _bare, base_names, expand, merge, ready_only
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
