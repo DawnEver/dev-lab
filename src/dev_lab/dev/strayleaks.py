@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Final, Literal
 from lab_commons import launch
 
 from dev_lab.dev.testtemp import writable_retry
-from dev_lab.supervise.components.resources import psutil_module
+from dev_lab.supervise.reading import psutil_module
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence

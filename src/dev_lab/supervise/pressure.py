@@ -251,7 +251,7 @@ def measure(
     """One reading of everything *declared*, judged against its limits and the *previous* memo.
 
     Each seam is a fixture's way in: *read* a file's text, *usage* a disk, *psutil* the module's loader (a
-    real reading passes :func:`~dev_lab.supervise.components.resources.psutil_module`; ``None`` is absent),
+    real reading passes :func:`~dev_lab.supervise.reading.psutil_module`; ``None`` is absent),
     *linux* whether PSI and cgroups are asked, *sizes* the consumers of a disk alarm, *locate* a
     declared unit's cgroup (systemd's ``ControlGroup``).
     """

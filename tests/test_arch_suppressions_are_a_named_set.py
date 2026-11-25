@@ -355,7 +355,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'import _winapi',
     ): '_winapi exists only on Windows; the junction helper imports it on the branch that runs there',
     (
-        'src/dev_lab/supervise/components/resources.py',
+        'src/dev_lab/supervise/reading.py',
         'PLC0415',
         'import psutil',
     ): 'psutil is optional on a supervised host; importing it inside the check turns its absence into a '

@@ -11,10 +11,10 @@ import time
 from datetime import UTC, datetime
 
 from dev_lab.supervise.component import CheckContext, Component
-from dev_lab.supervise.components.resources import psutil_module
 from dev_lab.supervise.hostalarms import AGENTS, SUPERVISE, memo, notice, record, rows
 from dev_lab.supervise.notice import headline, host_label
 from dev_lab.supervise.pressure import THRESHOLDS, Declared, measure
+from dev_lab.supervise.reading import psutil_module
 from dev_lab.supervise.verdict import Anomaly, CheckResult
 
 __all__ = ['HostPressure']

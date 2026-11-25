@@ -160,3 +160,22 @@ def test_the_running_kit_is_this_package() -> None:
     kit = trackedrender.running_kit()
     assert kit.package == Path(trackedrender.__file__).resolve().parent.parent
     assert isinstance(kit.commit, str), 'the git commit it was installed at, or empty when none'
+
+
+@pytest.mark.parametrize('ending', ['\n', '\r\n'])
+def test_a_copied_hook_file_in_either_line_ending_is_already_present(tmp_path: Path, ending: str) -> None:
+    """The resolver and the session catalog are TEXT: the ending git's checkout chose is no difference.
+
+    THE INCIDENT, 2026-11-25 (PR #956, base@windows): a lane checked out under ``core.autocrlf`` held them
+    with CRLF, the kit shipped LF, a byte compare rewrote both, and the lane went dirty with no change.
+    PLANTED CONTROL: a file whose TEXT differs is still rewritten.
+    """
+    agent_guard.install_guard(tmp_path)
+    copies = [tmp_path / '.claude' / 'hooks' / name for name in ('venv_resolver.js', 'native_session.json')]
+    for copy in copies:
+        text = copy.read_bytes().decode('utf-8').replace('\r\n', '\n')
+        copy.write_bytes(text.replace('\n', ending).encode('utf-8'))
+    actions = agent_guard.install_guard(tmp_path)
+    assert not [line for line in actions if 'installed' in line and 'hooks' in line], actions
+    copies[0].write_bytes(copies[0].read_bytes() + b'// drifted\n')
+    assert any('environment resolver installed' in line for line in agent_guard.install_guard(tmp_path))

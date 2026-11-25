@@ -19,9 +19,10 @@ from typing import Any, Final
 
 from dev_lab.supervise.component import CheckContext, Component
 from dev_lab.supervise.pressure import RAM_CRITICAL
+from dev_lab.supervise.reading import psutil_module
 from dev_lab.supervise.verdict import Anomaly, CheckResult, Severity, condition_digest
 
-__all__ = ['RAM_CRITICAL', 'DiskUsage', 'LogScanner', 'ProcessMonitor', 'psutil_module']
+__all__ = ['RAM_CRITICAL', 'DiskUsage', 'LogScanner', 'ProcessMonitor']
 
 #: How much of a matched log line is kept. A line long enough to be interesting is usually JSON,
 #: and the first two hundred characters of it name the failure.
@@ -155,15 +156,6 @@ class ProcessMonitor(Component):
         for wanted in ctx.config.get('processes', []):
             result.anomalies.extend(_one_process(wanted, found))
         return result if not ctx.config.get('track_system') else _with_system(psutil, result)
-
-
-def psutil_module() -> ModuleType | None:
-    """The ``psutil`` module, or ``None`` where the optional extra is not installed -- the one lazy import."""
-    try:
-        import psutil  # noqa: PLC0415
-    except ImportError:
-        return None
-    return psutil
 
 
 def _running(psutil: ModuleType) -> dict[str, tuple[int, float]]:
