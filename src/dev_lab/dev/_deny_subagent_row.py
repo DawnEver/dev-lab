@@ -18,8 +18,8 @@ WHAT MAIN-ONLY-DOOR REFUSES: every OTHER main-only door (a held login session, a
 grant, ...), which publishes nothing. Until 2026-11-22 the push row refused those too, so ``hpcaccount
 deploy-fleet --dry-run`` was answered "commit on your lane and hand the SHA back" -- the remedy of a push nobody
 asked for. A refusal names its real cause, so two subjects are two rows; and a verb that only READS
-(:data:`READ_ONLY_FLAGS`, and every ``actor == SUBAGENT`` door, which neither pattern derives from) is refused
-by neither.
+(:data:`READ_ONLY_FLAGS`, :data:`READ_ONLY_ARGS`, and every ``actor == SUBAGENT`` door, which neither pattern
+derives from) is refused by neither.
 
 IT IS FIRST IN THE REGISTRY ON PURPOSE: the engine reports the first row that fires, and a subagent
 asking to push should be told to hand back its SHA, not how to retry the push.
@@ -33,7 +33,7 @@ from typing import Final
 from dev_lab.dev._deny_forge_rows import VENV_PYTHONS
 from dev_lab.dev.agentpolicy import MAIN, POLICY, module_verbs
 
-__all__ = ['MAIN_ONLY_DOOR', 'PUBLISHING_MODULES', 'READ_ONLY_FLAGS', 'SUBAGENT_NO_PUSH']
+__all__ = ['MAIN_ONLY_DOOR', 'PUBLISHING_MODULES', 'READ_ONLY_ARGS', 'READ_ONLY_FLAGS', 'SUBAGENT_NO_PUSH']
 
 _INTERPRETER = r'\S*python[\w.]*(?:\.exe)?\s+'
 
@@ -46,6 +46,14 @@ PUBLISHING_MODULES: Final = frozenset({'dev_lab.dev.forge', 'dev_lab.dev.integra
 #: reaches an account over ssh (``hpcaccount forget``, ``retention``) is not one and stays the main session's.
 READ_ONLY_FLAGS: Final[dict[tuple[str, tuple[str, ...]], str]] = {
     ('dev_lab.dev.hpcaccount', ('deploy-fleet',)): '--dry-run',
+}
+
+#: ``module -> pattern``: a WHOLE-MODULE main door whose argument list matching the pattern only READS, so any agent
+#: may run it. ``opsserver <server|all> card`` reads the status card over HTTPS with no ssh and no code (user ruling
+#: 2026-11-13); every other opsserver verb opens the ops login with the user's one-time code -- ``status``, ``logs``
+#: and ``disk`` included, which read the server but spend the user's word -- and stays the main session's.
+READ_ONLY_ARGS: Final[dict[str, str]] = {
+    'dev_lab.dev.opsserver': r'[\w.-]+\s+card(?![\w-])(?![^\n;&|]*[^\s;&|])',
 }
 
 
@@ -67,7 +75,8 @@ def _main_doors(*, publishing: bool) -> str:
             continue
         head = rf'{_INTERPRETER}-m\s+{re.escape(module)}'
         if () in verbs:  # a door that is the whole module: every verb of it is the main session's
-            alternatives.append(rf'{head}(?![\w.-])')
+            read = READ_ONLY_ARGS.get(module)
+            alternatives.append(rf'{head}(?![\w.-])' + ('' if read is None else rf'(?!\s+{read})'))
             continue
         alternatives.append(rf'{head}\s+(?:{"|".join(_verb(module, verb) for verb in verbs)})')
     return '|'.join(alternatives)
@@ -144,14 +153,16 @@ MAIN_ONLY_DOOR: dict[str, object] = {
     'user`s word.',
     'remedy': 'Hand the exact command back to the main session, which runs it and reads the result. Reading stays '
     'yours: {python} -m dev_lab.dev.sshhold status, {python} -m dev_lab.dev.hpcaccount drift-fleet, '
-    'and hpcaccount deploy-fleet --dry-run.',
+    'hpcaccount deploy-fleet --dry-run, and {python} -m dev_lab.dev.opsserver <server|all> card.',
     'needs': None,
     'refuses': (
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.sshhold open alice@hpclogin01.example.org --hours 2 --code 123456',
         f"{VENV_PYTHONS[0]} -m dev_lab.dev.sshhold run alice@hpclogin01.example.org 'squeue'",
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.hpcaccount deploy-fleet --account alice',
         f'{VENV_PYTHONS[1]} -m dev_lab.dev.hpcaccount forget --repo u --row k --fleet --dry-run',
-        f'{VENV_PYTHONS[0]} -m dev_lab.dev.opsserver status forge',
+        f'{VENV_PYTHONS[0]} -m dev_lab.dev.opsserver forge-a1 restart gitea',
+        f'{VENV_PYTHONS[0]} -m dev_lab.dev.opsserver forge-a1 status gitea',
+        f'{VENV_PYTHONS[0]} -m dev_lab.dev.opsserver forge-a1 card gitea',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.family join https://example.org/o/r',
     ),
     'permits': (
@@ -159,6 +170,8 @@ MAIN_ONLY_DOOR: dict[str, object] = {
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.hpcaccount deploy-fleet --account alice --dry-run',
         f'{VENV_PYTHONS[1]} -m dev_lab.dev.hpcaccount drift-fleet',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.family check',
+        f'{VENV_PYTHONS[0]} -m dev_lab.dev.opsserver forge-a1 card',
+        f'{VENV_PYTHONS[1]} -m dev_lab.dev.opsserver all card',
         'git commit -m "sshhold open is the main session`s"',
     ),
 }

@@ -38,7 +38,7 @@ from urllib.parse import urlsplit
 
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devschema, rolecheck, roles, writeroots
+from dev_lab.dev import accounthost, devschema, devservers, rolecheck, roles, writeroots
 from dev_lab.dev.machineroutes import route_defects
 from dev_lab.ops import clientkeys
 from dev_lab.ops import config as opsconfig
@@ -150,6 +150,12 @@ def check_family(path: Path) -> list[str]:
     except tomllib.TOMLDecodeError as bad:
         return [f'{path.name}: not TOML: {bad}']
     found = [f'{path.name}: {line}' for line in devschema.check_family(parsed)]
+    servers = parsed.get('dev', {}).get(devservers.KEY)
+    if servers is not None and not devservers.defects(servers):  # a malformed one is devschema's line above
+        try:
+            devservers.rows(path.parent, servers)
+        except ValueError as unrendered:
+            found.append(f'{path.name}: {unrendered}')
     found += [
         f'{path.name}: [{name}] is machine-local; it lives in each machine file'
         for name in LOCAL_ONLY

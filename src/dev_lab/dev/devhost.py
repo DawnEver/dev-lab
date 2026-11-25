@@ -65,6 +65,7 @@ from dev_lab.dev import (
     devhostadmit,
     devprofile,
     devschema,
+    devservers,
     familyrepos,
     forgecredential,
     forgeenroll,
@@ -119,6 +120,8 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
         layered = merge(layered, devprofile.bridge_tables(dev, live))
         layered = merge(layered, {OWN_TABLE: {'hooks': dev['hooks']}} if 'hooks' in dev else {})
         layered = merge(layered, {OWN_TABLE: {'forge_reach': dev['forge_reach']}} if 'forge_reach' in dev else {})
+        if not unmanaged and (servers := dev.get(devservers.KEY)):  # a registered workstation operates them all
+            layered = merge(layered, {devservers.TABLE: devservers.rows(clone, servers)})
     if channels := parsed.get('dev', {}).get('channels'):
         layered = merge(layered, {CHANNELS_TABLE: {'channels': channels}})
     shared = {k: v for k, v in family.items() if k != 'dev'}
@@ -181,6 +184,8 @@ def _owner(path: tuple[str, ...], clone: Path, host: str) -> str:
     if path[0] == OWN_TABLE:
         return f'the render itself: {RENDER_DOOR}'
     edit = f'change it there through its pull request, then {RENDER_DOOR}'
+    if path[0] == devservers.TABLE:
+        return f'family layer (family.toml [dev] {devservers.KEY}, rendered): {edit}'
     family_file, own_file = _sources(clone, host)
     for layer, source in (('host', own_file), ('family', family_file)):
         tables = {k: v for k, v in (_read(source) if source.is_file() else {}).items() if k != 'dev'}

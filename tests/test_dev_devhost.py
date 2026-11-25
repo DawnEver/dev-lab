@@ -12,7 +12,7 @@ import pytest
 from _arch_corpus import module_names
 from _ops_fixtures import git
 
-from dev_lab.dev import devdeclared, devhost, devschema, devsource, vendordetect, venvfollow
+from dev_lab.dev import devdeclared, devhost, devschema, devsource, opsserver, vendordetect, venvfollow
 from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -577,3 +577,85 @@ def test_use_store_refuses_by_name_while_the_store_lacks_a_declared_login(
     assert applied == []
     said = capsys.readouterr()
     assert 'dev_lab.dev.devcredential --login dev-user' in said.out + said.err
+
+
+# THE SERVERS ARE A RENDER (user ruling 2026-11-25): every registered workstation operates the family servers. The
+# family names each server and its address once; the login and status card come from the server's own host card.
+SERVER_CARD = """\
+[target]
+name = "box"
+
+[ops]
+home = "/var/lib/clones"
+python = "/opt/dev-lab/.venv/bin/python"
+repos = []
+
+[ops.access]
+account = "ops"
+
+[ops.status]
+file = "/var/lib/dev-lab/status.json"
+site = "forge.example"
+"""
+
+
+def _served(tmp_path: Path) -> Path:
+    clone = _clone(tmp_path)
+    family = FAMILY.replace(
+        'ref = "integrate/main"\n', 'ref = "integrate/main"\nservers = { box = { address = "198.51.100.7" } }\n'
+    )
+    _write(clone, 'family.toml', family)
+    _write(clone, 'hosts/box.toml', SERVER_CARD)
+    _write(clone, 'hosts/c-u1.toml', ACCOUNT)
+    return clone
+
+
+def test_a_workstation_renders_every_family_server_derived_from_its_card(tmp_path: Path) -> None:
+    rendered = tomllib.loads(devhost.render(_served(tmp_path), 'ws', tomllib.loads(LOCAL)))
+    assert rendered['server'] == [
+        {'name': 'box', 'target': 'ops@198.51.100.7', 'status': 'https://forge.example/dev-lab/status.json'},
+    ]
+    assert set(opsserver.declared_servers(rendered)) == {'box'}, 'the ops door reads the rendered rows'
+
+
+def test_an_hpc_account_renders_no_server(tmp_path: Path) -> None:
+    rendered = tomllib.loads(devhost.render(_served(tmp_path), 'c-u1', {}))
+    assert 'server' not in rendered, 'an account is no workstation: it operates no server'
+
+
+@pytest.mark.usefixtures('_credentials_agree')
+def test_a_hand_written_server_that_differs_is_drift_naming_the_family(tmp_path: Path) -> None:
+    clone = _served(tmp_path)
+    live = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
+    assert devhost.drift(live, clone) == [], 'the planted control: the render itself is no drift'
+    live['server'] = [{'name': 'box', 'target': 'ops@203.0.113.9'}]
+    edit = f'change it there through its pull request, then {devhost.RENDER_DOOR}'
+    owner = 'family layer (family.toml [dev] servers, rendered)'
+    assert devhost.drift(live, clone) == [f'[server] is not the render -- {owner}: {edit}']
+
+
+def test_a_server_without_its_host_card_is_refused_by_name(tmp_path: Path) -> None:
+    clone = _served(tmp_path)
+    (clone / 'hosts/box.toml').unlink()
+    with pytest.raises(ValueError, match=r"names 'box', but hosts/box\.toml declares no \[ops\.access\]"):
+        devhost.render(clone, 'ws', {})
+    assert any("names 'box'" in line for line in check_family(clone / 'family.toml'))
+
+
+@pytest.mark.parametrize(
+    ('servers', 'named'),
+    [
+        ('{ box = { address = "ops@198.51.100.7" } }', 'bare host'),
+        ('{ box = { address = "198.51.100.7", target = "x" } }', 'only'),
+    ],
+)
+def test_a_malformed_server_declaration_is_refused(tmp_path: Path, servers: str, named: str) -> None:
+    clone = _served(tmp_path)
+    family = FAMILY.replace('ref = "integrate/main"\n', f'ref = "integrate/main"\nservers = {servers}\n')
+    _write(clone, 'family.toml', family)
+    assert any(named in line for line in check_family(clone / 'family.toml'))
+
+
+def test_servers_are_a_family_fact_never_a_host_one(tmp_path: Path) -> None:
+    clone = _clone(tmp_path, HOST.replace('os = "windows"\n', 'os = "windows"\nservers = {}\n'))
+    assert any('servers' in line for line in check_host(clone / 'hosts/ws.toml', clone / 'family.toml'))
