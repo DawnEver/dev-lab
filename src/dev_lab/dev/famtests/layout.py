@@ -10,7 +10,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dev_lab.dev import floors
-from dev_lab.dev.layout import RULE_ID, declared_layout, layout_violations
+from dev_lab.dev._layout_table import RULE_ID, declared_layout
+from dev_lab.dev.layout import layout_violations
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,7 +23,7 @@ def assert_layout_holds(*, root: Path, floor: int, headroom: int) -> None:
     """Every top-level directory of *root* is declared, and no file sits under a directory forbidding its suffix.
 
     Raises:
-        dev_lab.dev.layout.LayoutNotDeclared: *root* declares no ``[layout]`` in ``layout.toml``.
+        dev_lab.dev._layout_table.LayoutNotDeclared: *root* declares no ``[layout]`` in ``layout.toml``.
         dev_lab.dev.floors.FloorUnmet: the walk read fewer top-level directories than *floor*.
         dev_lab.dev.floors.SlackFloor: the floor has been outgrown past *headroom*.
         AssertionError: a violation, every one named.

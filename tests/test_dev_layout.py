@@ -17,9 +17,10 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import codeplace, floors, layout
+from dev_lab.dev._layout_table import REQUIRED, LayoutNotDeclared, declared_layout
 from dev_lab.dev.codeplace import main
 from dev_lab.dev.famtests.layout import assert_layout_holds
-from dev_lab.dev.layout import LayoutNotDeclared, declared_layout, layout_violations, refuse_layout, scan_refusal
+from dev_lab.dev.layout import layout_violations, refuse_layout, scan_refusal
 
 _HOMES = """'.' = ['.toml', '.md']
 src = ['.py']
@@ -67,7 +68,7 @@ def _plant(root: Path, rel: str) -> Path:
 
 
 def test_the_family_homes_are_required() -> None:
-    assert {'src', 'tests', 'scratch', '.claude', 'docs-src', 'output'} == layout.REQUIRED
+    assert {'src', 'tests', 'scratch', '.claude', 'docs-src', 'output'} == REQUIRED
 
 
 def test_a_scripts_dir_is_no_family_home_and_undeclared_is_refused(tmp_path) -> None:
