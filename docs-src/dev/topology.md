@@ -227,7 +227,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 
 | file | where | owns | reader |
 |---|---|---|---|
-| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`max_hours`, `idle_minutes`); the session bridge's interpreter is DERIVED from `[repos] dev-lab` (its `.venv` pointer, `devprofile.bridge_python`), never set | `lab_commons.config`, `lab_commons.home` |
+| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`ceiling`, `idle`: durations); the session bridge's interpreter is DERIVED from `[repos] dev-lab` (its `.venv` pointer, `devprofile.bridge_python`), never set | `lab_commons.config`, `lab_commons.home` |
 | family layer | `family.toml` in the host-configuration repo | `[[hpc.grant]]`, AI spend caps, the review month -- a machine file restating a key is refused | `lab_commons.config` `[family]` |
 | repo declarations | each `pyproject.toml` | `[tool.dev_lab.integrator]`, `.review`, `.protection`, `.ci` | `dev_lab.dev.lanepolicy`, `forgeprotect`, `ciworkflows` |
 | host file | `/etc/dev-lab/supervise.toml`, reviewed as `hosts/<server>.toml` | `[ops.*]`, `[components.*]`, `[alerts]`, `[cycle]` | `dev_lab.ops.config`, `dev_lab.supervise.config` |
@@ -266,7 +266,7 @@ the key files. No server lists a workstation key by hand.
 5. Install the hooks: `python -m dev_lab.dev.hook_install --install`.
 6. To declare its capabilities: `python -m dev_lab.dev.workstation template --role light`, then the deploy
    ([adding a workstation](adding-a-workstation.md)). A workstation never serves a merge's parts.
-7. For hosts behind a TOTP: optionally set `[ssh.hold] max_hours` / `idle_minutes` in the machine file.
+7. For hosts behind a TOTP: optionally set `[ssh.hold] ceiling` / `idle` (durations, `"24 h"` / `"30 min"`) in the machine file.
 
 ### A forge host
 
