@@ -2,7 +2,10 @@
 
 User rulings 2026-11-24 (T3, superseded in part by H1). No repo keeps a heavy, not-heavy or big-memory list,
 and no ``slow`` / ``heavy`` marker: a hand-kept cost is refused at collection (:data:`RETIRED_MARKERS`). The
-cost of a test is its newest row in the duration ledger (:mod:`dev_lab.dev.durations`); the budget is the
+cost of a test is what :func:`measured_seconds` reads -- ONE READER over the family's two measurements: this
+host's own duration ledger (:mod:`dev_lab.dev.durations`, newest row per id) over the forge's learned table
+(:func:`forge_seconds`, every host's cache of the forge's runs), so a test the forge measured is measured on a
+workstation that never ran it. The budget is the
 HOST's, declared once in the family instance -- the machine file's ``[test_budget]`` table, which the family
 layer (:func:`lab_commons.config.section`) merges under it -- and dev-lab and the repos declare none::
 
@@ -26,6 +29,7 @@ box admits the run as a whole against ``cores``/``memory_gb`` (:mod:`dev_lab.dev
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -45,7 +49,11 @@ __all__ = [
     'beyond_budget',
     'budget_defects',
     'budget_of',
+    'forge_seconds',
     'killed_at',
+    'measured_seconds',
+    'origin_of',
+    'part_costs',
     'plan',
     'read_budget',
     'refuse_cost_markers',
@@ -167,21 +175,54 @@ def refuse_cost_markers(items: list[pytest.Item]) -> None:
         raise pytest.UsageError('\n'.join(refused))
 
 
-def _ledger_seconds(root: Path) -> dict[str, float]:
+def forge_seconds(repo_url: str) -> dict[str, float]:
+    """The forge's measured seconds per test id of *repo_url* (:func:`lab_commons.compute.learned.learned`).
+
+    A finished id is its duration; an id that never finished is its FLOOR -- "cost >= floor", the time it ran
+    before its item was killed (:mod:`lab_commons.compute.measured`) -- so a test the forge killed is never free.
+    """
+    from lab_commons.compute import learned  # noqa: PLC0415 -- read only when a budget plans or the forge places
+    from lab_commons.compute.measured import Measured  # noqa: PLC0415
+
+    measured = Measured.of(dict(learned.learned(repo_url)))
+    seconds = {node: float(value) for node, value in measured.floors.items()}
+    for node, value in measured.durations.items():
+        seconds[node] = max(float(value), seconds.get(node, 0.0))
+    return seconds
+
+
+def origin_of(root: Path) -> str | None:
+    """The forge origin the learned table of *root* is keyed by; ``None`` for a tree with no forge remote."""
+    from dev_lab.dev.forge import UnreadableRemote  # noqa: PLC0415 -- deferred like every plugin import
+    from dev_lab.dev.platformparts import origin_url  # noqa: PLC0415
+
+    try:
+        return origin_url(root)
+    except UnreadableRemote:
+        return None
+
+
+def measured_seconds(root: Path, repo_url: str | None) -> dict[str, float]:
+    """THE ONE READER of a test's cost here: the forge's reading of *repo_url*, overlaid by *root*'s own ledger.
+
+    This host's newest reading of an id wins it -- it is this box, and newest wins (user directive 2026-10-05);
+    an id only the forge measured is priced by the forge; ``None`` for *repo_url* reads the ledger alone.
+    """
     from dev_lab.dev import durations  # noqa: PLC0415 -- deferred like every plugin import (pytest_family)
     from dev_lab.dev.datedlog import UndeclaredOutput  # noqa: PLC0415
 
-    try:
-        return durations.read(root).seconds
-    except UndeclaredOutput:  # a tree with no output root has no ledger: every test is unmeasured
-        return {}
+    seconds = forge_seconds(repo_url) if repo_url else {}
+    with contextlib.suppress(UndeclaredOutput):  # a tree with no output root has no ledger of its own
+        seconds.update(durations.read(root).seconds)
+    return seconds
 
 
 def schedule(config: pytest.Config, items: list[pytest.Item], *, budget: Budget | None) -> Plan | None:
     """Apply :func:`plan` to the collected *items*: deselect the handed, give each local test its deadline."""
     if budget is None:
         return None
-    planned = plan([item.nodeid for item in items], _ledger_seconds(config.rootpath), budget)
+    root = config.rootpath
+    planned = plan([item.nodeid for item in items], measured_seconds(root, origin_of(root)), budget)
     handed = set(planned.handed)
     if handed:
         config.hook.pytest_deselected(items=[item for item in items if item.nodeid in handed])
@@ -221,12 +262,10 @@ def beyond_budget(part_ids_seconds: Mapping[str, float], budget: Budget | None, 
 
 
 def part_costs(repo_url: str, part: str) -> dict[str, float]:
-    """The measured seconds of *part*'s test ids from the learned table: the ids in the files the part last ran."""
+    """The measured seconds of *part*'s test ids (:func:`forge_seconds`): the ids in the files the part last ran."""
     from lab_commons.compute import learned  # noqa: PLC0415 -- read by the forge pass only
-    from lab_commons.compute.measured import Measured  # noqa: PLC0415
 
     from dev_lab.dev.partrows import needs_of_row  # noqa: PLC0415
 
     files = set(learned.part_files(repo_url, needs_of_row(part)))
-    durations = Measured.of(learned.learned(repo_url)).durations
-    return {node: float(value) for node, value in durations.items() if node.split('::', 1)[0] in files}
+    return {node: value for node, value in forge_seconds(repo_url).items() if node.split('::', 1)[0] in files}

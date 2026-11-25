@@ -176,3 +176,46 @@ def test_a_test_that_ends_inside_its_deadline_is_filed_at_what_it_took(
     result = pytester.runpytest_subprocess('-p', 'no:cacheprovider', '-p', 'dev_lab.dev.durations', '-p', 'no:xdist')
     result.assert_outcomes(passed=1)
     assert read(root).seconds['test_quick.py::test_quick'] < 30.0
+
+
+_FORGE = {'durations': {'t::forge': 900.0, 't::both': 3000.0}, 'floors': {'t::killed': 800.0}}
+
+
+def test_the_local_plan_reads_the_forge_measurement_beside_this_hosts_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ONE READER: a test the forge measured is measured here too; this host's own newer reading wins its id.
+
+    PLANTED CONTROL: with no forge origin the same root reads only its own ledger -- the forge ids are unmeasured.
+    """
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', encoding='utf-8')
+    write(tmp_path, [Row('t::both', 2.0), Row('t::local', 1.0)], selector='all', worker=None, tree='', env='')
+    monkeypatch.setattr(learned, 'learned', lambda repo: _FORGE if repo == 'origin' else {})
+    seconds = testcost.measured_seconds(tmp_path, 'origin')
+    assert seconds == {'t::forge': 900.0, 't::killed': 800.0, 't::both': 2.0, 't::local': 1.0}
+    assert testcost.measured_seconds(tmp_path, None) == {'t::both': 2.0, 't::local': 1.0}
+
+
+def test_an_id_the_forge_killed_is_priced_at_its_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A floor is 'cost >= floor' (lab_commons.compute.measured): the placement and the local plan both read it."""
+    monkeypatch.setattr(learned, 'learned', lambda _repo: _FORGE)
+    assert testcost.forge_seconds('origin') == {'t::forge': 900.0, 't::both': 3000.0, 't::killed': 800.0}
+    monkeypatch.setattr(learned, 'part_files', lambda _repo, _needs: ('t',))
+    assert testcost.part_costs('origin', 'base')['t::killed'] == pytest.approx(800.0, abs=1e-9)
+
+
+def test_verify_hands_a_test_only_the_forge_measured(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end: no local reading, a forge reading over this host's budget -- the test is handed by name."""
+    root = pytester.path
+    pytester.makefile('.toml', pyproject='[tool.dev_lab.parts]\noutput = "out/logs"\n')
+    machine = root / 'machine.toml'
+    machine.write_text('[test_budget]\ntest_s = 100\ncores = 2\nmemory_gb = 4\n', encoding='utf-8')
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(machine))
+    monkeypatch.setattr(testcost, 'origin_of', lambda _root: 'origin')
+    monkeypatch.setattr(learned, 'learned', lambda _repo: {'durations': {'test_forge.py::test_dear': 999.0}})
+    pytester.makepyfile(test_forge='def test_dear():\n    pass\ndef test_cheap():\n    pass\n')
+    result = pytester.runpytest('-p', 'no:cacheprovider')
+    result.assert_outcomes(passed=1, deselected=1)
+    result.stdout.fnmatch_lines(['*handed to the forge: test_forge.py::test_dear*'])
