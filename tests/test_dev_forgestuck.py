@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import shlex
 
 import pytest
 from lab_commons.hpc.grants import Grant
+from lab_commons.hpc.layout import ROOT, run_tree
 
 from dev_lab.dev.forgestuck import Limit, Task, cancel_stuck, judge, limit_of, parse_duration, remote_path
 
@@ -73,10 +75,12 @@ class _Shell:
 
     def __init__(self, *, sstat: str = '00:30.000\n04:00:00\n', fresh: bool = False, job: str = '1') -> None:
         self.cancelled: list[str] = []
+        self.commands: list[str] = []
         self.sstat, self.fresh, self.job = sstat, fresh, job
 
     def __call__(self, command: str, stdin: str | None = None) -> str:
         del stdin
+        self.commands.append(command)
         if 'squeue' in command:
             return (
                 f'100000\n{self.job}_1|run-{SHA[:12]}-linux|04:00:00|1\n{self.job}_2|run-{SHA[:12]}-linux|04:00:00|1\n'
@@ -180,3 +184,34 @@ def test_a_home_relative_run_dir_keeps_its_home_and_quotes_the_rest() -> None:
     assert remote_path("~/ci/it's here") == '"$HOME"/' + "'ci/it'\"'\"'s here'"
     assert remote_path('/shared/home/u/ci/run 1') == "'/shared/home/u/ci/run 1'"
     assert remote_path('~user/ci') == "'~user/ci'"
+
+
+def test_a_root_relative_run_dir_keeps_its_root_and_quotes_the_rest() -> None:
+    """A run dir under the declared root: quoted whole it reached the shell as ``'"$LAB_ROOT"/runs/...'``.
+
+    Live 2026-11-25: ezxmw9's run of a31807ea2807 could not advance for days -- ``cat: '"$LAB_ROOT"/runs/<sha>/tree/
+    .lab-hpc/run-.../manifest.json': No such file or directory`` -- so its supersede never drained and the next
+    integration head waited behind it.
+    """
+    assert remote_path(f'{ROOT}/runs/abc/tree/.lab-hpc/run-1') == f'{ROOT}/runs/abc/tree/.lab-hpc/run-1'
+    assert remote_path(f"{ROOT}/runs/it's here") == f'{ROOT}/' + "'runs/it'\"'\"'s here'"
+    assert remote_path(ROOT) == ROOT
+
+
+@pytest.mark.parametrize('path', ['/x/"$LAB_ROOT"/y', '"$LAB_ROOT"x/y', '$LAB_ROOT/y'])
+def test_the_root_expression_anywhere_but_the_head_stays_quoted_data(path: str) -> None:
+    """PLANTED CONTROL for the test above: only the exact leading root expression is left expandable."""
+    assert remote_path(path) == shlex.quote(path)
+
+
+def test_the_streams_judged_are_read_under_the_run_tree_of_the_sha() -> None:
+    """A task's stream is ``<run tree>/<stream>`` (:func:`lab_commons.hpc.layout.run_tree`), the tree the run wrote.
+
+    Read under a retired ``trees/<sha>`` it never exists, so every task read silent for its whole elapsed time.
+    """
+    shell = _Shell()
+    _cancel(shell, [])
+    stats = [command for command in shell.commands if 'stat -c %Y' in command]
+    assert stats, 'the stream ages were never read'
+    assert all(f'{run_tree(SHA)}/' in command for command in stats)
+    assert not any(f'{ROOT}/trees/' in command for command in stats)
