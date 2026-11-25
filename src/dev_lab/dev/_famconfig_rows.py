@@ -89,6 +89,8 @@ GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
     '/output/': 'the dated artifact tree (dev_lab.dev.datedlog) and every redirected tool cache.',
     '/config/': 'the dev-mode in-repo config root a consumer generates from packaged defaults.',
     '/temp/': 'the root temporary directory a run may create; a source package named `temp` is not it.',
+    '/target/': 'cargo`s build directory beside a root workspace Cargo.toml (a repo whose Rust sits at the root).',
+    '/rust/target/': 'cargo`s build directory beside a rust/Cargo.toml workspace (a repo whose Rust sits in rust/).',
     '**/.DS_Store': 'macOS Finder state; a platform artifact at any depth.',
 }
 

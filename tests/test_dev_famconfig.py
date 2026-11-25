@@ -210,6 +210,26 @@ def test_a_delta_that_restates_a_base_line_is_refused() -> None:
         render(_base(), delta)
 
 
+#: Where a family repo keeps its cargo workspace: at the root, or under ``rust/``.
+_CARGO_TARGETS: Final = ('/target/', '/rust/target/')
+
+
+@pytest.mark.parametrize('line', _CARGO_TARGETS)
+def test_the_cargo_build_directory_is_the_families_line_not_a_repos(line: str) -> None:
+    """Cargo writes ``target/`` beside the workspace manifest in every repo with a Rust workspace: a toolchain fact."""
+    assert line in GITIGNORE_FAMILY_LINES, f'{line} is cargo`s build dir; a repo should not spend its own line on it'
+    assert 'cargo' in GITIGNORE_FAMILY_LINES[line], 'the line names its writer'
+
+
+@pytest.mark.parametrize('line', _CARGO_TARGETS)
+def test_planted_a_repo_listing_the_cargo_line_is_refused_as_a_duplicate(line: str) -> None:
+    """PLANTED: a repo still carrying the cargo line in its delta is told the base holds it; its own fact passes."""
+    problems = delta_problems(_base(), _delta(added=(line,), ceiling=1))
+    assert any('the base already has it' in problem and repr(line) in problem for problem in problems), problems
+    own = '/src/pkg/contracts/generated/'
+    assert not delta_problems(_base(), _delta(added=(own,), ceiling=1)), 'a repo-owned generated dir is clean'
+
+
 def test_a_delta_past_its_ceiling_is_refused() -> None:
     """An escape hatch needs a CEILING rather than a reason, and this is where the ceiling bites."""
     delta = Delta(repo='planted-repo', added=('a/', 'b/', 'c/'), dropped={}, ceiling=2)
