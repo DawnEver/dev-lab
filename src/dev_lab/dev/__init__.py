@@ -583,7 +583,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.nativefirst` -- NATIVE-FIRST: no numeric loop or stage twin under a declared orchestration
   path, and no test comparing a native stage against its Python twin.
 * :mod:`dev_lab.dev.envreads` -- ENV-IS-READ-ONCE: the environment is read only in a repo's declared entry modules;
-  the pending ledger of existing reads only shrinks.
+  the pending ledger of existing reads only shrinks; a test switch is refused in every mode.
 * :mod:`dev_lab.dev.harness` -- dev-lab's ENV-IS-READ-ONCE entry: the harness context as a typed record, and the
   environment a child process inherits.
 * :mod:`dev_lab.dev.complexity` -- the per-owner complexity report (fan-out, call path, public surface): a dated

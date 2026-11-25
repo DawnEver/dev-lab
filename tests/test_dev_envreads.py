@@ -283,3 +283,91 @@ def test_the_cli_range_and_census(tmp_path: Path, capsys: pytest.CaptureFixture[
     assert 'pending = [\n    "src/a.py",\n    "src/b.py",\n]' in out, 'the census is the whole list, pasteable'
     assert envreads.main(['check'], cwd=tmp_path) == 1
     assert envreads.main(['--bogus'], cwd=tmp_path) == envreads.USAGE
+
+
+# -- class C: an environment read that decides whether a test runs ------------------------------------------------
+
+
+_OS_PYTEST = 'import os\nimport pytest\n'
+
+
+@pytest.mark.parametrize(
+    'body',
+    [
+        "@pytest.mark.skipif(not os.getenv('LIVE'), reason='x')\ndef test_a(): ...\n",
+        "LIVE = os.environ.get('LIVE') == '1'\npytestmark = pytest.mark.skipif(not LIVE, reason='x')\n",
+        "def test_a():\n    if not os.environ.get('FEMM_DIR'):\n        pytest.skip('x')\n",
+        "def test_a():\n    if 'LIVE' in os.environ:\n        run()\n    else:\n        pytest.skip('x')\n",
+        "@pytest.mark.xfail(condition=os.getenv('X') is None, reason='x')\ndef test_a(): ...\n",
+        "def mark():\n    return pytest.mark.skipif(True, reason='x') if os.getenv('L') != '1' else None\n",
+        "from os import environ\nif environ.get('LIVE') != '1':\n    pytest.skip('x', allow_module_level=True)\n",
+    ],
+)
+def test_a_planted_test_switch_is_convicted(body: str) -> None:
+    """PLANTED CONTROL: a read deciding a skip or an xfail -- directly or through a name it binds -- is a switch."""
+    assert envreads.python_switches(_OS_PYTEST + body) != ()
+
+
+@pytest.mark.parametrize(
+    'body',
+    [
+        "from pathlib import Path\ntmp = os.environ['TMP']\nout = Path(tmp) / 'x'\n",
+        "import subprocess\nenv = {**os.environ, 'A': '1'}\nsubprocess.run(['x'], env=env)\n",
+        "@pytest.mark.skipif(sys.platform != 'win32', reason=os.environ.get('W', 'x'))\ndef test_a(): ...\n",
+        "from pathlib import Path\nif path := os.environ.get('FAKE_OUT'):\n    Path(path).write_text('x')\n",
+        "TMP = os.environ['TMP']\n@pytest.mark.skipif(sys.platform != 'win32', reason='x')\ndef test_a(): ...\n",
+        "done = run(['x'], env={**os.environ, 'A': '1'})\nif done.returncode:\n    pytest.xfail('x')\n",
+    ],
+)
+def test_a_read_deciding_no_skip_is_not_a_switch(body: str) -> None:
+    """A fact, a child env (its RESULT deciding an xfail), a skip REASON, a fake's input, another condition pass."""
+    assert envreads.python_switches(_OS_PYTEST + body) == ()
+
+
+_SWITCH = "import os\nimport pytest\nif not os.getenv('LIVE'):\n    pytest.skip('x', allow_module_level=True)\n"
+_FACT = "import os\nTMP = os.environ['TMP']\n"
+
+
+@pytest.mark.parametrize('rel', ['tests/test_a.py', 'tests/conftest.py', 'conftest.py'])
+@pytest.mark.parametrize('strict', [False, True])
+def test_a_test_switch_is_refused_in_every_mode_naming_its_door(tmp_path: Path, rel: str, *, strict: bool) -> None:
+    """Class C has no test exemption: the refusal names the line and the door, once (never also as a plain read)."""
+    found = _problems(tmp_path, EnvPolicy(strict=strict), {rel: _SWITCH})
+    assert len(found) == 1
+    assert f'{rel}:3' in found[0]
+    assert 'pytest option' in found[0]
+    assert 'resource need' in found[0]
+
+
+def test_a_switch_in_src_is_not_judged_as_a_test_switch(tmp_path: Path) -> None:
+    """Outside test code the read is an ordinary one (class A there): one finding, the general one."""
+    found = _problems(tmp_path, EnvPolicy(), {'src/pkg/a.py': _SWITCH})
+    assert len(found) == 1
+    assert 'pytest option' not in found[0]
+
+
+def test_an_entry_cannot_launder_a_test_switch_but_the_pending_ledger_records_it(tmp_path: Path) -> None:
+    files = {'tests/conftest.py': _SWITCH}
+    assert len(_problems(tmp_path, EnvPolicy(entry=('tests/conftest.py',), strict=True), files)) == 1
+    assert _problems(tmp_path, EnvPolicy(pending=('tests/conftest.py',)), files) == []
+    assert _problems(tmp_path, EnvPolicy(pending=('tests/conftest.py',), strict=True), files) == []
+
+
+def test_a_test_fact_is_allowed_only_when_declared(tmp_path: Path) -> None:
+    """PLANTED CONTROL, strict: an OS-set temp dir read in test code reds undeclared, passes as entry or pending."""
+    files = {'tests/conftest.py': _FACT}
+    found = _problems(tmp_path, EnvPolicy(strict=True), files)
+    assert len(found) == 1
+    assert 'tests/conftest.py:2' in found[0]
+    assert 'pytest option' not in found[0], 'a fact is not a switch: its door is the declaration'
+    assert _problems(tmp_path, EnvPolicy(entry=('tests/conftest.py',), strict=True), files) == []
+    assert _problems(tmp_path, EnvPolicy(pending=('tests/conftest.py',), strict=True), files) == []
+
+
+def test_a_pending_test_switch_is_not_stale_and_the_census_records_it(tmp_path: Path) -> None:
+    """Outside strict mode a test file is judged for switches only: on the ledger it is a live read, not stale."""
+    assert _problems(tmp_path, EnvPolicy(pending=('tests/test_a.py',)), {'tests/test_a.py': _SWITCH}) == []
+    _write(tmp_path, 'tests/test_b.py', _FACT)
+    _write(tmp_path, 'tests/test_a.py', _SWITCH)
+    files = ('tests/test_a.py', 'tests/test_b.py')
+    assert envreads.census(tmp_path, EnvPolicy(), files) == ('tests/test_a.py',)
