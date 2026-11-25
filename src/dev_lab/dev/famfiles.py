@@ -43,13 +43,13 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import ciworkflowshape
-from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artifact_base, inspect_file, render
+from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, ForkedDelta, artifact_base, inspect_file, render
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from dev_lab.dev.famconfig import Delta
+    from dev_lab.dev.famconfig import Base, Delta
 
 __all__ = [
     'GENERATED',
@@ -62,6 +62,7 @@ __all__ = [
     'RETIRED_PROJECT_FILES',
     'ProjectFile',
     'Renderer',
+    'delta_base',
     'due_renderers',
     'is_member',
     'load_deltas',
@@ -371,14 +372,40 @@ def load_deltas(path: Path) -> Mapping[str, Delta]:
     return module.DELTAS
 
 
+def delta_base(artifact: str) -> Base:
+    """The base a repo's delta for *artifact* renders over, or a refusal naming why there is none and the door.
+
+    EVERY-WALL-TEACHES (2026-11-25): famconfig's "no family base" sends a stale delta to ADD a base row, which
+    for a file the family retired or hands to the repo is the wrong door. Both facts live in this module's
+    tables, above famconfig, so the refusal that knows them is raised here.
+    """
+    if artifact in RETIRED_PROJECT_FILES:
+        msg = (
+            f'{artifact!r} is RETIRED from the family (dev_lab.dev.famfiles.RETIRED_PROJECT_FILES): '
+            f'{RETIRED_PROJECT_FILES[artifact]}. Its delta renders over nothing -- drop its row (and any constant '
+            f'only it used) from the repo DELTAS module and `git rm {artifact}`.'
+        )
+        raise ForkedDelta(msg)
+    row = PROJECT_FILES.get(artifact)
+    if row is not None and row.kind == OWNED:
+        msg = (
+            f"{artifact!r} is the repo's OWN file, with no family base (dev_lab.dev.famfiles.PROJECT_FILES: "
+            f'{row.how}). Its delta renders over nothing -- drop its row (and any constant only it used) from '
+            f'the repo DELTAS module; the file itself stays the repo`s.'
+        )
+        raise ForkedDelta(msg)
+    return artifact_base(artifact)
+
+
 def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple[str, ...]:
     """Every RENDERED base this repo declares, re-rendered into *root*; one line per artifact, what happened.
 
     With *write* false nothing is written and the lines say what WOULD change: the check mode.
+    A delta with no base is refused by :func:`delta_base`, which names the retirement or ownership if either holds.
     """
     out: list[str] = []
     for artifact in sorted(deltas):
-        base = artifact_base(artifact)
+        base = delta_base(artifact)
         path = root / artifact
         report = inspect_file(path, base, deltas[artifact])
         if report.status == INSTALLED:

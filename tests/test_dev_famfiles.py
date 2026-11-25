@@ -18,7 +18,7 @@ from _famconfig_delta import DELTAS, REPO
 
 from dev_lab.dev._famfiles_disk import project_files_on_disk, unplaced_workflows
 from dev_lab.dev.agentsection import AGENTS_REL, BEGIN, END, render_section
-from dev_lab.dev.famconfig import BASES, RENDERED
+from dev_lab.dev.famconfig import BASES, RENDERED, ForkedDelta
 from dev_lab.dev.famfiles import (
     MANAGED,
     OWNED,
@@ -171,6 +171,44 @@ def test_a_tracked_retired_file_is_refused_by_name(repo: Path, path: str) -> Non
     _git('add', '-f', path, cwd=repo)
     with pytest.raises(AssertionError, match=f'{re.escape(path)}: RETIRED'):
         assert_every_project_file_is_accounted_for(root=repo, owned_here={})
+
+
+@pytest.mark.parametrize('path', sorted(RETIRED_PROJECT_FILES))
+def test_a_delta_for_a_retired_file_names_the_retirement_and_its_door(tmp_path: Path, path: str) -> None:
+    """EVERY-WALL-TEACHES: a consumer's delta outliving its retired base is told WHY and what to do.
+
+    2026-11-25: a relock refused `.rgignore` with "add the row to _famconfig_rows" -- the wrong door for a
+    file the family retired the day before. The refusal names the retirement and its reason, and the door:
+    drop the delta row and `git rm` the file.
+    """
+    with pytest.raises(ForkedDelta) as refused:
+        render_all(tmp_path, {path: DELTAS['.gitignore']}, write=False)
+    message = str(refused.value)
+    assert 'RETIRED' in message
+    assert RETIRED_PROJECT_FILES[path] in message
+    assert 'drop its row' in message
+    assert f'git rm {path}' in message
+    assert '_famconfig_rows' not in message, 'the old door points at a base the family retired'
+
+
+def test_a_delta_for_an_owned_file_names_it_the_repos_own(tmp_path: Path) -> None:
+    """The Makefile's family contract retired 2026-11-24; the file stays the repo's, so only the row goes."""
+    with pytest.raises(ForkedDelta) as refused:
+        render_all(tmp_path, {'Makefile': DELTAS['.gitignore']}, write=False)
+    message = str(refused.value)
+    assert "the repo's OWN file" in message
+    assert PROJECT_FILES['Makefile'].how in message
+    assert 'drop its row' in message
+    assert 'git rm' not in message
+    assert '_famconfig_rows' not in message
+
+
+def test_a_delta_for_an_unknown_file_keeps_the_no_base_refusal(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a path never declared nor retired still says there is no family base, and nothing more."""
+    with pytest.raises(ForkedDelta, match='no family base') as refused:
+        render_all(tmp_path, {'never-a-family-file.cfg': DELTAS['.gitignore']}, write=False)
+    assert 'RETIRED' not in str(refused.value)
+    assert 'OWN file' not in str(refused.value)
 
 
 # ------------------------------------------------------------------- the renderers, derived from the one list
