@@ -163,7 +163,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'doorcensus',
     # ORIGINAL, and the row is worth its comment because the thing it measures is THIS package. No
     # prior mechanism asked whether the LEAF carries a consumer's data: the README's tier-1 rule and
-    # `.claude/rules/statement-and-mechanism.md` both stated it, both were read on every turn, and
+    # `<repo>/.claude/rules/statement-and-mechanism.md` both stated it, both were read on every turn, and
     # the `dev` layer absorbed 38 executable values, 153 unresolvable paths and 181 prose mentions
     # anyway. There is no path to name because prose was the only prior mechanism, and it lost.
     'foreign',
@@ -279,7 +279,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # Node-free (2026-10-28) and a downstream repo's review JS tests were found to call shutil.which('node').
     'hostnode',
     # ORIGINAL: no consumer file refused a test's unowned temp entry or host-root literal; the need arose when
-    # one workstation held 8.9 GB of suite leftovers in %TEMP% and trees at C:/var/tmp, C:/results (2026-11-24).
+    # one workstation held 8.9 GB of suite leftovers in %TEMP% and trees at <drive>:/var/tmp, <drive>:/results
+    # (2026-11-24).
     'testleaks',
     # ORIGINAL, and it is the only kind it could honestly be: no consumer file asserts this, because
     # nobody had a word for the shape until `boundedremedy`'s own `wider_tier in text` clause was

@@ -92,7 +92,7 @@ __all__ = [
 
 #: A rule ID is a slug, never a number, and the reason is measured rather than aesthetic: an integer
 #: cannot say WHICH row moved, so when a pin disagrees the honest-looking repair is to edit the digit
-#: (`.claude/rules/integration.md` records a pin that was lowered to a broken reading).
+#: (`<repo>/.claude/rules/integration.md` records a pin that was lowered to a broken reading).
 _ID: Final = re.compile(r'[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*')
 
 #: The one lint-code spelling the data half may use, so `('ruff', ...)` cannot quietly become a

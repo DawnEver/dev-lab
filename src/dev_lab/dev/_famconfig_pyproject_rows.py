@@ -59,7 +59,7 @@ PYTEST_INI: Final = '[tool.pytest.ini_options]'
 #: another backend adopts in its own wave, named meanwhile in its ``[tool.dev_lab.pyproject] pending``.
 BUILD_SYSTEM: Final = '[build-system]'
 HATCH_VERSION: Final = '[tool.hatch.version]'
-#: The coverage HTML report under output/cache/coverage/ (every tool cache and report under output/).
+#: The coverage HTML report under output/cache/<tool>/ (every tool cache and report under output/).
 COVERAGE_HTML: Final = '[tool.coverage.html]'
 
 #: There is NO dedicated-file spelling for these tables, so the prefix a `SectionBase` strips is

@@ -141,7 +141,7 @@ def _plan(**overrides: object) -> Plan:
     return Plan.from_config(base, _PROJECT)
 
 
-#: The candidate root of the running test: its own tmp_path, never the host's /var/tmp (C:\var\tmp on Windows).
+#: The candidate root of the running test: its own tmp_path, never the host's /var/tmp (<drive>:\var\tmp on Windows).
 _CANDIDATE: list[Path] = [Path()]
 
 

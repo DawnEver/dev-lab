@@ -205,7 +205,7 @@ function splitHeredocs(cmd) {
       if (consumers.some((word) => SHELLS.test(word))) shellBodies.push(body);
     }
 
-    // The WHOLE opening line is shell text: a redirect after the opener (`cat <<EOF > /tmp/x`) was dropped here
+    // The WHOLE opening line is shell text: a redirect after the opener (`cat <<EOF > <temp>/x`) was dropped here
     // until 2026-11-24, so the same write was refused before the opener and admitted after it.
     rest += cmd.slice(index, bodyStart);
     index = bodyEnd;

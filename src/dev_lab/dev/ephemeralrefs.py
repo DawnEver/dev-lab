@@ -84,7 +84,7 @@ RULE: Final = 'TRACKED-CITES-NO-EPHEMERAL'
 #: A dated memory entry, ``.claude/memory/<yyyy>/<mm>/<dd>/...`` at any depth: an immutable record of what
 #: happened (MEMORY-SHAPE; integrator ruling 2026-11-02), so a path it cites existed THEN and is a true
 #: statement about the past. THIS scan alone skips it, beside archived code; the memory index files and
-#: ``.claude/rules`` stay judged, and no other family scan inherits the exemption.
+#: ``<repo>/.claude/rules`` stay judged, and no other family scan inherits the exemption.
 DATED_MEMORY: Final = re.compile(r'(?:^|/)\.claude/memory/\d{4}/\d{2}/\d{2}/')
 #: The remedy every refusal prints.
 REMEDY: Final = 'cite a tracked source or a <placeholder> shape, or declare an escape in [tool.dev_lab.ephemeral_refs]'

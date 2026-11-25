@@ -156,7 +156,7 @@ def test_an_ordinary_root_and_the_tokens_are_accepted() -> None:
         ('other', 'scratch/26/11/24/probe/run.sh', False),
         ('sibling', 'x.py', True),
         ('temp', 'probe.py', True),
-        ('temp', 'claude/abc/session/tasks/out.txt', True),  # the harness's subtree: $CLAUDE_JOB_DIR/tmp lives there
+        ('temp', 'claude/abc/session/tasks/out.txt', True),  # the harness's subtree: <job-dir>/tmp lives there
         ('home', 'loose.txt', True),
         ('home', '.bashrc', True),
         ('home', 'src/repo/x.py', True),
@@ -333,7 +333,7 @@ def test_a_synced_folder_and_a_dir_beside_a_checkout_are_off_the_allowlist(tmp_p
 
 
 def test_the_job_temp_is_no_door(tmp_path: Path) -> None:
-    # User ruling 2026-11-23: $CLAUDE_JOB_DIR/tmp is forbidden too; planted, it must not be excluded.
+    # User ruling 2026-11-23: <job-dir>/tmp (CLAUDE_JOB_DIR) is forbidden too; planted, it must not be excluded.
     job = tmp_path / 'jobs' / 'abc'
     found = excluded_paths((), machine={}, env={'CLAUDE_JOB_DIR': str(job)})
     assert job / 'tmp' not in found
