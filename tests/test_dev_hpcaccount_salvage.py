@@ -176,7 +176,8 @@ def test_an_unpushed_commit_lands_and_fetches_into_a_matched_repo(
     _git(account.tmp, 'clone', '-q', account.origin.as_posix(), str(local))
     head, status = _git(local, 'rev-parse', 'HEAD'), _git(local, 'status', '--porcelain')
     said: list[str] = []
-    checkout = account.out / 'u1' / 'src' / 'ahead'
+    monkeypatch.chdir(account.out)
+    checkout = Path('u1', 'src', 'ahead')  # relative, as typed: git reads the bundle from inside the repo
     assert salvagefetch.fetch(checkout, local, apply=True, say=said.append) == 0, said
     assert _git(local, 'rev-parse', 'salvage/u1/src/ahead/main').strip() == account.shas['ahead']
     assert (_git(local, 'rev-parse', 'HEAD'), _git(local, 'status', '--porcelain')) == (head, status), 'untouched'

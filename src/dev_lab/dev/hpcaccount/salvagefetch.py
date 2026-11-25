@@ -139,8 +139,9 @@ def _reached(repo: Path, sha: str) -> str:
 
 def fetch(checkout: Path, repo: Path, *, apply: bool, say: Callable[[str], None] = emit) -> int:
     """Fetch salvaged *checkout*'s bundle into *repo* as salvage branches (*apply*), else verify and print; 0 or 2."""
+    checkout = checkout.resolve()  # git reads the bundle from inside *repo*: a relative path would name another file
     try:
-        account, entry = _entry(checkout.resolve())
+        account, entry = _entry(checkout)
         name = entry['path']
         bundle = checkout / FILES['bundle']
         if not bundle.is_file():
