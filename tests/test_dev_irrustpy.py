@@ -24,13 +24,13 @@ import lab_commons.launch as _door
 import numpy as np
 import pytest
 
-from dev_lab.dev import irpython, irrust
+from dev_lab.dev import irpython, irrust, irrustpy
 from dev_lab.dev.ircheck import load
 
 FIXTURE = Path(__file__).parent / 'data' / 'ir_schema' / 'repo'
 CARGO = shutil.which('cargo')
 _OFFLINE = ('offline', 'no matching package', 'failed to select a version', 'failed to download')
-_MANIFEST = """[package]
+_MANIFEST = f"""[package]
 name = "ir_ext"
 version = "0.0.0"
 edition = "2021"
@@ -43,11 +43,11 @@ default = ["pyo3"]
 pyo3 = ["dep:pyo3", "dep:numpy"]
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
+serde = {{ version = "1", features = ["derive"] }}
 serde_json = "1"
 ndarray = "0.17"
-pyo3 = { version = "0.29", optional = true, features = ["extension-module"] }
-numpy = { version = "0.29", optional = true }
+pyo3 = {{ version = "{irrustpy.PYO3_VERSION}", optional = true, features = ["extension-module"] }}
+numpy = {{ version = "{irrustpy.NUMPY_VERSION}", optional = true }}
 """
 _LIB = """include!(concat!(env!("CARGO_MANIFEST_DIR"), "/ir.rs"));
 
