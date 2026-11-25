@@ -18,7 +18,9 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev._deny_outputcode_row import CODE_SUFFIXES
 from dev_lab.dev.datedlog import (
+    FAMILY_KINDS,
     UndeclaredOutput,
     date_parts,
     dated_log,
@@ -136,3 +138,19 @@ def test_planted_an_undeclared_output_is_REFUSED_naming_the_key(tmp_path: Path, 
     with pytest.raises(UndeclaredOutput, match=r'\[tool\.dev_lab\.parts\] output'):
         output_dir(tmp_path, 'coverage')
     assert not (tmp_path / 'output').exists()
+
+
+def test_the_family_kinds_declare_formats_never_code_nor_anything() -> None:
+    """``FAMILY_KINDS`` is a layout every adopter inherits: each shape a ``.suffix`` set, no code, no ``*``.
+
+    A sub-shape (``*.outcomes/*``) sits under a declared one (``*.outcomes``), the kind itself being ``'.'``.
+    """
+    assert FAMILY_KINDS, 'the family declares no dated kind: every repo would have to copy them by hand'
+    for kind, shapes in FAMILY_KINDS.items():
+        assert '/' not in kind, kind
+        assert kind not in {'', '.', '*'}, kind
+        assert '.' in shapes, f'{kind}: the kind directory itself is undeclared'
+        for shape, suffixes in shapes.items():
+            assert shape == '.' or '/' not in shape or shape.rsplit('/', 1)[0] in shapes, (kind, shape)
+            assert all(s.startswith('.') and len(s) > 1 for s in suffixes), (kind, shape, suffixes)
+            assert not suffixes & set(CODE_SUFFIXES), (kind, shape, suffixes & set(CODE_SUFFIXES))

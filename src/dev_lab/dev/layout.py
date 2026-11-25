@@ -30,12 +30,17 @@ directory, a row with no glob character beats a globbed one, then the row with f
 tied are refused by name as ambiguous.
 Nothing is allowed by default: a new directory or format is refused until it is declared on purpose.
 
-THE FAMILY HOLDS THREE THINGS, NOT THE TREE (a repo's formats are its own): every family home
+THE FAMILY HOLDS FOUR THINGS, NOT THE TREE (a repo's formats are its own): every family home
 (:data:`dev_lab.dev.codeplace.FAMILY_HOMES`) must be declared; ``output`` may never allow a
-:data:`~dev_lab.dev._deny_outputcode_row.CODE_SUFFIXES` suffix nor ``*``; and under :data:`NO_COPY_ROOTS` a COPY
+:data:`~dev_lab.dev._deny_outputcode_row.CODE_SUFFIXES` suffix nor ``*``; under :data:`NO_COPY_ROOTS` a COPY
 is refused whatever the table says -- a directory holding ``.git`` (a clone or worktree), a ``pyproject.toml``
-beside a ``src/`` (an exported tree), or a :data:`BACKUP_SUFFIXES` file (a bundle or patch parked as a backup).
-Its door is MERGE-OR-DELETE: land the work through its branch, or delete it.
+beside a ``src/`` (an exported tree), or a :data:`BACKUP_SUFFIXES` file (a bundle or patch parked as a backup),
+its door MERGE-OR-DELETE: land the work through its branch, or delete it; and THE FAMILY'S DATED KINDS
+(:data:`dev_lab.dev.datedlog.FAMILY_KINDS`, the kinds dev-lab's own mechanisms write under
+``output/logs/<yy>/<mm>/<dd>/``) are rows of every repo's table without being listed there
+(:data:`~dev_lab.dev._layout_table.FAMILY_ROWS`, with the dated levels above them): a repo row naming one is
+refused, and inside one only the family's rows judge, so a repo's open ``<day>/*`` row never widens it. A repo
+lists only its own kinds.
 
 TWO EXEMPTIONS, BOTH NAMED (user rulings 2026-11-24). A ``read_only`` path is user input of whatever format the
 user keeps: the scan never judges or descends it, and the write hook refuses any write into it. A tool in
@@ -175,13 +180,14 @@ def _row_for(rel_dir: str, layout: Layout, hops: int = 0) -> tuple[str, frozense
     if rel_dir == '.':
         return ('.', layout.rows['.']) if '.' in layout.rows else None
     parts = rel_dir.split('/')
+    rows = layout.judging(parts)  # inside a family kind, the family's rows alone
     matching = [
         pattern
-        for pattern in layout.rows
+        for pattern in rows
         if pattern != '.'
         and len(segs := pattern.split('/')) == len(parts)
         and all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False))
-    ] or [pattern for pattern in layout.mirrors if _mirrored(parts, pattern, layout, hops)]
+    ] or [pattern for pattern in layout.mirrors if rows is layout.rows and _mirrored(parts, pattern, layout, hops)]
     if not matching:
         return None
     top = max(map(_precedence, matching))
@@ -192,7 +198,7 @@ def _row_for(rel_dir: str, layout: Layout, hops: int = 0) -> tuple[str, frozense
             f'row for it or make one pattern narrower'
         )
         raise _AmbiguousRowError(msg)
-    return best[0], layout.rows[best[0]]
+    return best[0], rows[best[0]]
 
 
 def allowed(name: str, allows: frozenset[str]) -> bool:

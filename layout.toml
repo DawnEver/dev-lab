@@ -52,11 +52,5 @@ output = []
 'output/forge/*' = ['.json', '.tmp']
 'output/cache' = []
 'output/cache/runcache' = ['.jsonl']
-'output/logs' = []
-'output/logs/[0-9][0-9]' = []
-'output/logs/[0-9][0-9]/[0-9][0-9]' = []
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]' = []
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/*' = ['.log', '.jsonl', '.json', '.gz', '.coverage', '.txt', '.csv']
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/verify/*.outcomes' = []
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/verify/*.outcomes/*' = ['.jsonl']
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/coverage' = ['.md', '.coverage']  # verify's coverage table
+# output/logs/<yy>/<mm>/<dd>/<kind>/: every kind dev-lab writes is a FAMILY kind (dev_lab.dev.datedlog.FAMILY_KINDS),
+# admitted in every repo without a row; this repo has no dated kind of its own.
