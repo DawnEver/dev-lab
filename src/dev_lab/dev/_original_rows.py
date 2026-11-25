@@ -109,7 +109,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'slurmkilled',
     'artifacts',
     'artifactstores',
-    'largeobjects',
     # ORIGINAL: the artifact member index, split out of `artifacts` inside the kit; no consumer held them.
     'artifactpack',  # writes the member-indexed archive
     'artifactindex',  # the member-index facts and their manifest record

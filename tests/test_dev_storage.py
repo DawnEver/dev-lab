@@ -7,10 +7,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from lab_commons.objects import SCRATCH_PREFIX
 from lab_commons.storage import StorageError, declared
 
 from dev_lab.dev import storage
-from dev_lab.dev.artifactstores import SCRATCH_PREFIX, ArtifactRefused, check_key
+from dev_lab.dev.artifactstores import ArtifactRefused, check_key
 from dev_lab.dev.writeroots import Allowance, admitted_paths, refuse_outside_tree
 
 GIT = shutil.which('git') or 'git'

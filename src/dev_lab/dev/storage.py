@@ -10,6 +10,8 @@ module is dev-lab's ONE adapter onto it (:func:`kind_root`, :func:`output_path`)
   hand-edits an rclone config; the secret never reaches argv, a log or this module's output.
 * ``check <remote> [--to P]`` renders, then lists the remote's top level through the pinned rclone: the one proof a
   placed secret reaches it (rclone absent names :func:`dev_lab.dev.toolrelease.door`).
+* :func:`run_objects` is that proof for the family's run store (``[storage] runs``): it returns the
+  :class:`lab_commons.objects.RcloneObjects` every run's oversize results travel through, or refuses by name.
 * ``publish [--to P]`` writes the bound roots as JSON (:func:`publish`) for the agent-guard engine, which reads no
   TOML: a worktree under a bound ``worktrees`` root is admitted by WORKTREES-STAY-INSIDE only through it.
 * ``migrate <kind>`` moves the in-tree default of a bound kind to its bound root ONCE and leaves a marker; a
@@ -32,6 +34,7 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons import launch as _door
+from lab_commons import objects as _objects
 from lab_commons import storage as _storage
 from lab_commons.config import config_path
 from lab_commons.log import emit
@@ -45,6 +48,7 @@ __all__ = [
     'ROOTS_ENV',
     'Run',
     'StaleTree',
+    'StoreUnreached',
     'check',
     'checkout_output_path',
     'kind_root',
@@ -57,6 +61,7 @@ __all__ = [
     'render',
     'rendered',
     'roots_file',
+    'run_objects',
     'worktrees_root',
 ]
 
@@ -76,6 +81,10 @@ ROOTS_ENV: Final = 'LAB_COMMONS_STORAGE_ROOTS'
 
 class StaleTree(RuntimeError):
     """A bound kind still has an in-tree copy: migrate it once, or delete the leftover."""
+
+
+class StoreUnreached(_storage.StorageError):
+    """The family declares a run store this machine does not reach: the message names the store and its door."""
 
 
 def main_of(tree: Path) -> Path:
@@ -284,6 +293,37 @@ def check(
         msg = f'rclone could not list {remote}: (exit {done.returncode}) {" | ".join(said)}'
         raise _storage.StorageError(msg)
     return f'{remote}: reached ({len(done.stdout.splitlines())} top-level entr(y/ies)) through {written}'
+
+
+def run_objects(
+    repo: Path, *, declared: _storage.Storage | None = None, rclone: Sequence[str] = (), run: Run = _door.run,
+    to: Path = DEFAULT_RCLONE,
+) -> _objects.RcloneObjects | None:  # fmt: skip
+    """The object store every run on this machine uses: the family's ``[storage] runs``, proven reached.
+
+    THE ONE CALL a dev-lab consumer needs: it hands its checkout (*repo*, which the rendered rclone config stays
+    outside) and never reads hosts-config. ``None`` when the family declares no run store.
+
+    Raises:
+        StoreUnreached: the store is declared but this machine does not reach it -- no reach, no placed secret, or
+            the listing refused -- naming the store and the door that places its secret.
+
+    """
+    declared = _storage.declared() if declared is None else declared
+    if declared.runs is None or declared.runs_remote is None:
+        return None
+    name = declared.runs_remote
+    try:
+        check(name, repo=repo, to=to, declared=declared, run=run, rclone=rclone)
+    except _storage.StorageError as cause:
+        msg = (
+            f'the family declares run store {declared.runs!r} and this machine does not reach {name!r}: {cause} -- '
+            f'on a workstation `python -m dev_lab.ops.secretplace enter --remote {name}`, for an HPC account '
+            f'`python -m dev_lab.ops.secretplace distribute --remote {name}`; then '
+            f'`python -m dev_lab.dev.storage check {name}`'
+        )
+        raise StoreUnreached(msg) from cause
+    return _objects.declared_objects(declared, rclone=tuple(rclone) or (rclone_exe(),), config=to)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
