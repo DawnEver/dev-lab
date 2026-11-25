@@ -448,4 +448,23 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'uvrelease',
     # ORIGINAL: 2026-11-23, the holder record beside a cluster tick's lock: who holds it and in which phase.
     'tickholder',
+    'fitting',  # ORIGINAL: 2026-11-23, the interpreter a bootstrap door names imports dev_lab and fits requires-python
+    'layout',  # ORIGINAL: 2026-11-23, DECLARED-LAYOUT and NO-BACKUP-COPIES, a checkout's tree as an allow-list
+    'changeselect',  # ORIGINAL: 2026-11-24, the tests a change reaches, run by verify --changed
+    'importedges',  # ORIGINAL: 2026-11-24, the family's one static import-edge reader for architecture tests
+    'stallwatch',  # ORIGINAL: 2026-11-24, a test run ends when it is dead, not when the wall says so
+    'worktreeseeds',  # ORIGINAL: 2026-11-24, the gitignored files a worktree is gated with, as data
+    'cratefresh',  # ORIGINAL: 2026-11-24, the Rust side of dependency freshness
+    'toolchain',  # ORIGINAL: 2026-11-24, what a checkout needs on this host before its environment can build
+    'docrows',  # ORIGINAL: 2026-11-24, a repo's documentation site built from data
+    'docrules',  # ORIGINAL: 2026-11-24, the family doc rules re-injected before a document is edited
+    'hiddenintake',  # ORIGINAL: 2026-11-24, TYPED-VALUES-ARE-SHOWN over every family repo's tracked code
+    'secretkit',  # ORIGINAL: 2026-11-24, TYPED-VALUES-ARE-SHOWN, the kit half: a stale kit never prompts
+    'machineroutes',  # ORIGINAL: 2026-11-24, MACHINES-MEET-ONLY-THROUGH-THE-FORGE
+    'notices',  # ORIGINAL: 2026-11-24, the third-party license notice generated from the environment
+    'portmeasure',  # ORIGINAL: 2026-11-24, MEASURE-BEFORE-PORTING, a new native crate carries its measured reason
+    'priorart',  # ORIGINAL: 2026-11-24, PRIOR-ART-FIRST, a new product module named like an existing one cites it
+    'spelling',  # ORIGINAL: 2026-11-24, US-SPELLING-IS-CHECKED, typos in locale en-us
+    'salvage',  # ORIGINAL: 2026-11-24, worktrees --salvage and --reap-orphans record a tree's work first
+    'branchlocal',  # ORIGINAL: 2026-11-25, branchdelete --local deletes local branches their content landed
 )

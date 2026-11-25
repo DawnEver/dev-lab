@@ -91,7 +91,7 @@ def test_without_the_declared_ref_its_branch_is_kept(repo: Path) -> None:
     assert 'landed-declared' in _branches(repo)
 
 
-def test_a_branch_that_moved_after_the_judgement_is_kept(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_branch_that_moved_after_the_judgment_is_kept(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED CONTROL: the delete is pinned to the judged sha."""
     real = module._judged
 

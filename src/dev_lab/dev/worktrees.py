@@ -61,7 +61,7 @@ from lab_commons.log import emit
 from dev_lab.dev import reclaimrun
 from dev_lab.dev.backgroundrun import repo_main
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset, holders
-from dev_lab.dev.checkout import authority_for, git_out, worktrees
+from dev_lab.dev.checkout import authority_for, git_out, linked, worktrees
 from dev_lab.dev.liverun import Census, describe, removal_holders
 from dev_lab.dev.reclaim import QUIET_S, blockers, reclaim, removed_approved, unlanded_work
 from dev_lab.dev.salvage import reap_orphans, salvage, salvaged
@@ -88,15 +88,6 @@ def unheld_head(tree: Path) -> str:
         msg = f'git could not say which refs contain {head} in {tree}'
         raise RuntimeError(msg)
     return '' if holders.strip() else head
-
-
-def linked(main: Path, name: str) -> Path | str:
-    """The one LINKED worktree of *main* named *name* (never the main checkout), resolved; else why not."""
-    registered = worktrees(main)
-    if registered is None:
-        return f'git could not list the worktrees of {main}'
-    found = [path.resolve() for path, _ in registered[1:] if path.name == name]
-    return found[0] if len(found) == 1 else f'{len(found)} linked worktrees of {main} are named {name!r}'
 
 
 #: RETIRED-NAMES-REGISTERED: the flag D31 retired, refused by name with its doors, never parsed as unknown.

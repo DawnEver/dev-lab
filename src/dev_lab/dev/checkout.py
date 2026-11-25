@@ -64,6 +64,7 @@ __all__ = [
     'git_bytes',
     'git_out',
     'gitlinks',
+    'linked',
     'locked_trees',
     'origin_branches',
     'orphan_directories',
@@ -182,6 +183,15 @@ def worktrees(root: Path) -> tuple[tuple[Path, str], ...] | None:
             found.append((path, 'detached'))
             path = None
     return tuple(found)
+
+
+def linked(main: Path, name: str) -> Path | str:
+    """The one LINKED worktree of *main* named *name* (never the main checkout), resolved; else why not."""
+    registered = worktrees(main)
+    if registered is None:
+        return f'git could not list the worktrees of {main}'
+    found = [path.resolve() for path, _ in registered[1:] if path.name == name]
+    return found[0] if len(found) == 1 else f'{len(found)} linked worktrees of {main} are named {name!r}'
 
 
 def _has_origin(root: Path, branch: str) -> bool:

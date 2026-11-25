@@ -80,4 +80,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'transport',
     # ORIGINAL: the integrator as a session role, verified offline from its consent credential (2026-11-12).
     'session',
+    'storagecheck',  # ORIGINAL: 2026-11-23, hpcaccount storage-check re-proves a placed secret on its host
+    'tickstop',  # ORIGINAL: 2026-11-23, hpcaccount tick-status and tick-stop, the door to a hung cluster tick
 )

@@ -10,7 +10,7 @@ refused by ``--remove`` because git lists no such tree, with no door at all.
   snapshot is a RECORD, not a landing, so no hook judges it; the tree, its index and its branch are untouched and
   nothing is pushed. A process holding the tree refuses it, by pid.
 * :func:`salvaged` is true when a tree's content IS its salvage commit's: ``--remove`` then needs neither the
-  clean-tree judgement nor the quiet wait -- the salvage is not a live session, and an edit after it is.
+  clean-tree judgment nor the quiet wait -- the salvage is not a live session, and an edit after it is.
 * :func:`reap_orphans` removes a directory under the worktree home that git does not list and whose ``.git``
   points at a vanished gitdir, once every file in it that git does not ignore is a blob some ref reaches; else it
   is kept with the first such file named.
@@ -27,10 +27,9 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.census import processes
 
-from dev_lab.dev.checkout import worktrees
+from dev_lab.dev.checkout import linked, worktrees
 from dev_lab.dev.liverun import Census, describe, removal_holders
 from dev_lab.dev.reclaim import _removed, repository_at
-from dev_lab.dev.worktree_outputs import linked
 
 __all__ = ['BRANCH', 'reap_orphans', 'salvage', 'salvaged', 'snapshot']
 
