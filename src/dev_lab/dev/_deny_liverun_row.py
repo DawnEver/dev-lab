@@ -31,6 +31,8 @@ LIVE_RUN: dict[str, object] = {
     'pattern': (
         rf'(?:git{_GIT_GLOBAL}\s+(?:{_GIT_MUTATORS})'
         r'|\S*python[\w.]*\s+-m\s+dev_lab\.dev\.dep\b[^\n]*\s--(?:sync|bootstrap|lock-upgrade|upgrade-package)'
+        # The network door runs its git verb after `--`: pull and submodule update rewrite the tree (2026-11-25).
+        rf'|\S*python[\w.]*\s+-m\s+dev_lab\.dev\.netverb\b[^\n]*\s--\s+git{_GIT_GLOBAL}\s+(?:pull|submodule\s+update)'
         r'|(?:\S*python[\w.]*\s+-m\s+)?pip3?\s+(?:install|uninstall)'
         rf'|uv(?:\s+--?[\w-]+(?:[=\s][^\s-]\S*)?)*?\s+(?:{_UV_MUTATORS}))(?![\w-])'
     ),
@@ -59,6 +61,7 @@ LIVE_RUN: dict[str, object] = {
         f'{_NT} -m pip install requests',
         'git -c core.autocrlf=false -C .claude/worktrees/x merge lane/x',
         'git --no-pager checkout main',
+        'python -m dev_lab.dev.netverb --cwd ../x -- git pull --ff-only',
     ),
     'permits': (
         'git status',
@@ -76,5 +79,6 @@ LIVE_RUN: dict[str, object] = {
         'git stash show -p stash@{0}',
         'git restore --staged src/a.py',
         'git rm --cached src/a.py',
+        'python -m dev_lab.dev.netverb --cwd ../x -- git fetch origin',
     ),
 }
