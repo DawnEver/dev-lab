@@ -38,7 +38,7 @@ LEDGER_WRITES_THROUGH_ITS_DOOR: dict[str, object] = {
     'needs': None,
     'refuses': (
         'echo "- done" >> ~/repos/tasks/toolchain/JOURNAL.md',
-        'printf x > .claude/tasks/t/TASK.md',
+        'printf x > work/tasks/t/TASK.md',
         'echo x | tee -a D:\\home\\repos\\tasks\\t\\JOURNAL.md',
         'sed -i s/open/closed/ repos/tasks/t/TASK.md',
         'cp draft.md repos/tasks/archive/2026-11-23/t/TASK.md',

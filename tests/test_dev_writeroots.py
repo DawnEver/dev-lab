@@ -228,6 +228,15 @@ def test_the_shell_targets_are_every_place_a_line_writes(command: str, targets: 
     assert shell_targets(command) == targets
 
 
+@pytest.mark.parametrize('target', ['D:/var/x.txt', 'C:\\tmp\\out.csv'])
+def test_a_drive_spelled_target_is_absolute_on_every_os(tmp_path: Path, target: str) -> None:
+    """A drive letter names a root outside the call's cwd even where the OS has no drives (CI's POSIX runner)."""
+    placed = writeroots.place(target, '', tmp_path)
+    assert placed is not None
+    assert placed.is_absolute()
+    assert not placed.is_relative_to(tmp_path)
+
+
 def _payload(command: str, cwd: Path) -> dict[str, object]:
     return {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(cwd)}
 

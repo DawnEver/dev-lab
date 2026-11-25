@@ -30,6 +30,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal
 
+from lab_commons import launch
+
 from dev_lab.dev.testtemp import writable_retry
 
 if TYPE_CHECKING:
@@ -90,7 +92,7 @@ def _file_clones(path: Path) -> str | None:
 
 
 def _git(path: Path, *args: str) -> str:
-    done = subprocess.run(
+    done = launch.run(
         [_GIT_EXE, '-C', str(path), *args], capture_output=True, text=True, timeout=_GIT_TIMEOUT_S, check=True
     )
     return done.stdout.strip()

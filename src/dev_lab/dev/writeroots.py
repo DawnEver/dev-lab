@@ -472,6 +472,8 @@ def place(target: str, cwd: str, base: Path, *, env: Mapping[str, str] | None = 
     if where is None or spelled is None:
         return None
     path = Path(spelled).expanduser()
+    if os.name != 'nt' and re.match(r'^[A-Za-z]:/', spelled):
+        return Path('/', spelled)  # a drive root this OS lacks: absolute, and below no root it can allow
     if path.is_absolute():
         return path
     return base / Path(where).expanduser() / path if where else base / path

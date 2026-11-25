@@ -48,7 +48,7 @@ WRITES_STAY_IN_THE_TREE: dict[str, object] = {
         'cp a.py /tmp/',
         'mv out.csv "C:/tmp/out.csv"',
         'mkdir -p /c/temp/probe',
-        'touch ~/src/repo/x',
+        'touch ~/work/repo/x',
         'cd /tmp && echo x > a.py',
         'Get-Content a | Out-File -FilePath $env:TEMP\\x.txt',
         'New-Item -ItemType File D:\\var\\x.txt',
