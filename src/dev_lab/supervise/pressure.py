@@ -63,7 +63,7 @@ THRESHOLDS: Final[Mapping[str, float]] = {
     'memory_percent_ceiling': float(RAM_CRITICAL),  # a workstation's RAM: supervision's own ceiling, one source
     'psutil_window_s': 5.0,  # the averaging window on a workstation; never a 50 ms sample
     # THE CADENCE AND THE SLOPE, ONE SOURCE: a writer reads every `interval_s` (a writer passes its own: the
-    # forge tick's `[schedule] tick_minutes`, supervision's `cycle.interval`); a days-to-full slope is believed
+    # forge tick's `[schedule] tick`, supervision's `cycle.interval`); a days-to-full slope is believed
     # only over at least `slope_span_s`, and the disk history is kept BY AGE -- `slope_span_s + interval_s` --
     # so at any cadence the window holds a reading old enough to meet the floor.
     'interval_s': 300.0,

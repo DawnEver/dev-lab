@@ -48,7 +48,7 @@ Where the supply counts ``submits`` (a cluster account), a claim takes one.
 A WAIT IS ANSWERED, BOUNDED AND SEEN (:mod:`dev_lab.dev.forgewait`). Given its *box*, a tick tells every part
 it does not admit when it could start and protects that start from lower-ranked parts; a part larger than
 this box that no live host in *cards* can take is refused on its commit at once, naming the remedy; and a
-part waiting ``not admitted`` past the schedule's ``request_unadmitted_hours`` is told on ``waits/<part>``.
+part waiting ``not admitted`` past the schedule's ``request_unadmitted`` is told on ``waits/<part>``.
 """
 
 from __future__ import annotations

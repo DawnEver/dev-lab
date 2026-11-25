@@ -315,5 +315,5 @@ def test_auto_sync_has_no_switch_of_its_own_and_its_quiet_period_is_a_duration()
     assert forgeautosync.quiet_after(declared) == timedelta(minutes=5)
     with pytest.raises(ValueError, match='unknown key'):
         policy_from('[tool.dev_lab.integrator]\nauto_sync = true\n', 't')
-    with pytest.raises(ValueError, match='needs a unit'):
+    with pytest.raises(ValueError, match='is a bare number'):
         forgeautosync.quiet_after(dataclasses.replace(_DECLARED, auto_sync_quiet='10'))

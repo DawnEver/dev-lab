@@ -18,10 +18,10 @@ How a task hears the forge (docs-src/dev/forgefeed.md):
   within :data:`OWN_WINDOW_S`) is not news.
 * COMMIT STATUSES ARE NOT IN ANY FEED: neither forge notifies a status change, so a session's OPEN PRs keep their
   status read (:func:`dev_lab.dev.sessionpoll.poll_session`) -- the only per-PR read left.
-* THE TICK IS A SETTING: ``[forgefeed] tick_s`` in the machine file (:func:`tick_s`), default :data:`DEFAULT_TICK_S`;
-  anything but a positive integer is refused by name.
+* THE TICK IS A SETTING: ``[forgefeed] tick`` in the machine file (:func:`tick_s`, a duration such as ``"2 min"``),
+  default :data:`DEFAULT_TICK_S`; anything but a positive duration is refused by name.
 * THE PRUNE DUTY RIDES ON ITS OWN INTERVAL: where the family binds ``prune`` to THIS machine (``{ host = "<name>" }``),
-  every ``[forgefeed] prune_duty_s`` (:func:`dev_lab.dev.branchpolicy.prune_duty_s`) the hearer runs
+  every ``[forgefeed] prune_duty`` (:func:`dev_lab.dev.branchpolicy.prune_duty_s`) the hearer runs
   :func:`dev_lab.dev.branchpolicy.run_here` over its declared checkouts -- one fetch and one branch survey per repo
   per interval: close landed PRs, sweep, prune merged heads, observe the branch policy (D46).
 
@@ -49,13 +49,13 @@ from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.forge import Forge, forge_from_remote
 from dev_lab.dev.forgethreads import (
     Thread,
+    declared_seconds,
     feed_dir,
     is_own,
     own,
     read_feed,
     read_json,
     route,
-    seconds,
 )
 from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, env_superseded
 from dev_lab.dev.sessionpoll import poll_session
@@ -100,14 +100,14 @@ WATCHER: Final = 'forgefeed'
 RULE: Final = 'TASK-HEARS-ITS-FORGE-EVENTS'
 
 
-def tick_s(table: object = None) -> int:
-    """The hearer's tick in seconds: the machine file's ``[forgefeed] tick_s``, else :data:`DEFAULT_TICK_S`.
+def tick_s(table: object = None) -> float:
+    """The hearer's tick in seconds: the machine file's ``[forgefeed] tick`` (a duration), else :data:`DEFAULT_TICK_S`.
 
     Raises:
-        ValueError: the declared value is not a positive integer (named, with its key).
+        ValueError: the declared value is not a positive duration, or is the retired ``tick_s`` (named, with its key).
 
     """
-    return seconds('forgefeed', 'tick_s', DEFAULT_TICK_S, table)
+    return declared_seconds('forgefeed', 'tick', DEFAULT_TICK_S, table)
 
 
 def _dir() -> Path:

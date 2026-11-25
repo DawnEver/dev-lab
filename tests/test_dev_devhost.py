@@ -537,7 +537,7 @@ def test_an_account_file_passes_and_renders_its_grant_role(tmp_path: Path) -> No
         ('c-u1', ACCOUNT + '\n[[hpc.grant]]\nuser = "u1"\n', 'hpc.grant'),
         ('c-u1', ACCOUNT + '\n[consent]\nendpoint = "consent@forge.example"\n', 'restates'),
         ('c-u1', ACCOUNT + '\n[bogus]\nx = 1\n', 'bogus'),
-        ('c-u1', ACCOUNT + '\n[schedule]\ntick_minutes = 15\n', '[schedule] on a research account'),
+        ('c-u1', ACCOUNT + '\n[schedule]\ntick = "15 min"\n', '[schedule] on a research account'),
         ('c-u1', ACCOUNT.replace('repos = [', 'repo = ['), 'deploy'),
     ],
 )

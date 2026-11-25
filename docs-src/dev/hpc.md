@@ -50,14 +50,14 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
 - A grant's compute-node `setup` (e.g. `module load git`) is a cluster fact the deploy cannot read: add it to
   the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
-- **The crontab line**, per served repo and the kit, every `[schedule] tick_minutes` (a divisor of 60,
-  default 5; the host card is judged stale against the same number) at a minute offset derived from the
+- **The crontab line**, per served repo and the kit, every `[schedule] tick` (whole minutes dividing an
+  hour, default `"5 min"`; the host card is judged stale against the same number) at a minute offset derived from the
   account's home, so accounts never tick in lockstep. Each tick refreshes its repo and serves its queue only
   where the family binds a role of the repo to the account's grant (`[roles.<forge>]`, `dev_lab.dev.roles`, D73;
   ruling 2026-11-16); a repo with no role bound there is checked out, installed and never served. The line:
   `<offset>-59/<minutes> * * * * PATH=...; cd <root>/repos/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount tick <repo> --lock <root>/serve/<repo>.lock --wall-minutes <wall> >> <root>/serve/<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
   The tick takes its own lock and writes who holds it beside it (`<lock>.holder`: pid, start, phase); it runs
-  within `[schedule] tick_wall_minutes` (default 40) and past it ends its serve, releases the lock and prints
+  within `[schedule] tick_wall` (whole minutes, default `"40 min"`) and past it ends its serve, releases the lock and prints
   `tick: ended at its wall after <s> s doing <phase>` -- the next tick resumes every run from its saved step
   (`dev_lab.dev.hpcaccount.tickwall`).
   A tick that finds the lock held names its holder (pid, start, age, phase) and marks the host card, so

@@ -194,9 +194,11 @@ def test_run_here_runs_the_duty_only_on_the_bound_machine(tmp_path: Path, monkey
 
 def test_the_prune_duty_interval_defaults_and_refuses_by_name() -> None:
     assert branchpolicy.prune_duty_s({}) == branchpolicy.DEFAULT_PRUNE_DUTY_S
-    assert branchpolicy.prune_duty_s({'prune_duty_s': 600}) == 600
-    with pytest.raises(ValueError, match='prune_duty_s'):
-        branchpolicy.prune_duty_s({'prune_duty_s': 0})
+    assert branchpolicy.prune_duty_s({'prune_duty': '10 min'}) == 600
+    with pytest.raises(ValueError, match=r'\[forgefeed\] prune_duty = "0 s" must be positive'):
+        branchpolicy.prune_duty_s({'prune_duty': '0 s'})
+    with pytest.raises(ValueError, match=r'prune_duty_s = 600 is retired.*write prune_duty = "600 s"'):
+        branchpolicy.prune_duty_s({'prune_duty_s': 600})
 
 
 def test_the_duty_runs_once_per_interval(monkeypatch: pytest.MonkeyPatch) -> None:

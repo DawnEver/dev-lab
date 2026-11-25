@@ -748,15 +748,36 @@ def test_a_tick_whose_refresh_spent_its_wall_serves_nothing_and_says_so(
     assert tickholder.read(record).phase == 'serving alpha'
 
 
-def test_the_tick_wall_is_the_schedule_tick_wall_minutes_default_40(tmp_path: Path) -> None:
-    assert _cron_spec('', tmp_path).tick_wall_minutes == deploy_spec.DEFAULT_TICK_WALL_MINUTES == 40
-    assert _cron_spec('\n[schedule]\ntick_wall_minutes = 25\n', tmp_path).tick_wall_minutes == 25
+def test_the_tick_wall_is_the_schedule_tick_wall_default_40_minutes(tmp_path: Path) -> None:
+    assert _cron_spec('', tmp_path).tick_wall == deploy_spec.DEFAULT_TICK_WALL == 40 * 60
+    assert _cron_spec('\n[schedule]\ntick_wall = "25 min"\n', tmp_path).tick_wall == 25 * 60
+    assert _cron_spec('\n[schedule]\ntick_wall = "1 h"\n', tmp_path).tick_wall == 3600
 
 
-@pytest.mark.parametrize('minutes', ['0', '-5', '"40"', '2.5'])
-def test_a_tick_wall_that_is_no_positive_whole_minute_count_is_refused(tmp_path: Path, minutes: str) -> None:
-    with pytest.raises(ValueError, match='tick_wall_minutes'):
-        _cron_spec(f'\n[schedule]\ntick_wall_minutes = {minutes}\n', tmp_path)
+@pytest.mark.parametrize(
+    ('wall', 'named'),
+    [
+        ('"0 min"', 'must be positive'),
+        ('"-5 min"', 'must be positive'),
+        ('"40"', 'bare number'),
+        ('40', 'bare number'),
+        ('"90 s"', 'whole minutes'),
+        ('"40 GiB"', 'not a duration'),
+    ],
+)
+def test_a_tick_wall_that_is_no_positive_whole_minute_duration_is_refused(
+    tmp_path: Path, wall: str, named: str
+) -> None:
+    with pytest.raises(ValueError, match=rf'\[schedule\] tick_wall = .*{named}'):
+        _cron_spec(f'\n[schedule]\ntick_wall = {wall}\n', tmp_path)
+
+
+def test_the_retired_tick_keys_are_refused_with_their_new_line(tmp_path: Path) -> None:
+    """FORMATS-MIGRATE-ONCE (user ruling 2026-11-25): the old keys are never read; the refusal is the migration."""
+    with pytest.raises(ValueError, match=r'tick_minutes = 15 is retired.*write tick = "15 min"'):
+        _cron_spec('\n[schedule]\ntick_minutes = 15\n', tmp_path)
+    with pytest.raises(ValueError, match=r'tick_wall_minutes = 25 is retired.*write tick_wall = "25 min"'):
+        _cron_spec('\n[schedule]\ntick_wall_minutes = 25\n', tmp_path)
 
 
 def test_a_tick_of_an_undeclared_repo_is_refused(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
@@ -807,14 +828,14 @@ def _cron_spec(text: str, tmp_path: Path) -> deploy_spec.Deployment:
     return spec
 
 
-def test_the_cron_period_is_the_schedule_tick_minutes_staggered_per_account(tmp_path: Path) -> None:
-    """HPC pressure (2026-10-26): one period, ``[schedule] tick_minutes`` -- the one the host card is judged by.
+def test_the_cron_period_is_the_schedule_tick_staggered_per_account(tmp_path: Path) -> None:
+    """HPC pressure (2026-10-26): one period, ``[schedule] tick`` -- the one the host card is judged by.
 
     Each account's minute offset is derived from its home, so accounts do not tick in lockstep.
     PLANTED CONTROL: undeclared, the period is the schedule's one default (5).
     """
-    spec = _cron_spec('\n[schedule]\ntick_minutes = 15\n', tmp_path)
-    assert spec.tick_minutes == 15
+    spec = _cron_spec('\n[schedule]\ntick = "15 min"\n', tmp_path)
+    assert spec.tick == 15 * 60
     offsets = set()
     for user in ('alice', 'bob', 'carol', 'dave', 'erin', 'frank'):
         lines = deploy_spec.cron_lines(spec, Path('/home') / user)
@@ -826,13 +847,13 @@ def test_the_cron_period_is_the_schedule_tick_minutes_staggered_per_account(tmp_
         assert lines == deploy_spec.cron_lines(spec, Path('/home') / user), 'deterministic'
         offsets.add(offset)
     assert len(offsets) > 1, 'accounts are staggered'
-    assert _cron_spec('', tmp_path).tick_minutes == 5
+    assert _cron_spec('', tmp_path).tick == 5 * 60
 
 
-@pytest.mark.parametrize('minutes', ['7', '0', '2.5', '"15"'])
-def test_a_tick_period_cron_cannot_keep_is_refused(tmp_path: Path, minutes: str) -> None:
-    with pytest.raises(ValueError, match='tick_minutes'):
-        _cron_spec(f'\n[schedule]\ntick_minutes = {minutes}\n', tmp_path)
+@pytest.mark.parametrize('period', ['"7 min"', '"0 min"', '"2.5 min"', '"15"', '15', '"90 s"'])
+def test_a_tick_period_cron_cannot_keep_is_refused(tmp_path: Path, period: str) -> None:
+    with pytest.raises(ValueError, match=r'\[schedule\] tick = '):
+        _cron_spec(f'\n[schedule]\ntick = {period}\n', tmp_path)
 
 
 def test_an_actions_repo_is_kept_fresh_but_its_queue_is_never_served(
