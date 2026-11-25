@@ -183,8 +183,9 @@ def main(
     shown.add_argument('--repo', type=Path, help="the checkout whose forge's records home is read (default: here)")
     gone = verbs.add_parser('supersede', help="settle every claim on a ref's earlier heads superseded by its tip")
     gone.add_argument('--ref', required=True, help='the branch whose earlier heads are superseded (origin, as fetched)')
+    parser.set_defaults(repo=None)  # a verb without --repo reads here
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    root = getattr(args, 'repo', None) or (Path.cwd() if cwd is None else cwd)
+    root = args.repo or (Path.cwd() if cwd is None else cwd)
     try:
         client = client_for(root, env=env, transport=transport)
         if args.verb == 'supersede':

@@ -172,7 +172,7 @@ def owner(path: Path) -> str:
         uid = path.lstat().st_uid
     except OSError:
         return ''
-    if not hasattr(os, 'getuid') or uid == os.getuid():
+    if sys.platform == 'win32' or uid == os.getuid():
         return ''
     try:
         import pwd  # noqa: PLC0415 -- POSIX only; getuid above already ruled Windows out
