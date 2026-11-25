@@ -887,6 +887,8 @@ def test_planted_an_approval_note_never_admits_deleting_an_entry(repo: Path) -> 
         ('.claude/memory/2026/10/01/attachments/INDEX.md', True),
         ('.claude/memory/2026/10/01/probe.py', True),
         ('.claude/memory/2026/10/01/an-entry.md', False),
+        ('.claude/memory/2026/08/30/.archive/handoff.md', True),
+        ('.claude/memory/2026/09/27/.archive/skills/git-tidy/SKILL.md', True),
         ('docs/attachments/x.toml', False),
     ],
 )

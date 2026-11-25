@@ -8,6 +8,8 @@ The rem plugin is retired; its two kept duties are this module's. Memory stays i
 * ``amend`` -- the user-approved in-place correction: ONE line replaced one-for-one, plus the amendment note.
 * ``redact`` -- a privacy redaction: a span swapped for a placeholder or role, plus the redaction note.
 * ``rename`` -- the redacting rename: the file name loses an account-like run, plus a ``renamed`` note.
+* ``delete`` -- the approved attachment deletion (ATTACHMENT-DELETE): a NEW entry carries the ``deleted`` note
+  naming every attachment with the user's words, then each file leaves memory. An entry is never deleted.
 * ``search`` -- every entry holding ALL the query terms (case-insensitive), best first: a term in the
   frontmatter weighs :data:`HEAD_WEIGHT` body hits.
 
@@ -15,7 +17,7 @@ Each write is judged by the SAME predicate the commit check (:mod:`dev_lab.dev.m
 :mod:`dev_lab.dev.memoryentry` is the one source of every shape -- so a door never writes what a commit refuses.
 A refusal names its cause and exits 2; nothing is written.
 
-``python -m dev_lab.dev.memory {add|amend|redact|rename|search} ...`` (``--root``: the repo, default the cwd).
+``python -m dev_lab.dev.memory {add|amend|redact|rename|delete|search} ...`` (``--root``: the repo, default the cwd).
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ __all__ = [
     'MemoryRefused',
     'add',
     'amend',
+    'delete',
     'main',
     'memory_dir',
     'redact',
@@ -171,6 +174,35 @@ def rename(root: Path, rel: str, new_name: str, *, approved: str) -> Path:
     return target
 
 
+def delete(root: Path, name: str, paths: Sequence[str], *, reason: str, approved: str, day: date | None = None) -> Path:
+    """Remove the attachments *paths*, recorded in the new entry *name* whose note approves each deletion."""
+    files = [(root / rel).resolve() for rel in paths]
+    rels = [_rel(root, path) for path in files]
+    for rel, path in zip(rels, files, strict=True):
+        if not entry.is_attachment(rel) or not path.is_file():
+            msg = (
+                f'{rel}: not a memory attachment -- a deletable file lies under .claude/memory/ and is not an entry '
+                '(`<yyyy>/<mm>/<dd>/<slug>.md`); an entry is never deleted (correct it with a new entry)'
+            )
+            raise MemoryRefused(msg)
+    inside = ', '.join(rel.split(entry.MEMORY_DIR, 1)[1] for rel in rels)
+    note = _note(entry.AMENDMENT_NOTE, reason=f'deleted {inside} -- {reason}', approved=approved)
+    if not reason.strip() or not all(entry.deletion_approved(rel, [note]) for rel in rels):
+        msg = 'not an approved deletion -- a non-empty reason and the user`s approving words, quoted'
+        raise MemoryRefused(msg)
+    listed = '\n'.join(f'- `{rel}`' for rel in rels)
+    body = f'Deleted from memory (ATTACHMENT-DELETE):\n\n{listed}\n\n{note}'
+    record = add(root, name, f'memory attachments deleted: {reason}', body, day=day)
+    base = memory_dir(root).resolve()
+    for path in files:
+        path.unlink()
+        parent = path.parent
+        while parent != base and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
+    return record
+
+
 def _frontmatter(text: str) -> tuple[str, str]:
     match = entry.FRONTMATTER.match(text)
     return (match.group(1), text[match.end() :]) if match else ('', text)
@@ -217,6 +249,11 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument('path')
     p.add_argument('new_name')
     p.add_argument('--approved', required=True)
+    p = verbs.add_parser('delete', help='an approved attachment deletion, recorded in a new entry')
+    p.add_argument('name', help='the slug of the new entry recording the deletion')
+    p.add_argument('paths', nargs='+', help='the attachments, repo-relative')
+    p.add_argument('--reason', required=True)
+    p.add_argument('--approved', required=True, help='the user`s approving words, quoted')
     p = verbs.add_parser('search', help='entries holding every term, best first')
     p.add_argument('terms', nargs='+')
     p.add_argument('--limit', type=int, default=20)
@@ -236,6 +273,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             path = add(root, args.name, args.description, sys.stdin.read())
         elif args.verb == 'amend':
             path = amend(root, args.path, args.line, args.text, reason=args.reason, approved=args.approved)
+        elif args.verb == 'delete':
+            path = delete(root, args.name, args.paths, reason=args.reason, approved=args.approved)
         elif args.verb == 'redact':
             path = redact(root, args.path, args.span, args.placeholder)
         else:

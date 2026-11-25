@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from dev_lab.dev import memory
+from dev_lab.dev import memory, memoryentry
 from dev_lab.dev.memory import MemoryRefused
 
 if TYPE_CHECKING:
@@ -96,3 +96,33 @@ def test_the_cli_refuses_by_name_and_searches(tmp_path: Path, capsys: pytest.Cap
         memory.main(['--root', str(tmp_path), 'amend', 'nowhere.md', '1', 'x', '--reason', 'r', '--approved', 'a']) == 2
     )
     assert 'MEMORY-SHAPE' in capsys.readouterr().err
+
+
+def _attach(root: Path, inside: str) -> Path:
+    path = memory.memory_dir(root) / inside
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('x\n', encoding='utf-8')
+    return path
+
+
+def test_delete_removes_attachments_and_records_their_approval_in_a_new_entry(tmp_path: Path) -> None:
+    """ATTACHMENT-DELETE: the door writes the note memoryadds admits a deletion by, then removes each file."""
+    paths = [_attach(tmp_path, '2026/08/30/.archive/a.md'), _attach(tmp_path, '2026/08/30/.archive/b.mjs')]
+    rels = [p.relative_to(tmp_path).as_posix() for p in paths]
+    note_entry = memory.delete(tmp_path, 'archive-cleared', rels, reason='stray', approved='ok to clean', day=DAY)
+    assert not any(p.exists() for p in paths)
+    assert not (memory.memory_dir(tmp_path) / '2026/08/30/.archive').exists()
+    notes = memoryentry.amendment_notes(note_entry.read_text(encoding='utf-8'))
+    assert all(memoryentry.deletion_approved(rel, notes) for rel in rels)
+
+
+def test_delete_refuses_an_entry_and_an_empty_approval(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a dated entry is never an attachment, and empty words approve nothing; nothing is removed."""
+    rel = _entry(tmp_path)
+    with pytest.raises(MemoryRefused, match='not a memory attachment'):
+        memory.delete(tmp_path, 'gone', [rel], reason='r', approved='yes', day=DAY)
+    assert (tmp_path / rel).exists()
+    path = _attach(tmp_path, '2026/08/30/.archive/a.md')
+    with pytest.raises(MemoryRefused, match='approv'):
+        memory.delete(tmp_path, 'gone', [path.relative_to(tmp_path).as_posix()], reason='r', approved='', day=DAY)
+    assert path.exists()
