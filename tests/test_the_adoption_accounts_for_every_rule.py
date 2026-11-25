@@ -234,6 +234,10 @@ _ENFORCED = {
         guard('tests/test_dev_units.py'),
         guard('tests/test_no_name_carries_a_unit.py'),
     ),
+    'CONFIG-VALUES-CARRY-UNITS': (
+        guard('tests/test_dev_configkeys.py'),
+        guard('tests/test_config_keys_carry_no_unit.py'),
+    ),
     'VERDICT-BAR-IS-THE-INCREMENT': (guard('tests/test_dev_verdict.py'),),
     'XFAIL-NOT-SKIP': (guard('tests/test_arch_skips_are_a_named_set.py'),),
     # Prevention is the deny row (proved through the real engine); detection is the family body run

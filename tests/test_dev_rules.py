@@ -146,6 +146,7 @@ _IDS = frozenset(
         'ZERO-CORE-CHANGE',
         'NATIVE-FIRST',
         'MACHINES-MEET-ONLY-THROUGH-THE-FORGE',
+        'CONFIG-VALUES-CARRY-UNITS',
     }
 )
 
