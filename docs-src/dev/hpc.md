@@ -214,7 +214,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
 
 - **Preparation is keyed by its inputs, never by commit** (`lab_commons.hpc.builds`), declared once:
   `[tool.lab_commons.hpc] dependency_inputs`, `source_roots`, `install`, `needs`, `collect`, `outputs`,
-  `timeout_s = {incremental = ..., full = ...}` and `native = { inputs = [...], build = "..." }`. A fresh sha
+  `timeout = {incremental = "<duration>", full = "<duration>"}` and `native = { inputs = [...], build = "..." }`. A fresh sha
   with unchanged inputs builds nothing. The committed `uv.lock` is an input, so its hash keys the venv.
 - Everything lives under the account's declared root (`$LAB_ROOT`; `lab_commons.hpc.layout.account_paths`):
   `repos/<repo>`, `envs/<key>`, `native/<key>`, `jobs/<sha>`, `cache/{git,uv,packs,collect,cargo}` (one bare
@@ -230,7 +230,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   them back (`lab_commons.compute.learned`), packs whole files into shards inside the `[policy]` window, and sets the
   wall limit and memory from the slowest shard and worst peak times `policy.safety`.
 - The array asks for every declared partition that admits its shard (`--partition=shortq,defq`). A task pending
-  past `stall_minutes` while a declared partition has a free slot is reported as a STALL with its remedy.
+  past `stall` while a declared partition has a free slot is reported as a STALL with its remedy.
 - **Test cells are streamed**, one JSON line per test phase keyed by pytest's `nodeid` -- a plain
   `lab_commons.outcomes.Cell` (status, reason) plus the test's `Expectation` when it declares one -- so a killed
   shard keeps what it reported. Its unfinished ids are re-submitted in halves for up to two more rounds, with
@@ -299,7 +299,7 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
   headroom, free slots, QOS limits and its home's free inodes (`df -i`, the file-count quota is a resource: a plan
   writing more files than are free is refused) -- and its throughput is the batch's padded seconds over that
   makespan. The items are cut into consecutive slices in proportion, so the slices end about together. The spread
-  is kept only when every slice holds at least one `shard_minutes_min` shard and its slowest slice beats the best
+  is kept only when every slice holds at least one `shortest_shard` shard and its slowest slice beats the best
   single grant (`plan.allocate`); otherwise one grant takes it all. Nothing is reserved anywhere.
 - **The artifact is ensured per grant.** `[job] sha` + `repo_url` run the batch from that commit's artifact (no
   `workdir` beside them): before submitting, each chosen grant gets `run build`'s artifact in its own home, reused
@@ -318,7 +318,7 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
 - **One record.** `<job>.submission.json` holds `placements` -- per grant its targets, item range, run directory,
   job ids, shards and plan -- and `moved`. `status` prints a line per grant, `gather` merges every slice back into
   batch order and names any grant that did not answer. A record without `placements` is refused: submit again.
-  `gather -c job.toml -o out.json --wait` polls as `status` does every `[policy] poll_seconds`, prints the status
+  `gather -c job.toml -o out.json --wait` polls as `status` does every `[policy] poll`, prints the status
   line only when it changes (`pending: <why>` while a grant does not answer), and gathers once no shard is queued
   or running. `--wait` belongs to `gather` and `run gather` only.
 - **A dead grant's slice moves.** `retry` re-submits each shard with no results file that is not active, on its own
