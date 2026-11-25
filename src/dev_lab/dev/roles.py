@@ -77,6 +77,7 @@ __all__ = [
     'Roles',
     'Unbound',
     'accounts',
+    'bound_accounts',
     'executor_from',
     'host_refusals',
     'machine_layer',
@@ -208,6 +209,18 @@ def accounts(executor: Executor, layer: Mapping[str, Any]) -> tuple[str, ...]:
         grant.user for grant in grants if grant.cluster_name == executor.cluster and grant.role == executor.grant_role
     )
     return tuple(dict.fromkeys(named))
+
+
+def bound_accounts(roles: Roles, layer: Mapping[str, Any]) -> frozenset[str] | None:
+    """The users of every declared grant an :data:`HPC` role of *roles* is bound to: the seats that serve the repo.
+
+    ``None`` -- every account -- for a binding carrying kinds alone (a render's :data:`ROLES_ENV`, no family layer):
+    it names an ``hpc`` role but no grant, read as :func:`dev_lab.dev.hpcaccount.spec.serves_here` reads it.
+    """
+    bound = [roles.of(role) for role in ROLES if roles.kind(role) == HPC]
+    if any(not executor.grant_role for executor in bound):
+        return None
+    return frozenset(user for executor in bound for user in accounts(executor, layer))
 
 
 def _bound(layer: Mapping[str, Any], forge: str, repo: str, role: str) -> Executor:

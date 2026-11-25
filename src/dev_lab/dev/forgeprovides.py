@@ -20,7 +20,8 @@ A STALE CARD SUPPLIES NOTHING (:func:`supplied`, user ruling 2026-10-28): a host
 claim, so what its card last declared -- ``jmag = 1`` on two workstations stale for days -- is never counted
 as supply by the queue, the fleet alarm or any other reader. Its forge claims are not released by anyone: each
 lapses with its lease (:data:`dev_lab.dev.forgeclaim.DEFAULT_LEASE`), which only its owner renews, and is then
-retaken by any host serving that part.
+retaken by any host serving that part. A cluster seat the family binds no role to is not read at all
+(:func:`dev_lab.dev.forgehosts.serving_cards`): its card is never even a stale holder.
 """
 
 from __future__ import annotations

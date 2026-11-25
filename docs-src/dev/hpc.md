@@ -64,7 +64,9 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   `forge queue` reads `tick held <age> in <phase>`. From the workstation: `python -m dev_lab.dev.hpcaccount
   tick-status --account <user>` reads every lock's holder; `tick-stop --account <user> [--repo R]` stops a tick
   older than its wall (verified a tick of that repo, this user's) and refuses a younger one by name;
-  `look --account <user> {processes|ticks|log <repo>|crontab}` is the closed set of read-only looks.
+  `look --account <user> {processes|ticks|log <repo>|crontab|stuck <path>|inventory <path>}` is the closed set of
+  read-only looks; `inventory` lists each entry's files, bytes and newest change and judges every git checkout under
+  the path pushed or NOT PUSHED (`dev_lab.dev.hpcaccount.inventory`).
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine
   file adds Telegram/email/webhook delivery.
 - **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across
@@ -90,6 +92,18 @@ agent's own. Nothing on an account is backed up. What an account holds that the 
 `python -m dev_lab.dev.hpcaccount drift-fleet (--cluster <name> | --account <user>)...` (read only; secret-looking
 values print as a hash): fold each item into the config source, or discard it. `ci-pause-fleet` refuses an account
 while it drifts, naming each item; `--discard-drift` accepts the loss (`dev_lab.dev.hpcaccount.drift`).
+
+**Cleaning an account completely** (user ruling 2026-11-25) goes per directory: read it
+(`look --account <user> inventory <path>`); a directory of caches, or of checkouts all proven pushed, goes through
+`python -m lab_commons.hpc clean`; anything holding results of record is first archived,
+`python -m dev_lab.dev.hpcaccount archive --account <user> <path> [--as <name>] [--apply]`: tar parts of at most
+4 GiB piped from the account to `<[storage] runs>/archive/<user>/<path>/part-NNNNN.tar`, each read back from the
+store (`rclone hashsum sha256 --download`) and compared with the sha256 taken on the way up, then
+`manifest.json` (source, tree state, both hashes per part, the whole stream's sha256, `verified`). Then
+`hpcaccount archive-clean --account <user> <path> [--apply]` deletes it through the clean door only when that
+manifest is verified, every part is on the store at its size and the tree is unchanged since (files, bytes, newest
+change). An undeclared `[storage] runs`, or an account that does not reach it (`secretplace distribute --remote
+<name>`, then `hpcaccount storage-check`), is refused by name (`dev_lab.dev.hpcaccount.archive`).
 
 A learned row no run can supersede (an OOM-inflated `slurm|` peak, say) is forgotten on the accounts that hold it
 with `python -m dev_lab.dev.hpcaccount forget --repo <url> --row "slurm|" (--fleet | --account <user>...) [--dry-run]`:

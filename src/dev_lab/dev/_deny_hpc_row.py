@@ -53,6 +53,8 @@ USAGES: Final[Mapping[str, tuple[tuple[tuple[str, ...], ...], str]]] = {
             ('dev_lab.dev.hpcaccount', 'credential'),
             ('dev_lab.dev.hpcaccount', 'keys'),
             ('dev_lab.dev.hpcaccount', 'deploy'),
+            ('dev_lab.dev.hpcaccount', 'archive'),
+            ('dev_lab.dev.hpcaccount', 'archive-clean'),
         ),
         '`hpcaccount <verb>`',
     ),

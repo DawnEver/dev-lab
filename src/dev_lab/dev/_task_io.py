@@ -14,11 +14,14 @@ import shutil
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol
 
 import lab_commons.launch as _door
 
 from dev_lab.dev.labsession import ENV
+
+if TYPE_CHECKING:
+    from dev_lab.dev.forgework import Client
 
 __all__ = [
     'GIT',
@@ -56,16 +59,19 @@ class Forge(Protocol):
 
 
 class ForgeIssues:
-    """The default :class:`Forge`: dev-lab's forge client for the ledger clone's origin."""
+    """The default :class:`Forge`: dev-lab's forge client for the ledger clone's origin (*client* stands in for it)."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, client: Client | None = None) -> None:
         from dev_lab.dev.forgeclient import client_for  # noqa: PLC0415 -- the network client, only for open/close
 
-        self._client = client_for(root)
+        self._client = client if client is not None else client_for(root)
 
     def open(self, slug: str, goal: str) -> str:
+        """The open issue labeled ``task:<slug>`` -- the one already there, else a new one (the label IS the id)."""
         from dev_lab.dev.issuekind import create  # noqa: PLC0415
 
+        if held := self._client.issue_list(state='open', labels=(f'task:{slug}',)):
+            return held[0].url
         body = f"The identity of task `{slug}`: the tasks repo's {slug}/ journals it and links here.\n\nGoal: {goal}"
         return create(self._client, f'task: {slug} -- {goal}', body, 'need', [f'task:{slug}']).url
 

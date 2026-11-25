@@ -117,7 +117,8 @@ def test_the_hpc_refusal_names_forget_among_the_deploy_doors() -> None:
 def test_a_verb_removed_from_the_exits_leaves_the_refusal() -> None:
     """PLANTED CONTROL: without the hpcaccount exits, the rendered refusal drops the deploy purpose."""
     kept = [argv for argv in exits() if argv[0] != 'dev_lab.dev.hpcaccount']
-    assert len(kept) == len(exits()) - 5
+    dropped = {argv[1] for argv in exits() if argv[0] == 'dev_lab.dev.hpcaccount'}
+    assert dropped == {'deploy-fleet', 'forget', 'retention', 'credential', 'archive', 'archive-clean', 'deploy'}
     assert 'hpcaccount' not in remedy(kept)
 
 

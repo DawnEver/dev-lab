@@ -31,6 +31,13 @@ MOVED_TABLES: Final = (
 
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
+    **dict.fromkeys(
+        ('session_entries', 'scratch-sessions', 'SESSION_DIR'),
+        (
+            'dev_lab.dev._scratch_owners (an owner record per entry, claimed where it is made) and own_entries',
+            "2026-11-25: a SessionStart snapshot diff named another live session's scratch entry as the stopping one's",
+        ),
+    ),
     'rulesinject': (
         'AGENTS.md, the one always-loaded page every harness reads natively (dev_lab.dev.agentsection)',
         '2026-11-24: .claude/rules/ retired, so the SessionStart injection of it had nothing left to inject',

@@ -25,6 +25,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'roles',  # the forge roles each repo's work is bound to, read from the family layer (D73; replaced producers)
     'disposable',  # a throwaway worktree's lease: scratch and discard without a landing (split from reclaim)
     'scratchtree',  # the scratch worktree door, --scratch and --discard (split from reclaim)
+    'scratchorphans',  # scratch entries no live session owns, read for the integrator (2026-11-25)
     'tomlleaves',  # the TOML leaf reader devhost renders through, split from devhost
     'vendordetect',  # detect installed vendor tools for the machine file, split from devhost
     'devsource',  # the config source's forge URL, split from devhost at the module-size band (2026-11-21)
