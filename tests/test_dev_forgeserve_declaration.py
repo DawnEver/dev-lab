@@ -32,7 +32,7 @@ def _refusing(name: str) -> object:
 def _host(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
-    monkeypatch.setattr(forgeserve, '_host_failure', lambda *_a: None)
+    monkeypatch.setattr(forgeserve, 'host_failure', lambda *_a: None)
 
 
 def _serve(tmp_path: Path, seat: ClusterAccount | None) -> object:

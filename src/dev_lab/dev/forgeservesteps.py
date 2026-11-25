@@ -6,6 +6,9 @@ so one broken step never stops the others (:func:`dev_lab.dev.forgeserve.serve` 
 
 from __future__ import annotations
 
+import contextlib
+import os
+import signal
 import time
 from collections.abc import Callable, Sequence
 from datetime import datetime
@@ -16,7 +19,7 @@ from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.hpc.account import ClusterAccount
 
-from dev_lab.dev import escapes, forgerunstate, forgeship, hostalarm, retention
+from dev_lab.dev import escapes, forgerunstate, forgeship, hostalarm, metrics, retention
 from dev_lab.dev.branchpolicy import prune_duty
 from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.drift import step as drift_step
@@ -60,6 +63,8 @@ __all__ = [
     'cancel_strays',
     'demote_unreachable',
     'every_host',
+    'exit_on_sigterm',
+    'host_failure',
     'hygiene',
     'pressed',
     'prompt',
@@ -309,3 +314,22 @@ def demote_unreachable(produced: Sequence[Produced]) -> None:
         if one.outage:
             tools = sorted(needs_of_row(one.platform) & CHECKS.keys())
             demote(tools, f'{one.platform} at {one.sha[:12]} exited {int(ProducerExit.UNREACHABLE)} (unreachable)')
+
+
+def _terminated(signum: int, _frame: object) -> None:
+    """SIGTERM (a tick at its wall, or ``tick-stop``) runs every ``finally``: producers joined, claims let go."""
+    raise SystemExit(128 + signum)
+
+
+def exit_on_sigterm() -> None:
+    """Install :func:`_terminated` (POSIX; only the main thread sets a handler, a thread's serve keeps none)."""
+    if os.name != 'nt':
+        with contextlib.suppress(ValueError):
+            signal.signal(signal.SIGTERM, _terminated)
+
+
+def host_failure(root: Path, failure: BaseException) -> None:
+    """A serve that failed before it posted anything reached nobody as a PR status: one ``host_failure`` line."""
+    metrics.record(
+        metrics.HOST_FAILURE, root=root, repo=metrics.repo_of(root), rule='serve', reason=type(failure).__name__
+    )
