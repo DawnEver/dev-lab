@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Final, Literal
 from lab_commons import launch
 
 from dev_lab.dev.testtemp import writable_retry
+from dev_lab.supervise.components.resources import psutil_module
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -137,9 +138,8 @@ def held_paths(prefixes: Sequence[str]) -> list[Path] | str:
 
     A string instead names why that cannot be told (psutil absent, a holder's files unreadable): the caller keeps.
     """
-    try:
-        import psutil  # noqa: PLC0415 -- a transitive dependency; its absence keeps every aged entry
-    except ImportError:
+    psutil = psutil_module()
+    if psutil is None:
         return 'psutil is not installed, so a running holder cannot be ruled out'
     paths: list[Path] = []
     for proc in psutil.process_iter(['name']):
