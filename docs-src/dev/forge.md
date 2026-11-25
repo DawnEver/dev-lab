@@ -69,7 +69,7 @@ tick re-derived the same repo-wide answers. So the repo-wide poll (step 6) runs 
   publishes its card, and polls nothing. Its own live lease: renewed, no read-back. None or expired: written, read back, and the
   host polls only if the read-back names it; racing creators keep the OLDEST lease comment and each deletes
   its own younger one. A lease lives three tick periods (`POLL_LEASE_TICKS`), so a dead holder is replaced
-  within fifteen minutes at the default `tick_minutes = 5`.
+  within fifteen minutes at the default `tick = "5 min"`.
 - A race both hosts win costs one duplicate poll, never a wrong answer: every polled step was already idempotent.
 - `[serve] poller: <host>` in the serve log names the holder each tick.
 
@@ -356,7 +356,7 @@ newest commit lacks, or a request issue.
   a sha origin does not serve or that commits no `uv.lock`. A host runs a request off origin's integration
   branch and trunk only for a login its machine file lists in `[requests] authors`; it waits, named, while a
   git source of its lock or submodules is unreachable here, and is told once on its issue after
-  `request_unadmitted_hours`. A success is labeled `request:done` with its record path and sha256s, and
+  `request_unadmitted`. A success is labeled `request:done` with its record path and sha256s, and
   closed (user ruling 2026-11-19); a failure stays open. A ref's tip is one candidate per
   part it needs (`base`, and every part its posted parts hand to). The same rule names those
   children ([the integration branch](integration.md)).
@@ -370,13 +370,13 @@ newest commit lacks, or a request issue.
   is coalesced (`Schedule.coalesce`): one PR session holds at most one run per part in flight, and a child's
   coalescing reads only ITS OWN commits, never the integration run it branched from.
 - **Cost** is the repo's last measured run (`lab_commons.compute.learned`), in core-hours on a cluster and
-  wall-hours on a box; unmeasured work costs `prior_cost_h`.
+  wall-hours on a box; unmeasured work costs `prior_cost`.
 - **Priority is a forge label** on the PR or issue: `priority:user` adds the declared boost, `priority:<n>`
   adds `n`.
-- **Budgets.** A cluster charges each run's core-hours to its ref; a ref at its class's `daily_budget_core_h`
+- **Budgets.** A cluster charges each run's core-hours to its ref; a ref at its class's `daily_budget` (core time)
   is not claimed. A box meters no core-hours.
 - **Admission** decides FIT; rank only decides ORDER ([admission](#admission)).
-- **Starvation.** A candidate waiting past its class's `starve_after_hours` raises a `starved` alarm naming
+- **Starvation.** A candidate waiting past its class's `starve_after` raises a `starved` alarm naming
   it, its wait and its blocking reason -- for a job that does not fit, the resources it lacks.
 
 The numbers are data, `[tool.lab_commons.schedule]` over the family default
@@ -387,16 +387,20 @@ declaration replaces whole. Every class the rule names must be valued in `classe
 [tool.lab_commons.schedule]
 classes = {integration = 100, pr = 60, feature = 45, branch = 30, request = 20}
 aging_rate = 10                                    # value per hour waited
-starve_after_hours = {integration = 6, pr = 12, feature = 18, branch = 24, request = 48}
-daily_budget_core_h = {}                           # class -> core-hours one ref may use per 24 h
+starve_after = {integration = "6 h", pr = "12 h", feature = "18 h", branch = "24 h", request = "48 h"}
+daily_budget = {}                                  # class -> core time one ref may use per 24 h ("200 h")
 boosts = {"priority:user" = 1000}                  # label -> value; `priority:<n>` adds n
 classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}  # ordered, first match
 coalesce = ["integration", "feature", "pr"]       # one run per (ref, part) in flight; the tip waits behind it
 served_first = ["integration", "pr"]              # served strictly before every other class, in this order
 oldest_first = ["pr"]                             # ordered by age, not score
 request_label = "forge:request"
-prior_cost_h = 4.0
+prior_cost = "4 h"
+request_unadmitted = "6 h"
 ```
+
+Every duration carries its unit and is read once by `lab_commons.quantity`; a retired key (`prior_cost_h`,
+`starve_after_hours`, `daily_budget_core_h`, `request_unadmitted_hours`) is refused with its new line.
 
 ### HPC account affinity
 
@@ -460,7 +464,7 @@ lower-ranked one is still claimed, so several parts run on one host at once.
   `forge queue` shows `no host admits it -- <host> lacking <resource>; ...`.
 
 A host serving several repos weighs them in its machine file: `[schedule] weights = {"owner/name" = 2.0}`
-(absent = 1); `[schedule] tick_minutes` (default 5) is what its card is judged stale against.
+(absent = 1); `[schedule] tick` (default `"5 min"`) is what its card is judged stale against.
 `[capabilities.<name>]` declares a resource it has beyond its OS (`seats` = its concurrency, the one number
 no probe reads); a checked tool is present only where its check passes, and the card shows each verdict with
 its evidence ([HPC clusters](hpc.md#parts-by-need-set)).
@@ -519,7 +523,7 @@ BLOCKED red to route), keyed by state, branch and tip, so a new row is delivered
 `pruned` (the merged branches it deleted, or a prune that failed) and `stale-branch` (unmerged branches idle
 past the grace, never deleted; see [pruning origin](branch-set.md#pruning-origin)). The machine file's
 `[alerts]` table (telegram, email, webhook) delivers them; one `(kind, repo[, about])` is delivered at most
-once per `[alerts] repeat_hours` (absent: 6) -- the receiver's decision, so it lives in the receiver's machine file.
+once per `[alerts] repeat` (a duration such as `"6 h"`) (absent: 6) -- the receiver's decision, so it lives in the receiver's machine file.
 Every alarm is one structured notice (`dev_lab.supervise.notice`) written once as Markdown: its first line is
 the severity in words, the host, and what is wrong (a metric's value against its threshold); then the action,
 the context (repository, PR, branch, commit, run, service, since/last) and the remedy. The agent hook and the

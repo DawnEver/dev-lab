@@ -922,7 +922,7 @@ class _Sets(_Proc):
 
 
 #: A tick period short enough that a second round comes while a producer runs.
-QUICK = {'tick_minutes': 0.001}
+QUICK = {'tick': '0.06 s'}
 
 
 def test_two_admitted_local_parts_are_produced_at_once(monkeypatch, tmp_path: Path) -> None:
@@ -1489,20 +1489,20 @@ def test_a_tick_past_its_period_leaves_the_runs_it_did_not_reach_for_the_next(mo
     monkeypatch.setattr(forgerun, 'advance', slow)
     report, said, _alarms = _serve(
         monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
-        table={'tick_minutes': 5}, clock=lambda: now[0],
+        table={'tick': '5 min'}, clock=lambda: now[0],
     )  # fmt: skip
     assert advanced == shas[:2], 'the third would start past the 5 min period'
     assert sorted(report.in_flight) == shas, 'a run not reached is still in flight, untouched'
     assert any(line == f'[serve] the tick ran past its period: {shas[2][:12]} wait for the next' for line in said), said
     advanced.clear()
-    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, table={'tick_minutes': 5})
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, table={'tick': '5 min'})
     assert sorted(advanced) == shas, 'PLANTED: a quick tick advances every run'
     advanced.clear()
     _rounds_take(monkeypatch, now, timedelta(hours=1))
     monkeypatch.setattr(forgerun, 'advance', lambda _r, run, **_k: advanced.append(run.sha) or run)
     _serve(
         monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
-        table={'tick_minutes': 5}, clock=lambda: now[0],
+        table={'tick': '5 min'}, clock=lambda: now[0],
     )  # fmt: skip
     assert sorted(advanced) == shas, 'the rounds ran an hour, and the runs still get their own period'
 
@@ -1536,7 +1536,7 @@ def test_bookkeeping_that_spends_the_period_does_not_starve_the_runs(monkeypatch
     monkeypatch.setattr(forgerun, 'advance', lambda _r, run, **_k: advanced.append(run.sha) or run)
     _serve(
         monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
-        table={'tick_minutes': 5}, clock=clock,
+        table={'tick': '5 min'}, clock=clock,
     )  # fmt: skip
     assert sorted(advanced) == shas, "every quick run, a superseded one's withdrawal among them, advances"
     advanced.clear()
@@ -1549,7 +1549,7 @@ def test_bookkeeping_that_spends_the_period_does_not_starve_the_runs(monkeypatch
     monkeypatch.setattr(forgerun, 'advance', slow)
     _serve(
         monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
-        table={'tick_minutes': 5}, clock=clock,
+        table={'tick': '5 min'}, clock=clock,
     )  # fmt: skip
     assert len(advanced) == 1, 'PLANTED: runs that overrun their own period still stop after one'
 
@@ -1574,7 +1574,7 @@ def test_consecutive_slow_ticks_reach_every_run_least_recently_advanced_first(mo
     for _ in range(2):
         _serve(
             monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
-            table={'tick_minutes': 5}, clock=lambda: now[0],
+            table={'tick': '5 min'}, clock=lambda: now[0],
         )  # fmt: skip
     assert advanced[:2] == shas[:2], 'PLANTED: the first slow tick reaches the first two'
     assert advanced[2] == shas[2], 'the second tick starts at the run the first did not reach'

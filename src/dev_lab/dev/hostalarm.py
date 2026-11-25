@@ -37,6 +37,7 @@ from lab_commons.config import section
 from lab_commons.log import emit
 
 from dev_lab.dev.forgealarm import PRESSURE, Alarm
+from dev_lab.dev.hpcaccount.spec import schedule_tick
 from dev_lab.supervise import hostalarms
 from dev_lab.supervise.alert import Delivery, Notifier
 from dev_lab.supervise.config import load_config
@@ -132,7 +133,7 @@ def step(
 ) -> dict[str, Any]:
     """One tick's reading: measure ``[pressure]`` (default: *root*'s disk), record the state, sound each alarm."""
     table = section('pressure') if table is None else table
-    cadence = float(section('schedule').get('tick_minutes', 5)) * 60  # the tick reads at its own cadence
+    cadence = schedule_tick(section('schedule'))  # the tick reads at its own cadence
     if _supervised(cadence):
         return hostalarms.read()  # ONE OWNER: supervision measures and sounds this host
     declared = Declared.of({'paths': [str(root)], **table}, interval=cadence)

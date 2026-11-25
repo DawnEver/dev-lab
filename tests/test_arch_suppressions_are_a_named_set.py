@@ -219,7 +219,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/hpcaccount/__init__.py',
         'PLC0415',
-        'from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL_MINUTES',
+        'from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL',
     ): 'spec imports the package (division, grantslice) and the roles table; only the tick verb needs its default',
     (
         'src/dev_lab/dev/servelock.py',

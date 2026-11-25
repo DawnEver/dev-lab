@@ -52,7 +52,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
-from lab_commons.units import Q_
 
 from dev_lab.dev import forgereview_batch as batching_
 from dev_lab.dev import forgereview_scope, reviewcode
@@ -407,16 +406,11 @@ def stale_after(review: Review) -> timedelta:
 
 
 def _duration(key: str, value: str) -> timedelta:
-    """The declared *key*'s *value* as a :class:`~datetime.timedelta`; a bare number or a non-duration is refused."""
-    try:
-        quantity = Q_(value)
-    except Exception as bad:
-        msg = f'{key} {value!r} is not a duration; write one such as "1 h"'
-        raise ValueError(msg) from bad
-    if not isinstance(quantity, Q_) or not quantity.check('[time]'):
-        msg = f'{key} {value!r} is not a duration (it needs a unit); write one such as "1 h"'
-        raise ValueError(msg)
-    return timedelta(seconds=float(quantity.m_as('s')))
+    """The declared *key*'s *value* as a :class:`~datetime.timedelta`; a bare number or a non-duration is refused.
+
+    The family's one duration parser reads it (:func:`lab_commons.quantity.parse`); its refusal names *key*.
+    """
+    return timedelta(seconds=parse(key, value, 'duration'))
 
 
 def command_for(

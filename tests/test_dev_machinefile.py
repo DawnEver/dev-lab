@@ -10,7 +10,7 @@ from dev_lab.dev._machinefile import diff, merged
 
 HAND: str = (
     '# this box\n[hpc]\n\n[[hpc.grant]]\nuser = "me"  # mine\nslurm_account = "a"\n\n'
-    '[capabilities.jmag]\nseats = 4  # measured here\n\n[serve]\ntick_minutes = 2\n'
+    '[capabilities.jmag]\nseats = 4  # measured here\n\n[serve]\ntick = "2 min"\n'
 )
 
 
@@ -19,12 +19,12 @@ def test_an_absent_table_is_appended_and_every_other_line_kept() -> None:
     assert out.startswith(HAND.rstrip('\n'))
     parsed = tomllib.loads(out)
     assert parsed['capabilities'] == {'jmag': {'seats': 4}, 'femm': {}}
-    assert parsed['serve'] == {'tick_minutes': 2, 'repos': ['a', 'b']}
+    assert parsed['serve'] == {'tick': '2 min', 'repos': ['a', 'b']}
     assert parsed['hpc']['grant'] == [{'user': 'me', 'slurm_account': 'a'}]
 
 
 def test_an_equal_value_keeps_its_line_and_comment_so_a_second_merge_is_a_no_op() -> None:
-    wanted = {'capabilities.jmag': {'seats': 4}, 'serve': {'tick_minutes': 2}}
+    wanted = {'capabilities.jmag': {'seats': 4}, 'serve': {'tick': '2 min'}}
     assert merged(HAND, wanted) == HAND
     once = merged(HAND, {'serve': {'repos': ['x']}})
     assert merged(once, {'serve': {'repos': ['x']}}) == once
@@ -44,16 +44,16 @@ def test_a_merge_that_would_break_the_file_is_refused() -> None:
 
 
 def test_an_empty_file_gets_the_tables() -> None:
-    assert tomllib.loads(merged('', {'serve': {'tick_minutes': 2.5}})) == {'serve': {'tick_minutes': 2.5}}
+    assert tomllib.loads(merged('', {'serve': {'tick': '2.5 min'}})) == {'serve': {'tick': '2.5 min'}}
     assert diff('a\n', 'a\n', 'c') == ''
 
 
 def test_a_none_value_removes_its_key_and_only_its_line() -> None:
     """A retired key is DROPPED by the merge (``None``); an absent one is a no-op, every other line kept."""
-    out = merged(HAND, {'serve': {'tick_minutes': None}})
+    out = merged(HAND, {'serve': {'tick': None}})
     assert diff(HAND, out, 'c').count('\n-') == 1
     assert tomllib.loads(out)['serve'] == {}
-    assert merged(out, {'serve': {'tick_minutes': None}}) == out
+    assert merged(out, {'serve': {'tick': None}}) == out
     assert tomllib.loads(merged('', {'serve': {'root': None, 'repos': ['a']}})) == {'serve': {'repos': ['a']}}
 
 
