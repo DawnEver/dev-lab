@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from dev_lab.dev import memory
+from dev_lab.dev import memoryentry as entry
 from dev_lab.dev.memory import MemoryRefused
 
 if TYPE_CHECKING:
@@ -66,6 +67,30 @@ def test_redact_swaps_a_span_for_a_placeholder(tmp_path: Path) -> None:
     assert 'acme-host-7' not in text
     with pytest.raises(MemoryRefused, match='not a redaction'):
         memory.redact(tmp_path, rel, 'today', 'tomorrow')
+
+
+def test_a_second_redaction_of_the_same_entry_is_admitted(tmp_path: Path) -> None:
+    """An entry with two private spans takes two redactions: the first one's note is not a changed line."""
+    rel = _entry(tmp_path, body='Measured on acme-host-7 in X:/proj/acme/repo today.')
+    memory.redact(tmp_path, rel, 'X:/proj/acme/', '<projects>/')
+    memory.redact(tmp_path, rel, 'acme-host-7', '<host>')
+    text = (tmp_path / rel).read_text(encoding='utf-8')
+    assert 'Measured on <host> in <projects>/repo today.' in text
+    assert sum(line.startswith('> Redacted ') for line in text.splitlines()) == 2, text
+
+
+def test_planted_a_redaction_never_drops_an_earlier_note(tmp_path: Path) -> None:
+    """PLANTED CONTROL: setting the old notes aside must not let a redaction delete one of them."""
+    rel = _entry(tmp_path, body='Measured on acme-host-7 by jdoe in lab-9.')
+    memory.redact(tmp_path, rel, 'jdoe', '<user>')
+    memory.redact(tmp_path, rel, 'lab-9', '<room>')
+    old = (tmp_path / rel).read_text(encoding='utf-8')
+    note = next(line for line in old.splitlines() if line.startswith('> Redacted '))
+    swapped = old.replace('acme-host-7', '<host>')
+    assert entry.only_redacted(old, swapped.rstrip('\n') + '\n\n' + note + '\n')
+    lines = swapped.splitlines()
+    lines.remove(note)
+    assert not entry.only_redacted(old, '\n'.join(lines) + '\n'), 'one of the two earlier notes was dropped'
 
 
 def test_rename_drops_a_token_and_records_it(tmp_path: Path) -> None:

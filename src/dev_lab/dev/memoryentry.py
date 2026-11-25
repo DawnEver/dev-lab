@@ -158,11 +158,18 @@ def only_amended(old: str, new: str) -> bool:
 
 
 def only_redacted(old: str, new: str) -> bool:
-    """A privacy redaction: the note is added and every other changed line only swaps spans for placeholders."""
-    after_lines = lf(new).splitlines()
-    if not any(_NOTE_LINE.fullmatch(line) for line in after_lines):
+    """A privacy redaction: the note is added and every other changed line only swaps spans for placeholders.
+
+    The notes of earlier redactions are not changed lines: an entry with two private spans takes two redactions
+    (2026-11-25: the second one was refused because the first one's note counted as a removed line). Every
+    earlier note survives -- a redaction adds its note and never drops one.
+    """
+    before_lines, after_lines = lf(old).splitlines(), lf(new).splitlines()
+    old_notes = [line for line in before_lines if _NOTE_LINE.fullmatch(line)]
+    new_notes = [line for line in after_lines if _NOTE_LINE.fullmatch(line)]
+    if len(new_notes) <= len(old_notes) or any(old_notes.count(n) > new_notes.count(n) for n in old_notes):
         return False
-    before = [line for line in lf(old).splitlines() if line.strip()]
+    before = [line for line in before_lines if line.strip() and not _NOTE_LINE.fullmatch(line)]
     after = [line for line in after_lines if line.strip() and not _NOTE_LINE.fullmatch(line)]
     if len(before) != len(after):
         return False
