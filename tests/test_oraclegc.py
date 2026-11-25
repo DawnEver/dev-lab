@@ -140,3 +140,76 @@ def test_there_is_no_delete_verb() -> None:
     with pytest.raises(SystemExit):
         oraclegc.main(['delete'])
     assert not any(hasattr(oraclegc, n) for n in ('delete', 'apply', 'prune'))
+
+
+GOLDEN = 'e' * 64
+SAMPLES = [_row(GOLDEN, 5, 2)]
+FIELD = oraclegc.Pattern('cases/**/*.toml', 'sha256')
+
+
+@pytest.fixture
+def frozen(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    """A repo naming GOLDEN only by a ``sha256 = ...`` field of a cases TOML (an inline table), no lock."""
+    root = tmp_path / 'frozen'
+    root.mkdir()
+    _git(root, 'init', '-q')
+    sha = _commit(root, {'cases/m/golden.toml': f'[source]\nref = {{ sha256 = "{GOLDEN}" }}\n', 'note.toml': ''})
+    return root, {'main': sha}
+
+
+def test_a_field_named_golden_is_kept_when_the_family_declares_it(frozen: tuple[Path, dict[str, str]]) -> None:
+    root, heads = frozen
+    found = report({'frozen': root}, FakeForge({'frozen': heads}), FakeStore(SAMPLES), now=NOW,
+                   family={'frozen': (FIELD,)})  # fmt: skip
+    assert found.unreferenced == ()
+    assert found.referenced == 1
+
+
+def test_a_field_named_golden_is_reported_when_undeclared(frozen: tuple[Path, dict[str, str]]) -> None:
+    root, heads = frozen
+    found = report({'frozen': root}, FakeForge({'frozen': heads}), FakeStore(SAMPLES), now=NOW)
+    assert [u.stored.sha256 for u in found.unreferenced] == [GOLDEN]
+
+
+def test_a_repo_declares_its_own_roots_per_branch(tmp_path: Path) -> None:
+    root = tmp_path / 'own'
+    root.mkdir()
+    _git(root, 'init', '-q')
+    own = '[tool.dev_lab.oraclegc]\nroots = [{ glob = "**/*.toml", key = "golden" }]\n'
+    sha = _commit(root, {'pyproject.toml': own, 'golden.toml': f'golden = "{GOLDEN}"\n'})
+    found = report({'own': root}, FakeForge({'own': {'pr/x': sha}}), FakeStore(SAMPLES), now=NOW)
+    assert found.unreferenced == ()
+
+
+@pytest.mark.parametrize(
+    'table',
+    [
+        {'roots': [{'glob': 'cases/**/*.toml'}]},
+        {'roots': [{'glob': '../x/*.toml', 'key': 'sha256'}]},
+        {'roots': [{'glob': '*.toml', 'key': 'sha 256'}]},
+        {'roots': 'cases/**/*.toml'},
+        {'root': []},
+    ],
+)
+def test_a_malformed_pattern_is_refused(table: object) -> None:
+    with pytest.raises(oraclegc.PatternRefused, match='family'):
+        oraclegc.patterns_of(table, 'family')
+
+
+def test_a_malformed_own_declaration_aborts_the_report_by_name(tmp_path: Path) -> None:
+    root = tmp_path / 'bad'
+    root.mkdir()
+    _git(root, 'init', '-q')
+    sha = _commit(root, {'pyproject.toml': '[tool.dev_lab.oraclegc]\nroots = [{ glob = "*.toml" }]\n'})
+    store = FakeStore(SAMPLES)
+    with pytest.raises(RootsUnread, match=r'bad@.*\[tool.dev_lab.oraclegc\] roots'):
+        report({'bad': root}, FakeForge({'bad': {'main': sha}}), store, now=NOW)
+    assert store.asked == 0
+
+
+def test_the_family_table_is_read_from_the_machine_file() -> None:
+    machine = {'oraclegc': {'repos': {'frozen': {'roots': [{'glob': 'cases/**/*.toml', 'key': 'sha256'}]}}}}
+    assert oraclegc.family_patterns(machine) == {'frozen': (FIELD,)}
+    assert oraclegc.family_patterns({}) == {}
+    with pytest.raises(oraclegc.PatternRefused, match=r'\[oraclegc.repos\] frozen'):
+        oraclegc.family_patterns({'oraclegc': {'repos': {'frozen': {'roots': [{'key': 'sha256'}]}}}})

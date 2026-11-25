@@ -9,6 +9,18 @@ This lane is REPORT-ONLY: there is no delete verb. ``report`` writes, under
 ``<output>/<yy>/<mm>/<dd>/oraclegc/``, the objects no root names (size and age), the sha256s a lock names that the
 store does not hold, and totals. A later ``--apply`` is a separate user ruling.
 
+WHICH FILES NAME ROOTS. By default only :data:`LOCK_NAMES`, read whole. A repo whose objects are named by a field
+in other tracked files declares them in its own pyproject, read at EACH branch tip (:data:`OWN_TABLE`, e.g.
+``roots = [{ glob = "cases/**/*.toml", key = "sha256" }]``). A repo that cannot declare (a frozen pre-v1
+repo whose goldens and material cards carry ``sha256 = "..."`` until v1's migration re-homes them under D86) is
+declared for it in :data:`FAMILY_TABLE` of the FAMILY file (the config source's ``family.toml``), which every machine
+file renders identically (:mod:`dev_lab.dev.devhost`). Not a host file or a local table: a root set that differs per
+machine would make one box's garbage another box's live object. Not dev-lab's pyproject: a member's name is a
+private fact a tracked public file does not hold. A malformed pattern is :class:`PatternRefused`.
+
+``--apply`` (deleting what the report lists) does not exist and is not to be added on this module's say: it is
+gated on the user's ruling after the D86 re-homing, once the frozen repos' field-named roots live in locks.
+
 A PARTIAL ROOT SET IS REFUSED, never reported: a repo whose branches cannot be listed, or whose branch tip is not in
 the local checkout, would make every object only it names look like garbage. :class:`RootsUnread` names each such
 repo and its remedy, and no report is written.
@@ -20,9 +32,11 @@ import argparse
 import re
 import subprocess
 import sys
+import tomllib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 from typing import Any, Final, Protocol
 
@@ -31,17 +45,23 @@ from lab_commons import launch as _door
 from dev_lab.dev.netverb import run_network_verb
 
 __all__ = [
+    'FAMILY_TABLE',
     'LOCK_NAMES',
+    'OWN_TABLE',
     'Forge',
     'GitForge',
     'Missing',
+    'Pattern',
+    'PatternRefused',
     'Report',
     'RootsUnread',
     'Store',
     'Stored',
     'Unreferenced',
     'collect_roots',
+    'family_patterns',
     'main',
+    'patterns_of',
     'render',
     'report',
 ]
@@ -54,10 +74,37 @@ KIND: Final = 'oraclegc'
 _SHA256: Final = re.compile(r'(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])')
 _HEAD: Final = re.compile(r'^([0-9a-f]{40})\trefs/heads/(\S+)$', re.MULTILINE)
 _GIT: Final = 'git'
+_KEY: Final = re.compile(r'[A-Za-z_][A-Za-z0-9_-]*')
+#: Where a repo declares its own root patterns, in its pyproject at each branch tip.
+OWN_TABLE: Final = '[tool.dev_lab.oraclegc] roots'
+#: Where the family declares them for a repo that cannot (a frozen one): the family file, rendered into every
+#: machine file.
+FAMILY_TABLE: Final = '[oraclegc.repos]'
 
 
 class RootsUnread(RuntimeError):
     """One or more repos could not be read; the root set would be partial, so no report is written."""
+
+
+class PatternRefused(RootsUnread):
+    """A declared root pattern is malformed: the repo's roots cannot be read as declared."""
+
+
+@dataclass(frozen=True)
+class Pattern:
+    """Tracked files matching *glob* name roots by the value of their field *key* (``key = "<sha256>"``)."""
+
+    glob: str
+    key: str
+
+    def matches(self, path: str) -> bool:
+        """Whether the tracked POSIX *path* matches; a leading ``**/`` matches the top level too."""
+        return fnmatchcase(path, self.glob) or (self.glob.startswith('**/') and fnmatchcase(path, self.glob[3:]))
+
+
+def _keyed(key: str) -> re.Pattern[str]:
+    """``key = "<sha256>"`` (TOML, inline tables too) or ``"key": "<sha256>"`` (JSON): the sha256."""
+    return re.compile(rf'(?<![\w-])["\']?{re.escape(key)}["\']?\s*[=:]\s*["\']([0-9a-f]{{64}})["\']')
 
 
 class Forge(Protocol):
@@ -138,35 +185,85 @@ def _git(checkout: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )  # fmt: skip
 
 
-def _locks_at(checkout: Path, sha: str, names: Sequence[str]) -> dict[str, str]:
-    """Each lock file in the tree of *sha*: its path -> its text."""
+def _pattern(entry: object, where: str) -> Pattern:
+    if not isinstance(entry, dict) or set(entry) != {'glob', 'key'}:
+        msg = f'{where}: each root is {{ glob = "<tracked-file glob>", key = "<field>" }}, got {entry!r}'
+        raise PatternRefused(msg)
+    glob, key = entry['glob'], entry['key']
+    if not isinstance(glob, str) or not glob or '\\' in glob or glob.startswith('/') or '..' in glob.split('/'):
+        msg = f'{where}: glob {glob!r} must be a relative POSIX glob inside the tree'
+        raise PatternRefused(msg)
+    if not isinstance(key, str) or _KEY.fullmatch(key) is None:
+        msg = f'{where}: key {key!r} must be one bare field name'
+        raise PatternRefused(msg)
+    return Pattern(glob, key)
+
+
+def patterns_of(table: object, where: str) -> tuple[Pattern, ...]:
+    """The ``roots`` list of an ``oraclegc`` table, validated; a malformed one is :class:`PatternRefused`."""
+    if table is None:
+        return ()
+    if not isinstance(table, dict) or set(table) - {'roots'} or not isinstance(table.get('roots', []), list):
+        msg = f'{where}: the table holds only roots = [{{ glob = ..., key = ... }}, ...], got {table!r}'
+        raise PatternRefused(msg)
+    return tuple(_pattern(entry, where) for entry in table.get('roots', []))
+
+
+def family_patterns(machine: Mapping[str, Any]) -> dict[str, tuple[Pattern, ...]]:
+    """:data:`FAMILY_TABLE` of the parsed *machine* file: repo name -> its declared root patterns."""
+    repos = machine.get('oraclegc', {}).get('repos', {})
+    return {name: patterns_of(table, f'{FAMILY_TABLE} {name}') for name, table in repos.items()}
+
+
+def _show(checkout: Path, sha: str, path: str) -> str:
+    shown = _git(checkout, 'show', f'{sha}:{path}')
+    if shown.returncode != 0:
+        msg = f'{checkout.name}: {sha[:12]}:{path} unreadable ({shown.stderr.strip()[-200:]})'
+        raise RootsUnread(msg)
+    return shown.stdout
+
+
+def _roots_at(
+    name: str, checkout: Path, sha: str, names: Sequence[str], family: Sequence[Pattern]
+) -> dict[str, list[str]]:
+    """Each file at *sha* that names roots -> the sha256s it names: locks whole, declared files by their key."""
     listed = _git(checkout, 'ls-tree', '-r', '--name-only', sha)
     if listed.returncode != 0:
         msg = (
-            f'{checkout.name}: {sha[:12]} is not in the local checkout ({listed.stderr.strip()[-200:]}) -- '
+            f'{name}: {sha[:12]} is not in the local checkout ({listed.stderr.strip()[-200:]}) -- '
             f'python -m dev_lab.dev.netverb -- git -C {checkout} fetch origin'
         )
         raise RootsUnread(msg)
-    found = {}
-    for path in listed.stdout.splitlines():
+    paths = listed.stdout.splitlines()
+    patterns = list(family)
+    if 'pyproject.toml' in paths:
+        own = tomllib.loads(_show(checkout, sha, 'pyproject.toml')).get('tool', {}).get('dev_lab', {})
+        patterns += patterns_of(own.get('oraclegc'), f'{name}@{sha[:12]} {OWN_TABLE}')
+    found: dict[str, list[str]] = {}
+    for path in paths:
+        keys = [p.key for p in patterns if p.matches(path)]
         if PurePosixPath(path).name in names:
-            shown = _git(checkout, 'show', f'{sha}:{path}')
-            if shown.returncode != 0:
-                msg = f'{checkout.name}: {sha[:12]}:{path} unreadable ({shown.stderr.strip()[-200:]})'
-                raise RootsUnread(msg)
-            found[path] = shown.stdout
+            found[path] = _SHA256.findall(_show(checkout, sha, path))
+        elif keys:
+            text = _show(checkout, sha, path)
+            found[path] = [sha256 for key in keys for sha256 in _keyed(key).findall(text)]
     return found
 
 
 def collect_roots(
-    repos: Mapping[str, Path], forge: Forge, *, names: Sequence[str] = LOCK_NAMES
+    repos: Mapping[str, Path],
+    forge: Forge,
+    *,
+    names: Sequence[str] = LOCK_NAMES,
+    family: Mapping[str, Sequence[Pattern]] | None = None,
 ) -> tuple[dict[str, list[str]], int]:
-    """Every sha256 any lock names on any branch of any repo -> where; and how many branches were read.
+    """Every sha256 any root file names on any branch of any repo -> where; and how many branches were read.
 
     Raises:
-        RootsUnread: naming EVERY repo that could not be read, after trying all of them.
+        RootsUnread: naming EVERY repo that could not be read (or declares a malformed pattern), after trying all.
 
     """
+    family = {} if family is None else family
     roots: dict[str, list[str]] = {}
     unread: list[str] = []
     branches = 0
@@ -174,8 +271,8 @@ def collect_roots(
         try:
             heads = forge.heads(name, checkout)
             for branch, sha in sorted(heads.items()):
-                for path, text in _locks_at(checkout, sha, names).items():
-                    for sha256 in _SHA256.findall(text):
+                for path, named in _roots_at(name, checkout, sha, names, family.get(name, ())).items():
+                    for sha256 in named:
                         roots.setdefault(sha256, []).append(f'{name}:{branch}:{path}')
             branches += len(heads)
         except RootsUnread as cause:
@@ -199,10 +296,16 @@ def _listed(rows: Iterable[Mapping[str, Any]]) -> tuple[list[Stored], list[str]]
 
 
 def report(
-    repos: Mapping[str, Path], forge: Forge, store: Store, *, now: datetime, names: Sequence[str] = LOCK_NAMES
+    repos: Mapping[str, Path],
+    forge: Forge,
+    store: Store,
+    *,
+    now: datetime,
+    names: Sequence[str] = LOCK_NAMES,
+    family: Mapping[str, Sequence[Pattern]] | None = None,
 ) -> Report:
     """The roots first (a partial set raises before the store is asked), then the store against them."""
-    roots, branches = collect_roots(repos, forge, names=names)
+    roots, branches = collect_roots(repos, forge, names=names, family=family)
     stored, foreign = _listed(store.files())
     held = {item.sha256 for item in stored}
     unreferenced = tuple(
@@ -270,6 +373,7 @@ class _RunStore:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``report [--lock NAME ...]``: write the report; exit 1 naming the unread repos when the roots are partial."""
+    from lab_commons.config import config_path  # noqa: PLC0415
     from lab_commons.home import repos  # noqa: PLC0415
 
     from dev_lab.dev.datedlog import dated_log, declared_output  # noqa: PLC0415
@@ -282,7 +386,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     tree = Path.cwd()
     now = datetime.now(UTC)
     try:
-        found = report(repos(), GitForge(), _RunStore(tree), now=now, names=tuple(args.lock or LOCK_NAMES))
+        machine = config_path()
+        family = family_patterns(tomllib.loads(machine.read_text(encoding='utf-8')) if machine.is_file() else {})
+        found = report(
+            repos(), GitForge(), _RunStore(tree), now=now, names=tuple(args.lock or LOCK_NAMES), family=family
+        )
     except RootsUnread as cause:
         sys.stderr.write(f'REFUSED: {cause}\n')
         return 1
