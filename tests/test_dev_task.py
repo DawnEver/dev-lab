@@ -12,6 +12,7 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -125,6 +126,61 @@ def test_a_grant_expires(ledger: Path) -> None:
     taskauthority.grant_from_prompt(ledger, '/task open x', now=0.0)
     with pytest.raises(taskauthority.AuthorityRefused):
         taskauthority.consume(ledger, 'open', 'x', now=taskauthority.TTL_S + 1.0)
+
+
+def _hook(prompt: str) -> int:
+    return taskauthority.main(['hook'], stdin=io.StringIO(json.dumps({'prompt': prompt, 'session_id': 's'})))
+
+
+def test_an_approve_that_grants_nothing_says_why(ledger: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Measured 2026-11-25: `approve 294277` came 36 min after its request and was dropped without a word."""
+    code = taskauthority.request(ledger, 'open', 'x', 'goal', now=time.time() - taskauthority.TTL_S - 360)
+    assert _hook(f'approve {code}') == 0
+    said = capsys.readouterr().out
+    assert f'approve {code} granted nothing' in said
+    assert 'past its 30-min life' in said
+    assert 'Door: python -m dev_lab.dev.task request open x' in said
+    assert not any(e['event'] == 'granted' for e in taskauthority.events(ledger))
+    assert _hook('approve abcdef') == 0
+    assert 'no request holds the code abcdef' in capsys.readouterr().out
+    fresh = taskauthority.request(ledger, 'open', 'y', 'goal')
+    assert _hook(f'approve {fresh}') == 0
+    assert 'granted nothing' not in capsys.readouterr().out, 'planted control: a live request is granted'
+    assert _hook(f'approve {fresh}') == 0
+    assert f'the code {fresh} already granted open y' in capsys.readouterr().out
+
+
+def test_a_refusal_names_why_no_grant_is_recorded(ledger: Path) -> None:
+    with pytest.raises(taskauthority.AuthorityRefused) as none:
+        taskauthority.consume(ledger, 'open', 'x')
+    assert 'no request and no grant is recorded' in str(none.value)
+    assert 'python -m dev_lab.dev.taskauthority hook' in str(none.value), 'it names the row that writes grants'
+    code = taskauthority.request(ledger, 'open', 'x', 'goal')
+    with pytest.raises(taskauthority.AuthorityRefused) as pending:
+        taskauthority.consume(ledger, 'open', 'x')
+    assert f'request {code}' in str(pending.value)
+    assert 'not live in that session' in str(pending.value)
+    assert 'dev_lab.dev.dep --lock-upgrade' in str(pending.value), 'the door: relock the session repo onto the row'
+    with pytest.raises(taskauthority.AuthorityRefused) as stale:
+        taskauthority.consume(ledger, 'open', 'x', now=time.time() + taskauthority.TTL_S + 60)
+    assert 'past its 30-min life' in str(stale.value)
+
+
+def test_a_grant_dated_in_the_future_is_not_live(ledger: Path) -> None:
+    """Measured 2026-11-25: rem's history dates events in ms, so a folded unspent grant read as live forever."""
+    now = time.time()
+    rem_ms = {'event': 'granted', 'id': 'g1', 'verb': 'close', 'slug': 'a', 'at': int((now - 3600) * 1000)}
+    assert taskauthority.fold(ledger, [json.dumps(rem_ms)]) == 1
+    assert taskauthority.events(ledger)[0]['at'] == pytest.approx(now - 3600, abs=1.0), 'the fold migrates ms to s'
+    with pytest.raises(taskauthority.AuthorityRefused):
+        taskauthority.consume(ledger, 'close', 'a', now=now)
+    ahead = {'event': 'granted', 'id': 'g2', 'verb': 'close', 'slug': 'b', 'at': (now + 3600) * 1000}
+    with taskauthority.store(ledger).open('a', encoding='utf-8') as out:  # a record an older fold left as it was
+        out.write(json.dumps(ahead) + '\n')
+    with pytest.raises(taskauthority.AuthorityRefused):
+        taskauthority.consume(ledger, 'close', 'b', now=now)
+    taskauthority.grant_from_prompt(ledger, '/task close c', now=now)
+    assert taskauthority.consume(ledger, 'close', 'c', now=now + 1.0), 'planted control: a fresh grant is live'
 
 
 def test_appends_mint_the_next_id_and_commit(ledger: Path, tmp_path: Path) -> None:
