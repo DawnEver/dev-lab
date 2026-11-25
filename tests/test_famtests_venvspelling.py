@@ -111,7 +111,9 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-TAKEN 2026-11-21 AT 656 (the 11-20 wave: ask, bringup, outputcode, a ledger carrier, size bands): floor 631.
 #: RE-TAKEN 2026-11-23 AT 675 (the 11-21..23 wave: tickholder, tickwall, tickstop, look, largeobjects, msyspath):
 #: floor 650 (was 631; 675 - 631 = 44 outgrew the 40 margin).
-FILE_FLOOR = 650
+#: RE-TAKEN 2026-11-25 AT 726 (the 1124 wave: irschema, layout, writeroots, strayleaks, docrows, nativefirst):
+#: floor 701 (726 - 650 = 76 outgrew the 40 margin).
+FILE_FLOOR = 701
 
 
 def _tree() -> dict[str, str]:
