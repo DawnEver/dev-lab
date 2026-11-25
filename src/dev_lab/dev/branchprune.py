@@ -49,7 +49,8 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.branchdelete import DOOR, UNAPPROVED, delete, delete_contained_tags, delete_task, discard, sweep
+from dev_lab.dev._branch_tags import delete_contained_tags
+from dev_lab.dev.branchdelete import DOOR, UNAPPROVED, delete, delete_task, discard, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.deletejudge import ORIGIN

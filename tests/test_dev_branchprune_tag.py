@@ -12,7 +12,7 @@ from pathlib import Path
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 
-from dev_lab.dev.branchdelete import CONTAINED_TAG_DOOR, TAG_EVENT, delete_contained_tags
+from dev_lab.dev._branch_tags import CONTAINED_TAG_DOOR, TAG_EVENT, delete_contained_tags
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 
