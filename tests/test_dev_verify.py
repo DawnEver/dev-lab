@@ -45,7 +45,16 @@ from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.testcells import TestCell
 from lab_commons.outcomes import Cell, Conclusion, Expectation, Reason, Record, Status
 
-from dev_lab.dev import forgerequest, localpart, platformparts, serialpass, verify, verifybox, verifysteps
+from dev_lab.dev import (
+    _verify_coverage,
+    forgerequest,
+    localpart,
+    platformparts,
+    serialpass,
+    verify,
+    verifybox,
+    verifysteps,
+)
 from dev_lab.dev.datedlog import UndeclaredOutput, date_parts
 from dev_lab.dev.famtests import alwayson
 from dev_lab.dev.inflight import RunKey, seat
@@ -2064,8 +2073,8 @@ def test_the_coverage_total_is_read_from_the_markdown_report(tmp_path: Path) -> 
         '| **TOTAL** | **7** | **1** | **86%** |\n',
         encoding='utf-8',
     )
-    assert verifysteps.coverage_total(report) == '86%'
-    assert verifysteps.coverage_total(tmp_path / 'absent.md') is None  # PLANTED: no report, no number
+    assert _verify_coverage.coverage_total(report) == '86%'
+    assert _verify_coverage.coverage_total(tmp_path / 'absent.md') is None  # PLANTED: no report, no number
 
 
 def test_pytest_cov_REALLY_writes_the_report_the_door_names(tmp_path: Path) -> None:
@@ -2087,10 +2096,10 @@ def test_pytest_cov_REALLY_writes_the_report_the_door_names(tmp_path: Path) -> N
             '-p',
             'no:cacheprovider',
             *family_off,
-            *verifysteps.coverage_args(tmp_path, log),
+            *_verify_coverage.coverage_args(tmp_path, log),
         ],
         cwd=tmp_path,
-        env={**os.environ, **verifysteps.coverage_env(tmp_path, log)},
+        env={**os.environ, **_verify_coverage.coverage_env(tmp_path, log)},
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -2098,13 +2107,13 @@ def test_pytest_cov_REALLY_writes_the_report_the_door_names(tmp_path: Path) -> N
         check=False,
     )
     assert done.returncode == 0, done.stdout + done.stderr
-    assert verifysteps.coverage_total(verifysteps.coverage_report(tmp_path, log)) == '86%'
+    assert _verify_coverage.coverage_total(_verify_coverage.coverage_report(tmp_path, log)) == '86%'
 
 
 def test_planted_an_UNDECLARED_output_root_is_refused_naming_the_key(tmp_path: Path) -> None:
     """No default root: a repo that declares none is told the key, never handed another repo's answer."""
     with pytest.raises(UndeclaredOutput, match=r'\[tool\.dev_lab\.parts\] output'):
-        verifysteps.coverage_report(tmp_path, tmp_path / 'verify-x.log')
+        _verify_coverage.coverage_report(tmp_path, tmp_path / 'verify-x.log')
 
 
 def test_each_failed_step_in_the_summary_names_its_door_and_a_failed_test_its_log(tmp_path: Path) -> None:

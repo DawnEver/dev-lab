@@ -117,7 +117,7 @@ complete part or the forge's acceptance gates.
 - The verdict line is written at the end of the run's own log; the full log is the evidence.
 - The tree stamp carries its dirty bit on a measurement too; it records which tree the counts are about.
 - Numerical regression uses tolerances, never hashes.
-- **Every pytest step writes a coverage REPORT, never a gate** (`verifysteps.coverage_args`): pytest-cov
+- **Every pytest step writes a coverage REPORT, never a gate** (`_verify_coverage.coverage_args`): pytest-cov
   writes `<output>/<yy>/<mm>/<dd>/coverage/<log stem>.coverage.md` (`datedlog.output_dir`), its data file beside
   it, and verify prints the TOTAL line. A serial stage appends to the parallel stage's data, so the report covers the whole run.
   There is no `--cov-fail-under`: a coverage number never moves a verdict. `--cov` names no source, so a

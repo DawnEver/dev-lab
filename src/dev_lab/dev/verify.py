@@ -50,6 +50,7 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import depneeds, verifiedby
+from dev_lab.dev._verify_address import tree_address
 from dev_lab.dev.changeselect import changed_paths, select
 from dev_lab.dev.footprint import Footprints
 from dev_lab.dev.forgeclaim import this_machine
@@ -78,7 +79,7 @@ from dev_lab.dev.verifybox import (
     WAIT_S,
     serial_width,
 )
-from dev_lab.dev.verifysteps import run_verify, tree_address
+from dev_lab.dev.verifysteps import run_verify
 from dev_lab.dev.workstationverdict import after_run, before_run, head_tree, workstation_fields, workstation_refusal
 
 __all__ = [
