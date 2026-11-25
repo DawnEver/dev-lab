@@ -150,3 +150,43 @@ def test_a_crate_layout_toml_declares_but_the_tree_lacks_is_allowed(tmp_path: Pa
 
 def test_no_rust_table_means_rust_is_not_judged(tmp_path: Path) -> None:
     assert _problems(tmp_path, declared='[python.owners]\n') == []
+
+
+#: D113: one crate, NORMAL for some crates and DEV (tests only) for every crate.
+SPLIT = DECLARED.replace(
+    'serde_json = { crates = ["*"], kind = "dev", features = ["float_roundtrip"], reason = "goldens" }',
+    'serde_json = { crates = ["middle"], dev_crates = ["*"], features = ["float_roundtrip"], reason = "goldens" }',
+)
+
+
+def test_a_dev_crates_grant_admits_tests_everywhere_and_normal_only_where_crates_says(tmp_path: Path) -> None:
+    """THE PLANTED PAIR: base's dev-dependency passes under dev_crates; as base's normal one it is refused."""
+    assert _problems(tmp_path, declared=SPLIT) == []
+    normal = {
+        'rust/crates/base/Cargo.toml': _crate(
+            'base', deps='serde_json = { workspace = true, features = ["float_roundtrip"] }'
+        )
+    }
+    found = _problems(tmp_path / 'normal', normal, declared=SPLIT)
+    assert len(found) == 1, found
+    assert (
+        'crate base depends on serde_json (normal), but [rust.external] serde_json allows it only in middle' in found[0]
+    )
+    fine = {
+        'rust/crates/middle/Cargo.toml': _crate(
+            'middle',
+            deps=(
+                'base = { path = "../base" }\nrayon = "1"\n'
+                'serde_json = { workspace = true, features = ["float_roundtrip"] }'
+            ),
+            build='cc = "1"',
+        )
+    }
+    assert _problems(tmp_path / 'fine', fine, declared=SPLIT) == []
+
+
+def test_dev_crates_is_refused_on_a_row_that_already_grants_dev_everywhere(tmp_path: Path) -> None:
+    redundant = DECLARED.replace('kind = "dev", features', 'kind = "dev", dev_crates = ["*"], features')
+    (tmp_path / deptable.FILE).write_text(redundant, encoding='utf-8')
+    with pytest.raises(deptable.DependenciesError, match='dev_crates'):
+        deptable.load(tmp_path)
