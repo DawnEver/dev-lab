@@ -29,7 +29,8 @@ from dev_lab.dev import disclosure, forgeclient, pushdelete, walls
 from dev_lab.dev.branchdelete import delete
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.githooks.runner import ZERO_SHA, run_stage
+from dev_lab.dev.githooks._gitread import ZERO_SHA
+from dev_lab.dev.githooks.runner import run_stage
 from dev_lab.dev.githooks.table import base_rows, merge
 from dev_lab.dev.lanepolicy import Derived, policy_from
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report

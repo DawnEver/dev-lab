@@ -18,16 +18,10 @@ import pytest
 from _venv_fake import linked_env
 
 from dev_lab.dev import venvpointer, walls
+from dev_lab.dev.githooks import _gitread, runner
 from dev_lab.dev.githooks import main as githooks_main
-from dev_lab.dev.githooks import runner
-from dev_lab.dev.githooks.runner import (
-    PUSH_URL_ENV,
-    ZERO_SHA,
-    borrowed_interpreter,
-    parse_push_lines,
-    resolve,
-    run_stage,
-)
+from dev_lab.dev.githooks._gitread import ZERO_SHA, parse_push_lines
+from dev_lab.dev.githooks.runner import PUSH_URL_ENV, borrowed_interpreter, resolve, run_stage
 from dev_lab.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
 from dev_lab.dev.metrics import PUSH, REFUSAL, read
 
@@ -729,7 +723,7 @@ def test_a_failing_git_query_of_the_runner_names_its_cause_and_door(repo: Path, 
 
     (repo / 'clean.txt').write_text('clean\n', encoding='utf-8')
     _git(repo, 'add', 'clean.txt')
-    monkeypatch.setattr(runner, '_git', broken)
+    monkeypatch.setattr(_gitread, 'git', broken)  # the staged-path read is the one that fails
     assert run_stage('pre-commit', root=repo) == 1
     said = capsys.readouterr().err
     assert 'GITHOOKS-GIT-FAILED' in said
