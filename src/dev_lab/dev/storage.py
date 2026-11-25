@@ -43,7 +43,6 @@ from dev_lab.dev.gitdirs import common_dir
 from dev_lab.dev.hpcaccount.grantslice import read_machine
 
 __all__ = [
-    'DEFAULT_RCLONE',
     'MARKER',
     'ROOTS_ENV',
     'Run',
@@ -68,8 +67,6 @@ __all__ = [
 #: The file a migration leaves at the bound root, naming the tree it came from.
 MARKER: Final = '.storage-migrated'
 
-#: Where ``render`` writes when no ``--to`` is given: outside every repo, beside the machine's config.
-DEFAULT_RCLONE: Final = Path('~/.config/lab-commons/rclone.conf')
 #: A check answers in seconds or says why: rclone's default retries made a refused key look like a hung terminal
 #: (measured 2026-11-20).
 CHECK_BOUNDS: Final = ('--contimeout', '15s', '--timeout', '30s', '--retries', '1', '--low-level-retries', '1')
@@ -233,7 +230,7 @@ def render(to: Path, *, repo: Path, declared: _storage.Storage | None = None) ->
 
     declared = _storage.declared() if declared is None else declared
     if (to := to.expanduser()).resolve().is_relative_to(repo.resolve()):
-        msg = f'the rclone config is never in a repo: render it outside {repo} (e.g. {DEFAULT_RCLONE})'
+        msg = f'the rclone config is never in a repo: render it outside {repo} (e.g. {_objects.RCLONE_CONFIG})'
         raise ArtifactRefused(msg)
     to.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(to, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -268,7 +265,7 @@ type Run = Callable[..., subprocess.CompletedProcess[str]]
 
 
 def check(
-    remote: str, *, repo: Path, to: Path = DEFAULT_RCLONE, declared: _storage.Storage | None = None,
+    remote: str, *, repo: Path, to: Path = _objects.RCLONE_CONFIG, declared: _storage.Storage | None = None,
     run: Run = _door.run, rclone: Sequence[str] = (),
 ) -> str:  # fmt: skip
     """Render, then list *remote*'s top level through rclone; what was reached, value-free.
@@ -297,7 +294,7 @@ def check(
 
 def run_objects(
     repo: Path, *, declared: _storage.Storage | None = None, rclone: Sequence[str] = (), run: Run = _door.run,
-    to: Path = DEFAULT_RCLONE,
+    to: Path = _objects.RCLONE_CONFIG,
 ) -> _objects.RcloneObjects | None:  # fmt: skip
     """The object store every run on this machine uses: the family's ``[storage] runs``, proven reached.
 
@@ -333,10 +330,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     where = sub.add_parser('where', help='print each kind root of this checkout')
     where.add_argument('kinds', nargs='*')
     out = sub.add_parser('render', help='write the reached rclone remotes, owner-only, outside every repo')
-    out.add_argument('--to', type=Path, default=DEFAULT_RCLONE)
+    out.add_argument('--to', type=Path, default=_objects.RCLONE_CONFIG)
     probe = sub.add_parser('check', help='render, then list one reached remote through rclone')
     probe.add_argument('remote')
-    probe.add_argument('--to', type=Path, default=DEFAULT_RCLONE)
+    probe.add_argument('--to', type=Path, default=_objects.RCLONE_CONFIG)
     move = sub.add_parser('migrate', help='move a bound kind out of the checkout once')
     move.add_argument('kind')
     shown = sub.add_parser('publish', help='write the bound roots for the agent-guard engine')

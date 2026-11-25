@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from lab_commons import home as _home
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
@@ -150,12 +151,8 @@ def platform_key(system: str | None = None, machine: str | None = None) -> str:
 
 
 def tool_dir(*, windows: bool | None = None, environ: Mapping[str, str] | None = None) -> Path:
-    """Where this door installs: ``~/.local/bin`` on POSIX, ``%LOCALAPPDATA%/dev-lab/bin`` on Windows."""
-    env = os.environ if environ is None else environ
-    if os.name == 'nt' if windows is None else windows:
-        base = env.get('LOCALAPPDATA') or str(Path(env.get('USERPROFILE', str(Path.home()))) / 'AppData' / 'Local')
-        return Path(base) / 'dev-lab' / 'bin'
-    return Path(env.get('HOME', str(Path.home()))) / '.local' / 'bin'
+    """Where this door installs: :func:`lab_commons.home.pinned_bin`, the one place a product resolves it too."""
+    return _home.pinned_bin(windows=windows, environ=environ)
 
 
 def resolve(
