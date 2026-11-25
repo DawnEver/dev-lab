@@ -46,6 +46,6 @@ OUTPUT_HOLDS_NO_CODE: dict[str, object] = {
         'git log > output/logs/26/11/20/merge/log.txt',
         'git status > output/logs/26/11/20/merge/status.txt',
         'cp output/logs/26/11/20/case/record.json scratch/26/11/20/x/',
-        'git bundle create C:/backup/lane.bundle HEAD',
+        'git bundle verify output/moved/lane.bundle',
     ),
 }

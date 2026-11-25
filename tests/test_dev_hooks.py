@@ -104,7 +104,10 @@ def test_every_row_lets_its_near_misses_through(rule: DenyRule) -> None:
     denied elsewhere is the sealed road, reached by a different street.
     """
     assert rule.permits, f'{rule.id} names no near-miss, so nothing says its pattern is not simply always true'
-    denied = {text: denies(DENY_RULES, text, _REMEDIES) for text in rule.permits}
+    # An asks row is skipped (this one too): here its prefilter reads as a refusal, while its judge (which needs a repo)
+    # admits these; the real engine, judges included, is test_dev_agenthooks' corpus.
+    rules = [other for other in DENY_RULES if other.asks is None]
+    denied = {text: denies(rules, text, _REMEDIES) for text in rule.permits}
     caught = {text: by for text, by in denied.items() if by is not None}
     assert caught == {}, f'{rule.id} declares these permitted and the registry refuses them: {caught}'
 
@@ -125,7 +128,7 @@ def test_every_row_names_an_exit_and_renders_it(rule: DenyRule) -> None:
 def test_a_rule_that_needs_a_remedy_refuses_to_render_without_one() -> None:
     """A reason whose exit went missing reads exactly like one whose exit is a plain command."""
     needy = [rule for rule in DENY_RULES if rule.needs is not None]
-    assert needy, 'no row needs a repo artefact, so this control is checking nothing'
+    assert needy, 'no row needs a repo artifact, so this control is checking nothing'
     with pytest.raises(UnremediedRule, match='no exit to name'):
         needy[0].reason()
     with pytest.raises(UnremediedRule, match='answers a different question'):
@@ -290,7 +293,11 @@ def test_an_unknown_severity_raises() -> None:
 
 
 #: The rows whose pattern only prefilters and a module judges, as a NAMED SET.
-ASKING_ROWS = {'TRACKED-CITES-NO-EPHEMERAL': 'dev_lab.dev.journaldoor'}
+ASKING_ROWS = {
+    'TRACKED-CITES-NO-EPHEMERAL': 'dev_lab.dev.journaldoor',
+    'USER-FROZEN-FILES': 'dev_lab.dev.frozen',
+    'WRITES-STAY-IN-THE-TREE': 'dev_lab.dev.writeroots',
+}
 
 
 def test_the_asking_rows_are_a_named_set_and_render_their_judge() -> None:
@@ -310,3 +317,19 @@ def test_an_asks_naming_no_dev_lab_module_raises(asks: str) -> None:
     """
     with pytest.raises(ValueError, match='names no dev_lab module'):
         replace(rules_by_id(DENY_RULES)['PUSH-FORCE'], asks=asks)
+
+
+#: A consumer's OUTPUT-REDIRECT-IS-DATED row (its own ``deny-rules.json``) refuses a
+#: redirection into ``output/`` that is not ``output/logs/<yy>/<mm>/<dd>/<kind>/<name>``. That row lives
+#: in the consumer, so the whole-registry near-miss test above cannot see it; a permit this kit renders
+#: into the consumer must still be one the consumer's own row lets through.
+_UNDATED_OUTPUT_REDIRECT = re.compile(r'>>?\s*["\']?output[/\\](?!logs[/\\]\d\d[/\\]\d\d[/\\]\d\d[/\\][^/\\\s]+[/\\])')
+
+
+@pytest.mark.parametrize('rule', DENY_RULES, ids=lambda rule: rule.id)
+def test_no_permit_redirects_into_undated_output(rule: DenyRule) -> None:
+    """A planted control: ``echo x > output/a.bak`` is the shape this test exists to refuse."""
+    assert _UNDATED_OUTPUT_REDIRECT.search('echo x > output/a.bak')
+    assert not _UNDATED_OUTPUT_REDIRECT.search('git log > output/logs/26/11/20/merge/log.txt')
+    undated = [text for text in rule.permits if _UNDATED_OUTPUT_REDIRECT.search(text)]
+    assert undated == [], f'{rule.id} permits a redirection a consumer refuses as OUTPUT-REDIRECT-IS-DATED: {undated}'

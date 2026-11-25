@@ -13,7 +13,7 @@ THREE PARTS, AND ALL THREE MUST BE LIVE. Any one of them missing makes the other
 each fails in its own way, so each is reported by name rather than collapsed into one boolean:
 
 ``engine``   ``.claude/hooks/deny-commands.js`` -- installed from :mod:`dev_lab.dev.agenthooks`
-             and recognised by its stamp, so a drifted copy is a finding rather than a fork.
+             and recognized by its stamp, so a drifted copy is a finding rather than a fork.
 ``rules``    ``.claude/hooks/deny-rules.json`` -- the repo's OWN rendered declaration. This module
              never writes it: which rules a repo can honestly ship is
              :mod:`dev_lab.dev.hook_adoption`'s question, answered from that repo's remedies, and
@@ -58,7 +58,6 @@ from dev_lab.dev.agent_wiring import (
 )
 from dev_lab.dev.agenthooks import STAMP, engine_source
 from dev_lab.dev.launcherplan import launcher_plan
-from dev_lab.dev.plugin_settings import disable_plugins, live_disabled_plugins
 from dev_lab.dev.trackedrender import Kit, RenderRefused, check_render
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -193,7 +192,7 @@ def _stamp_block(text: str) -> tuple[str, ...]:
 def _without_stamp(text: str) -> str:
     """*text* with its provenance block removed.
 
-    How an UNSTAMPED copy is recognised as the same engine. It is the difference between "somebody
+    How an UNSTAMPED copy is recognized as the same engine. It is the difference between "somebody
     wrote their own engine here" and "this copy predates the shipped payload", and those two need
     different remedies.
     """
@@ -268,7 +267,6 @@ def _inspect_wiring(path: Path, repo: Path) -> tuple[str, str]:
     if HOOK_COMMAND not in ours:
         return STALE, f'runs the engine with other arguments: {ours[0]!r}, not {HOOK_COMMAND!r}'
     stale = _drift_lines(settings, repo)
-    stale += [f'enabledPlugins does not turn off {", ".join(p)}' for p in [live_disabled_plugins(settings)] if p]
     if stale:
         return STALE, '; '.join(stale) + ' -- re-install to upgrade'
     return INSTALLED, f'PreToolUse {_MATCHER}: {HOOK_COMMAND}'
@@ -285,14 +283,14 @@ def guard_installation(repo: Path) -> GuardReport:
 
 
 def wire_settings(settings: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
-    """*settings* with the rendered rows wired, the family's disabled plugins off, and NOTHING ELSE MOVED.
+    """*settings* with the rendered rows wired and NOTHING ELSE MOVED (the whole file: dev_lab.dev.claudesettings).
 
     The rows are :func:`dev_lab.dev.agent_wiring.rows` of *root*: the family's and what the repo declares.
 
     THE RENDERER OWNS EVERY ROW THAT IS OURS -- the engine, and any launcher row running a ``dev_lab.dev`` module --
     so every such row is removed wherever it stands (a retired handler, a hand-wired copy, a partial shell matcher)
-    and the rendered rows are appended, one entry each. A repo's own hooks and ``enabledPlugins`` entries are kept;
-    :mod:`dev_lab.dev.plugin_settings` owns ours. Pure over its argument: the input is not mutated.
+    and the rendered rows are appended, one entry each. A repo's own hooks are kept.
+    Pure over its argument: the input is not mutated.
     """
     out = json.loads(json.dumps(settings))  # a deep copy through the same encoder that writes it
     hooks = out.setdefault('hooks', {})
@@ -309,7 +307,7 @@ def wire_settings(settings: dict[str, Any], root: Path | None = None) -> dict[st
         hook = {'type': 'command', 'command': row.command, 'timeout': row.timeout}
         entry = {'matcher': row.matcher, 'hooks': [hook]} if row.matcher else {'hooks': [hook]}
         hooks.setdefault(row.event, []).append(entry)
-    return disable_plugins(out)
+    return out
 
 
 def _ours(hook: object) -> bool:
@@ -351,17 +349,28 @@ def _text(text: str) -> bytes:
     return text.replace('\n', os.linesep).encode('utf-8')
 
 
+def _copy_plan(path: Path, shipped: Path) -> bytes | None:
+    """The bytes that write the shipped TEXT file *shipped* to *path*, or ``None`` when its text is there.
+
+    Compared as text: a checkout under ``core.autocrlf`` holds it in the ending git chose, which is no change.
+    """
+    text = shipped.read_text(encoding='utf-8')
+    if path.exists() and path.read_text(encoding='utf-8', errors='replace') == text:
+        return None
+    return _text(text)
+
+
 def _resolvers(dirs: set[Path]) -> tuple[dict[Path, bytes], list[str]]:
     """The ONE environment resolver into each of *dirs*: the launcher and the engine both require it."""
-    shipped = _LAUNCHER_SHIPPED.with_name(_RESOLVER).read_bytes()
     writes: dict[Path, bytes] = {}
     actions = []
     for beside in sorted(dirs):
         resolver = beside / _RESOLVER
-        if resolver.exists() and resolver.read_bytes() == shipped:
+        write = _copy_plan(resolver, _LAUNCHER_SHIPPED.with_name(_RESOLVER))
+        if write is None:
             actions.append(f'environment resolver already present: {resolver}')
         else:
-            writes[resolver] = shipped
+            writes[resolver] = write
             actions.append(f'environment resolver installed: {resolver}')
     return writes, actions
 
@@ -388,11 +397,11 @@ def _planned(repo: Path, *, force: bool) -> tuple[dict[Path, bytes], list[str]]:
     actions.append(action)
 
     catalog = launcher.with_name('native_session.json')
-    catalog_bytes = _LAUNCHER_SHIPPED.with_name('native_session.json').read_bytes()
-    if catalog.exists() and catalog.read_bytes() == catalog_bytes:
+    write = _copy_plan(catalog, _LAUNCHER_SHIPPED.with_name(catalog.name))
+    if write is None:
         actions.append(f'native session catalog already present: {catalog}')
     else:
-        writes[catalog] = catalog_bytes
+        writes[catalog] = write
         actions.append(f'native session catalog installed: {catalog}')
 
     resolvers, resolved = _resolvers({launcher.parent, engine.parent})

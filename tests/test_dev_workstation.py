@@ -235,7 +235,7 @@ def test_every_missing_tool_is_refused_at_once_each_with_its_remedy(
 
 def test_the_workstation_kit_and_jmag_are_probed_only_when_declared(box: Box) -> None:
     bare = replace(box.programs, which=lambda tool: None if tool in {'node', 'codex'} else tool, com=lambda _p: None)
-    argv = ['--repos', REPOS, '--capabilities', 'femm', '--forge', FORGE]
+    argv = ['--repos', REPOS, '--capabilities', 'femm:1', '--forge', FORGE]
     assert workstation.deploy(argv, programs=bare) == 0
 
 
@@ -311,6 +311,14 @@ def test_the_kit_is_deployed_on_every_host_even_when_not_named(box: Box) -> None
 def test_a_bad_capability_is_refused_by_name() -> None:
     with pytest.raises(SystemExit):
         workstation.deploy(['--repos', REPOS, '--capabilities', 'jmag:x'])
+
+
+def test_a_vendor_tool_without_a_seat_count_is_refused_by_the_parser(capsys: pytest.CaptureFixture[str]) -> None:
+    """A vendor tool's seats are declared, never lent 1 (lab-commons UndeclaredSeat): an argument error, no trace."""
+    with pytest.raises(SystemExit) as stopped:
+        workstation.deploy(['--repos', REPOS, '--capabilities', 'femm'])
+    assert stopped.value.code == 2
+    assert 'femm' in capsys.readouterr().err
 
 
 def test_a_retired_serve_task_is_deleted_and_a_second_run_finds_none(box: Box) -> None:
@@ -457,7 +465,7 @@ def test_a_role_deploys_card_passes_the_host_refusals(box: Box) -> None:
     assert host_refusals('ws.toml', tomllib.loads(box.machine.read_text(encoding='utf-8'))) == []
 
 
-@pytest.mark.parametrize('heavy', ['jmag:4', 'femm', 'matlab'])
+@pytest.mark.parametrize('heavy', ['jmag:4', 'femm:1', 'matlab:2'])
 def test_the_light_role_refuses_a_heavy_capability(box: Box, heavy: str, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
         workstation.deploy([*LIGHT, '--capabilities', f'workstation,{heavy}'], programs=box.programs)

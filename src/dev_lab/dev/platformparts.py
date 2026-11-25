@@ -266,7 +266,7 @@ class ClusterPart:
     repo_url: str
     collect: str
     output: Path
-    outputs: tuple[str, ...] = ()  # declared outputs to pack and store (dev_lab.dev.artefacts); none by default
+    outputs: tuple[str, ...] = ()  # declared outputs to pack and store (dev_lab.dev.artifacts); none by default
 
 
 def cluster_part(root: Path, head: str) -> ClusterPart:

@@ -39,9 +39,9 @@ from lab_commons.hpc.testcells import TestCell
 from lab_commons.launch import run
 from lab_commons.outcomes import Cell, Reason, Status
 
-from dev_lab.dev import cjk
+from dev_lab.dev import cjk, corechange, frozen, nativefirst, remretired
 from dev_lab.dev.family import declared_table, is_member
-from dev_lab.dev.famtests import modulealarm, treechecks
+from dev_lab.dev.famtests import hiddenintake, modulealarm, treechecks
 from dev_lab.dev.rules import ALWAYS_ON, tracked_files
 
 if TYPE_CHECKING:
@@ -135,6 +135,8 @@ def check_no_cjk(root: Path) -> None:
 _LAYOUT_RULE: Final = 'MODULE-SIZE-ALARM'
 _CHECKS: Final[dict[str, Callable[[Path], None]]] = {
     'NO-CJK-IN-TRACKED-SOURCE': check_no_cjk,
+    remretired.RULE_ID: remretired.check,
+    hiddenintake.RULE_ID: hiddenintake.check,
     _LAYOUT_RULE: modulealarm.check,
 }
 
@@ -173,6 +175,12 @@ def _applicable(root: Path) -> dict[str, Callable[[Path], None]]:
     if _declared_checkout(root):
         if _declares_layout(root):
             checks[_LAYOUT_RULE] = _CHECKS[_LAYOUT_RULE]
+        if frozen.declared(root):
+            checks[frozen.RULE_ID] = frozen.check
+        if corechange.declared(root):
+            checks[corechange.RULE_ID] = corechange.check
+        if nativefirst.declared(root):
+            checks[nativefirst.RULE_ID] = nativefirst.check
         checks.update(treechecks.applicable(root))
     return checks
 

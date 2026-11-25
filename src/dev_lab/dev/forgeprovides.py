@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 __all__ = ['NO_PROVIDER', 'present', 'supplied', 'unserved']
 
-#: How a part no host may claim is labelled: ``no host provides <resource>``.
+#: How a part no host may claim is labeled: ``no host provides <resource>``.
 NO_PROVIDER: Final = f'{NO_HOST} provides'
 
 

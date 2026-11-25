@@ -77,10 +77,10 @@ refuses a push that creates or updates `refs/heads/X` unless `BranchSet.admits(X
 branch, or a branch in an `ephemeral` namespace -- by the set the PUSHED tip declares. The refusal names `X`,
 the declared branches, the ephemeral globs and the remedy: publish the feature as its task's head, or keep
 the branch local. PUSHED-HEAD-CARRIES-ITS-TASK, in the same row: an agent session's head in the task namespace
-(`[tool.dev_lab.branchset] task_heads`, default `pr/<task>/<feature>`; `''` judges none) carries the task its user
-bound it to (`task: <slug>`, bound by rem, read by `dev_lab.dev.taskbinding`) -- another task's head, a flat
-`pr/<feature>` and a bare `pr/<task>` are refused naming `pr/<task>/`, and an unbound session is told how a task is
-bound. A human push and the forge's own status are not judged; `pr/*` admits the head (fnmatch's `*` crosses `/`), and a task never publishes a bare
+(`[tool.dev_lab.branchset] task_heads`, default `pr/<task>/<feature>`; `''` judges none) names a task open in the
+machine's one task ledger (`dev_lab.dev.taskledger`; the branch IS the task, user ruling 2026-11-23) -- a flat
+`pr/<feature>`, a bare `pr/<task>` and a head naming a task the ledger does not hold open are refused naming the
+door. A human push and the forge's own status are not judged; `pr/*` admits the head (fnmatch's `*` crosses `/`), and a task never publishes a bare
 `pr/<task>`, which git cannot hold beside `pr/<task>/<x>`. Agent fan-out (`lane/` `feat/` `fix/`) is local by construction. Deletions are judged by
 SESSION-HISTORY-ONLY-GROWS alone, and tags are not branches, so an existing undeclared origin branch takes no new
 push and is deleted by a human. The machine pushers all land: relock (`pr/relock`), forge autosync (`pr/*`
@@ -109,7 +109,7 @@ after its `git fetch --prune`; a deletion is pinned to the judged sha, so a race
   `python -m dev_lab.dev.branchprune delete <branch>...`, which refuses unless every commit lives elsewhere
   or, by content, every non-generated file its own commits wrote is identical on integration (fails closed).
   The deny row reads text only; the guarantee is the base pre-push row `lossless-delete` (`dev_lab.dev.pushdelete`),
-  which judges EVERY branch a push deletes, however spelled, with that same judgement -- the door's push included.
+  which judges EVERY branch a push deletes, however spelled, with that same judgment -- the door's push included.
 - **Each deletion is pinned to the sha the survey judged.** The live tip is read from the forge first. A branch
   that moved is kept, because its new tip is somebody's new work.
 - **Each deletion is logged** as one line, `{"event": "lab_commons.forge.prune", "ref", "sha", "rule"}`. The

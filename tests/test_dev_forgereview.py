@@ -569,7 +569,7 @@ def test_a_standing_security_finding_holds_every_later_head_until_the_review_is_
     assert len(command.ran) == 1
     assert _state(forge, fix)[0] == 'success'
     _tick(work, forge, command)
-    assert len(command.ran) == 1, 'a request is honoured once'
+    assert len(command.ran) == 1, 'a request is honored once'
 
 
 def test_a_pr_grown_to_the_declared_multiple_is_reviewed_once_more(tmp_path: Path) -> None:
@@ -853,7 +853,7 @@ def test_a_host_that_cannot_run_the_command_skips_the_step_without_reading_the_f
     assert len(command.ran) == 1
 
 
-def test_the_step_reviews_into_the_policys_integration_and_says_a_failure(tmp_path: Path) -> None:
+def test_the_step_reviews_into_the_policy_integration_and_says_a_failure(tmp_path: Path) -> None:
     """PLANTED control: the same step against a forge that cannot list PRs says so and raises nothing."""
     work, head = _work(tmp_path)
     forge, _ = _forge(head)

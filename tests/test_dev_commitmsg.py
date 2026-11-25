@@ -32,7 +32,7 @@ def test_a_conventional_message_passes(message: str) -> None:
     'message',
     [
         'data(femm): not a type',
-        'Feat: capitalised type',
+        'Feat: capitalized type',
         'feat:no space',
         'feat(): empty scope',
         'feat(a b): spaced scope',
@@ -161,6 +161,28 @@ def test_published_skips_what_the_base_holds_and_judges_the_rest(
     capsys.readouterr()
     assert commitmsg.main(['--rev-range', f'{first}..HEAD', '--published', 'base']) == 1
     assert 'rem(x)' in capsys.readouterr().out
+
+
+def test_a_merged_branches_history_is_not_judged_but_the_first_parent_chain_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Commits reached only through a merge's SECOND parent are another branch's history, judged at its own push."""
+    _git(tmp_path, 'init', '-q', '-b', 'lane')
+    _git(tmp_path, 'config', 'user.email', 't@t')
+    _git(tmp_path, 'config', 'user.name', 't')
+    _git(tmp_path, 'commit', '-q', '--allow-empty', '-m', 'chore: seed')
+    first = _git(tmp_path, 'rev-parse', 'HEAD')
+    _git(tmp_path, 'checkout', '-q', '-b', 'side')
+    _git(tmp_path, 'commit', '-q', '--allow-empty', '-m', 'wip: side history')
+    _git(tmp_path, 'checkout', '-q', 'lane')
+    _git(tmp_path, 'commit', '-q', '--allow-empty', '-m', 'feat: lane work')
+    _git(tmp_path, 'merge', '-q', '--no-ff', '--no-edit', 'side')
+    monkeypatch.chdir(tmp_path)
+    assert commitmsg.main(['--rev-range', f'{first}..HEAD']) == 0
+    _git(tmp_path, 'commit', '-q', '--allow-empty', '-m', 'wip: first-parent and off-format')
+    capsys.readouterr()
+    assert commitmsg.main(['--rev-range', f'{first}..HEAD']) == 1  # PLANTED: the lane's own commit is judged
+    assert 'first-parent and off-format' in capsys.readouterr().out
 
 
 def test_published_without_a_range_is_a_usage_error() -> None:

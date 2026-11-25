@@ -195,7 +195,7 @@ def timeout_ceilings(tree: ast.AST) -> tuple[int, ...]:
     return tuple(out)
 
 
-#: The ``unittest`` spelling of the assertion that cannot fail for a behavioural reason. A named SET
+#: The ``unittest`` spelling of the assertion that cannot fail for a behavioral reason. A named SET
 #: rather than a startswith test: ``assertIsNotNone`` is the only member today, and a set says which
 #: member arrived when a second one does.
 VACUOUS_ASSERT_METHODS: Final[frozenset[str]] = frozenset({'assertIsNotNone'})
@@ -220,7 +220,7 @@ def _called_name(node: ast.AST) -> str | None:
 def is_vacuous_assert(node: ast.AST) -> bool:
     """True for ``assert <expr> is not None`` and for ``self.assertIsNotNone(<expr>)``.
 
-    ``is not None`` is the assertion that cannot fail for a behavioural reason. A call returning the
+    ``is not None`` is the assertion that cannot fail for a behavioral reason. A call returning the
     wrong shape, the wrong sign, the wrong units or a value three orders of magnitude off still
     returns an object, so a test whose ONLY assertion is that shape is a green cell asserting nothing
     -- and a test NAMED for the property it does not check is the declaration that lies.

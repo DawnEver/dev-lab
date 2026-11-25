@@ -55,7 +55,7 @@ from dev_lab.ops import configdoor, forgeprotection
 from dev_lab.ops.consent.actions import ACTIONS, read_answer
 from dev_lab.ops.consent.client import TABLE
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import PREFLIGHT_FRESH_S, ssh_send, subject_read
+from dev_lab.ops.consent.door import PREFLIGHT_FRESH_S, endpoint_send, subject_read
 from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
 from dev_lab.ops.forgerequests import ACCOUNT_ACTION, REVOKE_ACTION
 from dev_lab.ops.giteaadmin import ForgeRefused
@@ -181,7 +181,7 @@ type IssuerSubject = Callable[[str, str, list[str]], tuple[str, str | None]]
 
 def issuer_subject(dest: str, action: str, argv: list[str]) -> tuple[str, str | None]:
     """*dest*'s subject (and standing refusal) for *action* as *argv*, through the issuer's read-only ``subject``."""
-    return subject_read(section(TABLE), dest, action, argv, send=ssh_send)
+    return subject_read(section(TABLE), dest, action, argv, send=endpoint_send)
 
 
 @dataclass(frozen=True)

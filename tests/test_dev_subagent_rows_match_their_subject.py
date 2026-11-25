@@ -22,7 +22,7 @@ _PUSH, _DOOR = 'SUBAGENT-NO-PUSH', 'MAIN-ONLY-DOOR'
 
 @pytest.fixture(scope='module')
 def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """The rows that need no repo artefact, rendered as a repo ships them: both subagent rows are among them."""
+    """The rows that need no repo artifact, rendered as a repo ships them: both subagent rows are among them."""
     path = tmp_path_factory.mktemp('rules') / 'deny-rules.json'
     path.write_text(render(HookAdoption(app_name='subagent rows (suite)')), encoding='utf-8')
     return path

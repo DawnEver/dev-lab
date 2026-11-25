@@ -28,12 +28,14 @@ runs as it shows the plan. A refusal here spends no code: the user is never aske
   enrolled, a task identity changed after the request was written). :func:`fresh_receipts` is the read a Stop
   hook takes through ``python -m dev_lab.ops.consent receipts``.
 * :func:`reached` wraps a :data:`Send` so an ssh transport failure (255) is named by its cause and door -- an unknown
-  host key is ``devhost enrol`` -- never read as an old issuer. :func:`handshake` applies it itself, so every door
+  host key is ``devhost enroll`` -- never read as an old issuer. :func:`handshake` applies it itself, so every door
   that shakes hands (a lone preflight, a plan's offer, the bring-up wall) tells ssh from a version.
 
-:func:`ssh_send` is the one JSON-line transport to an endpoint table (consent issuer, break-glass server); it
-lives here so the consent client imports no ``dev_lab.dev`` client module (the former
-``ops.consent -> dev.forgebreakglass`` import cycle).
+:func:`endpoint_send` is the one JSON-line transport to an endpoint table (consent issuer, break-glass server):
+ONE protocol over the transport this machine declares it can reach the forge by (``[dev] forge_reach``, rendered as
+``[devhost] forge_reach``; undeclared is ssh) -- :func:`ssh_send` to the table's ``endpoint``, or
+:func:`dev_lab.ops.httpsclient.https_send` to its ``https`` URL, signed by the same client key. It lives here so the
+consent client imports no ``dev_lab.dev`` client module (the former ``ops.consent -> dev.forgebreakglass`` cycle).
 """
 
 from __future__ import annotations
@@ -42,7 +44,7 @@ import hashlib
 import importlib.metadata
 import json
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
@@ -50,9 +52,12 @@ from lab_commons.config import section
 
 from dev_lab.dev import remote
 from dev_lab.dev.consentguard import state_dir
+from dev_lab.dev.devdeclared import OWN_TABLE
+from dev_lab.dev.devschema import FORGE_REACH
 from dev_lab.ops.consent.actions import ACTIONS, read_answer
 from dev_lab.ops.consent.credential import FIELDS, ConsentRefused
 from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
+from dev_lab.ops.httpsclient import https_send
 from dev_lab.ops.totp import write_private
 
 __all__ = [
@@ -65,6 +70,7 @@ __all__ = [
     'RECEIPT_FRESH_S',
     'SSH_FAILED',
     'Send',
+    'endpoint_send',
     'fresh_receipts',
     'green_age',
     'handshake',
@@ -73,6 +79,7 @@ __all__ = [
     'offer',
     'plan_preflights',
     'preflighted_steps',
+    'reach',
     'reached',
     'read_argv',
     'receipt_path',
@@ -139,12 +146,41 @@ def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, st
         return 255, str(refused)
 
 
+def reach(live: Mapping[str, Any] | None = None) -> tuple[str, ...]:
+    """The machine's declared ``[devhost] forge_reach``, or ``('ssh',)`` when it declares none.
+
+    Rendered from its host file's ``[dev] forge_reach``; *live* is a machine file's tables (default: this machine's).
+    """
+    declared = (section(OWN_TABLE) if live is None else live.get(OWN_TABLE, {})).get('forge_reach')
+    return tuple(declared) if isinstance(declared, list) and declared else FORGE_REACH[:1]
+
+
+def endpoint_send(
+    table: Mapping[str, Any], request: dict[str, Any], *, via: Sequence[str] | None = None
+) -> tuple[int, str]:
+    """Send *request* to *table* by the first transport of *via* (default :func:`reach`) the table declares.
+
+    ``https`` needs the table's ``https`` URL, ``ssh`` its ``endpoint``. Neither: a refusal naming both doors.
+    """
+    order = tuple(reach() if via is None else via)
+    for transport in order:
+        if transport == 'https' and table.get('https'):
+            return https_send(table, request)
+        if transport == 'ssh' and table.get('endpoint'):
+            return ssh_send(table, request)
+    return 2, (
+        f'this machine reaches the forge by {list(order)} ([dev] forge_reach in its host file) and the endpoint table '
+        'declares no matching https = "https://<forge>/dev-lab/<role>" / endpoint = "<account>@<host>": pull '
+        'hosts-config (family [consent]/[breakglass]) or correct forge_reach, then re-render the machine file'
+    )
+
+
 def reached(send: Send, what: str = 'the consent issuer') -> Send:
     """*send*, refusing an ssh transport failure by its cause and door before any answer is read as the issuer's.
 
     Raises:
         ConsentRefused: ssh exited 255 -- named as SSH with its last line: an unknown host key names ``devhost
-            enrol``, a refused key the bring-up check, anything else the endpoint and the network.
+            enroll``, a refused key the bring-up check, anything else the endpoint and the network.
 
     """
 
@@ -156,7 +192,7 @@ def reached(send: Send, what: str = 'the consent issuer') -> Send:
         last = said.strip().splitlines()[-1] if said.strip() else 'no output'
         if _HOST_KEY in said:
             door = ("this machine does not know the host's key (never enrolled): run `python -m dev_lab.dev.devhost "
-                    'enrol` here, then preflight again')  # fmt: skip
+                    'enroll` here, then preflight again')  # fmt: skip
         elif _KEY_REFUSED in said:
             door = ("that account does not admit this machine's ssh key: `python -m dev_lab.dev.devhost bringup "
                     '--check` names the wall (client-key, issuer) and its door, then preflight again')  # fmt: skip

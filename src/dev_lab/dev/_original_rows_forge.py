@@ -113,7 +113,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgerunshow',  # a cluster run's findings published on the forge, new here
     'forgedraft',  # a PR opens as a draft until its author marks it ready (D53), new here
     'forgehold',  # a PR held from the merge tick by a label where its draft is refused, new here
-    'forgeorphan',  # MERGE-OR-DELETE executed: an orphaned PR is labelled to the integrator (2026-11-15)
+    'forgeorphan',  # MERGE-OR-DELETE executed: an orphaned PR is labeled to the integrator (2026-11-15)
     'forgebacklog',  # a ready head unreviewed past the bound pages once, new here
     'forgebreakglass',
     'forgeauthnotice',  # the session-start token check: a refused forge token heard before an agent complains
@@ -137,4 +137,21 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgerule',
     # ORIGINAL: a forge read's busy seconds per phase (2026-11-13, the 170 s queue); no consumer measured it.
     'forgephases',
+    # Moved from _original_rows.py at the module-size band (2026-11-25): the forge and PR rows belong here.
+    'forgetask',  # the forge task verbs, split from forgecli to keep it under the module bound
+    'pradmit',
+    'prlanded',
+    'prcontinue',
+    'forgepages',  # ORIGINAL: split from forgework: a listing read page by page (2026-11-15)
+    'forgefeed',  # ORIGINAL: one machine hearer reads declared repos' updated issues into task inboxes (D79, D81)
+    'forgethreads',  # the threads read, cursor and own comments, split from forgefeed (module-size band)
+    'forgewaves',  # ORIGINAL: an unacknowledged break-glass wave reaches each session once (ruling 2026-11-19)
+    'prsuperseded',
+    # ORIGINAL: a stale pr/* head was caught only after the push, by the forge's alarm (2026-11-07).
+    'prcurrent',
+    # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
+    'pushgate',
+    'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
+    'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
+    'forgepr',  # ORIGINAL: pr close and pr edit, split from forgecli at the module-size band (2026-11-25)
 )

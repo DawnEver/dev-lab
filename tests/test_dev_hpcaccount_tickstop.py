@@ -65,7 +65,7 @@ def test_planted_control_a_tick_younger_than_its_wall_is_refused_by_name(
     (TICK.replace('tick alpha', 'tick beta'), ME, 'is not a tick of alpha'),
     (TICK, 0, "is not this user's process"),
 ])  # fmt: skip
-def test_a_pid_that_is_not_this_users_tick_of_the_repo_is_never_signalled(
+def test_a_pid_that_is_not_this_users_tick_of_the_repo_is_never_signaled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, owner: int, why: str
 ) -> None:
     _held(tmp_path, 63)
@@ -74,7 +74,7 @@ def test_a_pid_that_is_not_this_users_tick_of_the_repo_is_never_signalled(
     assert why in said[0]
 
 
-def test_a_dead_holder_is_said_and_nothing_is_signalled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_dead_holder_is_said_and_nothing_is_signaled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _held(tmp_path, 63)
     code, killed, said = _stop(tmp_path, monkeypatch, alive=False)
     assert (code, killed) == (0, [])

@@ -7,7 +7,7 @@ name), named ``unit-<unit hash>-g<generation>-<result hash>.tar.gz``: the name a
 generation and which outputs, so the FIRST attachment for a unit hash and generation is its result, an
 identical later post is a no-op, and a differing one sounds the ``nondeterminism`` alarm
 (:mod:`dev_lab.dev.forgealarm`) and raises -- the first stands. An archive over :data:`MAX_UPLOAD_BYTES` (the
-forge attachment limit, :data:`~dev_lab.dev.artefactstores.ATTACHMENT_LIMIT_MB`) is refused with
+forge attachment limit, :data:`~dev_lab.dev.artifactstores.ATTACHMENT_LIMIT_MB`) is refused with
 :class:`~lab_commons.compute.store.TooLarge`, never attached. A TOMBSTONE closing a generation is a small
 ``grave-<unit hash>-<generation>.json`` attachment through the same outbox; every host reads it (``graves``).
 
@@ -24,7 +24,7 @@ and drops it (the first stands) -- and stops at the first that still cannot land
 A UNIT OFFERED (:func:`offering`, the ``offer`` a :class:`~lab_commons.compute.execute.LocalExecutor` calls when
 ``--where`` lets a unit this box cannot run go elsewhere). Its BUNDLE -- ``unit.json`` (engine, version,
 environment, entry, parameters, outputs, demand) plus every input file under ``files/`` -- goes up through the
-artefact store (:func:`dev_lab.dev.artefacts.store_for`), and the Job is a request for the built-in
+artifact store (:func:`dev_lab.dev.artifacts.store_for`), and the Job is a request for the built-in
 producer :data:`~dev_lab.dev.forgerequest.UNIT` (:func:`dev_lab.dev.forgepublish.publish`), its
 ``paths`` naming the unit hash, the bundle's ref, its size and its needs (:class:`UnitJob`).
 
@@ -61,9 +61,9 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev._forge_journal import outbox_dir
 from dev_lab.dev._forgeunit_pending import flush_held, hold, unread
-from dev_lab.dev.artefactpack import pack, unpack
-from dev_lab.dev.artefacts import load_config, resolve, store_for
-from dev_lab.dev.artefactstores import ARCHIVE, ATTACHMENT_LIMIT_MB, MB, Ref, manifest_of, run_id
+from dev_lab.dev.artifactpack import pack, unpack
+from dev_lab.dev.artifacts import load_config, resolve, store_for
+from dev_lab.dev.artifactstores import ARCHIVE, ATTACHMENT_LIMIT_MB, MB, Ref, manifest_of, run_id
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgepublish import publish

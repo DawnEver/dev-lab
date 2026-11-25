@@ -96,7 +96,8 @@ def test_no_door_carries_its_own_pointer_reader() -> None:
 def test_the_installer_puts_the_resolver_beside_the_launcher_and_the_engine(tmp_path: Path) -> None:
     agent_guard.install_guard(tmp_path)
     hooks = tmp_path / '.claude' / 'hooks'
-    assert (hooks / 'venv_resolver.js').read_bytes() == RESOLVER.read_bytes()
+    # As text, as the launcher's install is compared: a checkout's line endings are git's (autocrlf), not the kit's.
+    assert (hooks / 'venv_resolver.js').read_text(encoding='utf-8') == RESOLVER.read_text(encoding='utf-8')
 
 
 def test_a_watch_yields_only_an_environment_a_newer_one_superseded(tmp_path: Path) -> None:

@@ -9,9 +9,7 @@ import pytest
 
 from dev_lab.dev import principles
 from dev_lab.dev.docwidth import WIDTH_CEILING
-from dev_lab.dev.famfiles import render_agent_files
-from dev_lab.dev.famtests.principlespage import assert_principles_page_is_rendered
-from dev_lab.dev.principles import PAGE_REL, PRINCIPLES, payload, render
+from dev_lab.dev.principles import PRINCIPLES, bullet_lines, payload
 from dev_lab.dev.rules import RULES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,9 +19,9 @@ def test_the_set_is_the_named_set_and_keeps_valuable_options() -> None:
     """A NAMED SET, not a count: a dropped or renamed id names itself."""
     assert [one.id for one in PRINCIPLES] == [
         'first-principles', 'no-historical-baggage', 'occams-razor', 'single-source-of-truth',
-        'layered-decoupling', 'names-match-behaviour', 'no-backward-compatibility', 'progressive-disclosure',
+        'layered-decoupling', 'names-match-behavior', 'no-backward-compatibility', 'progressive-disclosure',
         'keep-valuable-options', 'every-wall-teaches', 'no-barrier-fan-out', 'images-by-absolute-path',
-        'worktree-names-its-task',
+        'worktree-names-its-task', 'native-first',
     ]  # fmt: skip
     kept = {one.id: one for one in PRINCIPLES}['keep-valuable-options']
     assert kept.name == 'Keep every valuable parameter and option'
@@ -79,6 +77,19 @@ def test_an_image_is_delivered_by_absolute_path_and_a_worktree_is_named_for_its_
     assert {'IMAGES-BY-ABSOLUTE-PATH', 'WORKTREE-NAMES-ITS-TASK'} <= {rule.id for rule in RULES}
 
 
+def test_native_first_is_the_ruling_verbatim_and_has_its_mechanism() -> None:
+    """User ruling 2026-11-25 (D51 L2): the statement is the user's words; NATIVE-FIRST is its opt-in mechanism."""
+    native = {one.id: one for one in PRINCIPLES}['native-first']
+    assert native.name == 'Native first'
+    assert native.statement == (
+        'Python declares and orchestrates, Rust computes. A stage Rust owns is written in Rust from its first line; '
+        'a Python version of it is only a scratch prototype, never a second implementation; acceptance is against '
+        'references (analytic, the vendor ladder, the previous implementation during a migration), never against a '
+        'Python twin.'
+    )
+    assert 'NATIVE-FIRST' in {rule.id for rule in RULES}
+
+
 def test_the_json_flag_prints_the_payload(capsys: pytest.CaptureFixture[str]) -> None:
     """``--json`` prints exactly ``{"principles": [{id, name, statement}...]}``."""
     assert principles.main(['--json']) == 0
@@ -93,26 +104,8 @@ def test_the_json_flag_prints_the_payload(capsys: pytest.CaptureFixture[str]) ->
 
 def test_the_page_fits_the_width_and_names_every_principle() -> None:
     """Every line within the injected-doc ceiling; every id and verbatim statement present."""
-    page = render()
-    assert all(len(line) <= WIDTH_CEILING for line in page.splitlines())
-    flat = ' '.join(line.strip() for line in page.splitlines())
+    lines = bullet_lines()
+    assert all(len(line) <= WIDTH_CEILING for line in lines)
+    flat = ' '.join(line.strip() for line in lines)
     for one in PRINCIPLES:
         assert f'- **{one.name}** (`{one.id}`): {one.statement}' in flat
-
-
-def test_famfiles_writes_the_page_and_a_drifted_page_reds(tmp_path: Path) -> None:
-    """PLANTED: an absent page reds, the write greens it, a hand edit reds again."""
-    with pytest.raises(AssertionError, match='no '):
-        assert_principles_page_is_rendered(root=tmp_path)
-    render_agent_files(tmp_path, write=True)
-    assert render_agent_files(tmp_path, write=False)[0] == f'{PAGE_REL}: current'
-    assert_principles_page_is_rendered(root=tmp_path)
-    page = tmp_path / PAGE_REL
-    page.write_text(page.read_text(encoding='utf-8') + '- extra\n', encoding='utf-8')
-    with pytest.raises(AssertionError, match='drifted'):
-        assert_principles_page_is_rendered(root=tmp_path)
-
-
-def test_this_repo_commits_the_render() -> None:
-    """The kit's own page through the consumer body."""
-    assert_principles_page_is_rendered(root=ROOT)

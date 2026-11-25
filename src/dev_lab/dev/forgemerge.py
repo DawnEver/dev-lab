@@ -51,13 +51,15 @@ fifth conditions, which a serve host posts):
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit
-  (:func:`dev_lab.dev.mergeaudit.judge`, the same judgement the commit-msg hook makes) -- its message
+  (:func:`dev_lab.dev.mergeaudit.judge`, the same judgment the commit-msg hook makes) -- its message
   names the branch (``Merged-Branch:``), so INTEGRATION-IS-MERGES-ONLY holds of it too;
 * every commit its head adds over integration passes the repo's OWN declared message row -- the pre-push row
   running ``cz-push-range``, run here on the range ``origin/<integration>..<head>`` with that row's env in its
   ``--merge-decision`` mode -- commits the base already holds are history, the PR's own are all judged, none
   exempt (:func:`message_wait`). A worktree with no venv skips that row at commit and push, so the
   merge is the one place no client can skip it; a repo declaring no such row is not judged on messages;
+* a head that adds a crate (a ``Cargo.toml``) carries a measured ``Port-Measured:`` trailer
+  (:func:`dev_lab.dev.portmeasure.unmeasured`, MEASURE-BEFORE-PORTING);
 * every merge commit its head adds over integration declares each file its parents conflict on
   (:func:`dev_lab.dev.mergeresolution.unresolved`, MERGE-RESOLUTION-DECLARED) -- the one place no client and no
   web-UI merge can skip it.
@@ -81,13 +83,14 @@ from dev_lab.dev.forgedraft import WAITING
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeheadgate import alarms_said
 from dev_lab.dev.forgehold import HELD, is_held
-from dev_lab.dev.forgemergewaits import hand_note, red_checks, status_waits
+from dev_lab.dev.forgemergewaits import hand_note, off_record, recorded_as_ran, red_checks, status_waits
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
 from dev_lab.dev.forgereview_declared import load_review
 from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgestatus import fingerprints_at, status_list
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
+from dev_lab.dev.portmeasure import unmeasured
 from dev_lab.dev.reviewcap import unreviewed_waiver
 from dev_lab.dev.roles import REVIEW, TESTS, Unbound, roles_at
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
@@ -157,12 +160,16 @@ def decide(
     statuses: Sequence[CommitStatus],
     reviewed: Reviewed,
     waiver: str | None = None,
+    record: str = '',
 ) -> Decision:
     """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing.
 
     *waiver* (:func:`dev_lab.dev.reviewcap.unreviewed_waiver`) waives the review condition alone, and the message and
-    the decision carry it.
+    the decision carry it. *record* is the PR body: a red test part it puts on record (``Red-On-Record:``) reads
+    as ran (RED-INTEGRATION-MERGES); every other red still waits, named with that door.
     """
+    unrecorded = off_record(statuses, record)
+    statuses = recorded_as_ran(statuses, record)
     into = policy.integration
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
@@ -180,7 +187,7 @@ def decide(
         waits = status_waits(policy, head, statuses, tests=roles_at(root).kind(TESTS))
     except Unbound as undeclared:  # a malformed producer is named, never merged
         waits = [f'its producer: {undeclared}']
-    missing += waits
+    missing += waits + unrecorded
     tried = trial(root, base, head)
     if not tried.clean:
         files = ', '.join(f'`{name}`' for name in tried.conflicts)
@@ -196,6 +203,12 @@ def decide(
         missing += [f'a merge the audit passes: {problem}' for problem in problems]
     if (off := message_wait(root, base, head)) is not None:
         missing.append(f'conventional commit messages: {off}')
+    try:
+        port = unmeasured(root, base, head)
+    except ValueError as unread:
+        port = f'its port record cannot be read: {unread}'
+    if port is not None:
+        missing.append(f'a measured port: {port}')
     try:
         undeclared = unresolved(root, base, head)
     except MergeAuditError as error:
@@ -259,10 +272,19 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
             return f'the review gate cannot be read: {why}'
 
     waiver = unreviewed_waiver(client, number, base=policy.integration)
+    pull = client.pr_view(number)
     found = decide(
-        root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed, waiver=waiver
+        root,
+        policy,
+        branch=branch,
+        number=number,
+        head=head,
+        statuses=statuses,
+        reviewed=reviewed,
+        waiver=waiver,
+        record=pull.body,
     )
-    pull, others = client.pr_view(number), found.others
+    others = found.others
     if (
         hidden := hidden_reds(lambda ref: fingerprints_at(client, ref), head, policy.integration, statuses)
     ) is not None:

@@ -82,6 +82,8 @@ class Plan:
         ceiling: the memory ceiling for every command this runs.
         keep: how many verified snapshots to retain.
         tolerance: how many consecutive failures of one release to tolerate.
+        candidate: where the candidate is built and started (default :data:`CANDIDATE`). Every write
+            ``preflight`` makes lands under it, so a caller that is not the host names its own.
 
     """
 
@@ -99,6 +101,7 @@ class Plan:
     ceiling: str
     keep: int
     tolerance: int
+    candidate: str = CANDIDATE
 
     def missing(self) -> list[str]:
         """Return the fields a deployment cannot run without.
@@ -154,6 +157,7 @@ class Plan:
             ceiling=str(config.get('ceiling', '600M')),
             keep=int(config.get('keep', 3)),
             tolerance=int(config.get('tolerance', 3)),
+            candidate=str(config.get('candidate', CANDIDATE)),
         )
 
 
@@ -262,7 +266,7 @@ def preflight(
         Whether the candidate answered everything it was asked.
 
     """
-    candidate = Path(CANDIDATE)
+    candidate = Path(plan.candidate)
     home = candidate / 'home'
     _teardown(plan, ctx, candidate)
     if not _git(

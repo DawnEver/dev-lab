@@ -21,7 +21,7 @@ WHAT A ROW HOLDS, and every field is load-bearing:
               over several months on a `uv` rule that named no alternative. Where the exit is a file
               in the consuming repo, the text carries the ``{remedy}`` placeholder and the row also
               names ``needs``; the rule is then NOT SHIPPED to a repo that supplies no such file.
-``needs``     the KIND of repo artefact the remedy requires, or ``None`` when the remedy is a plain
+``needs``     the KIND of repo artifact the remedy requires, or ``None`` when the remedy is a plain
               command every checkout already has (git's own verbs). This is the ID-plus-mechanism
               split `dev_lab.dev.rules` already uses: the statement is universal, the thing that
               resolves it lives in one tree.
@@ -33,8 +33,8 @@ WHAT A ROW HOLDS, and every field is load-bearing:
               are proof carried by the row, so a row cannot arrive without a control -- and a
               ``permits`` entry may not lean on any repo's remedy, because this file has no repo.
 
-WHAT IS NOT HERE, AND WHY -- the judgement this file records. A shape whose HAZARD TEXT WOULD BE
-FALSE in another repo stays in the repo that has the hazard, however tempting the generalisation:
+WHAT IS NOT HERE, AND WHY -- the judgment this file records. A shape whose HAZARD TEXT WOULD BE
+FALSE in another repo stays in the repo that has the hazard, however tempting the generalization:
 
 * repo-specific dependency mutation rules (``uv sync``, ``pip install``). Each checkout owns its
   ``.venv``; the hazard is bypassing that repo's checked dependency door, not borrowing a shared
@@ -62,12 +62,15 @@ from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
 from dev_lab.dev._deny_familyrepo_row import FAMILY_REPO_IS_CHECKED_OUT
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
+from dev_lab.dev._deny_frozen_row import USER_FROZEN_FILES
 from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
 from dev_lab.dev._deny_journal_row import JOURNAL_CITES
+from dev_lab.dev._deny_ledger_row import LEDGER_WRITES_THROUGH_ITS_DOOR
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev._deny_machinefile_row import MACHINE_FILE_IS_RENDERED
+from dev_lab.dev._deny_nobackup_row import NO_BACKUP_COPIES
 from dev_lab.dev._deny_outputcode_row import OUTPUT_HOLDS_NO_CODE
 from dev_lab.dev._deny_push_rows import PUSH_ROWS
 from dev_lab.dev._deny_remote_row import REMOTE_WRITE
@@ -112,10 +115,12 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     LIVE_RUN,
     BACKGROUND_BOUNDED,
     JOURNAL_CITES,
+    LEDGER_WRITES_THROUGH_ITS_DOOR,
     SUBAGENT_NO_PUSH,
     MAIN_ONLY_DOOR,
     HEAVY_IS_THE_MAIN_SESSIONS,
     CONSENT_CODE_FROM_THE_USER,
+    USER_FROZEN_FILES,
     MACHINE_FILE_IS_RENDERED,
     COMMIT_HOOKS_RUN,
     {
@@ -167,7 +172,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         # `needs` is None after checking what a repo could possibly supply, and the answer is nothing:
         # `git commit` and `git log` exist in every checkout, and a follow-up convention is prose
         # rather than a file. Giving this row a `needs` would DROP it from every repo that has no
-        # such artefact -- which is all four -- so a universal hazard would ship to nobody.
+        # such artifact -- which is all four -- so a universal hazard would ship to nobody.
         'needs': None,
         # NO `allow`, and that is a decision rather than an omission. The opening would have to say
         # "this branch is reachable by nobody else", and the engine reads TEXT: whether HEAD is
@@ -264,7 +269,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     *PUSH_ROWS,
     {
         'id': 'NETWORK-VERB',
-        # Every verb `dev_lab.dev.netverb.is_network_verb` recognises, git's `-C`/`-c` options included.
+        # Every verb `dev_lab.dev.netverb.is_network_verb` recognizes, git's `-C`/`-c` options included.
         'pattern': NETWORK_VERB_PATTERN,
         'matches': 'command',
         'hazard': 'one transient forge failure on a network verb reads as '
@@ -365,6 +370,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     RECURSIVE_DELETE,
     REPORTS_LIVE_IN_MEMORY,
     OUTPUT_HOLDS_NO_CODE,
+    NO_BACKUP_COPIES,
     WRITES_STAY_IN_THE_TREE,
     STATUS_VIA_DOORS,
     CI_CRON_NEEDS_CONSENT,

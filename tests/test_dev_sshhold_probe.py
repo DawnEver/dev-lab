@@ -5,8 +5,12 @@ Measured 2026-11-22: ``sshhold open <user@host>`` to a key + second-factor host 
 with no code at all: a BatchMode login ends ``(keyboard-interactive)`` when the key was accepted and ``(publickey)``
 when it was not. The open probes that first; a plan's preflight reads the same line of its own key-only ssh.
 
-PLANTED CONTROLS: a host that accepted the key and wants the code, and one ssh could not reach, both go on to the
-open; a plan host that wants only the code is still offered.
+Measured 2026-11-24 on Cirrus: three codes were read after the probe let an empty ``Permission denied ()`` pass.
+The probe now PROVES ``Authenticated using "publickey" with partial success`` for the destination itself
+(``ssh -v``) and refuses everything short of it, naming the identity ssh offered and SAFE.
+
+PLANTED CONTROLS: a host that proves partial success goes on to the open; a bastion's proof alone does not; a plan
+host that wants only the code is still offered.
 """
 
 from __future__ import annotations
@@ -24,6 +28,22 @@ __all__ = ['secret_here']
 DEST = 'alice@login.example'
 KEY_REFUSED = f'{DEST}: Permission denied (publickey).'
 WANTS_CODE = f'{DEST}: Permission denied (keyboard-interactive).'
+IDENTITY = '~/.ssh/id_ed25519'
+#: What ``ssh -v`` says when the key was accepted and the code is what is missing (measured on Cirrus 2026-11-24).
+PROVEN = (
+    "debug1: Authenticating to login.example:22 as 'alice'\n"
+    f'debug1: Will attempt key: {IDENTITY} ED25519 SHA256:abc\n'
+    f'debug1: Offering public key: {IDENTITY} ED25519 SHA256:abc\n'
+    'Authenticated using "publickey" with partial success.\n'
+    'debug1: Authentications that can continue: keyboard-interactive\n'
+    f'{WANTS_CODE}\n'
+)
+#: The key offered, the server says no more than an empty list -- no partial success.
+UNPROVEN = (
+    "debug1: Authenticating to login.example:22 as 'alice'\n"
+    f'debug1: Offering public key: {IDENTITY} ED25519 SHA256:abc\n'
+    f'{DEST}: Permission denied ().\n'
+)
 EITHER = f'{DEST}: Permission denied (publickey,keyboard-interactive).'
 NO_ROUTE = 'ssh: connect to host login.example port 22: Connection timed out'
 
@@ -45,20 +65,49 @@ def test_only_a_denial_that_offers_the_key_and_no_code_method_is_a_refused_key(s
     assert bool(sshholdprobe.key_refused(said)) is refused
 
 
-def test_the_probe_rides_the_opens_own_ssh_words_in_batch_mode_and_refuses_a_refused_key() -> None:
+def test_the_probe_rides_the_opens_own_ssh_words_verbose_in_batch_mode_and_passes_on_proven_partial_success() -> None:
     seen: list[list[str]] = []
     route = ('ssh', '-J', 'alice@bastion.example', '-o', 'StrictHostKeyChecking=yes')
-    with pytest.raises(HoldRefused, match='no code was read') as refused:
-        sshholdprobe.probe(DEST, route, run=_ssh(255, KEY_REFUSED, seen))
-    assert seen[0][: len(route)] == list(route)
-    assert 'BatchMode=yes' in seen[0]
+    assert IDENTITY in sshholdprobe.probe(DEST, route, run=_ssh(255, PROVEN, seen))
+    assert seen[0][1 : len(route)] == list(route[1:])  # [0] is PATH's ssh: test_dev_sshhold_program
+    assert {'-v', 'BatchMode=yes'} <= set(seen[0])
     assert seen[0][-2:] == [DEST, 'true']
-    said = str(refused.value)
-    assert 'Permission denied (publickey)' in said
-    assert 'python -m dev_lab.dev.hpcaccount keys' in said
-    assert 'portal' in said
-    for status, answer in ((255, WANTS_CODE), (255, NO_ROUTE), (1, KEY_REFUSED)):  # the controls
-        sshholdprobe.probe(DEST, route, run=_ssh(status, answer))
+
+
+@pytest.mark.parametrize(
+    ('status', 'said', 'cause'),
+    [
+        (255, KEY_REFUSED, 'Permission denied (publickey)'),
+        (255, UNPROVEN, 'Permission denied ()'),  # measured on Cirrus 2026-11-24: the empty list passed the old probe
+        (255, WANTS_CODE, 'Permission denied (keyboard-interactive)'),  # no partial success proven: not enough
+        (255, NO_ROUTE, 'Connection timed out'),
+        (1, '', 'no denial line'),
+    ],
+)
+def test_anything_short_of_proven_partial_success_refuses_before_the_code(status: int, said: str, cause: str) -> None:
+    with pytest.raises(HoldRefused, match='no code was read') as refused:
+        sshholdprobe.probe(DEST, ('ssh',), run=_ssh(status, said))
+    text = str(refused.value)
+    assert cause in text
+    assert 'SAFE' in text
+    assert 'publickey partial success' in text
+
+
+def test_the_refusal_names_the_identity_ssh_offered_and_never_its_fingerprint() -> None:
+    with pytest.raises(HoldRefused) as refused:
+        sshholdprobe.probe(DEST, ('ssh',), run=_ssh(255, UNPROVEN))
+    assert IDENTITY in str(refused.value)
+    assert 'SHA256' not in str(refused.value)
+
+
+def test_partial_success_of_a_bastion_alone_proves_nothing() -> None:
+    bastion = (
+        "debug1: Authenticating to bastion.example:22 as 'alice'\n"
+        'Authenticated using "publickey" with partial success.\n'
+    )
+    with pytest.raises(HoldRefused):
+        sshholdprobe.probe(DEST, ('ssh',), run=_ssh(255, bastion + UNPROVEN))
+    assert sshholdprobe.probe(DEST, ('ssh',), run=_ssh(255, bastion + PROVEN))  # control: the dest's own proof
 
 
 def test_a_key_only_host_is_refused_before_any_code_naming_its_read_door() -> None:
@@ -68,20 +117,21 @@ def test_a_key_only_host_is_refused_before_any_code_naming_its_read_door() -> No
     assert 'python -m dev_lab.dev.hpcaccount look --account' in str(refused.value)
 
 
-def test_a_probe_that_cannot_run_leaves_the_open_to_say_what_ssh_says() -> None:
+def test_a_probe_that_cannot_run_refuses_rather_than_spend_a_code() -> None:
     def gone(_argv: list[str], **_kw: object) -> subprocess.CompletedProcess[str]:
         msg = 'ssh'
         raise FileNotFoundError(msg)
 
-    sshholdprobe.probe(DEST, ('ssh',), run=gone)
+    with pytest.raises(HoldRefused, match='no code was read'):
+        sshholdprobe.probe(DEST, ('ssh',), run=gone)
 
 
-def test_open_reads_no_code_for_a_host_that_refuses_the_key(
+def test_open_reads_no_code_until_partial_success_is_proven(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """PLANTED CONTROL: the same open against a host that wants the code reads it and opens."""
+    """PLANTED CONTROL: the same open against a host that proves partial success reads the code and opens."""
     opened: list[str] = []
-    answer = [KEY_REFUSED]
+    answer = [UNPROVEN]
     monkeypatch.setattr(sshhold, 'section', lambda _name: {})
     monkeypatch.setattr(sshhold, 'open_session', lambda dest, *_a, **_k: opened.append(dest) or f'{dest}: open')
 
@@ -91,12 +141,24 @@ def test_open_reads_no_code_for_a_host_that_refuses_the_key(
     monkeypatch.setattr(sshholdprobe._door, 'run', answered)
     monkeypatch.setattr(sshhold, 'given_code', lambda _code: pytest.fail('the code must not be read'))
     assert sshhold.main(['open', DEST, '--hours', '1', '--code', '123456']) == 2
-    assert "does not admit this machine's public key" in capsys.readouterr().err
+    assert 'publickey partial success' in capsys.readouterr().err
     assert opened == []
-    answer[0] = WANTS_CODE
+    answer[0] = PROVEN
     monkeypatch.setattr(sshhold, 'given_code', lambda code: code)
     assert sshhold.main(['open', DEST, '--hours', '1', '--code', '123456']) == 0
     assert opened == [DEST]
+
+
+def test_the_probe_verb_reads_no_code_and_says_the_proof(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sshhold, 'section', lambda _name: {})
+    monkeypatch.setattr(sshholdprobe._door, 'run', _ssh(255, PROVEN))
+    monkeypatch.setattr(sshhold, 'given_code', lambda _code: pytest.fail('probe reads no code'))
+    assert sshhold.main(['probe', DEST]) == 0
+    assert IDENTITY in capsys.readouterr().out
+    monkeypatch.setattr(sshholdprobe._door, 'run', _ssh(255, UNPROVEN))
+    assert sshhold.main(['probe', DEST]) == 2
 
 
 def test_a_plan_host_that_refuses_the_key_is_blocked_and_one_that_wants_the_code_is_not() -> None:

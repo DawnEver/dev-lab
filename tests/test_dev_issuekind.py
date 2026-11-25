@@ -13,7 +13,7 @@ from dev_lab.dev.issuekind import KINDS, MOVED, SETTLED, create, retire_notices
 
 
 @pytest.mark.parametrize('kind', KINDS)
-def test_an_issue_is_created_labelled_with_its_kind(kind: str) -> None:
+def test_an_issue_is_created_labeled_with_its_kind(kind: str) -> None:
     forge = StateForge()
     made = create(forge, 'ask: x', 'body', kind)
     assert forge.labeled == [(made.number, f'kind:{kind}')]
@@ -48,8 +48,8 @@ def test_create_adds_each_label_creating_a_missing_one() -> None:
     assert sorted(one['name'] for one in forge.labels) == ['kind:need', 'rem', 'task:x'], 'one each, none twice'
 
 
-def test_issue_list_by_label_excludes_unlabelled_and_an_unknown_label_lists_nothing() -> None:
-    """PLANTED CONTROLS: an unlabelled issue never passes; an unknown label lists nothing, not an error.
+def test_issue_list_by_label_excludes_unlabeled_and_an_unknown_label_lists_nothing() -> None:
+    """PLANTED CONTROLS: an unlabeled issue never passes; an unknown label lists nothing, not an error.
 
     The fake ignores ``labels=`` as Gitea does for a name it lacks, so only the client's own filter can exclude.
     """

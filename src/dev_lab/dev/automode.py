@@ -18,7 +18,7 @@ So the family ``.gitignore`` ignores it in every consumer, and it is rendered on
   its own ``[tool.dev_lab.policy] intents`` (prose, never a kit-held text), and its ``origin`` and branch set;
 * what the MACHINE holds (:func:`read_fleet`): every workstation of the synced workstation registry
   (``hosts.json``, named by the machine file's ``[workstation] registry``) and every ``[[hpc.grant]]`` account
-  with its login hosts, by NAME so the classifier recognises them.
+  with its login hosts, by NAME so the classifier recognizes them.
 
 It is rendered by the dependency door's bootstrap and sync (:mod:`dev_lab.dev.dep`) and by
 ``python -m dev_lab.dev.automode {write [--repo R] | session-start}`` (the latter reads a ``SessionStart`` hook

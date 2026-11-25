@@ -7,9 +7,10 @@ ends ``Permission denied (keyboard-interactive)`` when the key WAS accepted and 
 (:data:`WANTS_CODE`, the distinction a plan's preflight already reads), and ``Permission denied (publickey)`` when
 the key itself was refused (:func:`key_refused`).
 
-:func:`probe` runs that one attempt through the SAME ssh words the open will use (its route and declared host key).
-Only a refused key refuses; anything else it cannot judge (a network fault, a host that admits the login outright)
-is left to the open, as before.
+:func:`probe` runs that one attempt, verbose, through the SAME ssh words and binary the open will use (its route,
+declared host key, PATH's ssh). It PROVES what the code needs -- ssh's ``Authenticated using "publickey" with
+partial success`` for the destination itself -- and refuses anything short of it (measured 2026-11-24: an empty
+``Permission denied ()`` passed the old refused-key-only check and three codes were read on no evidence).
 """
 
 from __future__ import annotations
@@ -21,14 +22,18 @@ from typing import Final
 
 import lab_commons.launch as _door
 
-from dev_lab.dev.sshholdwire import HoldRefused
+from dev_lab.dev.sshholdwire import HoldRefused, resolved
 
 __all__ = ['KEYS_DOOR', 'KEY_ONLY_DOOR', 'WANTS_CODE', 'key_refused', 'probe']
 
 #: An ssh login the host refused for want of a code: the key (when one is needed) was accepted.
 WANTS_CODE: Final = re.compile(r'Permission denied \((?:[\w-]+,)*(?:keyboard-interactive|password)')
 _DENIED: Final = re.compile(r'Permission denied \(([\w,-]+)\)')
-_SSH_FAILED: Final = 255
+_DENIED_ANY: Final = re.compile(r'Permission denied \([\w,-]*\)')
+#: ssh -v's proof that the key was accepted and a further method is wanted (OpenSSH 8.9+ names the method).
+_PARTIAL: Final = re.compile(r'Authenticated (?:using "publickey" )?with partial success')
+#: The identity file ssh offered -- the path alone, never the key type or fingerprint after it.
+_OFFERED: Final = re.compile(r'Offering public key: (.+?) [A-Z0-9-]+ SHA256:')
 _PROBE_S: Final = 60.0
 
 #: Where an account's login keys are managed -- the door of a refused key.
@@ -56,27 +61,55 @@ def key_refused(said: str) -> str:
     return found.group(0)
 
 
-def probe(dest: str, ssh: Sequence[str], *, run: Run | None = None) -> None:
-    """Refuse, with no code read, a *dest* that does not admit this machine's key; *ssh* are the open's own words.
+def _own_part(dest: str, said: str) -> str:
+    """``ssh -v`` about *dest* itself: after its last ``Authenticating to <host>:`` (a bastion's comes before)."""
+    marker = f'Authenticating to {dest.rpartition("@")[2]}:'
+    return said[said.rindex(marker) :] if marker in said else ''
+
+
+def _cause(said: str) -> str:
+    """Ssh's denial line, else its last non-debug line, else ``'no denial line'``."""
+    if found := _DENIED_ANY.search(said):
+        return found.group(0)
+    plain = [line.strip() for line in said.splitlines() if line.strip() and not line.startswith('debug')]
+    return plain[-1] if plain else 'no denial line'
+
+
+def probe(dest: str, ssh: Sequence[str], *, run: Run | None = None) -> str:
+    """PROVE, with no code read, that *dest* accepted this machine's key and wants only the code; say the proof.
+
+    *ssh* are the open's own words. One ``ssh -v`` BatchMode attempt (no prompt can be answered, so no code is
+    spent); the proof is ``Authenticated using "publickey" with partial success`` for *dest* itself.
 
     Raises:
-        HoldRefused: ssh refused the public key -- naming ssh's line and :data:`KEYS_DOOR`.
+        HoldRefused: a key-only host, or no proof -- naming ssh's cause, the identity it offered and the doors.
 
     """
-    argv = [*ssh, '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', dest, 'true']
+    argv = [*ssh, '-v', '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', dest, 'true']
+    retry = f'`python -m dev_lab.dev.sshhold probe {dest}`'
     try:
         done = (run or _door.run)(
-            argv, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=_PROBE_S, check=False,
-            stdin=subprocess.DEVNULL,
+            resolved(argv), capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=_PROBE_S,
+            check=False, stdin=subprocess.DEVNULL,
         )  # fmt: skip
-    except (OSError, subprocess.TimeoutExpired):
-        return  # not judged here: the open says what ssh says
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        msg = (
+            f'{dest}: the no-code probe could not run ssh ({type(exc).__name__}), so publickey partial success '
+            f'is unproven; no code was read -- fix ssh, then {retry} (on Cirrus the key is registered in SAFE)'
+        )
+        raise HoldRefused(msg) from exc
     if done.returncode == 0:
         msg = (f'{dest} logged in with the key alone: a KEY-ONLY host needs no code and no held session; no code was '
                f'read -- {KEY_ONLY_DOOR}')  # fmt: skip
         raise HoldRefused(msg)
-    denied = key_refused(f'{done.stdout}{done.stderr}') if done.returncode == _SSH_FAILED else ''
-    if denied:
-        msg = (f"{dest} does not admit this machine's public key (ssh, with no code: {denied}); no code was read "
-               f'and none is used -- {KEYS_DOOR}; then open again')  # fmt: skip
-        raise HoldRefused(msg)
+    said = f'{done.stdout}{done.stderr}'
+    own = _own_part(dest, said)
+    identities = list(dict.fromkeys(_OFFERED.findall(own or said)))
+    if _PARTIAL.search(own):
+        return f'{dest}: publickey partial success proven with {", ".join(identities) or "an agent key"}; code next'
+    offered = ', '.join(identities) or 'no identity (no key file and no agent key)'
+    msg = (f'{dest}: publickey partial success is unproven (ssh, with no code: {_cause(said)}); ssh offered '
+           f"{offered}; no code was read and none is used -- register that identity's .pub on the account (on "
+           f'Cirrus: SAFE, safe.epcc.ed.ac.uk > Login accounts > the account > Add credential); elsewhere '
+           f'{KEYS_DOOR}; then {retry}')  # fmt: skip
+    raise HoldRefused(msg)

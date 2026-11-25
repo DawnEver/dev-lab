@@ -41,7 +41,7 @@ __all__ = [
 ]
 
 #: The smallest base that can carry a guarantee. ONE, because its subject is a table that read EMPTY:
-#: the per-artefact counts are pinned in the data module, and pinning them twice would red on every
+#: the per-artifact counts are pinned in the data module, and pinning them twice would red on every
 #: line the family agrees to share.
 MIN_BASE_LINES: Final = 1
 
@@ -63,9 +63,9 @@ def assert_base_floor(reached: int, floor: int, what: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class Base:
-    """One family artefact: its lines, how strictly they bind, and how a comment is spelled in it."""
+    """One family artifact: its lines, how strictly they bind, and how a comment is spelled in it."""
 
-    artefact: str
+    artifact: str
     lines: tuple[str, ...]
     mode: str
     comment: str = '#'
@@ -83,9 +83,9 @@ class Base:
 
     @property
     def stamp_lines(self) -> tuple[str, ...]:
-        """The provenance block, in this artefact's own comment syntax."""
+        """The provenance block, in this artifact's own comment syntax."""
         return (
-            f'{self.comment} {STAMP} from the family base for {self.artefact}.',
+            f'{self.comment} {STAMP} from the family base for {self.artifact}.',
             f'{self.comment} Hand edits RED. The base is data in dev_lab.dev._famconfig_rows;',
             f"{self.comment} this repo's own lines are its declared delta. Change one, re-render, commit.",
         )
@@ -161,77 +161,6 @@ def satisfies(required: str, live: Sequence[str]) -> bool:
     return required in live
 
 
-def recipe_blocks(lines: Sequence[str]) -> dict[str, tuple[str, ...]]:
-    """``{header: its indented lines}``, derived from ORDER -- never from a second hand-written table.
-
-    A block opens on an UNINDENTED line and continues through every indented line after it. That is
-    the whole grammar this needs, and it is deliberately not a Makefile parser: the only question is
-    which lines BELONG to which header, which is what :func:`satisfies` cannot see because it is a
-    predicate over one line at a time.
-
-    Deriving the blocks from the base's own line order is what keeps this from being a declaration
-    that can drift -- a recipe moved under a different target in the base moves here in the same
-    edit. An artefact with no indentation at all, a ``.gitignore``, yields blocks that are all empty,
-    so :func:`unbound_recipes` has nothing to say about it and says nothing.
-    """
-    blocks: dict[str, tuple[str, ...]] = {}
-    header: str | None = None
-    for line in lines:
-        if line[:1].isspace():
-            if header is not None:
-                blocks[header] = (*blocks[header], line)
-        else:
-            header = line
-            blocks.setdefault(header, ())
-    return blocks
-
-
-def unbound_recipes(required: Sequence[str], live: Sequence[str]) -> tuple[str, ...]:
-    """Base recipe lines present in *live* but NOT under the header they sit under in *required*.
-
-    THE HOLE THIS CLOSES, MEASURED 2026-09-18 against the live Makefile base. :func:`satisfies`
-    matches a colon-terminated base line by TARGET NAME ALONE, and every other base line by
-    membership ANYWHERE in the file. Each is right on its own, and together they cannot see an
-    ASSOCIATION: a Makefile whose ``verify:`` is followed by nothing, with
-    ``python -m dev_lab.dev.verify`` sitting under ``all:`` instead, satisfies BOTH base lines
-    and reports INSTALLED. ``make verify`` then does nothing, and under ``REQUIRED`` nothing else
-    byte-checks that recipe.
-
-    It is the recipe-shaped twin of the count pin: ``REQUIRED`` can see a target DISAPPEAR and cannot
-    see one GUTTED -- and gutted is the state a reader is least likely to look for, because the
-    target is right there in the file.
-
-    TWO THINGS ARE DELIBERATELY NOT REPORTED HERE, and both are the same rule: one defect, one voice.
-    A header MISSING entirely is already a missing base line. And a recipe line that is nowhere in the
-    file at all is already a missing base line too -- reporting it would also make the message UNTRUE,
-    since it says the line is in the file. So the complaint fires only when the recipe really is
-    present and really is under something else, which is the state no other arm can see.
-
-    Args:
-        required: the base's content lines, IN ORDER, so the association can be derived at all.
-        live: the file's meaningful lines, in order.
-
-    Returns:
-        One complaint per orphaned recipe line, sorted, naming the header it belongs under.
-
-    """
-    wanted = recipe_blocks(required)
-    found = recipe_blocks(live)
-    anywhere = set(live)
-    problems: list[str] = []
-    for header, recipes in wanted.items():
-        if not recipes or not any(satisfies(header, (name,)) for name in found):
-            continue
-        under = {line for name, lines in found.items() if satisfies(header, (name,)) for line in lines}
-        problems.extend(
-            f'{line!r} is in the file but not under {header!r} -- the target is present and its recipe is '
-            f'not, so it runs and does nothing'
-            for line in recipes
-            if line in anywhere and line not in under
-        )
-    return tuple(sorted(problems))
-
-
 def measured_delta(path: Path, base: Base, repo: str) -> Delta:
     """What *path* would have to declare, today, to be a rendering of *base*.
 
@@ -240,7 +169,7 @@ def measured_delta(path: Path, base: Base, repo: str) -> Delta:
     itself -- a starting point, not a decision; stating one is the act that makes it a ceiling.
 
     It returns an APPENDING delta and never an anchored one, because where a measured line belongs is
-    a judgement about the artefact's grammar that reading the file cannot make. Deciding it is the
+    a judgment about the artifact's grammar that reading the file cannot make. Deciding it is the
     adoption commit's job, which is also why this returns a starting point rather than an answer.
     """
     live = meaningful_lines(path.read_text(encoding='utf-8'), base.comment) if path.is_file() else ()
@@ -273,7 +202,7 @@ def negated_base_lines(base: Base) -> tuple[str, ...]:
 
     THE OTHER HALF OF THE SORTED TABLE'S PROSE. `_famconfig_rows` justifies storing its `.gitignore`
     sorted with "order-insensitive apart from negations, AND THE BASE DECLARES NONE"; the re-ignore
-    arm mechanised the first clause and this one mechanises the second. A negation is meaningful only
+    arm mechanized the first clause and this one mechanizes the second. A negation is meaningful only
     BELOW the rule it re-includes from, and `!` sorts below every character a rule can start with, so
     a negation in this table renders above its own subject and does nothing -- and the anchor points
     one way, so no delta can move it down.
@@ -304,7 +233,7 @@ def positional_base_lines(base: Base, *, floating_floor: int) -> tuple[str, ...]
     and a scan that found none would report subsumption nowhere and read exactly like a clean table.
     """
     subjects = {line: subject for line in base.content_lines if (subject := floating_subject(line))}
-    assert_base_floor(len(subjects), floating_floor, f'{base.artefact} floating-rule')
+    assert_base_floor(len(subjects), floating_floor, f'{base.artifact} floating-rule')
     return tuple(
         line
         for line in base.content_lines

@@ -200,7 +200,7 @@ def test_the_consent_package_imports_no_client_of_the_forge_wave() -> None:
 @pytest.mark.parametrize(
     ('said', 'names'),
     [
-        ('Host key verification failed.', 'devhost enrol'),
+        ('Host key verification failed.', 'devhost enroll'),
         ('consent@forge: Permission denied (publickey).', "does not admit this machine's ssh key"),
         ('ssh: connect to host forge port 22: Connection timed out', 'unreachable over ssh'),
     ],

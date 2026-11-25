@@ -72,7 +72,7 @@ def test_check_host_refuses_an_undeclared_table_or_key_by_name(tmp_path: Path, e
 
 def test_a_misspelt_ops_scalar_is_refused_at_load(tmp_path: Path) -> None:
     host = _write(tmp_path, 'h.toml', HOST.replace('[ops]\n', '[ops]\npyhton = "x"\n', 1))
-    with pytest.raises(ValueError, match='pyhton'):
+    with pytest.raises(ValueError, match='python'):
         opsconfig.load(host, environ={}, as_root=False, structure_only=True)
 
 
@@ -80,6 +80,15 @@ def test_a_misspelt_ops_scalar_is_refused_at_load(tmp_path: Path) -> None:
 def test_the_family_file_refuses_a_local_only_table(tmp_path: Path, table: str) -> None:
     found = check_family(_write(tmp_path, 'family.toml', f'[{table}]\nx = "y"\n'))
     assert any(table in line and 'local' in line for line in found)
+
+
+def test_a_host_declares_its_writable_roots_and_a_forbidden_one_is_named(tmp_path: Path) -> None:
+    """Ruling R8: every host file may declare [writeroots] allow; an entry no machine may allow is refused by name."""
+    good = HOST + '\n[writeroots]\nallow = ["{repos}", "/srv/lab"]\n'
+    assert check_host(_write(tmp_path, 'good.toml', good)) == []
+    bad = HOST + '\n[writeroots]\nallow = ["{repos}", "/tmp"]\n'
+    found = check_host(_write(tmp_path, 'bad.toml', bad))
+    assert any("'/tmp' is refused" in line for line in found), found
 
 
 def test_the_family_file_refuses_a_secret_value_and_admits_a_path(tmp_path: Path) -> None:

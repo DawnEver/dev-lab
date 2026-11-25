@@ -15,7 +15,7 @@ would take for a unit. Matching is on the LAST segment only (``radial_gap`` is n
 ``Q_1mm``/``Q_0Nm`` constants -- whose values ARE pint Quantities -- are not flagged by accident.
 
 WHY THE SINGLE LETTERS ARE DECLARED RATHER THAN OMITTED, AND THIS IS THE MEASURED PART. A scan that
-silently omits metre -- core's own unit -- reads exactly like a scan that found none, so every symbol
+silently omits meter -- core's own unit -- reads exactly like a scan that found none, so every symbol
 considered and REJECTED is a row below, with the collision that rejected it. The brief this registry
 serves states that a lone ``_s`` "is usually a plural" and a lone ``_a`` "is usually an article".
 MEASURED 2026-09-15, over ``consumer-a``'s ``src/``+``tests/`` (4046 modules) and over this
@@ -53,7 +53,7 @@ by -- ``consumer-a`` (``src/``, ``tests/``, ``cases/``, ``scripts/``), ``consume
 spelling in them (this one, ``dev/units.py``, ``tests/test_dev_units.py``); see the note above
 :data:`EXCLUDED_TOKENS` for why that subtraction is a correction rather than a convenience.
 
-WHAT IS NOT HERE. Spelled-out unit words (``millimetres``, ``seconds``): the family writes symbols --
+WHAT IS NOT HERE. Spelled-out unit words (``millimeters``, ``seconds``): the family writes symbols --
 measured, the longest time spelling in either tree is ``_sec``. ``deg_c``/``deg_f``, whose trailing
 segment is the excluded ``c``/``f``: that is a violation this registry cannot SEE, named here rather
 than left for a reader to discover. And the registry is not exhaustive by design: a unit absent from
@@ -198,14 +198,14 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
     'd': ('day -- `_d` is a derivative index or a distance (`FLUX_LINKAGE_D`, `L_d`, `I_D`); 884 rows.'),
     'db': 'decibel -- `_db` is a database handle (`in_db`, `solver_db`), 28 rows.',
     'dl': (
-        'decilitre -- 7 `_dl` rows measured and the reading is a download or a DIFFERENTIAL inductance '
-        '(`_dl` x6, `cur-dL` x1); zero decilitres. A volume here is `m3`/`cm3`/`mm3`, added to the '
+        'deciliter -- 7 `_dl` rows measured and the reading is a download or a DIFFERENTIAL inductance '
+        '(`_dl` x6, `cur-dL` x1); zero deciliters. A volume here is `m3`/`cm3`/`mm3`, added to the '
         'table above on the same measurement that removes this row.'
     ),
     'dm': (
-        'decimetre -- 4 `_dm` rows measured, ONE distinct (`_Dm`, a test-double class standing in for a '
+        'decimeter -- 4 `_dm` rows measured, ONE distinct (`_Dm`, a test-double class standing in for a '
         '`DiscreteModel`), and the two production violations are `dm` bound to a real `DiscreteModel` '
-        '(`_assign(study, dm)` in the JMAG parametric route). Zero decimetres: the family is SI and '
+        '(`_assign(study, dm)` in the JMAG parametric route). Zero decimeters: the family is SI and '
         'writes lengths in `mm`, and this token spends its whole budget on a MODEL.'
     ),
     'ev': (
@@ -216,7 +216,7 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
     ),
     'f': ('farad -- `_f` is frequency, force or field as often (`C_F`, `_REFERENCE_BETA_ON_F`); 169 rows.'),
     'fm': (
-        'femtometre / FEMM -- 28 `_fm` rows measured, two distinct (`srdab_fm` x26, `test_srdab_fm` x2), '
+        'femtometer / FEMM -- 28 `_fm` rows measured, two distinct (`srdab_fm` x26, `test_srdab_fm` x2), '
         'and both are the FREQUENCY-MODULATED drive control law: `laplace/control/laws/fm_drive.py` is '
         'titled "Frequency-modulated drive controller" and exports `srdab_fm_law`/`SRDABFmParameters`. It '
         'is not the vendor either -- `hamilton/adapters/femm` spells FEMM out, and no name measured here '
@@ -268,9 +268,9 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
         'kelvin and in scope for an opt-in).'
     ),
     'km': (
-        'kilometre -- ZERO `_km` rows measured in a name across the four repos, and the two violations '
+        'kilometer -- ZERO `_km` rows measured in a name across the four repos, and the two violations '
         'are `KM = 0.2  # motor constant k_t = k_e [N*m/A]` in two hamilton coupling tests. A distance '
-        'here is never written in kilometres and a MOTOR CONSTANT is; the family works in `mm` and `m`.'
+        'here is never written in kilometers and a MOTOR CONSTANT is; the family works in `mm` and `m`.'
     ),
     'kw': (
         'kilowatt -- THE LARGEST false positive measured on this family, and the number that matters is '
@@ -282,7 +282,7 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
         'or a docstring). A token that reds 182 times on a tree that obeys the rule is the guard that '
         'gets widened, which is the failure this table exists to prevent.'
     ),
-    'l': ('litre -- `_l` is length, level or lower (`BETA_L`, `_i_l`, `RL_L`), 178 rows.'),
+    'l': ('liter -- `_l` is length, level or lower (`BETA_L`, `_i_l`, `RL_L`), 178 rows.'),
     'lb': (
         'pound -- 13 `_lb` rows measured, four distinct, and all four a LOWER BOUND or a handle: '
         '`radius_lb`/`radius_ub` is the declared pair in `euclid/param_model/closed_shape.py`, plus '
@@ -290,15 +290,15 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
         'is `def lb() -> int` -- a bound in a benchmark. Zero pounds: a mass is written in `kg` here.'
     ),
     'm': (
-        'metre -- the biggest real category measured (842 rows, `PROBE_DEPTH_M`, `--depth-m`) AND '
+        'meter -- the biggest real category measured (842 rows, `PROBE_DEPTH_M`, `--depth-m`) AND '
         'the reason the default is conservative: `Q_0A_per_m`/`Q_0Wb_per_m` in `lab_commons.em` '
         'spell `m` in names whose VALUE is already a pint Quantity, so a naive `m` row reds on code '
         "that obeys the rule. Opt in per repo with tokens=UNIT_TOKENS | {'m'}."
     ),
     'meters': (
-        'metre, spelled -- 0 `_meters` rows measured across the four repos. The symbol is the plural a '
+        'meter, spelled -- 0 `_meters` rows measured across the four repos. The symbol is the plural a '
         'MEASURING INSTRUMENT would take (`power_meters`), which is a device and not a unit, so admitting '
-        'the row would admit the wrong thing; and nothing here writes a metre as a word at all.'
+        'the row would admit the wrong thing; and nothing here writes a meter as a word at all.'
     ),
     'mi': 'mile -- `_mi` is mutual information; 8 rows measured, none of them a distance.',
     'min': (
@@ -329,12 +329,12 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
         'than it writes picohenries, and this table is the SHARED default.'
     ),
     'pm': (
-        'picometre IN PHYSICS, PERMANENT MAGNET HERE -- and the family reading is the one a SHARED table '
+        'picometer IN PHYSICS, PERMANENT MAGNET HERE -- and the family reading is the one a SHARED table '
         'has to hold, because all four repos are motor-design trees. MEASURED 924 `_pm` rows, 48 '
         'distinct, permanent magnet at every one: `psi_pm` x438, `lambda_pm`, `lam_pm`, `nu_pm`, `W_pm`, '
         '`flux_d_pm`, `surface-PM`, `interior-PM`, `buried-PM`. 63 violations in consumer-a and every one '
         'of them a permanent magnet, plus a third reading in consumer-b where `ArcSeg.pm` is the arc MID '
-        'POINT. Picometre is real physics and is not what any of these repos writes; a repo that wants '
+        'POINT. Picometer is real physics and is not what any of these repos writes; a repo that wants '
         "it opts in per repo with tokens=UNIT_TOKENS | {'pm'}."
     ),
     'ps': (

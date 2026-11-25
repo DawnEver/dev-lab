@@ -127,7 +127,7 @@ def selection_workers(
 ) -> tuple[int, list[str]]:
     """The workers *argv*'s pytest runs, and the ``-n`` to append so it runs exactly that many.
 
-    The caller's own width is honoured as given; else (and for ``auto``) xdist runs :func:`selection_width`
+    The caller's own width is honored as given; else (and for ``auto``) xdist runs :func:`selection_width`
     of the *free* room, and without xdist the step is one interpreter: ``0``.
     """
     fit = selection_width(free, files=files, per_gb=per_gb)

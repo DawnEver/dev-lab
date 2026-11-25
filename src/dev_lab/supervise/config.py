@@ -10,7 +10,7 @@ precedence here is two steps, and there is one file a reader has to open::
 
 TOML rather than YAML, which drops a dependency rather than adding one -- stdlib ``tomllib`` reads it
 and the family's configs are already TOML. A YAML parser for one file was a second
-serialisation format to keep working.
+serialization format to keep working.
 
 WHY A MISSING FILE IS NOT AN ERROR. A daemon that refuses to start because its config has not been
 written yet cannot report that fact, which is the one thing it is for. It starts on the defaults
@@ -224,7 +224,7 @@ def _validate(config: Mapping[str, Any]) -> None:
     """Refuse a configuration whose parts contradict each other.
 
     Only cross-field contradictions are checked here -- a single field's absence is the reader's
-    business, but two fields that cannot both be honoured is a configuration that would run and
+    business, but two fields that cannot both be honored is a configuration that would run and
     silently do the wrong thing.
 
     Args:

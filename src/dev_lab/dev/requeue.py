@@ -34,7 +34,7 @@ RETRIES: Final[dict[Owner, int]] = {
     Owner.ENVIRONMENT: 3,
     Owner.PART_REFUSAL: 3,
     Owner.SCHEDULING: 3,
-    Owner.VENDOR_LICENCE: 0,
+    Owner.VENDOR_LICENSE: 0,
     Owner.NETWORK: 0,
     Owner.STATUS_PUBLISHING: 0,
 }

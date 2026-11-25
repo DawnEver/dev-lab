@@ -21,8 +21,8 @@ LAUNCHER = Path(dep.__file__).with_name('agent_launcher.js')
 #: Child scripts are one line of `print(..., file=sys.stderr)`: a backslash before a quote is lost in Windows argv.
 _USAGE = (
     'import sys;'
-    'print("usage: taskbinding [-h] {show}", file=sys.stderr);'
-    "print(\"taskbinding: error: argument verb: invalid choice: 'bind' (choose from 'show')\", file=sys.stderr);"
+    'print("usage: taskledger [-h] {show}", file=sys.stderr);'
+    "print(\"taskledger: error: argument verb: invalid choice: 'bind' (choose from 'show')\", file=sys.stderr);"
     'sys.exit(2)'
 )
 _MISSING = 'import dev_lab_no_such_module'

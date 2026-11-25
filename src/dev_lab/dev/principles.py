@@ -3,9 +3,8 @@
 Family policy (user ruling 2026-10-27): every coding agent in every family repo reads them up front, and
 every reviewer judges a change against them. ONE source, two derivations:
 
-* :func:`render` -> ``.claude/rules/principles.md`` (:data:`PAGE_REL`), written into each repo by
-  :mod:`dev_lab.dev.famfiles` and pinned committed-equals-rendered by
-  :mod:`dev_lab.dev.famtests.principlespage`;
+* :func:`bullet_lines` -> the principles in the family section of each repo's AGENTS.md
+  (:mod:`dev_lab.dev.agentsection`, pinned by :mod:`dev_lab.dev.famtests.agentsection`);
 * ``python -m dev_lab.dev.principles --json`` -> the payload the review command hands ai-lab
   (``--principles``, :data:`dev_lab.dev.forgereview_scope.PRINCIPLES_FIELD`).
 
@@ -23,7 +22,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.docwidth import WIDTH_CEILING
 
-__all__ = ['PAGE_REL', 'PRINCIPLES', 'Principle', 'main', 'payload', 'render']
+__all__ = ['PRINCIPLES', 'Principle', 'bullet_lines', 'main', 'payload']
 
 
 class Principle(NamedTuple):
@@ -60,7 +59,7 @@ PRINCIPLES: Final = (
         'Layered decoupling',
         'Depend one way through narrow interfaces; never into internals or upward.',
     ),
-    Principle('names-match-behaviour', 'Names match what they do', 'A name says what the thing does now.'),
+    Principle('names-match-behavior', 'Names match what they do', 'A name says what the thing does now.'),
     Principle(
         'no-backward-compatibility',
         'No backward compatibility',
@@ -103,10 +102,15 @@ PRINCIPLES: Final = (
         "A worktree's name has a physical meaning tied to its task; a hash-like name (`agent-<hex>`, an appended "
         'hash) is forbidden (WORKTREE-NAMES-ITS-TASK).',
     ),
+    Principle(
+        'native-first',
+        'Native first',
+        'Python declares and orchestrates, Rust computes. A stage Rust owns is written in Rust from its first line; '
+        'a Python version of it is only a scratch prototype, never a second implementation; acceptance is against '
+        'references (analytic, the vendor ladder, the previous implementation during a migration), never against a '
+        'Python twin.',
+    ),
 )
-
-#: Where each family repo carries the rendered page (always loaded by the agent).
-PAGE_REL: Final = '.claude/rules/principles.md'
 
 
 def payload() -> dict[str, list[dict[str, Any]]]:
@@ -114,12 +118,9 @@ def payload() -> dict[str, list[dict[str, Any]]]:
     return {'principles': [one._asdict() for one in PRINCIPLES]}
 
 
-def render() -> str:
-    """The rules page: a heading and one bullet per principle, wrapped (as one bullet) to the injected width."""
-    lines = [
-        '# Principles -- family policy, rendered from dev_lab.dev.principles; edit there',
-        '',
-    ]
+def bullet_lines() -> tuple[str, ...]:
+    """One Markdown bullet per principle, each wrapped (as one bullet) to the injected width."""
+    lines: list[str] = []
     for one in PRINCIPLES:
         lines += textwrap.wrap(
             f'- **{one.name}** (`{one.id}`): {one.statement}',
@@ -127,16 +128,16 @@ def render() -> str:
             subsequent_indent='  ',
             break_on_hyphens=False,
         )
-    return '\n'.join(lines) + '\n'
+    return tuple(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI: ``--json`` prints the payload; otherwise the rendered page."""
+    """CLI: ``--json`` prints the payload; otherwise the bullets."""
     parser = argparse.ArgumentParser(description='The family engineering principles.')
     parser.add_argument('--json', action='store_true', help='print {"principles": [...]} as JSON')
     args = parser.parse_args(argv)
     # ASCII-escaped JSON is valid UTF-8 whatever the console's encoding, so no stream can corrupt the payload.
-    emit(json.dumps(payload(), indent=2) if args.json else render().rstrip('\n'), flush=True)
+    emit(json.dumps(payload(), indent=2) if args.json else '\n'.join(bullet_lines()), flush=True)
     return 0
 
 

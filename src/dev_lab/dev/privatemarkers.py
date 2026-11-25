@@ -275,7 +275,7 @@ def text_refusal(
     named = ', '.join(f'line {n}: {kind}' for n, kind, _ in hits)
     return (
         f'PRIVATE-MARKERS: the {what} names a private value ({named}) and the target repo is not known private\n'
-        'Door: drop or neutralise each named marker (a placeholder for each name), then re-run the same command\n'
+        'Door: drop or neutralize each named marker (a placeholder for each name), then re-run the same command\n'
         'details: docs-src/dev/refusals.md#private-markers (dev-lab)'
     )
 
@@ -303,7 +303,7 @@ def _judge_message(root: Path, message_file: Path, markers: tuple[re.Pattern[str
     emit('PRIVATE-MARKERS: the commit message names a private value; nothing is committed yet:', err=True)
     for n, kind, _ in hits:
         emit(f'message line {n}: {kind}', err=True)
-    emit('Door: neutralise each named marker and commit again (free before the commit exists)', err=True)
+    emit('Door: neutralize each named marker and commit again (free before the commit exists)', err=True)
     return 1
 
 
@@ -347,7 +347,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         for _, kind, _ in scan_text(text, markers, path=rel)
     ]
     if found:
-        emit('PRIVATE-MARKERS: a staged line names a private value; neutralise it before committing:', err=True)
+        emit('PRIVATE-MARKERS: a staged line names a private value; neutralize it before committing:', err=True)
         emit('\n'.join(found), err=True)
     return 1 if found else 0
 

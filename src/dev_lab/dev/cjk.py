@@ -4,8 +4,8 @@ THE USER DIRECTIVE, 2026-09-16, translated rather than quoted: across every repo
 no content that git tracks may contain CJK (Chinese/Japanese/Korean) characters -- only English
 letters, digits and symbols. Exempt: ``attic/`` and ``archived/`` (the last at the repo root only,
 since 2026-09-23), and a ``<stem>.zh.md`` / ``.zh.toml`` / ``.zh.json`` translation beside its English
-``<stem>.md`` / ``.toml`` / ``.json`` (:data:`TRANSLATION_SUFFIXES`). ``.claude/memory/`` and
-``.claude/tasks/`` are NOT exempt (D26, user, 2026-11-17): they are English only. It is not kept
+``<stem>.md`` / ``.toml`` / ``.json`` (:data:`TRANSLATION_SUFFIXES`). ``.claude/memory/`` is NOT
+exempt (D26, user, 2026-11-17): it is English only, as is the global task ledger. It is not kept
 here in the source language on purpose: this module is itself tracked, and a literal quotation would
 be the one violation its own guard could never let through.
 
@@ -47,7 +47,7 @@ reused rather than re-implemented): an untracked scratch file is not the subject
 and a mechanism keyed on the working tree would refuse content nobody will ever push.
 
 BINARY FILES ARE SKIPPED, NAMED. A file is read as bytes and decoded as UTF-8; a
-:class:`UnicodeDecodeError` means it is not text this guard can read at all (a compiled artefact, an
+:class:`UnicodeDecodeError` means it is not text this guard can read at all (a compiled artifact, an
 image checked in by accident) and it is recorded in :attr:`Scan.undecodable` rather than silently
 treated as clean -- "not decodable" and "decodable and free of CJK" are different facts and the
 first one is not evidence of the second.
@@ -129,7 +129,7 @@ CJK_RANGES: Final[tuple[tuple[int, int], ...]] = (
 )
 
 #: Where CJK is permitted without a declaration. DATA, not a literal scattered through the scan, so
-#: an adopting repo can read what it inherited rather than re-deriving it from behaviour.
+#: an adopting repo can read what it inherited rather than re-deriving it from behavior.
 #:
 #: TWO SHAPES, AND THE LEADING ``/`` IS WHAT TELLS THEM APART. A bare prefix matches as a path
 #: SEGMENT ANYWHERE in the path; a prefix spelled with a leading ``/`` is ANCHORED AT THE REPO ROOT
@@ -139,8 +139,8 @@ CJK_RANGES: Final[tuple[tuple[int, int], ...]] = (
 #: ``attic/`` holds one subtree per migrated repo, and its trees are SCOPED per module, where a
 #: root-prefix-only match once reported 47,521 phantom CJK characters under ``src/consumer_a/**``.
 #:
-#: ``.claude/memory/`` AND ``.claude/tasks/`` ARE NOT HERE (D26, user, 2026-11-17). They were exempt
-#: until then; now they are English only, and a user's words quoted in them are translated and marked
+#: ``.claude/memory/`` IS NOT HERE (D26, user, 2026-11-17). It was exempt
+#: until then; now it is English only, and a user's words quoted in them are translated and marked
 #: ``(user, translated)``. A repo migrates its remaining files through its declared named set
 #: (``[tool.dev_lab.cjk] declared``, read by :mod:`dev_lab.dev.famtests.alwayson`), which may only shrink.
 #:
@@ -432,7 +432,7 @@ _CATEGORY_NAMES: Final[dict[str, str]] = {
     'Mn': 'mark',
     'Mc': 'mark',
     'Me': 'mark',
-    'Nd': 'digit',
+    'And': 'digit',
     'Nl': 'number',
     'No': 'number (other)',
     'Pc': 'punctuation (connector)',

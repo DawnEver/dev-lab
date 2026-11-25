@@ -35,8 +35,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'devcredential',
     # ORIGINAL: 2026-11-20, tokens never rotate (user ruling): the helper and store-line presence checked by drift.
     'forgecredential',
-    # ORIGINAL: 2026-11-20, user (translated): 'you must be able to do it yourself' -- one code enrols a machine.
-    'forgeenrol',
+    # ORIGINAL: 2026-11-20, user (translated): 'you must be able to do it yourself' -- one code enrolls a machine.
+    'forgeenroll',
     # ORIGINAL: user ruling 2026-11-23, a declared key is admitted by one code from any machine the issuer admits.
     'devhostadmit',
     # ORIGINAL: 2026-11-20, the effective [dev] split from devhost at the module-size band for the credential doors.
@@ -80,4 +80,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'transport',
     # ORIGINAL: the integrator as a session role, verified offline from its consent credential (2026-11-12).
     'session',
+    'storagecheck',  # ORIGINAL: 2026-11-23, hpcaccount storage-check re-proves a placed secret on its host
+    'tickstop',  # ORIGINAL: 2026-11-23, hpcaccount tick-status and tick-stop, the door to a hung cluster tick
 )

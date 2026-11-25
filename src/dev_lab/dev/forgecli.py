@@ -48,6 +48,7 @@ from dev_lab.dev import (
     forgemergeready,
     forgenotice,
     forgeoutbox,
+    forgepr,
     forgeprotect,
     forgepublish,
     forgequeue,
@@ -79,7 +80,6 @@ from dev_lab.dev import (
     servelock,
     walls,
 )
-from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev.forge import Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -205,6 +205,13 @@ def _parser() -> argparse.ArgumentParser:
     closing.add_argument(
         '--reason', required=True, help='why; posted as a comment before the close (no branch deleted)'
     )
+    editing = _verb(pr, 'edit')
+    editing.add_argument('number', type=int)
+    edits = editing.add_mutually_exclusive_group(required=True)
+    edits.add_argument('--body-file', help='replace the body with this UTF-8 file')
+    edits.add_argument(
+        '--append-line', action='append', default=[], help='add this line after the current body (repeatable)'
+    )
     opened = _verb(pr, 'create')
     opened.add_argument('--title', required=True)
     opened.add_argument('--body', default='')
@@ -221,18 +228,6 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def pr_close(client: Client, number: int, reason: str) -> PullRequest:
-    """Close pull request *number*, commenting *reason* first so the record says why; its branch stays.
-
-    An empty *reason* is refused before any call: a close nobody can explain is not a record.
-    """
-    if not reason.strip():
-        said = f'pr close {number}: a reason is required (--reason "<why>")'
-        raise ValueError(said)
-    client.issue_comment(number, f'closed: {reason.strip()}')
-    return pull_of(client.call('PATCH', f'{client.repo}/pulls/{number}', {'state': 'closed'}))
-
-
 def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
     verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit, labels=args.label),
@@ -240,17 +235,20 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
         ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind, args.label),
         ('issue', 'comment'): lambda: client.issue_comment(args.number, args.body),
         ('issue', 'close'): lambda: client.issue_close(args.number),
-        ('issue', 'label'): lambda: _relabelled(client, args),
+        ('issue', 'label'): lambda: _relabeled(client, args),
         ('pr', 'create'): lambda: client.pr_create(
             args.title, _declared_body(args), head=args.head, base=args.base, draft=not args.ready
         ),
         ('pr', 'view'): lambda: client.pr_view(args.number),
-        ('pr', 'close'): lambda: pr_close(client, args.number, args.reason),
+        ('pr', 'close'): lambda: forgepr.pr_close(client, args.number, args.reason),
+        ('pr', 'edit'): lambda: forgepr.pr_edit(
+            client, args.number, body=forgepr.edit_text(args) if args.body_file else None, append=args.append_line
+        ),
     }
     return verbs[args.noun, args.verb]()
 
 
-def _relabelled(client: Client, args: argparse.Namespace) -> Issue:
+def _relabeled(client: Client, args: argparse.Namespace) -> Issue:
     """Relabel issue *args.number* (:func:`~dev_lab.dev.forgelabels.relabel`) and show it as it now stands."""
     relabel(client, args.number, add=args.add, remove=args.remove)
     return client.issue_view(args.number)
@@ -301,6 +299,7 @@ def _refused(
 _PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, Callable[[argparse.Namespace], tuple[str, ...]]]] = {
     ('pr', 'create'): ('PR title or body', lambda a: (a.title, a.body)),
     ('pr', 'close'): ('close reason', lambda a: (a.reason,)),
+    ('pr', 'edit'): ('PR body', lambda a: (forgepr.edit_text(a),)),
     ('issue', 'create'): ('issue title or body', lambda a: (a.title, a.body)),
     ('issue', 'comment'): ('comment body', lambda a: (a.body,)),
     ('issue', 'label'): ('label names', lambda a: (*a.add, *a.remove)),
@@ -325,7 +324,7 @@ def issue_and_pr(
     client = client_for(root, env=env, transport=transport)
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (
-            said := forgetask.head_advice(args.head, env)
+            said := forgetask.head_advice(args.head, root)
             + pradmit.create_advice(root, client, head=args.head, base=args.base)
         ):
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
@@ -340,7 +339,7 @@ def issue_and_pr(
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
-    forgetask.record(args, result, root, os.environ if env is None else env)
+    forgetask.record(args, result, root)
     items = result if isinstance(result, tuple) else (result,)
     if args.json:
         data = [dataclasses.asdict(item) for item in items]

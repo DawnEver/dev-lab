@@ -37,7 +37,7 @@ owner is not a state: it is the ``class=<owner>`` field of an ``error`` descript
 back by :func:`owner_of`. A ``failure`` is a judged FAIL and always :attr:`Owner.CODE`; an ``error`` is
 the author's red only when it says ``class=code``. Every other class is not the author's: it still blocks
 promoting ``main`` and is never a PASS. A producer DECLARES an outage it did not cause -- infrastructure
-that did not answer (:func:`unreachable`) or a vendor licence it could not check out (:func:`licence_outage`)
+that did not answer (:func:`unreachable`) or a vendor license it could not check out (:func:`license_outage`)
 -- and either is released RETRYABLE under its class. EVERY CLASS HAS ONE RETRY POLICY
 (:mod:`dev_lab.dev.requeue`): ``code`` is never retried, a part refusal until its limit, the rest only when
 RETRYABLE -- environment and scheduling results never block a merge
@@ -70,7 +70,7 @@ __all__ = [
     'box_release_reason',
     'declared_outage',
     'full_suite_refusal',
-    'licence_outage',
+    'license_outage',
     'outage_env',
     'outage_said',
     'owned',
@@ -123,7 +123,7 @@ class Owner(StrEnum):
     CODE = 'code'  # the commit under test: a judged FAIL, or a defect of the commit itself
     ENVIRONMENT = 'environment'  # the producer, its tree or its interpreter broke: a crash, no record, no tree
     SCHEDULING = 'scheduling'  # the box refused or killed it, a lease lapsed, a newer tip superseded it
-    VENDOR_LICENCE = 'vendor-licence'  # a vendor tool's licence could not be checked out
+    VENDOR_LICENSE = 'vendor-license'  # a vendor tool's license could not be checked out
     NETWORK = 'network'  # infrastructure it needs did not answer: a login host, the forge
     STATUS_PUBLISHING = 'status-publishing'  # the verdict exists but its status could not be posted (the outbox)
     PART_REFUSAL = 'part-refusal'  # it ran, but its part was refused (an inconclusive record, a refused post)
@@ -167,7 +167,7 @@ def whose(state: str, description: str) -> str:
 
     Architecture contract 6: an ``error`` of any class but ``code`` is NOT the author's -- it still leaves the
     commit unsettled (never a PASS, so it blocks promoting ``main``), but it is the producer's, the box's,
-    the network's, a vendor licence's or the forge's to clear, and the reading says so.
+    the network's, a vendor license's or the forge's to clear, and the reading says so.
     """
     if state != 'error':
         return ''
@@ -189,7 +189,7 @@ _OUTAGE: Final = {
     Owner.ENVIRONMENT: 'a tool it needs could not run here',
     Owner.NETWORK: 'infrastructure did not answer',
     Owner.SCHEDULING: 'the box had no room for it',
-    Owner.VENDOR_LICENCE: 'a vendor licence could not be checked out',
+    Owner.VENDOR_LICENSE: 'a vendor license could not be checked out',
     Owner.STATUS_PUBLISHING: 'its verdict could not be posted',
 }
 
@@ -228,9 +228,9 @@ def outage_said(text: str) -> str | None:
 _DECLARED: Final = re.compile(r'unreachable: class=(?P<owner>[a-z-]+) (?P<why>.*)', re.DOTALL)
 
 
-def licence_outage(why: str) -> int:
-    """Declare that a vendor licence could not be checked out: released RETRYABLE as ``class=vendor-licence``."""
-    return unreachable(why, Owner.VENDOR_LICENCE)
+def license_outage(why: str) -> int:
+    """Declare that a vendor license could not be checked out: released RETRYABLE as ``class=vendor-license``."""
+    return unreachable(why, Owner.VENDOR_LICENSE)
 
 
 def outage_env(record: Path) -> dict[str, str]:

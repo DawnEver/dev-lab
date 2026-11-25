@@ -71,9 +71,8 @@ def test_exempted_matches_the_declared_prefixes_and_nothing_wider() -> None:
 
 
 def test_memory_and_tasks_are_english_only_d26(tmp_path: Path) -> None:
-    """D26 (user, 2026-11-17): `.claude/memory/` and `.claude/tasks/` lost their exemption, at any depth."""
+    """D26 (user, 2026-11-17): `.claude/memory/` lost its exemption, at any depth."""
     assert not exempted('.claude/memory/2026/09/16/x.md')
-    assert not exempted('.claude/tasks/some-task/JOURNAL.md')
     assert not exempted('src/pkg/.claude/memory/x.md')
     memory = tmp_path / '.claude' / 'memory' / 'note.md'
     memory.parent.mkdir(parents=True)
@@ -117,7 +116,7 @@ def test_a_planted_violation_and_a_planted_clean_file_are_told_apart(tmp_path: P
     assert scan.files_read == 2, 'the exempt file must not count towards files_read'
 
 
-def test_a_nested_exemption_directory_is_recognised_and_a_nested_lookalike_is_not(tmp_path: Path) -> None:
+def test_a_nested_exemption_directory_is_recognized_and_a_nested_lookalike_is_not(tmp_path: Path) -> None:
     """MEASURED on consumer-a: `.claude/memory/` and `attic/` are not only root directories.
 
     A root-prefix-only match reported 47,521 CJK characters under `src/consumer_a/**` that were all
@@ -194,7 +193,7 @@ def _walk_every_character(
     This is the per-character walk `find_cjk` used before the derived-class prefilter landed,
     reproduced here rather than imported so the equivalence test compares two INDEPENDENT answers.
     If it is ever edited to match a new `find_cjk`, the test below stops proving anything -- it is
-    the OLD behaviour on purpose.
+    the OLD behavior on purpose.
     """
     found: list[tuple[int, int, str]] = []
     for line_no, line in enumerate(text.splitlines(), start=1):

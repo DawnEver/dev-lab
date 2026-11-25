@@ -15,5 +15,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'journaldoor',
     'memoryadds',  # memory is added to, never edited, new here
     'memoryentry',  # one memory entry's text judged, split from memoryadds (module-size band)
-    'remconfig',  # the family's rem.json, new here
+    'memory',  # memory written and searched by one door, rem's kept duty (user ruling 2026-11-23)
+    'remretired',  # rem's leftovers refused, its repo migration and machine uninstall (2026-11-23)
+    'ledgerguard',  # rem's task guard, kept as dev-lab's ledger guard (2026-11-23)
 )

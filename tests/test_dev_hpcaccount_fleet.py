@@ -203,7 +203,7 @@ def test_an_account_with_two_grants_is_refused_rather_than_one_silently_kept(tmp
 
 
 def test_a_declared_short_host_resolves_to_its_grant_login_host(tmp_path: Path) -> None:
-    """A machine file's ``login01`` IS the grant's ``login01.example``: the full name is what is dialled."""
+    """A machine file's ``login01`` IS the grant's ``login01.example``: the full name is what is dialed."""
     code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "login01"\nroot = "/r/src"\n'})
     assert code == 0
     assert [argv[0] for argv in started] == ['bob@login01.example']

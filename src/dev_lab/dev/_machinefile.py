@@ -133,7 +133,7 @@ def renamed(text: str, table: str, to: str) -> str:
 
 
 def diff(before: str, after: str, path: str) -> str:
-    """The unified diff of *before* -> *after*, labelled *path*; ``''`` when they are equal."""
+    """The unified diff of *before* -> *after*, labeled *path*; ``''`` when they are equal."""
     lines = difflib.unified_diff(before.splitlines(), after.splitlines(), path, path, lineterm='')
     return '\n'.join(lines)
 

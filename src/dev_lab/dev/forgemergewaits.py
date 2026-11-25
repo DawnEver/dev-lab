@@ -13,6 +13,8 @@ posted, no grant had room, a QOS refusal is the environment's or the schedule's,
 
 from __future__ import annotations
 
+import dataclasses
+import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Final
 
@@ -31,13 +33,16 @@ if TYPE_CHECKING:
     from dev_lab.dev.lanepolicy import Policy
 
 __all__ = [
+    'RECORD_LINE',
     'RED',
     'actions_wait',
     'checks_wait',
     'green_waits',
     'hand_note',
     'hand_parts',
+    'off_record',
     'parts_wait',
+    'recorded_as_ran',
     'red_checks',
     'requeued_parts',
     'status_waits',
@@ -45,6 +50,46 @@ __all__ = [
 
 #: The terminal red states of a status, on both forges: the check FAILED, it is not waiting.
 RED: Final = frozenset({'failure', 'error'})
+#: RED-INTEGRATION-MERGES: the PR line that puts one red part ON RECORD, its residual named after ``--``.
+RECORD_LINE: Final = 'Red-On-Record: <part> -- <residual>'
+_RECORD: Final = re.compile(r'^Red-On-Record:\s*(?P<part>\S+)\s+--\s*(?P<residual>\S.*)$', re.MULTILINE)
+_PART_PREFIX: Final = 'tests/'
+
+
+def _ran_red(statuses: Sequence[CommitStatus]) -> dict[str, CommitStatus]:
+    """The hosted base parts that RAN and failed: a judged FAIL, or an error its own code caused (``class=code``).
+
+    Hand and requeued parts never hold a merge (:func:`red_checks` drops them), nor does ``tests/review``.
+    """
+    latest = {status.context: status for status in statuses}
+    return {
+        c: latest[c]
+        for c in red_checks(statuses)
+        if c.startswith(_PART_PREFIX)
+        and row_part(c.removeprefix(_PART_PREFIX)) == BASE
+        and (latest[c].state == 'failure' or 'class=code' in latest[c].description)
+    }
+
+
+def _recorded(record: str) -> frozenset[str]:
+    return frozenset(found.group('part') for found in _RECORD.finditer(record))
+
+
+def off_record(statuses: Sequence[CommitStatus], record: str) -> list[str]:
+    """The wait for the test parts standing red in *statuses* that *record* (the PR body) does not put on record."""
+    if off := sorted(set(_ran_red(statuses)) - _recorded(record)):
+        return [f'its red parts on record: add `{RECORD_LINE}` to the PR for {", ".join(off)}']
+    return []
+
+
+def recorded_as_ran(statuses: Sequence[CommitStatus], record: str) -> tuple[CommitStatus, ...]:
+    """*statuses* with every red test part ON RECORD in *record* read as ran (``success``) -- integration only.
+
+    User ruling RED-INTEGRATION-MERGES: integration MAY be red, so a part that RAN and failed is no wait once its
+    residual is named. A pending or absent part is untouched and still waits; promote to the trunk never reads this.
+    """
+    on = _ran_red(statuses).keys() & _recorded(record)
+    return tuple(dataclasses.replace(s, state='success') if s.context in on and s.state in RED else s for s in statuses)
 
 
 def hand_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:

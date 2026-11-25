@@ -155,7 +155,7 @@ def test_a_waiver_whose_row_is_gone_reds(tmp_path: Path) -> None:
         )
 
 
-def test_a_synthetic_waiver_is_honoured_and_is_also_two_sided(tmp_path: Path) -> None:
+def test_a_synthetic_waiver_is_honored_and_is_also_two_sided(tmp_path: Path) -> None:
     """The second mapping means the same to the arm and something different to a reader."""
     src = _tree(tmp_path, 'm.py', 'EXAMPLE = "tests/a/test_fast.py"\n')
     assert_no_foreign_data(

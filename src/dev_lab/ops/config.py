@@ -35,6 +35,7 @@ from dev_lab.ops.caddy import Caddy, Status
 from dev_lab.ops.configretired import refuse as refuse_retired
 from dev_lab.ops.consentrole import Access, Consent, ConsentClient
 from dev_lab.ops.giteaadmin import Forge
+from dev_lab.ops.httpsdoor import HttpsDoor, behind_allowlist
 from dev_lab.ops.judgerole import Judge
 from dev_lab.ops.pgroles import Postgres
 from dev_lab.ops.placement import Placement
@@ -128,7 +129,7 @@ class Upgrade:
 
 
 @dataclass(frozen=True)
-class Breakglass(Placement):
+class Breakglass(Placement, HttpsDoor):
     """The emergency merge: the restricted account and its keys, the repos it serves, a token per forge, the waves.
 
     ``repos`` are the clone URLs it may merge into -- ITS OWN set, never ``[ops] repos`` (what promote fetches): a
@@ -147,6 +148,7 @@ class Breakglass(Placement):
     a wave reads who produces each repo's tests from the family's roles binding (:mod:`dev_lab.dev.roles`, D73), so
     install renders it as the ``[family]`` table of the machine file its serve and tick read
     (:data:`dev_lab.ops.install.BREAKGLASS_MACHINE`, :func:`dev_lab.ops.install.family_env`).
+    The ``https_*`` keys declare its HTTPS door (:class:`~dev_lab.ops.httpsdoor.HttpsDoor`).
     """
 
     account: str
@@ -164,6 +166,7 @@ class Breakglass(Placement):
 
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see the class docstring)."""
+        HttpsDoor.__post_init__(self)
         served_by(self.repos, self.tokens, self.apps, '[ops.breakglass]')
         if self.family and not self.family.get('source'):
             msg = '[ops.breakglass.family] names no source (the family file on this host)'
@@ -406,6 +409,9 @@ def load(
         postgres=_role(Postgres, ops.get('postgres'), '[ops.postgres]'),
     )
     found = _with_clients(found, ops.get(clientkeys.TABLE))
+    doors = {name: role for name, role in (('consent', found.consent), ('breakglass', found.breakglass))
+             if role is not None and role.https_port}  # fmt: skip
+    behind_allowlist(doors, None if found.caddy is None else found.caddy.sites)
     if found.status is not None and (found.caddy is None or found.supervise is None):
         msg = (
             '[ops.status] needs [ops.caddy] (the allowlist the card is served behind) and [ops.supervise] '

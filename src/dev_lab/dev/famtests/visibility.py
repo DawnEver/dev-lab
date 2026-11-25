@@ -85,7 +85,7 @@ class NotVisibleOnOrigin(AssertionError):
 
 
 def _refuse(message: str) -> None:
-    """Raise the one refusal this module makes, so every arm fails in one recognisable way."""
+    """Raise the one refusal this module makes, so every arm fails in one recognizable way."""
     raise NotVisibleOnOrigin(message)
 
 

@@ -1,7 +1,7 @@
 """MERGE-RESOLUTION-DECLARED: a conflicted merge says, per conflicted file, how it was resolved and why.
 
 THE DEFECT. A conflict resolution is the one edit in a merge nobody reviews: the diff against either parent
-shows the other side's work, not the choice made between them. ``.claude/rules/rem/integration.md``
+shows the other side's work, not the choice made between them. ``.claude/rules/integration.md``
 (downstream, 2026-09-04/05) records the result -- every conflicted file resolved by reinstating the lane's
 OLDER shape, invisible until a later pin red. MERGE-DEVIATIONS-NAMED (:mod:`dev_lab.dev.mergeaudit`) sees the
 TESTS such a resolution drops; this rule makes the resolution of every conflicted FILE a stated choice.
@@ -26,7 +26,8 @@ a file the parents do not conflict on is refused too. A clean merge needs no lin
 
 STRATEGY-BLIND ON PURPOSE. ``-s ours`` and ``-X ours|theirs`` stop on no conflict, yet the recomputation still
 finds the parents' one: a strategy that picks a side silently IS the unreviewed resolution this rule names, so
-it is declared like any other. The index cannot answer instead -- every stage is resolved by commit-msg time.
+it is declared like any other -- an unrelated history too, whose empty base makes every file both roots hold
+differently an add/add conflict. The index cannot answer instead -- every stage is resolved by commit-msg time.
 
 WHERE IT IS ENFORCED: on the FORGE, which no client can skip -- a PR into integration is not merged while a merge
 commit its head adds over integration leaves a conflicted file undeclared (:func:`unresolved`, asked by
@@ -81,7 +82,7 @@ GROUNDS: Final[dict[str, tuple[str, ...]]] = {
     'simpler-side': ('occams-razor',),
     'one-source': ('single-source-of-truth',),
     'deleted-as-baggage': ('no-historical-baggage', 'no-backward-compatibility'),
-    'renamed-to-reality': ('names-match-behaviour',),
+    'renamed-to-reality': ('names-match-behavior',),
     'both-needed': ('first-principles',),
     'kept-capability': ('keep-valuable-options',),
 }
@@ -94,6 +95,7 @@ UNCLASSED: Final[dict[str, str]] = {
     'no-barrier-fan-out': 'a property of how work is scheduled, not a side; a merge resolves one lane at a time',
     'images-by-absolute-path': 'a property of what a turn hands the user, not a side; the Stop hook refuses one',
     'worktree-names-its-task': 'a property of where the work is done, not a side; the deny row refuses the name',
+    'native-first': 'a property of where a stage computes, not a side; NATIVE-FIRST refuses a Python twin',
 }
 
 CLASSES: Final = frozenset(GROUNDS)
@@ -105,12 +107,26 @@ _GIT: Final = shutil.which('git') or 'git'
 _GIT_TIMEOUT_S: Final = 120
 _CONFLICTS_EXIT: Final = 1
 _PARENTS: Final = 2
+#: A discard (``-s ours``) of a history with no merge base is still a merge: with an empty base, a file both roots
+#: hold differently is git's own add/add conflict, so the declaration answers that set instead of an uncomputed one.
+_UNRELATED: Final = ('--allow-unrelated-histories',)
 
 
 def conflicted(root: Path, parents: Sequence[str]) -> tuple[str, ...]:
     """The files the two *parents* conflict on, sorted, as git's own three-way merge computes them."""
     done = _door.run(
-        [_GIT, '-C', str(root), 'merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', *parents],
+        [
+            _GIT,
+            '-C',
+            str(root),
+            'merge-tree',
+            '--write-tree',
+            '--name-only',
+            '--no-messages',
+            '-z',
+            *_UNRELATED,
+            *parents,
+        ],
         capture_output=True,
         check=False,
         timeout=_GIT_TIMEOUT_S,
@@ -209,7 +225,7 @@ def _retired_history(root: Path, base: str, merges: Sequence[tuple[str, Sequence
 
     A retire (``-s ours``) keeps its first parent's tree whole, so its second parent's commits reach the head as
     the retired branch's own past -- including any merge that branch made, whose message this PR cannot redo
-    without dropping the very sha the retire exists to contain. Recognised by CONTENT (tree equal to the first
+    without dropping the very sha the retire exists to contain. Recognized by CONTENT (tree equal to the first
     parent's), never by message; the retire merge itself is still judged like any other.
     """
     exempt: set[str] = set()

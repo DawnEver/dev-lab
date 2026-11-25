@@ -37,12 +37,12 @@ hook's own output is replayed, then one summary line. ``LAB_HOOKS_VERBOSE=1`` al
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -50,138 +50,25 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import metrics, venvpointer, walls
-from dev_lab.dev.githooks import inprocess
+from dev_lab.dev.githooks import fitting, inprocess
+from dev_lab.dev.githooks._gitread import PushLine, git, parse_push_lines, pushed_paths, staged_paths, worktree_diff
 from dev_lab.dev.githooks.gitfailure import git_failed
 from dev_lab.dev.githooks.table import ADVISORY, STAGES, Hook, hook_table
 
 __all__ = [
     'PUSH_URL_ENV',
-    'ZERO_SHA',
-    'PushLine',
     'borrowed_interpreter',
     'in_process',
-    'parse_push_lines',
-    'pushed_paths',
     'resolve',
     'run_stage',
-    'staged_paths',
-    'worktree_diff',
 ]
 
-#: The object name git writes for the absent side of a ref: a deleted ref, or one the remote lacks.
-ZERO_SHA: Final = '0' * 40
-
-#: The fields of one pre-push line: local ref, local sha, remote ref, remote sha.
-_PUSH_FIELDS: Final = 4
-
-_GIT: Final = shutil.which('git') or 'git'
-_GIT_TIMEOUT_S: Final = 120
 
 #: How many characters of path arguments one invocation carries -- under Windows' 32k command line.
 _ARG_BUDGET: Final = 24_000
 
 #: Set to ``1`` to report every pass and skip as well as the failures.
 VERBOSE_ENV: Final = 'LAB_HOOKS_VERBOSE'
-
-
-@dataclass(frozen=True)
-class PushLine:
-    """One ref a push updates, as git's pre-push protocol states it."""
-
-    local_ref: str
-    local_sha: str
-    remote_ref: str
-    remote_sha: str
-
-    @property
-    def deleted(self) -> bool:
-        """The push deletes *remote_ref*: git writes the zero sha on the local side."""
-        return self.local_sha == ZERO_SHA
-
-    @property
-    def line(self) -> str:
-        """The line as git wrote it."""
-        return f'{self.local_ref} {self.local_sha} {self.remote_ref} {self.remote_sha}'
-
-
-def parse_push_lines(text: str) -> tuple[PushLine, ...]:
-    """Git's pre-push stdin, one :class:`PushLine` per four-field line; anything else is not a ref line."""
-    return tuple(
-        PushLine(*fields) for fields in (line.split() for line in text.splitlines()) if len(fields) == _PUSH_FIELDS
-    )
-
-
-def _git(root: Path, *args: str) -> str:
-    return _door.run(
-        [_GIT, '-C', str(root), *args],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace',
-        check=True,
-        timeout=_GIT_TIMEOUT_S,
-    ).stdout
-
-
-def staged_paths(root: Path) -> tuple[str, ...]:
-    """The paths a commit would add or change -- deletions name no file a hook could read.
-
-    During a merge (``MERGE_HEAD``), a path counts only when it differs from HEAD AND from every merged head: what
-    the merge itself writes, never what one side already held.
-    """
-    found = _diff_names(root, '--cached')
-    for parent in _merge_heads(root):
-        theirs = set(_diff_names(root, '--cached', parent))
-        found = tuple(path for path in found if path in theirs)
-    return found
-
-
-def _diff_names(root: Path, *args: str) -> tuple[str, ...]:
-    out = _git(root, 'diff', *args, '--name-only', '--diff-filter=ACMR', '-z')
-    return tuple(path for path in out.split('\0') if path)
-
-
-def _merge_heads(root: Path) -> tuple[str, ...]:
-    """The heads an in-progress merge brings in (git's ``MERGE_HEAD`` file, one per line); none outside a merge."""
-    path = Path(_git(root, 'rev-parse', '--git-path', 'MERGE_HEAD').strip())
-    path = path if path.is_absolute() else root / path
-    return tuple(path.read_text(encoding='utf-8').split()) if path.is_file() else ()
-
-
-def pushed_paths(root: Path, lines: Sequence[PushLine], remote: str) -> tuple[str, ...]:
-    """The paths the pushed commits change: commits the remote lacks, a merge counting only its own content.
-
-    ``--cc`` (dense combined diff) names a merge's path only when it differs from every parent, so a merge of the
-    integration branch into a lane carries none of integration's files. The remote's old sha and its
-    remote-tracking refs bound the walk: a commit already published is not this push's.
-    """
-    found: dict[str, None] = {}
-    for line in lines:
-        if line.deleted:
-            continue
-        known = [line.remote_sha] if line.remote_sha != ZERO_SHA and _has_commit(root, line.remote_sha) else []
-        exclude = [f'--remotes={remote}'] if remote else []
-        out = _git(
-            root, 'log', '--cc', '--name-only', '--diff-filter=ACMR', '-z', '--format=', line.local_sha, '--not',
-            *known, *exclude,
-        )  # fmt: skip
-        found.update(dict.fromkeys(path.strip() for path in out.split('\0') if path.strip()))
-    return tuple(found)
-
-
-def _has_commit(root: Path, sha: str) -> bool:
-    done = _door.run(
-        [_GIT, '-C', str(root), 'cat-file', '-e', f'{sha}^{{commit}}'],
-        capture_output=True,
-        check=False,
-        timeout=_GIT_TIMEOUT_S,
-    )
-    return done.returncode == 0
-
-
-def worktree_diff(root: Path) -> str:
-    """The working tree's unstaged diff -- what a hook must not change during a commit."""
-    return _git(root, 'diff', '--no-color', '--binary')
 
 
 def resolve(run: Sequence[str], python: str = sys.executable) -> list[str]:
@@ -302,7 +189,16 @@ def _selected(
     chosen = tuple(hook_table(root).get(stage, ()) if hooks is None else hooks)
     if not borrowed:
         return chosen
-    door = f'{Path(sys.executable).as_posix()} -m dev_lab.dev.dep --bootstrap {root.as_posix()}'
+    python = fitting.bootstrap_interpreter(root)
+    door = (
+        f'{python} -m dev_lab.dev.dep --bootstrap {root.as_posix()}'
+        if python is not None
+        else (
+            f'no interpreter that imports dev_lab satisfies its requires-python {fitting.requires_python(root)!r} '
+            f'(this one is {platform.python_version()}): create a venv on a fitting Python with dev_lab, then run '
+            f'<that python> -m dev_lab.dev.dep --bootstrap {root.as_posix()}'
+        )
+    )
     if stage not in ADVISORY:
         emit(
             f'[githooks] {stage}: refused -- {root.as_posix()} has no venv of its own that imports dev_lab '
@@ -470,7 +366,7 @@ def _verdict(stage: str, failed: Sequence[str]) -> int:
 
 def main(stage: str, git_args: Sequence[str]) -> int:
     """The ``run`` subcommand: the checkout's top level from git, stdin read once when the stage has one."""
-    root = Path(_git(Path.cwd(), 'rev-parse', '--show-toplevel').strip())
+    root = Path(git(Path.cwd(), 'rev-parse', '--show-toplevel').strip())
     stdin = sys.stdin.read() if stage == 'pre-push' and not sys.stdin.isatty() else ''
     return run_stage(stage, git_args, root=root, stdin=stdin, borrowed=borrowed_interpreter(root))
 

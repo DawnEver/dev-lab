@@ -19,8 +19,11 @@ module is the client and the CLI::
 * ONE CODE, ONE PLAN (``--plan``): :mod:`dev_lab.dev.sshholdplan` -- the code buys the plan's credentials, then
   opens every plan host not already held. Before the code is read the door runs the plan's preflight ITSELF (the
   steps file its last green preflight recorded, or ``--steps``); not green now refuses ``no code used``.
-* THE KEY IS ASKED FIRST, with no code (:mod:`dev_lab.dev.sshholdprobe`): a host that refuses this machine's public
-  key refuses the open before the code is read, naming where the account's keys are managed.
+* THE KEY IS PROVEN FIRST, with no code (:mod:`dev_lab.dev.sshholdprobe`; alone: ``sshhold probe <dest>``): unless
+  ssh says ``publickey`` partial success for the host, the open is refused before the code is read, naming the
+  identity ssh offered and where the account's keys are registered (Cirrus: SAFE).
+* The ssh run is PATH's (:func:`dev_lab.dev.sshholdwire.resolved`) -- the one the user's shell runs, never the
+  System32 copy CreateProcess finds first on Windows.
 * ``--jump <bastion>``: a host reachable only through a bastion. ssh asks each hop's keyboard-interactive
   prompt through the same ``SSH_ASKPASS``, so ONE code answers both -- valid only where the hops share one TOTP
   secret (each pam_oath records the step it accepted, so the code is spent once per host, never twice on one).
@@ -205,6 +208,9 @@ def _parser() -> argparse.ArgumentParser:
     opening.add_argument(
         '--jump', help='a bastion (ssh -J) for every host [ssh] jump does not route; the one code answers both'
     )
+    proving = verbs.add_parser('probe', help='prove publickey partial success with no code (what open does first)')
+    proving.add_argument('dest')
+    proving.add_argument('--jump', help='a bastion (ssh -J) when [ssh] jump does not route the host')
     running = verbs.add_parser('run', help='run one command on the held connection')
     running.add_argument('dest')
     running.add_argument('--timeout', type=float, default=DEFAULT_TIMEOUT_S)
@@ -241,7 +247,7 @@ def _open(args: argparse.Namespace) -> int:
         emit(sshholdplan.offered(args.plan, args.steps, code_given=args.code is not None))
     check_hours(args.hours, ceiling())
     if args.plan is None:
-        sshholdprobe.probe(args.dest, route(args.dest, jump))  # the key, asked with no code
+        emit(sshholdprobe.probe(args.dest, route(args.dest, jump)))  # partial success PROVEN, with no code
         emit(open_session(args.dest, args.hours, given_code(args.code), ssh=route(args.dest, jump)))
         return 0
     code = given_code(args.code)
@@ -273,6 +279,8 @@ def main(argv: list[str] | None = None) -> int:
             return status
         if args.verb == 'credential':
             emit(store_credential(args.dest, args.url, args.login, sys.stdin.readline().strip()))
+        elif args.verb == 'probe':  # the open's first step alone: no code is read
+            emit(sshholdprobe.probe(args.dest, route(args.dest, args.jump)))
         elif args.verb == 'close':
             emit(close_session(args.dest))
         else:

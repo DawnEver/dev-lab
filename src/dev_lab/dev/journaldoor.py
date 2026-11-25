@@ -1,13 +1,13 @@
 """TRACKED-CITES-NO-EPHEMERAL AT THE DOOR: a task-journal append citing an ignored path is refused before it is written.
 
-THE INCIDENT, dev-lab#419 (2026-11-11). An agent appended a progress line through rem's door (``task.js log``)
+THE INCIDENT, dev-lab#419 (2026-11-11). An agent appended a progress line through the journal's door (then rem's)
 citing a git-ignored path. The commit-time check (:mod:`dev_lab.dev.ephemeralrefs`) then refused the journal,
 rem's task guard refused every repair (the journal is append-only), the escape ceiling only goes down, and the
 hand-back hook refused the ``! sed`` the agent proposed. Four guards, each right, and no remedy any of them allowed.
 
 THE CAUSE is the order: the check ran at COMMIT time on a line written at APPEND time through a door with no undo.
 So before the call runs, the SAME predicate (:func:`dev_lab.dev.ephemeralrefs.cited_in_text`) judges the text a
-``task.js log|decide|open-item|close-item|handoff`` command is about to append, and the call is denied naming a
+task-door ``log|decide|open-item|close-item|handoff`` command is about to append, and the call is denied naming a
 rephrase every other guard allows: a memory name or a ``<placeholder>`` shape. Only the appended words are
 judged -- a chained ``&& cat output/x`` is not the journal's text. A command the lexer cannot split is judged
 whole from the verb on, so a heredoc-built line is refused rather than missed.
@@ -38,9 +38,9 @@ if TYPE_CHECKING:
 
 __all__ = ['JOURNAL_VERBS', 'RULE', 'appended_texts', 'main', 'refusal']
 
-#: ``task.js`` flags that take a value; the value is routing, not journal text.
-_VALUED: Final = frozenset({'--task', '--scope', '--owner'})
-_DOOR: Final = 'task.js'
+#: The task door's flags that take a value; the value is routing, not journal text.
+_VALUED: Final = frozenset({'--task', '--line', '--reason'})
+_DOOR: Final = 'dev_lab.dev.task'
 
 
 def _words_after(words: list[str], start: int) -> list[str]:
@@ -59,7 +59,7 @@ def _words_after(words: list[str], start: int) -> list[str]:
 
 
 def appended_texts(command: str) -> list[str]:
-    """The text each journal-verb ``task.js`` call in *command* would append; ``[]`` when there is none."""
+    """The text each journal-verb task-door call in *command* would append; ``[]`` when there is none."""
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.escape = ''
@@ -95,7 +95,7 @@ def refusal(payload: Mapping[str, object]) -> str | None:
     if payload.get('tool_name') not in SHELL_TOOLS or not isinstance(tool_input, dict):
         return None
     texts = appended_texts(str(tool_input.get('command', '')))
-    # task.js writes under CLAUDE_PROJECT_DIR, else its cwd: judge in the same repo.
+    # the door runs in CLAUDE_PROJECT_DIR, else its cwd: judge in the same repo.
     where = os.environ.get('CLAUDE_PROJECT_DIR') or str(payload.get('cwd') or Path.cwd())
     root = _toplevel(where) if texts else None
     if root is None:

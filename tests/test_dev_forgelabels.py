@@ -42,7 +42,7 @@ def test_a_missing_label_is_refused_by_name_unless_ensured() -> None:
 
 @pytest.mark.parametrize('backend', [GITEA, GITHUB])
 def test_relabel_creates_a_missing_label_and_takes_one_off(backend: Backend) -> None:
-    """``forge issue label N --add A --remove B``: an existing issue relabelled, on both forges, through the door."""
+    """``forge issue label N --add A --remove B``: an existing issue relabeled, on both forges, through the door."""
     client = _Client(backend, {'task:toolchain': 3})
     relabel(client, 9, add=('task:toolchain', 'kind:need'), remove=('task:toolchain',))
     writes = [(m, p) for m, p, _b in client.calls if m != 'GET']

@@ -34,11 +34,11 @@ def _hook(verb: str, root, session: str = 'this-session') -> int:
 def _repo(root) -> None:
     """A MAIN checkout (a real ``.git`` directory) declaring the family scratch, its README tracked."""
     launch.run(['git', 'init', '-q', str(root)], check=True)
-    (root / 'pyproject.toml').write_text('[tool.dev_lab.placement]\n', encoding='utf-8')
+    (root / 'layout.toml').write_text('', encoding='utf-8')
     (root / 'scratch').mkdir()
     (root / 'scratch' / SCRATCH_README).write_text('anchor\n', encoding='utf-8')
     (root / 'scratch' / 'tracked.txt').write_text('kept\n', encoding='utf-8')
-    launch.run(['git', '-C', str(root), 'add', 'pyproject.toml', 'scratch'], check=True)
+    launch.run(['git', '-C', str(root), 'add', 'layout.toml', 'scratch'], check=True)
 
 
 def _plant(root, rel: str, text: str = 'x\n') -> None:

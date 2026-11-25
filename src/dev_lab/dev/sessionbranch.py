@@ -23,7 +23,7 @@ The invariants refused here by name, with NO network call beyond the push itself
   one; a forced non-fast-forward and a deletion are refused. ONE place: no other hook judges this.
 * ``INTEGRATION-IS-MERGES-ONLY`` (P4) -- every new first-parent commit of the integration branch is a
   two-parent merge naming its branch in a ``Merged-Branch:`` trailer, and the merge audit
-  (:func:`dev_lab.dev.mergeaudit.judge`, the SAME judgement the commit-msg hook makes) passes on it.
+  (:func:`dev_lab.dev.mergeaudit.judge`, the SAME judgment the commit-msg hook makes) passes on it.
   Judged from ``[tool.dev_lab.integrator] merges_only_since`` forward: no retroactive check.
 * ``INTEGRATION-TAKES-ONLY-FORGE-MERGES`` (P5) -- once ``[tool.dev_lab.integrator] pr_merges_since`` is
   declared, the integration branch moves ONLY by the forge's server-side merge of a pull request
@@ -40,10 +40,11 @@ The invariants refused here by name, with NO network call beyond the push itself
   branches and are not judged.
 * ``PUSHED-HEAD-CARRIES-ITS-TASK`` (P7, user ruling D25 2026-11-17) -- branch names follow the task: an AGENT
   session (:func:`~dev_lab.dev.native_session.session_of`) creates or updates a head in the task namespace
-  (``[tool.dev_lab.branchset] task_heads``, default ``pr/<task>/<feature>``) only under the task its user bound it
-  to (:mod:`dev_lab.dev.taskbinding`), one feature per PR. Another task's head, a flat ``pr/<feature>`` and the bare
-  ``pr/<task>`` are refused naming ``pr/<task>/``; with no bound task the refusal names how a task is bound. A human
-  push and the forge (which holds no session) are not judged; local fan-out never reaches origin.
+  (``[tool.dev_lab.branchset] task_heads``, default ``pr/<task>/<feature>``) only as ``<task>/<feature>`` of a task
+  OPEN in the machine's task ledger (:func:`dev_lab.dev.taskledger.ledger`; user ruling 2026-11-23: the branch IS
+  the task, no binding store), one feature per PR. A flat ``pr/<feature>``, the bare ``pr/<task>`` and a head naming
+  a task the ledger does not hold open are refused naming the door. A human push and the forge (which holds no
+  session) are not judged; local fan-out never reaches origin.
 
 THE FORGE DECIDES; this hook is EARLY FEEDBACK (user ruling 2026-11-07: a family check never depends on a consumer's
 local hook being current). The same :func:`refusals` runs on every open PR head as the forge's ``session-branch``
@@ -78,7 +79,7 @@ from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.native_session import session_of
 from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
-from dev_lab.dev.taskbinding import DOOR, head_for, session_task, slug_of
+from dev_lab.dev.taskledger import DOOR, LedgerUnresolvedError, head_for, ledger, slug_of, task_in, task_of
 
 __all__ = [
     'HOOK_ID',
@@ -118,7 +119,7 @@ _TRAILER: Final = re.compile(rf'^{MERGED_BRANCH}:\s*(\S+)\s*$', re.MULTILINE)
 
 #: What every refusal here ends with: this hook is early feedback, the forge's status is the gate.
 EARLY: Final = (
-    f'  (early feedback: the forge posts this judgement as the {HOOK_ID!r} status on the PR head, and the merge '
+    f'  (early feedback: the forge posts this judgment as the {HOOK_ID!r} status on the PR head, and the merge '
     'requires it)'
 )
 
@@ -244,18 +245,18 @@ def rename_remedy(branch: str, task: str | None = None) -> str:
     """The ONE exit for a feature on a local branch origin does not hold: rename it to its ``pr/`` name, push that.
 
     ``fix/x`` becomes ``pr/x`` (the namespace dropped, the feature kept), so P6 and P2 name the same command
-    and the first remedy never walks into the second refusal (2026-11-02, dev-lab #68). A session bound to task
-    *task* (a slug, :mod:`dev_lab.dev.taskbinding`) gets its task's head ``pr/<task>/x`` instead (D5, 2026-11-15).
+    and the first remedy never walks into the second refusal (2026-11-02, dev-lab #68). A checkout working on task
+    *task* (a slug, :func:`dev_lab.dev.taskledger.task_of`) gets its task's head ``pr/<task>/x`` instead.
     """
     target = f'pr/{branch.split("/", 1)[-1]}' if task is None else head_for(task, branch.rsplit('/', 1)[-1])
     return f'rename it and push: `git branch -m {branch} {target}` then `push -u origin {target}`'
 
 
 def _bound_slug() -> str | None:
-    """The slug of the task this process's session is bound to, or ``None`` (none, or no readable session)."""
+    """The slug of the open task the cwd's branch works on, or ``None`` (no task branch, or none open)."""
     try:
-        task = session_task(os.environ)
-    except ValueError:
+        task = task_of(Path.cwd())
+    except (ValueError, LookupError):
         return None
     return None if task is None else slug_of(task)
 
@@ -274,37 +275,30 @@ def _undeclared(declared: BranchSet, branch: str) -> list[str]:
     ]
 
 
-def _off_task(root: Path, declared: BranchSet, branch: str, env: Mapping[str, str]) -> list[str]:
-    """P7 for a create or update of *branch* by the agent session *env* names: a task head carries its bound task."""
+def _off_task(declared: BranchSet, branch: str, env: Mapping[str, str]) -> list[str]:
+    """P7 for a create or update of *branch* by the agent session *env* names: a task head names an OPEN task."""
     namespace = declared.task_namespace
-    if not namespace or not branch.startswith(namespace):
-        return []
     try:
-        if not session_of(env):
-            return []
-        task = session_task(env, start=root)
+        judged = bool(namespace) and branch.startswith(namespace) and bool(session_of(env))
     except ValueError as unread:
         return [f'{P7}: {branch} is a task head and this agent session cannot be read: {unread}']
-    shape = declared.task_heads
-    feature = branch.rsplit('/', 1)[-1]
-    if task is None:
+    if not judged:
+        return []
+    slug, _, feature = branch[len(namespace) :].partition('/')
+    if not feature:
         return [
             (
-                f'{P7}: a pushed head carries its task ({shape}), and this agent session is bound to no task, '
-                f'so {branch} has none.\nDoor: {DOOR}; then push it as {declared.task_head("<task>", feature)}.'
+                f'{P7}: a pushed head carries its task ({declared.task_heads}), one feature per PR, and {branch} '
+                f'names none.\nDoor: {DOOR}; then push it as {declared.task_head("<task>", slug or "<feature>")}.'
             )
         ]
-    slug = slug_of(task)
-    if declared.carries_task(branch, slug):
-        return []
-    head = declared.task_head(slug, feature)
-    return [
-        (
-            f'{P7}: this session is bound to task {task}, so its pushed heads are {declared.task_head(slug, "")}'
-            f'<feature>, one feature per PR; {branch} is not one.\n'
-            f'Door: `git branch -m {branch} {head}` then `push -u origin {head}`.'
-        )
-    ]
+    try:
+        task_in(ledger(), slug)
+    except LedgerUnresolvedError as unresolved:
+        return [f'{P7}: {branch} names task {slug}, and the task ledger cannot be read: {unresolved}']
+    except ValueError as closed:
+        return [f'{P7}: {branch} names task {slug}, which the task ledger does not hold open: {closed}.\nDoor: {DOOR}.']
+    return []
 
 
 def _misnamed(root: Path, local: str, target: str) -> list[str]:
@@ -386,7 +380,7 @@ def refusals(root: Path, lines: str, env: Mapping[str, str] | None = None) -> li
             policy = None
         if not _zero(fields[1]):
             found += _undeclared(declared, fields[2][len(_HEADS) :])
-            found += _off_task(root, declared, fields[2][len(_HEADS) :], env)
+            found += _off_task(declared, fields[2][len(_HEADS) :], env)
         if fields[2] in {f'{_HEADS}{name}' for name in declared.sessions | {declared.trunk}}:
             if (judged := _trusted(root, policy, fields[3])) is not None:
                 found += _judge_ref(root, judged, fields)

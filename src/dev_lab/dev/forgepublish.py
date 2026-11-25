@@ -51,7 +51,7 @@ def publish(
     paths: Sequence[str] = (),
     deadline: datetime | None = None,
 ) -> Issue:
-    """Open the request issue for *producer* at *sha*, labelled *label*, once every check passes, until *deadline*.
+    """Open the request issue for *producer* at *sha*, labeled *label*, once every check passes, until *deadline*.
 
     Raises:
         RequestRefused: the producer is undeclared or unsized at the sha, origin serves no ref containing it,

@@ -2,9 +2,9 @@
 
 Planted refusals: a modified tracked file, a staged file, a landed tree with an untracked not-ignored file (D31:
 merged or cleaned, never parked), a HEAD on no remote branch (holding an untracked file:
-the CONTROL that it is the unlanded HEAD that keeps it). Planted removals: a tree with ignored artefacts (a cache,
-``.venv``, a build-written ``__version__.py``), an unregistered
-directory holding files, an EMPTY one, and a landed tree whose ``output/logs`` is moved home, verified, first.
+the CONTROL that it is the unlanded HEAD that keeps it). Planted removals: a tree with ignored artifacts (a cache,
+``.venv``, a build-written ``__version__.py``), an unregistered directory holding files, an EMPTY one, and a landed
+tree with ``output/logs``, deleted with it: nothing moves home (NO-BACKUP-COPIES).
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def test_the_census_touches_nothing(tmp_path: Path) -> None:
     assert (work / '.claude' / 'worktrees' / 'empty').is_dir()
 
 
-def test_a_landed_tree_goes_with_what_git_does_not_track_and_its_outputs_go_home(tmp_path: Path) -> None:
+def test_a_landed_tree_goes_with_what_git_does_not_track_and_its_outputs(tmp_path: Path) -> None:
     work = _planted(tmp_path)
     home = work / '.claude' / 'worktrees'
     lines = prune(work, apply=True) or ()
@@ -88,7 +88,7 @@ def test_a_landed_tree_goes_with_what_git_does_not_track_and_its_outputs_go_home
     for name in _BLOCKED:
         assert (home / name).is_dir(), f'{name} must be refused'
         assert any(line.startswith('kept') and name in line for line in lines)
-    assert (work / 'output' / 'logs' / 'result.txt').read_text(encoding='utf-8') == 'keep me', 'moved home first'
+    assert not (work / 'output' / 'logs' / 'result.txt').exists(), 'PLANTED CONTROL: nothing moved home'
     assert (home / 'staged' / 'new.txt').is_file()
     assert any(line.startswith('kept') and 'untracked work' in line and 'scratch.txt' in line for line in lines)
     assert (home / 'untracked' / 'scratch.txt').is_file(), 'D31: untracked work stays in its tree'

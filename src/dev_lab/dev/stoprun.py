@@ -1,6 +1,6 @@
 """STOP ONE OWN RUN: ``python -m dev_lab.dev.stoprun --pid PID [--repo PATH] [--dry-run]``.
 
-Generalised 2026-10-04 from a consumer's process-tree killer (its ``--pid`` mode) (AUTO-MODE-RUNS-THE-DOORS):
+Generalized 2026-10-04 from a consumer's process-tree killer (its ``--pid`` mode) (AUTO-MODE-RUNS-THE-DOORS):
 an agent stopping its OWN superseded run was refused as a raw ``taskkill /T /F``. The door replaces the
 raw kill with a checked one: the NORMAL path REFUSES unless the pid's command line is a run it can identify
 (:data:`RUN_SIGNATURES` -- the family verify, a gate runner, pytest, a ``forge serve`` -- plus any the repo
@@ -12,7 +12,7 @@ mandatory. It stops the verified actual controller FIRST so its child cannot cau
 The bounded original subtree is rechecked before each stop; uncertainty reports partial completion. This is
 neither inferred session ownership nor atomic process control; see ``docs-src/dev/auto-doors.md``.
 
-AN ORPHANED WORKER IS PROVEN, NOT RECOGNISED (2026-10-23). A child that outlives the run that started it is
+AN ORPHANED WORKER IS PROVEN, NOT RECOGNIZED (2026-10-23). A child that outlives the run that started it is
 unreachable by any signature: the root that identified it is gone. A multiprocessing worker names the process
 it exists to serve (``spawn_main(parent_pid=N)``), so it is an orphan exactly when N is absent, or N was created
 after the worker (the pid was reused). :func:`orphaned_worker` reads that from the table; a worker whose parent
@@ -234,7 +234,7 @@ def stop_subtree(
     """Stop *pid*'s subtree children first, a member whose pid was recycled skipped; a serve gets its grace.
 
     The ONE tree-kill path: the identified-run and orphan modes reach it after :func:`stop` judged *pid*, and
-    :mod:`dev_lab.dev.shellreaper` after its own judgement (an agent shell past its bound, no seat, no spare).
+    :mod:`dev_lab.dev.shellreaper` after its own judgment (an agent shell past its bound, no seat, no spare).
     """
     serve = matched == SERVE.pattern
     # Each member's creation stamp as the snapshot saw it: a pid recycled during the serve grace is not ours.

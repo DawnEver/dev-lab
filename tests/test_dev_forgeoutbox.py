@@ -141,7 +141,7 @@ def test_a_newer_run_replaces_the_queued_post_for_the_same_commit_and_context(tm
     assert [(p.state, p.description) for p in queued(repo)] == [('success', 'new')]
 
 
-def test_a_post_that_could_never_land_is_refused_at_queueing() -> None:
+def test_a_post_that_could_never_land_is_refused_at_queuing() -> None:
     with pytest.raises(ValueError, match='one of'):
         Post('a' * 40, 'tests/linux', 'skipped', '')
     with pytest.raises(ValueError, match='40-hex'):

@@ -241,7 +241,7 @@ def test_a_cut_verify_names_what_it_recorded_failing(tmp_path: Path, monkeypatch
         handle.write('.F[gw0] node down: Not properly terminated\nF\nreplacing crashed worker gw0\n')
         return 4294967295  # what the box returns for a pytest it killed at the wall, on Windows
 
-    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    monkeypatch.setattr(verifysteps, 'LINT_STEPS', ())
     monkeypatch.setattr(verifysteps, 'boxed', lambda _root, argv, **_k: (argv, None))
     monkeypatch.setattr(verifysteps, '_tee', cut)
     verdict = verifysteps.run_verify(tmp_path, ('tests/test_one.py',), hooks=False)
@@ -262,7 +262,7 @@ def test_planted_control_a_settled_verify_adds_no_reason(tmp_path: Path, monkeyp
         handle.write('FAILED tests/test_one.py::test_one - assert 0\n1 failed in 0.1s\n')
         return 1
 
-    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    monkeypatch.setattr(verifysteps, 'LINT_STEPS', ())
     monkeypatch.setattr(verifysteps, 'boxed', lambda _root, argv, **_k: (argv, None))
     monkeypatch.setattr(verifysteps, '_tee', ran)
     verdict = verifysteps.run_verify(tmp_path, ('tests/test_one.py',), hooks=False)

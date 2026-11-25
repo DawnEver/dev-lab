@@ -18,10 +18,12 @@ THREE RULES OVER ONE MAP; this module holds the map and the first, the other two
 
 THE PLACEMENT MAP IS THE FAMILY'S, THE EXTRA ROOTS ARE THE REPO'S (user ruling 2026-10-02). Every
 file kind has ONE home, :data:`FAMILY_HOMES`; the homes that hold code are :data:`FAMILY_CODE_ROOTS`.
-A repo declares ONLY what it adds, in ONE place -- ``[tool.dev_lab.placement]`` of its
-``pyproject.toml``, read by :func:`declared_placement`::
+A repo declares ONLY what it adds, in ONE place -- the top level of its root :data:`LAYOUT_FILE`
+(``layout.toml``; user ruling 2026-11-24), read by :func:`placement_table` and :func:`declared_placement`. Its
+``[layout]`` table is :mod:`dev_lab.dev.layout`'s. The retired ``[tool.dev_lab.placement]`` of ``pyproject.toml``
+is refused by name with its migration (FORMATS-MIGRATE-ONCE)::
 
-    [tool.dev_lab.placement]
+    # layout.toml
     code_roots = ['rust/', 'attic/']        # the repo's own roots, beyond the family's
     pruned_paths = ['.claude/worktrees']    # other checkouts inside this one, judged by their own run
     stray_roots = []                        # where an untracked file may sit, beyond scratch
@@ -42,12 +44,14 @@ THE CLI: ``python -m dev_lab.dev.codeplace`` is the write hook, its only mode.
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import json
 import os
 import sys
 import tomllib
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
+from types import ModuleType
 from typing import TextIO
 
 from lab_commons.log import emit
@@ -55,8 +59,11 @@ from lab_commons.log import emit
 from dev_lab.dev import gitdirs
 from dev_lab.dev.consentguard import refuse_write as refuse_consent_write
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.frozen import refuse_write as refuse_frozen_write
+from dev_lab.dev.ledgerguard import refuse_write as refuse_ledger_write
 from dev_lab.dev.machineguard import refuse_write as refuse_machine_file_write
 from dev_lab.dev.outputcode import refuse_code_in_output
+from dev_lab.dev.priorart import refuse_new_module
 from dev_lab.dev.reportplace import refuse_report
 from dev_lab.dev.retiredfiles import RetiredFile, declared_retired
 from dev_lab.dev.writeroots import refuse_outside_tree
@@ -70,7 +77,6 @@ __all__ = [
     'FAMILY_STRAY_ROOTS',
     'PRUNED_NAMES',
     'SCRATCH_MAX_AGE_DAYS',
-    'TASK_ROOT',
     'Placement',
     'PlacementNotDeclared',
     'admits',
@@ -80,6 +86,7 @@ __all__ = [
     'is_archived',
     'main',
     'misplaced_code',
+    'placement_table',
     'refuse_write',
 ]
 
@@ -102,20 +109,18 @@ PRUNED_NAMES = frozenset({
 FAMILY_HOMES: dict[str, str] = {
     'product source': 'src/',
     'tests': 'tests/',
-    'repo-development mechanism': 'scripts/',
     'one-off experiment, probe or verification': 'scratch/',
     'memory, and one-offs archived before 2026-10-22': '.claude/memory/',
     'docs': 'docs-src/',
-    'artefacts': 'output/logs/',
+    'artifacts': 'output/logs/',
 }
 
-#: The family homes that hold CODE; docs and artefacts are homes, but never for a source file.
+#: The family homes that hold CODE; docs and artifacts are homes, but never for a source file.
 FAMILY_CODE_ROOTS: tuple[str, ...] = tuple(
     FAMILY_HOMES[kind]
     for kind in (
         'product source',
         'tests',
-        'repo-development mechanism',
         'one-off experiment, probe or verification',
         'memory, and one-offs archived before 2026-10-22',
     )
@@ -123,10 +128,6 @@ FAMILY_CODE_ROOTS: tuple[str, ...] = tuple(
 
 #: Where an untracked file may sit in every repo: the family's scratch home, nothing else.
 FAMILY_STRAY_ROOTS: tuple[str, ...] = (FAMILY_HOMES['one-off experiment, probe or verification'],)
-
-#: Where the user's task command (``/rem:task open``) writes ``<slug>/TASK.md`` and ``JOURNAL.md``: its folder,
-#: not a stray. It is the repository's ledger (:func:`dev_lab.dev.taskbinding.ledger`), never committed on a branch.
-TASK_ROOT = '.claude/tasks/'
 
 #: The family default for ``max_age_days`` (:mod:`dev_lab.dev.scratch` reads it off the placement).
 SCRATCH_MAX_AGE_DAYS = 3.0
@@ -138,9 +139,10 @@ ARCHIVE_DIRECTORY = 'attachments'
 #: ``archived/`` tree. With a memory day's :data:`ARCHIVE_DIRECTORY` these are every archive a scan
 #: skips; :func:`is_archived` is the one reading, so no scan keeps its own copy of the set.
 ARCHIVED_SEGMENTS = frozenset({'attic', 'archived'})
-#: Where a repo declares its delta: ``[tool.dev_lab.placement]`` in this file.
-_MANIFEST = 'pyproject.toml'
-_TABLE = '[tool.dev_lab.placement]'
+#: Where a repo declares its placement and its layout: this ONE root file (user ruling 2026-11-24).
+LAYOUT_FILE = 'layout.toml'
+#: The retired home of the placement, refused by name (FORMATS-MIGRATE-ONCE).
+_RETIRED = '[tool.dev_lab.placement] of pyproject.toml'
 
 
 def admits(rel: str, code_roots: tuple[str, ...]) -> bool:
@@ -179,7 +181,42 @@ def misplaced_code(root: Path, *, code_roots: Iterable[str], pruned_paths: Itera
 
 
 class PlacementNotDeclared(LookupError):
-    """A repo's ``[tool.dev_lab.placement]`` is absent or not the declared shape."""
+    """A repo's ``layout.toml`` is absent, unreadable or not the declared shape, or the retired table remains."""
+
+
+def placement_table(root: Path) -> dict | None:
+    """*root*'s :data:`LAYOUT_FILE` as a table; ``None`` when the checkout has none.
+
+    Raises:
+        PlacementNotDeclared: the file is unreadable or not TOML, or ``pyproject.toml`` still holds the retired
+            ``[tool.dev_lab.placement]`` -- refused by name with its migration, never read as a second path.
+
+    """
+    try:
+        manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    except (OSError, tomllib.TOMLDecodeError):
+        manifest = {}
+    if declared_table(manifest, 'placement') is not None:
+        msg = (
+            f'{root / "pyproject.toml"} still holds {_RETIRED}: the placement and the layout live in {root.name}/'
+            f'{LAYOUT_FILE} (user ruling 2026-11-24). Migrate ONCE (FORMATS-MIGRATE-ONCE): move each key of '
+            f'[tool.dev_lab.placement] to the top level of {LAYOUT_FILE}, its [tool.dev_lab.placement.layout] rows '
+            f'under [layout], and delete the table from pyproject.toml'
+        )
+        raise PlacementNotDeclared(msg)
+    path = root / LAYOUT_FILE
+    try:
+        text = path.read_text(encoding='utf-8')
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        msg = f'{path} is not readable: {exc}'
+        raise PlacementNotDeclared(msg) from exc
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        msg = f'{path} is not TOML: {exc}'
+        raise PlacementNotDeclared(msg) from exc
 
 
 @dataclasses.dataclass(frozen=True)
@@ -198,7 +235,7 @@ class Placement:
 def _strings(table: dict, key: str, manifest: Path) -> tuple[str, ...]:
     value = table.get(key, [])
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        msg = f'{_TABLE} {key} in {manifest} is {value!r}; it must be a list of repo-relative POSIX paths'
+        msg = f'{key} in {manifest} is {value!r}; it must be a list of repo-relative POSIX paths'
         raise PlacementNotDeclared(msg)
     return tuple(value)
 
@@ -211,33 +248,28 @@ def declared_placement(root: Path) -> Placement:
             adopter's test calls this, so an undeclared repo is a red rather than a vacuous green.
 
     """
-    manifest = root / _MANIFEST
-    try:
-        data = tomllib.loads(manifest.read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        msg = f'{manifest} is not a readable TOML manifest: {exc}'
-        raise PlacementNotDeclared(msg) from exc
-    table = declared_table(data, 'placement')
-    if not isinstance(table, dict):
-        msg = f'{manifest} declares no {_TABLE}; add it, even empty, to adopt the family placement map'
+    manifest = root / LAYOUT_FILE
+    table = placement_table(root)
+    if table is None:
+        msg = f'{root} has no {LAYOUT_FILE}; add it, even empty, to adopt the family placement map'
         raise PlacementNotDeclared(msg)
     extra = _strings(table, 'code_roots', manifest)
     scratch = table.get('scratch', FAMILY_STRAY_ROOTS[0])
     age = table.get('max_age_days', SCRATCH_MAX_AGE_DAYS)
     if not isinstance(scratch, str) or not scratch.strip('/'):
-        msg = f'{_TABLE} scratch in {manifest} is {scratch!r}; it must be one repo-relative POSIX directory'
+        msg = f'scratch in {manifest} is {scratch!r}; it must be one repo-relative POSIX directory'
         raise PlacementNotDeclared(msg)
     if isinstance(age, bool) or not isinstance(age, int | float) or age <= 0:
-        msg = f'{_TABLE} max_age_days in {manifest} is {age!r}; it must be a positive number of days'
+        msg = f'max_age_days in {manifest} is {age!r}; it must be a positive number of days'
         raise PlacementNotDeclared(msg)
     anchor = table.get('scratch_anchor', True)
     if not isinstance(anchor, bool):
-        msg = f'{_TABLE} scratch_anchor in {manifest} is {anchor!r}; it must be true (a tracked README) or false'
+        msg = f'scratch_anchor in {manifest} is {anchor!r}; it must be true (a tracked README) or false'
         raise PlacementNotDeclared(msg)
     try:
         retired = declared_retired(table.get('retired', []))
     except ValueError as exc:
-        msg = f'{_TABLE} in {manifest}: {exc}'
+        msg = f'{manifest}: {exc}'
         raise PlacementNotDeclared(msg) from exc
     scratch = f'{scratch.strip("/")}/'
     return Placement(
@@ -264,8 +296,7 @@ def _home_for(rel: str) -> str:
     return (
         f'{FAMILY_HOMES["product source"]} if it is product code, '
         f'{FAMILY_HOMES["one-off experiment, probe or verification"]} if it is a one-off experiment, '
-        f'probe or verification (promoted or deleted, never committed), {FAMILY_HOMES["repo-development mechanism"]} '
-        f'ONLY if it is repo-development mechanism with no business logic'
+        f'probe or verification (promoted or deleted, never committed); repo-development mechanism lives in dev-lab'
     )
 
 
@@ -297,14 +328,21 @@ def refuse_write(path: Path) -> str | None:
     return (
         f'CODE-IN-CODE-ROOTS: {rel} is a code file outside every declared code root '
         f'{list(placement.code_roots)}. Its home: {_home_for(rel)}. The family map: {homes}. A repo '
-        f'adds a root only in {_TABLE} code_roots of its {_MANIFEST}, never by writing the file first.'
+        f'adds a root only in code_roots of its {LAYOUT_FILE}, never by writing the file first.'
     )
+
+
+def _layout() -> ModuleType:
+    """:mod:`dev_lab.dev.layout` (DECLARED-LAYOUT) reads this module`s family map, so it loads when the hook runs."""
+    return importlib.import_module('dev_lab.dev.layout')
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     """The ``PreToolUse`` agent hook on Write/Edit/MultiEdit/NotebookEdit; the payload is *stdin*.
 
-    It refuses a report under ``output/`` and a write into a write-prone root, and hints a misplaced code file.
+    It refuses a report under ``output/``, a write into a write-prone root, a direct write onto a task ledger
+    file (:mod:`dev_lab.dev.ledgerguard`) and a new module that cites none of its prior art
+    (:mod:`dev_lab.dev.priorart`), and hints a misplaced code file.
     A payload naming no path is allowed: the hook judges a PATH, and such a payload names none. The stray
     census is :mod:`dev_lab.dev.strays`.
     """
@@ -324,7 +362,11 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     # (WRITES-STAY-IN-THE-TREE), so both are refused; a misplaced code file is a style
     # finding the forge's placement test reds on anyway, so it is a HINT (toolchain plan P3).
     refused = refuse_report(path) or refuse_machine_file_write(path) or refuse_code_in_output(path)
-    refused = refused or refuse_outside_tree(path) or refuse_consent_write(path)
+    refused = refused or refuse_ledger_write(path) or refuse_outside_tree(path) or refuse_consent_write(path)
+    refused = refused or _layout().refuse_layout(path)
+    refused = refused or refuse_frozen_write(path)
+    content = tool_input.get('content') if isinstance(tool_input.get('content'), str) else ''
+    refused = refused or refuse_new_module(path, content, FAMILY_HOMES['product source'])
     hint = refuse_write(path)
     if refused is not None:
         decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': refused}

@@ -14,7 +14,7 @@ stated in the machinery.
 THE PATTERNS ARE MATCHED CASE-INSENSITIVELY AS SUBSTRINGS of the attempt's WHOLE combined output
 (stdout and stderr together). Both halves are needed and that is measured, not defensive: a pre-push
 hook writes its refusal to STDOUT while git's own failure goes to stderr, so a classifier reading
-stderr alone was blind to exactly the line it had been taught to recognise.
+stderr alone was blind to exactly the line it had been taught to recognize.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
     (
         # A PRE-PUSH HOOK'S REFUSAL. Measured 2026-09-17 in this session: a repo's pre-push hook
         # refused a push and printed the identical refusal on all three attempts -- the same tree
-        # re-judged by the same hook returns the same answer, and each re-judgement paid the hook's
+        # re-judged by the same hook returns the same answer, and each re-judgment paid the hook's
         # full cost. The hook is LOCAL, so no backoff and no forge can change its mind.
         'hook-refused',
         False,

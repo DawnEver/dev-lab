@@ -45,10 +45,7 @@ declared session) and it holds nothing unlanded: no TRACKED change and no untrac
 2026-11-17: a worktree's work is MERGED or the tree CLEANED, never parked aside). What git IGNORES -- `.venv`,
 caches, builds -- is regenerable and goes with the tree. A tree holding unlanded work is kept and listed with its
 doors: commit it on its branch and land it through a PR, or the user discards it with
-`python -m dev_lab.dev.branchset --discard <branch> --approved "<the user words>"`. Run output is moved first (user ruling 2026-11-12:
-reclaiming useless trees is a required part of the workflow): a reclaimable tree's `archive-outputs` are moved
-into the MAIN checkout's `output/` and verified, and only then does it go; a move that cannot be verified keeps it
-and prints why. Each run ends with a summary line counting every kept tree by reason. An orphan directory under the worktree
+`python -m dev_lab.dev.branchset --discard <branch> --approved "<the user words>"`. Its run output goes WITH it (NO-BACKUP-COPIES, user 2026-11-23): `output/` holds regenerable logs and cache, results of record live in the run store, so nothing is moved into the main checkout. Each run ends with a summary line counting every kept tree by reason. An orphan directory under the worktree
 home is judged the same way. What blocks reclaim: a tracked change (staged or not), an untracked not-ignored file, commits not landed (`git cherry`), a
 live process, a `git worktree lock`. `dev_lab.dev.reclaim.reclaimable` is the
 one decision; `python -m dev_lab.dev.worktrees --prune` and `python -m dev_lab.dev.branchset --apply` act on it,
@@ -82,15 +79,6 @@ still refuses an undeclared tree, a main checkout, a lock, a tracked change, a H
 `python -m dev_lab.dev.worktrees --remove <name>` (`dev_lab.dev.worktrees.remove`) is the one door for a named
 tree on a branch or detached -- never the raw git removal, which `RECURSIVE-DELETE` refuses. It refuses a tree
 holding unlanded work (a tracked change or an untracked, not-ignored file, named with its doors), a detached
-commit no ref contains, a holding process, a live session and the main checkout; otherwise it moves the tree's
-run outputs home, verified (`dev_lab.dev.worktree_outputs.home_outputs`), then removes it. A branch the tree held
+commit no ref contains, a holding process, a live session and the main checkout; otherwise it removes it, its
+run outputs with it. A branch the tree held
 stays for `branchset --apply`. D31 retired the flag that saved a tree's work aside; it is refused by name.
-
-- MOVES (renames) every file under each `archive-outputs` directory to the same relative path in the main
-  checkout: identical bytes are skipped, differing bytes land as `<file>.<name>`, a directory holding
-  `pyvenv.cfg` never travels; a tree on another volume is refused (a move there is a copy).
-
-```toml
-[tool.dev_lab.worktrees]            # the main checkout's pyproject.toml; optional
-archive-outputs = ["<dir>"]             # default: worktree_outputs.OUTPUTS
-```

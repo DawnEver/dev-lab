@@ -1,7 +1,7 @@
 """The controls for :mod:`dev_lab.dev.famtests.density` -- every reader, both ways.
 
 WHAT IS PROVED HERE. Not "the meter runs": what this file owns is that each reader FIRES on a planted
-shape and STAYS SILENT on the honest neighbour beside it. A meter reading everything as one repo's and
+shape and STAYS SILENT on the honest neighbor beside it. A meter reading everything as one repo's and
 a meter reading nothing as one repo's both pass a one-sided test, and the second is indistinguishable
 from a tree of honest binders -- which is exactly the failure the density arm exists to catch in its
 consumers.
@@ -123,7 +123,7 @@ def test_the_percentage_of_a_file_with_no_own_lines_is_zero_rather_than_a_divisi
     assert Density(own=0, hits=0).percent == 0.0
 
 
-# --------------------------------------------------------------------------- THE JUDGEMENT
+# --------------------------------------------------------------------------- THE JUDGMENT
 
 
 def test_justified_takes_its_bars_rather_than_closing_over_a_modules_own() -> None:

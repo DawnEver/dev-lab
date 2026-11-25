@@ -51,7 +51,7 @@ _VALUED_OPTIONS: Final = frozenset(
 def census_scope(arguments: tuple[str, ...]) -> tuple[bool, tuple[str, ...]]:
     """Only known presentation flags preserve a full-suite skip census.
 
-    This is not a pytest parser: it recognises selection and the few display-only flags whose
+    This is not a pytest parser: it recognizes selection and the few display-only flags whose
     semantics establish this proof. Unknown options refuse a census claim instead of silently
     disabling the reverse ratchet. The original arguments still name the verdict's selector.
     """

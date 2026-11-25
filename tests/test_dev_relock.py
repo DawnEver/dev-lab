@@ -477,7 +477,8 @@ def test_a_toolchain_behind_the_newest_stable_is_carried_like_a_stale_lock(world
         (tree / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.99.1"\n', encoding='utf-8')
         return 0
 
-    said = _carry(clone, _Forge(), resolve=_fresh, stable=lambda: '1.99.1', upgrade=bumped)
+    # rust-toolchain.toml makes the lockcheck renderer due; the fake door syncs no .venv, so the render is a seam.
+    said = _carry(clone, _Forge(), resolve=_fresh, stable=lambda: '1.99.1', upgrade=bumped, rerender=lambda _t: ())
     assert said.startswith(f'relocked integrate/main at {sha[:12]} onto {BRANCH} (full, 1 move(s))')
     assert _git(origin, 'diff', '--name-only', sha, BRANCH) == 'rust-toolchain.toml'
 

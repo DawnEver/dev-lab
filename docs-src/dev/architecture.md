@@ -3,21 +3,21 @@
 The normative specification of how the family is developed: the principles, the two kinds of repository, the
 branch flow, the compute pool, consent, feedback, six contracts and the constitution. This page is the single
 source; every other page owns a mechanism and points here for the WHY. Each contract states the rule, the code
-that implements it today, and the GAP where today's code falls short -- a gap is a work item, never a licence.
+that implements it today, and the GAP where today's code falls short -- a gap is a work item, never a license.
 
 The concrete instance (hosts, accounts, addresses) is never written here ([topology](topology.md), first lines).
 
 ## Principles
 
 First principles, no historical baggage, Occam's razor, single source of truth, layered decoupling, names match
-behaviour -- each in its place. Their statements live once in `dev_lab.dev.principles`; a repo renders them into
-its `.claude/rules/principles.md`.
+behavior -- each in its place. Their statements live once in `dev_lab.dev.principles`; a repo renders them into
+the family section of its `AGENTS.md`.
 
 ## Two kinds of repository
 
 | kind | members | merge gate | heavy tests |
 |---|---|---|---|
-| toolchain (GitHub) | dev-lab, lab-commons, ai-lab, numerics-lab, document-lab, learn-lab, the optimisation library, the winding library | GitHub Actions ONLY: no HPC, workstation or judge dependency | stay in the tree, marked heavy, excluded from the GitHub gate; exercised by the business repos' unified tests |
+| toolchain (GitHub) | dev-lab, lab-commons, ai-lab, numerics-lab, document-lab, learn-lab, the optimization library, the winding library | GitHub Actions ONLY: no HPC, workstation or judge dependency | stay in the tree, marked heavy, excluded from the GitHub gate; exercised by the business repos' unified tests |
 | business (Gitea) | the motor product, the winding application | forge producers ([the forge](forge.md)) | run here: unified and heavy verification, cross-repo integration |
 
 - A business repo's test statuses are posted DIRECTLY by the HPC verification accounts (the `write` machine
@@ -44,7 +44,7 @@ mechanisms; each is owned where it is linked:
 - The quota guard, leases and the stray census (`lab_commons.hpc.lease`, `lab_commons.hpc.home.strays`,
   [HPC clusters](hpc.md#grants-the-machine-file)).
 - Retention with an in-flight mark, re-checked before removal (`dev_lab.dev.retentionplan`,
-  [artefacts](artefacts.md)).
+  [artifacts](artifacts.md)).
 
 ## Consent and break-glass
 
@@ -156,14 +156,14 @@ the session's next prompt. No Monitor is armed and no `Stop` gate waits on a PR.
 
 ### 6. Failure ownership
 
-- **Contract.** Every non-PASS names its owner class: code, environment, scheduling, vendor licence, network, or
+- **Contract.** Every non-PASS names its owner class: code, environment, scheduling, vendor license, network, or
   status publishing; only a code failure is the author's red.
-- **Today.** One enum, `dev_lab.dev.producer::Owner` (`code`, `environment`, `scheduling`, `vendor-licence`,
+- **Today.** One enum, `dev_lab.dev.producer::Owner` (`code`, `environment`, `scheduling`, `vendor-license`,
   `network`, `status-publishing`). The forge keeps its four states; the owner is the `class=<owner>` field of an
   `error` description (`producer.owned`, read by `producer.owner_of`, tolerant of other `key=value` fields). A
   `failure` part is `code`. Every release names its class: `release_reason` and `box_release_reason`
   (environment, scheduling), a declared outage (`producer.unreachable` network / environment / scheduling /
-  status-publishing, `producer.licence_outage` vendor-licence -- released `RETRYABLE`, re-claimed), a commit's own
+  status-publishing, `producer.license_outage` vendor-license -- released `RETRYABLE`, re-claimed), a commit's own
   defect `refused at this commit:` (code), superseded and no-room releases (scheduling), a dead host's intent
   (environment). `platformparts.standing` reads the class: an `error` naming `class=code` is FAIL, any other
   class leaves the commit INCONCLUSIVE (never PASS, so it blocks promoting `main`) and its problem says

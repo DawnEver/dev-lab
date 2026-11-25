@@ -243,11 +243,11 @@ def test_the_queue_cli_prints_json(server, tmp_path: Path, monkeypatch, capsys) 
     assert printed['queue'][0]['blocked'] == 'no host serves it'
 
 
-def test_a_card_states_why_its_host_cannot_write_the_artefact_store() -> None:
+def test_a_card_states_why_its_host_cannot_write_the_artifact_store() -> None:
     """PLANTED CONTROL: a card whose store works says nothing about it."""
     why = 'the rclone remote hpc-data: is missing or unusable'
-    assert f'artefacts: {why}' in _card('ada/alice', 'linux', NOW, artefacts=why).text()
-    assert 'artefacts:' not in _card('ada/alice', 'linux', NOW).text()
+    assert f'artifacts: {why}' in _card('ada/alice', 'linux', NOW, artifacts=why).text()
+    assert 'artifacts:' not in _card('ada/alice', 'linux', NOW).text()
 
 
 def test_the_queue_shows_the_origin_branches_a_human_may_delete() -> None:
@@ -455,7 +455,7 @@ def test_a_request_is_declared_once_per_queue_read(server, tmp_path: Path, monke
     _forge_of(tips, [])
     body = f'producer = "tests"\nsha = "{tips["feat/a"]}"\npaths = ["tests/test_x.py"]\n'
     issue = {**_issue(9, 'request'), 'body': body, 'created_at': NOW.isoformat(), 'labels': []}
-    monkeypatch.setattr(forgeschedule, 'labelled_issues', lambda _client, _label: (issue,))
+    monkeypatch.setattr(forgeschedule, 'labeled_issues', lambda _client, _label: (issue,))
     asked: list[tuple[str, str, tuple[str, ...]]] = []
 
     def declared(_root: Path, sha: str, producer: str, paths=()) -> object:

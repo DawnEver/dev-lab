@@ -1,6 +1,7 @@
 """DOCS-SPLIT and DECLARATION-LIES, over this repo's own always-loaded rules pages.
 
-`.claude/rules/**` is read on EVERY turn, which is what makes it expensive and what makes it drift.
+`AGENTS.md` is read on EVERY turn
+(`.claude/rules/` retired 2026-11-24, user ruling), which is what makes it expensive and what makes it drift.
 Two constraints keep it honest, and they pull in opposite directions on purpose:
 
 * A LINE RATCHET, PER PAGE AND IN TOTAL. The pages are hard constraints only; mechanism belongs in
@@ -33,7 +34,8 @@ from dev_lab.dev.rules import RULES
 #: The pins below are what says which page spent it; this says nobody may spend more in total.
 #: Raised 60 -> 70 (2026-10-27), 70 -> 73 and 73 -> 76 (2026-11-13) for the principles page, by user ruling.
 #: Raised 75 -> 79 (2026-11-22, user ruling): images-by-absolute-path and worktree-names-its-task, two lines each.
-RULES_LINE_CEILING = 79  # user rulings 2026-10-27, 2026-11-13 (every-wall-teaches, no-barrier-fan-out), 2026-11-22
+#: Raised 141 -> 145 (2026-11-25, user ruling D51 L2): the native-first principle, four lines.
+RULES_LINE_CEILING = 145  # 2026-11-24: AGENTS.md is the one entry; the rule pages and the family section moved in
 
 #: This repo's pages, MEASURED 2026-09-17, to the line count each may not exceed. TWO-SIDED in all
 #: four directions -- grew, shrank, arrived unpinned, pinned and gone -- and the reason the total
@@ -41,13 +43,11 @@ RULES_LINE_CEILING = 79  # user rulings 2026-10-27, 2026-11-13 (every-wall-teach
 #: page; raising one is a claim that a new hard constraint could not be expressed inside the budget,
 #: and that claim belongs in the commit message where a reader can refuse it.
 RULES_PAGE_PINS: dict[str, int] = {
-    '.claude/rules/downstream.md': 26,
-    '.claude/rules/principles.md': 28,  # family policy; user rulings 2026-10-27, 2026-11-13, 2026-11-22 (+ two)
-    '.claude/rules/statement-and-mechanism.md': 25,
+    'AGENTS.md': 145,  # the two former rule pages plus the rendered family section (2026-11-24); native-first
 }
 
 #: A rules page must exist at all: a ceiling over an empty directory is a check that cannot fail.
-RULES_PAGE_FLOOR = 2
+RULES_PAGE_FLOOR = 1
 
 #: A cited rule ID: an upper-case slug with at least one hyphen, so ordinary emphatic prose
 #: ("STATEMENT", "ABSENT") is not mistaken for a citation the registry has to answer for.
@@ -104,8 +104,8 @@ def test_a_planted_dangling_citation_is_refused(tmp_path: Path) -> None:
 
 
 def test_the_guard_reads_this_repo_s_pages() -> None:
-    """The corpus really is `.claude/rules/`, spelled the way a refusal would spell it."""
-    assert {rel(p) for p in rules_pages()} >= {'.claude/rules/downstream.md'}
+    """The corpus really is `AGENTS.md`, spelled the way a refusal would spell it."""
+    assert {rel(p) for p in rules_pages()} == {'AGENTS.md'}
 
 
 def test_a_page_that_grows_and_a_page_that_disappears_are_both_refused() -> None:
@@ -117,6 +117,5 @@ def test_a_page_that_grows_and_a_page_that_disappears_are_both_refused() -> None
     live = dict(RULES_PAGE_PINS)
     grown = {page: lines + 1 for page, lines in live.items()}
     assert 'grew' in ratchet_breaks(grown, pinned=live)[next(iter(live))]
-    vanished = dict(list(live.items())[1:])
-    assert ratchet_breaks(vanished, pinned=live)[next(iter(live))].startswith('pinned and gone')
+    assert ratchet_breaks({}, pinned=live)[next(iter(live))].startswith('pinned and gone')
     assert ratchet_breaks(live, pinned=live) == {}, 'the live tree must be silent, or nothing above means anything'

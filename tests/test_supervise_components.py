@@ -335,7 +335,7 @@ def test_a_missing_log_directory_is_not_an_error(tmp_path: Path) -> None:
 
 
 def test_a_finished_job_is_a_completion_and_not_an_anomaly(tmp_path: Path) -> None:
-    """THE PREDECESSOR'S SCAR: modelling completion as a warning made every success read degraded."""
+    """THE PREDECESSOR'S SCAR: modeling completion as a warning made every success read degraded."""
     progress = tmp_path / 'progress.json'
     progress.write_text(json.dumps({'ops': 10, 'total_ops': 10}), encoding='utf-8')
     result = ProgressTracker().check(_ctx({'progress_file': str(progress), 'count_path': 'ops'}, project=tmp_path))

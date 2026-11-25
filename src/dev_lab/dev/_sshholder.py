@@ -48,9 +48,12 @@ def askpass_helper() -> Path:
 
 
 def ssh_argv(ssh: list[str], dest: str) -> list[str]:
-    """The one held connection: no tty, keepalives, ONE answer tried, a bare non-interactive bash."""
+    """The one held connection: no tty, keepalives, ONE answer tried, a bare bash, on PATH's ssh.
+
+    The ssh word is resolved by :func:`.sshholdwire.resolved`.
+    """
     keep = ['-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=4', '-o', 'NumberOfPasswordPrompts=1']
-    return [*ssh, '-T', *keep, dest, 'bash', '--noprofile', '--norc', '-s']
+    return sshholdwire.resolved([*ssh, '-T', *keep, dest, 'bash', '--noprofile', '--norc', '-s'])
 
 
 class Holder:

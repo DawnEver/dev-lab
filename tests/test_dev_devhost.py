@@ -96,7 +96,7 @@ def test_a_dev_host_file_passes_with_its_family(tmp_path: Path) -> None:
         (HOST.replace('hpc = ["research"]', 'role = "integrator"'), 'role is retired'),
         (HOST.replace('hpc = ["research"]', 'hpc = "research"'), 'hpc must list'),
         (HOST.replace('cores = 16', 'cores = "16"'), 'resources.cores'),
-        (HOST.replace('version = "1.0"', 'licence = "x"'), 'licence'),
+        (HOST.replace('version = "1.0"', 'license = "x"'), 'license'),
         (HOST.replace('[dev]\n', '[dev]\nref = "main"\n', 1), 'restates'),
         (HOST + '\n[consent]\nendpoint = "consent@elsewhere"\n', 'consent.endpoint restates'),
         (HOST + '\n[bogus_table]\nx = 1\n', 'bogus_table'),

@@ -4,7 +4,7 @@ The client half of :mod:`dev_lab.ops.breakglass`. A WAVE opens on a ``breakglass
 granted. ``open --code <code> --hours H --max-merges N`` grants it AND opens in ONE call (the code lives one 30-second
 TOTP step, so a second command would spend its window) -- and ONLY after ``open --preflight --hours H --max-merges N``
 was green: it proves, with no code, that the consent issuer and this server answer (a host key never enrolled is named
-with its ``devhost enrol`` door) and writes the receipt the ``--code`` call needs
+with its ``devhost enroll`` door) and writes the receipt the ``--code`` call needs
 (:func:`dev_lab.ops.consent.client.preflight`). ``open --credential <id>`` opens on one already granted
 (``python -m dev_lab.ops.consent grant <request.json>``) from the consent state directory. Inside the wave
 ``pr breakglass`` merges with no code -- the server sends ONE summary of what actually merged when the wave ends.
@@ -13,7 +13,7 @@ with its ``devhost enrol`` door) and writes the receipt the ``--code`` call need
 
 The endpoint is the machine file's ``[breakglass]`` table (``endpoint = "<account>@<host>"``, optional
 ``identity = "<ssh key path>"``); every request is one JSON line over ``ssh -T``
-(:func:`dev_lab.ops.consent.door.ssh_send`, the consent client's one transport). The client holds no secret and
+(:func:`dev_lab.ops.consent.door.endpoint_send`, the consent client's one transport). The client holds no secret and
 cannot authorize itself. A PR's head is pinned: one that moved after it was shown is refused server side.
 """
 
@@ -37,7 +37,7 @@ from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgework import Client
 from dev_lab.ops.consent.client import grant, preflight
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import RECEIPT_FRESH_S, Send, reached, ssh_send
+from dev_lab.ops.consent.door import RECEIPT_FRESH_S, Send, endpoint_send, reached
 from dev_lab.ops.totp import STEP
 
 __all__ = ['TABLE', 'merge_main', 'promote_trunk', 'wave_main']
@@ -138,7 +138,7 @@ def wave_main(
     argv: Sequence[str] | None = None,
     *,
     table: Mapping[str, Any] | None = None,
-    send: Send = ssh_send,
+    send: Send = endpoint_send,
     home: Path | None = None,
     grant_: Grant = grant,
     preflight_: Preflight = preflight,
@@ -176,7 +176,7 @@ def wave_main(
 
 
 def promote_trunk(
-    root: Path, sha: str, reason: str, *, table: Mapping[str, Any] | None = None, send: Send = ssh_send
+    root: Path, sha: str, reason: str, *, table: Mapping[str, Any] | None = None, send: Send = endpoint_send
 ) -> int:
     """``integrate promote <sha> --breakglass --reason R``: the wave's server fast-forwards the trunk; exit 0/2/1.
 
@@ -196,7 +196,7 @@ def merge_main(
     cwd: Path | None = None,
     client: Client | None = None,
     table: Mapping[str, Any] | None = None,
-    send: Send = ssh_send,
+    send: Send = endpoint_send,
 ) -> int:
     """``pr breakglass <N> --reason R``: merge inside the open wave; exit 0 merged or was, 2 refused, 1 unreachable."""
     parser = argparse.ArgumentParser(

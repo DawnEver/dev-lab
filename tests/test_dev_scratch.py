@@ -37,13 +37,13 @@ def _plant(root, rel: str, *, age_days: float = 0.0) -> None:
 
 def _declare(root, body: str) -> None:
     (root / '.git').mkdir(exist_ok=True)
-    (root / 'pyproject.toml').write_text(f'[tool.dev_lab.placement]\n{body}', encoding='utf-8')
+    (root / 'layout.toml').write_text(body, encoding='utf-8')
 
 
 def _repo(root) -> None:
     launch.run(['git', 'init', '-q', str(root)], check=True)
-    (root / 'pyproject.toml').write_text('[tool.dev_lab.placement]\n', encoding='utf-8')
-    launch.run(['git', '-C', str(root), 'add', 'pyproject.toml'], check=True)
+    (root / 'layout.toml').write_text('', encoding='utf-8')
+    launch.run(['git', '-C', str(root), 'add', 'layout.toml'], check=True)
 
 
 def test_only_a_file_older_than_the_limit_is_overdue(tmp_path) -> None:
@@ -173,12 +173,12 @@ def test_an_undeclared_checkout_is_not_judged_by_the_row_and_a_verb_says_why(tmp
     monkeypatch.chdir(tmp_path)
     assert main(['check', 'scratch/probe.py']) == 0
     assert main(['list']) == 2
-    assert 'pyproject.toml' in capsys.readouterr().out
+    assert 'layout.toml' in capsys.readouterr().out
     assert main(['bogus']) == 2
 
 
 def _unanchored(root) -> None:
-    (root / 'pyproject.toml').write_text('[tool.dev_lab.placement]\nscratch_anchor = false\n', encoding='utf-8')
+    (root / 'layout.toml').write_text('scratch_anchor = false\n', encoding='utf-8')
 
 
 def test_an_unanchored_scratch_passes_only_when_nothing_under_it_is_tracked(tmp_path) -> None:

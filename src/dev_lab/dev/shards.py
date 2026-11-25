@@ -95,7 +95,7 @@ def pack(items: Sequence[tuple[str, float]], count: int, *, together: Sequence[f
     the order packed is ``(-cost, key)`` and the bin chosen is the least loaded with the LOWEST INDEX,
     never the order *items* arrived in.
 
-    *together* CO-LOCATES AN INDIVISIBLE RESOURCE -- a licence seat, a machine-global COM
+    *together* CO-LOCATES AN INDIVISIBLE RESOURCE -- a license seat, a machine-global COM
     registration. Each group becomes ONE composite item in ONE bin, so the resource never crosses a
     process boundary and needs no cross-process lock. Use one group PER RESOURCE: a seat is
     indivisible against itself and nothing else, and pooling unrelated seats builds a long pole.
@@ -182,8 +182,8 @@ def partition(
 
     ROUND-ROBIN when *costs* is empty or absent, over the sorted list rather than contiguous blocks:
     adjacent files tend to share fixtures and cost, so contiguous slicing puts the expensive
-    neighbourhood in one piece. *together* is IGNORED by that fallback deliberately: a set with no
-    prices is not one anybody should run CONCURRENTLY, and honouring the constraint there would make
+    neighborhood in one piece. *together* is IGNORED by that fallback deliberately: a set with no
+    prices is not one anybody should run CONCURRENTLY, and honoring the constraint there would make
     an unbalanced set look safe to fan out.
 
     Raises:
@@ -252,7 +252,7 @@ def compose(rows: tuple[Row, ...], count: int) -> Composed:
     The ``-dirty`` and ``unknown`` spellings are matched because they are what a git-shaped stamp
     produces when it cannot answer. A consumer stamping
     :func:`dev_lab.dev.content.content_address` instead never reaches that arm, which is the
-    correct behaviour rather than a gap: a content address is never unattributable.
+    correct behavior rather than a gap: a content address is never unattributable.
 
     Args:
         rows: one entry per piece, in piece order, ``None`` where a piece did not answer.

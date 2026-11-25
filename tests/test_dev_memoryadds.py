@@ -19,17 +19,13 @@ _GIT = shutil.which('git') or 'git'
 ENTRY = '.claude/memory/2026/10/01/an-entry.md'
 SOURCES = ('.claude/memory/2026/10/01/a.md', '.claude/memory/2026/10/02/b.md')
 MANUAL = '.claude/memory/2026/11/05/manual.md'
-# rem 2.2 task-engine.js handleAdd's exact dedicated task-list shape, not a generic memory entry.
+# The retired rem todo list's shape: once exempt, now an entry like any other.
 MANUAL_HEAD = (
     '---\nname: manual-2026-11-05\ndescription: Manual tasks created on 2026-11-05\nmetadata:\n  type: project\n---\n\n'
 )
 MANUAL_FIRST = (
     '- [ ] MANUAL-20261105-694 [HIGH] Deferred heavy acceptance; keep its evidence bar. (2026-11-05)\n'
     '      module: acceptance\n'
-)
-MANUAL_NEXT = (
-    '- [ ] MANUAL-20261105-695 [HIGH] Measure the exact unmeasured geometry identities. (2026-11-05)\n'
-    '      module: euclid.geometry\n'
 )
 
 
@@ -93,85 +89,14 @@ def test_a_lane_that_only_adds_memory_passes(repo: Path) -> None:
     assert memoryadds.problems_between(repo, base, 'HEAD') == ()
 
 
-@pytest.mark.parametrize('operation', ['append', 'append_closed', 'close', 'reopen'])
-def test_rem_manual_task_operations_pass(repo: Path, operation: str) -> None:
-    before = MANUAL_HEAD + MANUAL_FIRST
-    if operation == 'reopen':
-        before = before.replace('- [ ]', '- [x]')
-    _write(repo, MANUAL, before)
+def test_a_retired_rem_manual_list_is_immutable_like_any_entry(repo: Path) -> None:
+    """REM-RETIRED (2026-11-23): rem's todo list lost its exemption; a toggled checkbox is an edit, refused."""
+    _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST)
     _commit(repo, 'original manual tasks', MANUAL)
     base = _lane(repo)
-    after = (
-        before + '\n' + MANUAL_NEXT
-        if operation.startswith('append')
-        else before.replace(
-            '- [x]' if operation == 'reopen' else '- [ ]', '- [ ]' if operation == 'reopen' else '- [x]'
-        )
-    )
-    if operation == 'append_closed':
-        after = before + '\n' + MANUAL_NEXT.replace('- [ ]', '- [x]')
-    _write(repo, MANUAL, after)
+    _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST.replace('- [ ]', '- [x]'))
     _commit(repo, 'task state', MANUAL)
-    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
-
-
-@pytest.mark.parametrize(
-    'after',
-    [
-        MANUAL_HEAD + MANUAL_FIRST.replace('evidence bar', 'new claim'),
-        MANUAL_HEAD + MANUAL_FIRST.replace('acceptance\n', 'geometry\n'),
-        MANUAL_HEAD + MANUAL_FIRST.replace('[HIGH]', '[LOW]'),
-        MANUAL_HEAD,
-        MANUAL_HEAD + MANUAL_FIRST + '\nA historical claim rewritten in a task file.\n',
-        MANUAL_HEAD + MANUAL_FIRST + '\n' + MANUAL_FIRST,
-        MANUAL_HEAD + MANUAL_FIRST + '\n' + MANUAL_NEXT.replace('20261105', '20261106'),
-        MANUAL_HEAD + MANUAL_FIRST + '\n' + MANUAL_NEXT.replace('(2026-11-05)', '(2026-11-06)'),
-        MANUAL_HEAD + MANUAL_NEXT + '\n' + MANUAL_FIRST,
-        (MANUAL_HEAD + MANUAL_FIRST).replace('type: project', 'type: bypass'),
-    ],
-)
-def test_manual_filename_never_allows_task_content_rewrites_or_memory_injection(repo: Path, after: str) -> None:
-    _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST)
-    _commit(repo, 'original manual tasks', MANUAL)
-    base = _lane(repo)
-    _write(repo, MANUAL, after)
-    _commit(repo, 'planted bypass', MANUAL)
-    assert memoryadds.problems_between(repo, base, 'HEAD')
-
-
-@pytest.mark.parametrize('path', [MANUAL, ENTRY, 'src/x/' + MANUAL])
-def test_ordinary_memory_cannot_turn_into_a_mutable_manual_list(repo: Path, path: str) -> None:
-    _write(repo, path, '---\nname: manual-2026-11-05\n---\n\nImmutable prose.\n')
-    _commit(repo, 'ordinary entry', path)
-    _publish(repo)
-    _write(repo, path, MANUAL_HEAD + MANUAL_FIRST)
-    _git(repo, 'add', '--', path)
-    assert _judged(repo)
-
-
-def test_manual_refusal_names_the_versioned_task_format_and_remedy(repo: Path) -> None:
-    _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST)
-    _commit(repo, 'original task', MANUAL)
-    _publish(repo)
-    _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST.replace('evidence bar', 'rewritten history'))
-    _git(repo, 'add', '--', MANUAL)
-    refusal = '\n'.join(_judged(repo))
-    assert 'rem 2.2.0' in refusal
-    assert 'append tasks or toggle checkboxes' in refusal
-    assert 'immutable' in refusal
-
-
-@pytest.mark.parametrize('prefix', ['', 'src/x/'])
-def test_scoped_manual_task_format_preserves_crlf_operations(prefix: str) -> None:
-    before = MANUAL_HEAD + MANUAL_FIRST
-    after = before.replace('- [ ]', '- [x]') + '\n' + MANUAL_NEXT
-    assert memoryentry.only_manual_tasks_updated(prefix + MANUAL, before.replace('\n', '\r\n'), after)
-
-
-@pytest.mark.parametrize('path', [ENTRY, MANUAL.replace('manual.md', 'narrative.md'), MANUAL.replace('/11/', '/99/')])
-def test_a_task_shaped_body_cannot_make_another_memory_path_mutable(path: str) -> None:
-    before = MANUAL_HEAD + MANUAL_FIRST
-    assert not memoryentry.only_manual_tasks_updated(path, before, before + '\n' + MANUAL_NEXT)
+    assert 'immutable' in ' '.join(memoryadds.problems_between(repo, base, 'HEAD'))
 
 
 @pytest.mark.parametrize('change', ['edit', 'delete', 'rename'])
@@ -191,14 +116,47 @@ def test_a_lane_that_edits_deletes_or_moves_an_entry_is_refused(repo: Path, chan
     assert ENTRY in found[0]
 
 
-def test_a_task_moved_into_memory_is_the_one_allowed_move(repo: Path) -> None:
-    _write(repo, '.claude/tasks/integrator/JOURNAL.md', 'D1 a decision\n')
-    _commit(repo, 'task', '.claude/tasks/integrator/JOURNAL.md')
+SUMMARY = '.claude/memory/2026/10/SUMMARY-2026-10.md'
+
+
+@pytest.mark.parametrize('change', ['delete', 'move'])
+def test_a_retired_month_summary_may_leave_memory(repo: Path, change: str) -> None:
+    """User ruling 2026-11-24: SUMMARY-*.md retires -- its deletion, or its move into a dated entry, is admitted.
+
+    PLANTED CONTROL: the same deletion of a dated entry in that change is still refused, naming the summary door.
+    """
+    _write(repo, SUMMARY, '# October\n\nWhat happened.\n')
+    _commit(repo, 'summary', SUMMARY)
     base = _lane(repo)
-    (repo / '.claude/memory/2026/10/31').mkdir(parents=True)
-    _git(repo, 'mv', '.claude/tasks/integrator', '.claude/memory/2026/10/31/task-integrator')
-    _git(repo, 'commit', '-q', '-m', 'archive the task')
+    if change == 'delete':
+        _git(repo, 'rm', '-q', SUMMARY)
+    else:
+        moved = '.claude/memory/2026/10/31/october-summary.md'
+        (repo / moved).parent.mkdir(parents=True, exist_ok=True)
+        _git(repo, 'mv', SUMMARY, moved)
+        _write(repo, moved, '---\nname: october-summary\ndescription: d\n---\n\nWhat happened.\n')
+        _git(repo, 'add', moved)
+    _git(repo, 'commit', '-q', '-m', 'retire the month summary')
     assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+    _git(repo, 'rm', '-q', ENTRY)
+    _git(repo, 'commit', '-q', '-m', 'and an entry')
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    assert len(found) == 1, found
+    assert ENTRY in found[0]
+    assert 'SUMMARY-' in found[0], 'the refusal names the one deletion memory admits'
+
+
+def test_nothing_moves_into_memory_not_even_a_task(repo: Path) -> None:
+    """A closed task is archived in the global tasks repo by rem (2026-11-23), never moved into a checkout's memory."""
+    _write(repo, 'notes/integrator/JOURNAL.md', 'D1 a decision\n')
+    _commit(repo, 'task', 'notes/integrator/JOURNAL.md')
+    base = _lane(repo)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == (), 'planted control: nothing moved yet'
+    (repo / '.claude/memory/2026/10/31').mkdir(parents=True)
+    _git(repo, 'mv', 'notes/integrator', '.claude/memory/2026/10/31/task-integrator')
+    _git(repo, 'commit', '-q', '-m', 'archive the task')
+    [found] = memoryadds.problems_between(repo, base, 'HEAD')
+    assert 'tasks repo' in found
 
 
 def test_the_migration_strip_of_volatile_frontmatter_is_not_an_edit(repo: Path) -> None:
@@ -830,22 +788,14 @@ def test_planted_a_published_path_whose_blob_differs_is_still_judged(repo: Path)
     assert rel in found[0], found
 
 
-def test_an_archived_task_journal_needs_no_frontmatter_of_its_own(repo: Path) -> None:
-    """rem: an archived task is ONE entry; TASK.md carries name, description, kind: task."""
-    _lane(repo)
-    _write(repo, _TASK_MD, _TASK_TEXT)
-    _write(repo, _JOURNAL, '# Journal\n\n- step\n')
-    assert _push(repo, _commit(repo, 'archive a task', _TASK_MD, _JOURNAL)) == ()
-
-
 def test_the_issue_6602_journal_published_by_a_merge_commit_passes(repo: Path) -> None:
     head = _published_elsewhere(repo, (_TASK_MD, _TASK_TEXT), (_JOURNAL, '# J\n'))
     assert _push(repo, head) == ()
 
 
-@pytest.mark.parametrize('task', ['---\nname: t\ndescription: d\n---\n\nT.\n', None])
-def test_planted_a_journal_beside_no_task_md_of_kind_task_is_still_refused(repo: Path, task: str | None) -> None:
-    """PLANTED CONTROL: without a TASK.md declaring ``kind: task`` the directory is no task; each file is an entry."""
+@pytest.mark.parametrize('task', [_TASK_TEXT, '---\nname: t\ndescription: d\n---\n\nT.\n', None])
+def test_a_journal_added_to_memory_is_an_entry_of_its_own_even_beside_a_task_md(repo: Path, task: str | None) -> None:
+    """No archived-task exemption survives the global ledger (2026-11-23): each added file is an entry."""
     _lane(repo)
     paths = [_JOURNAL]
     _write(repo, _JOURNAL, '# Journal\n')
@@ -855,3 +805,160 @@ def test_planted_a_journal_beside_no_task_md_of_kind_task_is_still_refused(repo:
     found = _push(repo, _commit(repo, 'no task', *paths))
     assert len(found) == 1, found
     assert _JOURNAL in found[0], found
+
+
+ATTACHMENT = '.claude/memory/2026/10/01/attachments/manifest.toml'
+_CITING = _HEAD + 'Its manifest: attachments/manifest.toml.\nBody.\n'
+_CITED = _HEAD + 'Its manifest: cases/x/manifest.toml@abc1234.\nBody.\n'
+
+
+def _deletion_note(names: str = '2026/10/01/attachments/manifest.toml', approved: str = 'delete the duplicate') -> str:
+    return _amend_note(reason=f'deleted {names}, a duplicate of a case file', approved=approved)
+
+
+def _published_attachment(repo: Path) -> str:
+    _write(repo, ENTRY, _CITING)
+    _write(repo, ATTACHMENT, "[case]\nname = 'x'\n")
+    _commit(repo, 'attach', ENTRY, ATTACHMENT)
+    _publish(repo)
+    return _lane(repo)
+
+
+def test_an_approved_attachment_deletion_passes(repo: Path) -> None:
+    """ATTACHMENT-DELETE (user ruling 2026-11-24): an entry's note names the deleted attachment and the approval."""
+    base = _published_attachment(repo)
+    _git(repo, 'rm', '-q', ATTACHMENT)
+    _write(repo, ENTRY, _CITED.replace(_HEAD, f'{_HEAD}{_deletion_note()}\n\n'))
+    _commit(repo, 'cite instead', ENTRY)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+@pytest.mark.parametrize(
+    'note',
+    [
+        None,  # no note at all
+        'approved-empty',  # the reason without the user's words
+        'other-path',  # the note names a different attachment
+        'not-deleted',  # an amendment that does not say deleted
+        'published-note',  # a note the base already held approves nothing new
+    ],
+)
+def test_planted_an_attachment_deletion_without_its_approval_is_refused_by_name(repo: Path, note: str | None) -> None:
+    """PLANTED CONTROL: a deletion is refused, naming the attachment and its door, unless a NEW note approves it."""
+    if note == 'published-note':
+        _write(repo, ENTRY, _CITING.replace(_HEAD, f'{_HEAD}{_deletion_note()}\n\n'))
+        _write(repo, ATTACHMENT, "[case]\nname = 'x'\n")
+        _commit(repo, 'attach', ENTRY, ATTACHMENT)
+        _publish(repo)
+        base = _lane(repo)
+        _git(repo, 'rm', '-q', ATTACHMENT)
+        _git(repo, 'commit', '-q', '-m', 'drop')
+    else:
+        base = _published_attachment(repo)
+        _git(repo, 'rm', '-q', ATTACHMENT)
+        line = {
+            None: '',
+            'approved-empty': _deletion_note(approved=''),
+            'other-path': _deletion_note(names='2026/10/01/attachments/other.toml'),
+            'not-deleted': _amend_note(reason='2026/10/01/attachments/manifest.toml was cited'),
+        }[note]
+        _write(repo, ENTRY, _CITED.replace(_HEAD, f'{_HEAD}{line}\n\n' if line else _HEAD))
+        _commit(repo, 'cite instead', ENTRY)
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    refusal = [line for line in found if ATTACHMENT in line]
+    assert len(refusal) == 1, found
+    assert 'ATTACHMENT-DELETE' in refusal[0]
+    assert 'deleted <attachment>' in refusal[0]
+
+
+def test_planted_an_approval_note_never_admits_deleting_an_entry(repo: Path) -> None:
+    """PLANTED CONTROL: the door is for attachments -- an entry (``.md`` outside attachments/) stays undeletable."""
+    base = _lane(repo)
+    _git(repo, 'rm', '-q', SOURCES[0])
+    _write(repo, ENTRY, _HEAD + _deletion_note(names='2026/10/01/a.md') + '\n\nBody.\n')
+    _commit(repo, 'drop an entry', ENTRY)
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    assert any(SOURCES[0] in line and 'never deleted' in line for line in found), found
+
+
+@pytest.mark.parametrize(
+    ('path', 'attachment'),
+    [
+        ('.claude/memory/2026/10/01/attachments/INDEX.md', True),
+        ('.claude/memory/2026/10/01/probe.py', True),
+        ('.claude/memory/2026/10/01/an-entry.md', False),
+        ('docs/attachments/x.toml', False),
+    ],
+)
+def test_an_attachment_is_a_memory_file_that_is_not_an_entry(path: str, *, attachment: bool) -> None:
+    assert memoryentry.is_attachment(path) is attachment
+
+
+# ROOT-MOVE (user ruling R7 2026-11-23): a nested scope's entry moves into the root dated tree, text byte-identical,
+# approved by an amendment note the same range adds naming old -> new. Each admit below has its planted refusal.
+SCOPED = 'pkg/.claude/memory/2026/10/01/scoped.md'
+ROOTED = '.claude/memory/2026/10/01/scoped.md'
+_SCOPED_TEXT = '---\nname: scoped\ndescription: d\n---\n\nScoped body.\n'
+_NOTE_ENTRY = '.claude/memory/2026/11/23/scoped-memory-moves-to-the-root.md'
+
+
+def _move_note(
+    pair: str = f'{SCOPED} -> {ROOTED}', reason: str = 'moved', approved: str = 'user ruling R7 2026-11-23'
+) -> str:
+    return '> ' + memoryentry.AMENDMENT_NOTE.format(day='2026-11-23', reason=f'{reason} {pair}', approved=approved)
+
+
+def _moved(repo: Path, *, new: str = ROOTED, text: str = _SCOPED_TEXT, note: str | None = None) -> tuple[str, ...]:
+    _write(repo, SCOPED, _SCOPED_TEXT)
+    _commit(repo, 'scoped entry', SCOPED)
+    _publish(repo)
+    _lane(repo)
+    _git(repo, 'rm', '-q', SCOPED)
+    _write(repo, new, text)
+    paths = [new]
+    if note is not None:
+        _write(repo, _NOTE_ENTRY, f'---\nname: r7\ndescription: d\n---\n\n{note}\n')
+        paths.append(_NOTE_ENTRY)
+    _commit(repo, 'move', *paths)
+    return _push(repo, _git(repo, 'rev-parse', 'HEAD'))
+
+
+def test_an_approved_byte_identical_move_into_the_root_passes(repo: Path) -> None:
+    assert _moved(repo, note=_move_note()) == ()
+
+
+def test_one_note_naming_both_memory_directories_carries_a_whole_scope(repo: Path) -> None:
+    assert _moved(repo, note=_move_note('pkg/.claude/memory/ -> .claude/memory/')) == ()
+
+
+def test_planted_a_move_without_its_note_is_refused_and_names_the_door(repo: Path) -> None:
+    found = _moved(repo)
+    assert len(found) == 1, found
+    assert SCOPED in found[0]
+    assert 'ROOT-MOVE' in found[0]
+
+
+@pytest.mark.parametrize(
+    ('change', 'kwargs'),
+    [
+        ('text changed', {'text': _SCOPED_TEXT.replace('Scoped body', 'Rewritten'), 'note': _move_note()}),
+        (
+            'another dated dir',
+            {
+                'new': '.claude/memory/2026/10/02/scoped.md',
+                'note': _move_note(f'{SCOPED} -> .claude/memory/2026/10/02/scoped.md'),
+            },
+        ),
+        ('note names other paths', {'note': _move_note(f'{SCOPED} -> .claude/memory/2026/10/01/other.md')}),
+        ('reason does not say moved', {'note': _move_note(reason='relocated')}),
+        ('no user words', {'note': _move_note(approved=' ')}),
+    ],
+)
+def test_planted_a_move_breaking_one_condition_is_refused(repo: Path, change: str, kwargs: dict) -> None:
+    assert _moved(repo, **kwargs), change
+
+
+def test_planted_a_move_between_two_nested_scopes_is_refused() -> None:
+    other = 'other/.claude/memory/2026/10/01/scoped.md'
+    assert not memoryentry.move_approved(SCOPED, other, [_move_note(f'{SCOPED} -> {other}')])
+    assert memoryentry.move_approved(SCOPED, ROOTED, [_move_note()])  # control: the root admits it

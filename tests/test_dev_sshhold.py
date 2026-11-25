@@ -96,7 +96,7 @@ def test_a_held_session_runs_commands_on_one_connection_and_closes(monkeypatch: 
 
 def test_a_wrong_code_fails_the_open_and_leaves_no_session(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('FAKESSH_CODE', CODE)
-    with pytest.raises(HoldRefused, match='authenticat'):
+    with pytest.raises(HoldRefused, match='authenticate'):
         sshhold.open_session('ops@fake', 1.0, '000000', ssh=FAKE)
     assert sshholdstate.read_session('ops@fake') is None
 
@@ -183,7 +183,7 @@ def test_a_bastion_that_refuses_the_code_fails_the_open(monkeypatch: pytest.Monk
     """Planted control: the host would accept the code but the bastion's secret differs, so nothing opens."""
     monkeypatch.setenv('FAKESSH_CODE', CODE)
     monkeypatch.setenv('FAKESSH_JUMP_CODE', '999999')
-    with pytest.raises(HoldRefused, match='authenticat'):
+    with pytest.raises(HoldRefused, match='authenticate'):
         sshhold.open_session('ops@inner', 1.0, CODE, ssh=(*FAKE, '-J', 'ops@bastion'))
     assert sshholdstate.read_session('ops@inner') is None
 
@@ -193,7 +193,7 @@ def test_the_cli_jump_rides_both_the_plain_and_the_planned_open(monkeypatch: pyt
     monkeypatch.setattr(sshhold, 'section', lambda _name: {})  # no declared route: the flag alone decides
     monkeypatch.setattr(sshhold, 'open_session', lambda *_a, ssh: seen.append(ssh) or 'opened')
     monkeypatch.setattr(sshholdplan, 'offered', lambda _plan, _steps, **_k: 'preflight: green')
-    monkeypatch.setattr(sshholdprobe, 'probe', lambda _dest, _ssh: None)  # its own test: test_dev_sshhold_probe
+    monkeypatch.setattr(sshholdprobe, 'probe', lambda _dest, _ssh: 'proven')  # its own test: test_dev_sshhold_probe
     monkeypatch.setattr(
         sshholdplan,
         'open_planned',
@@ -367,7 +367,7 @@ def test_a_dest_without_its_user_is_refused_before_the_code_is_spent(
     assert '<user>@login.example' in capsys.readouterr().err
     assert opened == []
     monkeypatch.setattr(sshhold, 'given_code', lambda code: code or '1')
-    monkeypatch.setattr(sshholdprobe, 'probe', lambda _dest, _ssh: None)
+    monkeypatch.setattr(sshholdprobe, 'probe', lambda _dest, _ssh: 'proven')
     assert sshhold.main(['open', 'alice@login.example', '--hours', '1', '--code', '1']) == 0
     assert opened == ['alice@login.example']
 

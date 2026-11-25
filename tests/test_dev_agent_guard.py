@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import venv
 from pathlib import Path
@@ -27,7 +28,6 @@ from dev_lab.dev.githooks import bash_executable
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, Remedy, UnremediedRule
 from dev_lab.dev.jsrun import node_path
-from dev_lab.dev.plugin_settings import DISABLED_PLUGINS, live_disabled_plugins
 
 
 def _row(command: str) -> dict[str, object]:
@@ -367,38 +367,6 @@ def test_the_engine_reads_the_live_run_absent_key_python_writes() -> None:
     assert 'input.dev_lab_renamed_key === true' not in engine, 'CONTROL: the probe is a literal match'
 
 
-def test_the_install_turns_off_every_disabled_plugin_and_keeps_a_repo_own() -> None:
-    """Ruling 2026-11-05: the forge's PR review is the one review, so the wiring turns sharp-review off."""
-    own = {'enabledPlugins': {'rust-analyzer-lsp@claude-plugins-official': True, 'sharp-review@cc-market': True}}
-    after = agent_guard.wire_settings(own)
-    assert after['enabledPlugins'] == {
-        'rust-analyzer-lsp@claude-plugins-official': True,
-        **dict.fromkeys(DISABLED_PLUGINS, False),
-    }
-    assert own['enabledPlugins']['sharp-review@cc-market'] is True, 'the input was mutated'
-    assert live_disabled_plugins(after) == []
-
-
-@pytest.mark.parametrize('planted', [{'sharp-review@cc-market': True}, {}, None])
-def test_a_settings_file_enabling_or_omitting_a_disabled_plugin_is_stale(repo: Path, planted: object) -> None:
-    """PLANTED CONTROL: the check convicts an enabled plugin AND an absent entry (the user's file enables it)."""
-    _declare(repo)
-    agent_guard.install_guard(repo)
-    settings = repo / agent_wiring.SETTINGS_REL
-    document = json.loads(settings.read_text(encoding='utf-8'))
-    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
-    if planted is None:
-        del document['enabledPlugins']
-    else:
-        document['enabledPlugins'] = planted
-    settings.write_text(json.dumps(document), encoding='utf-8')
-    wiring = agent_guard.guard_installation(repo).by_part['wiring']
-    assert wiring.status == agent_guard.STALE
-    assert 'sharp-review@cc-market' in wiring.detail
-    agent_guard.install_guard(repo)
-    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
-
-
 def test_the_rules_file_is_written_from_the_repos_declared_adoption(repo: Path) -> None:
     """``python -m dev_lab.dev.hook_adoption --adoption <module>``: the renderer a relock re-runs (forge sync).
 
@@ -514,6 +482,40 @@ def test_a_stale_venv_missing_a_verb_names_its_fix_and_lets_the_prompt_through(t
     assert same.returncode == 0, 'dev-lab #639: a current venv lacking the verb is a wiring fault, never a block'
     assert 'behind' not in same.stderr
     assert 'agent_guard --install' in same.stderr, 'a current venv is told to re-render the wiring'
+
+
+def _walls(root: Path) -> list[dict[str, object]]:
+    return [
+        json.loads(raw)
+        for path in root.glob('output/logs/*/*/*/walls/walls.jsonl')
+        for raw in path.read_text(encoding='utf-8').splitlines()
+    ]
+
+
+def test_a_venv_carrying_no_dev_lab_is_named_and_sent_to_a_bootstrap_that_can_run(tmp_path: Path) -> None:
+    """A venv with no dev_lab at all is named (VENV-CARRIES-DEV-LAB) with a bootstrap that can run, and recorded.
+
+    2026-11-25: such a venv failed ``No module named dev_lab`` and was told to run THAT venv's ``python -m
+    dev_lab.dev.dep --bootstrap`` -- a door that cannot run; only a present-but-behind version was named. PLANTED
+    CONTROL: a venv carrying dev_lab behind its lock is still told it is behind, never that it carries none.
+    """
+    env = _venv_with_dev_lab_at(tmp_path, 'a' * 40, 'b' * 40)
+    shutil.rmtree(next((tmp_path / '.venv').glob('**/site-packages/dev_lab-0.dist-info')))
+    done = _bind(env)
+    assert done.returncode == 0, done.stderr
+    [line] = done.stderr.splitlines()
+    assert 'carries no dev_lab' in line, line
+    assert 'VENV-CARRIES-DEV-LAB' in line, line
+    assert f'cd {tmp_path} && ' in line, line
+    assert f'-m dev_lab.dev.dep --bootstrap {tmp_path}' in line, line
+    assert 'behind' not in line, line
+    [wall] = _walls(tmp_path)
+    assert (wall['rule'], wall['remedy_present']) == ('VENV-CARRIES-DEV-LAB', True)
+    behind = tmp_path / 'behind'
+    stale = _bind(_venv_with_dev_lab_at(behind, 'a' * 40, 'b' * 40))
+    assert 'aaaaaaaaaa is behind' in stale.stderr, stale.stderr
+    assert 'carries no dev_lab' not in stale.stderr, stale.stderr
+    assert [wall['rule'] for wall in _walls(behind)] == ['VENV-FOLLOWS-THE-LOCK']
 
 
 def test_the_stale_python_launcher_keeps_the_native_codex_wall_identity(tmp_path: Path) -> None:

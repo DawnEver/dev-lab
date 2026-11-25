@@ -19,7 +19,7 @@
 # `<local ref> <local sha> <remote ref> <remote sha>` -- the remote sha is what the remote has, the
 # local sha what is being sent.
 #
-# WHAT THIS DOES NOT FIX, stated because it is the neighbouring mechanism rather than this one.
+# WHAT THIS DOES NOT FIX, stated because it is the neighboring mechanism rather than this one.
 # Narrowing to the increment does not widen the hole where a commit reaches the trunk with a
 # non-conventional message: a commit already on the REMOTE BRANCH was, at the moment it was pushed,
 # inside its own increment and was judged then. The hole is about commits that arrive on the trunk by

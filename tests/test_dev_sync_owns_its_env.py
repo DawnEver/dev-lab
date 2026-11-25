@@ -88,3 +88,32 @@ def test_only_a_frozen_bootstrap_builds_under_the_invoking_interpreter(tmp_path,
     assert command[command.index('--python') + 1] == sys.executable
     with pytest.raises(_dep_project.ForeignEnvRefused):
         _dep_project.uv_command(root, missing, (), syncing=False, upgrade_packages=(), frozen=True)
+
+
+def test_a_bootstrap_the_caller_cannot_serve_asks_uv_for_the_targets_requires_python(tmp_path, monkeypatch) -> None:
+    root = _project(tmp_path / 'config')
+    (root / 'pyproject.toml').write_text(
+        '[project]\nname="empty"\nversion="0"\nrequires-python = ">=99.0"\n', encoding='utf-8'
+    )
+    monkeypatch.setattr(_dep_project.shutil, 'which', lambda _name: 'uv')
+    missing = str(root / '.venv' / 'Scripts' / 'python.exe')
+    command = _dep_project.uv_command(root, missing, (), syncing=True, upgrade_packages=(), frozen=True)
+    assert command[command.index('--python') + 1] == '>=99.0'
+
+
+@pytest.mark.parametrize(
+    ('running', 'spec', 'caller'),
+    [
+        ((3, 12, 9), '>=3.13', False),
+        ((3, 13, 1), '>=3.13', True),
+        ((3, 13, 1), '>=3.12,<3.13', False),
+        ((3, 12, 9), '==3.12.*', True),
+        ((3, 12, 9), '~=3.11', True),
+        ((3, 12, 9), '~=3.13.0', False),
+        ((3, 12, 9), '>=3.12; nonsense', False),
+    ],
+)
+def test_a_fitting_caller_builds_and_any_other_hands_uv_the_spec(tmp_path, running, spec, *, caller) -> None:
+    root = _project(tmp_path / 'config')
+    (root / 'pyproject.toml').write_text(f'[project]\nname="e"\nrequires-python = "{spec}"\n', encoding='utf-8')
+    assert _dep_project.bootstrap_python(root, running=running) == (sys.executable if caller else spec)

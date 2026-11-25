@@ -35,10 +35,11 @@ from lab_commons.config import CONFIG_ENV, FAMILY_TABLE
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.taskkeys import REVIEW_TASK, loader
 from dev_lab.ops import forcecommand
-from dev_lab.ops.access import Prepared, prepare, secret_file
+from dev_lab.ops.access import Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
-from dev_lab.ops.caddy import install_caddy
+from dev_lab.ops.caddy import Door, install_caddy
 from dev_lab.ops.config import Breakglass, OpsConfig
+from dev_lab.ops.httpsdoor import PATHS, HttpsDoor
 from dev_lab.ops.installpaths import Chown, keys_dir, prepare_paths, under
 from dev_lab.ops.installunits import SUPERVISE, UNIT, door, scheduled, service_unit
 from dev_lab.ops.judgerole import Judge
@@ -119,9 +120,58 @@ def _judge_machine_file(role: Judge) -> str:
     return f'{role.home_dir}/{machine_home}/{under_home}'
 
 
+def _https_unit(name: str) -> str:
+    return f'{_UNIT}-{name}-https.service'
+
+
+def _https_door(config: OpsConfig, name: str, role: HttpsDoor, account: str) -> dict[str, str]:
+    """*role*'s HTTPS relay unit (:mod:`dev_lab.ops.httpsdoor`); empty when it declares no ``https_port``.
+
+    The relay runs as the role's restricted *account* on 127.0.0.1 only and sudoes the ForceCommand's OWN serve line
+    (the one sudoers line :mod:`.forcecommand` renders), admitting a request only when it is signed by a key of the
+    account's authorized-keys file -- the ssh transport's key set. Caddy routes the allowlisted site's path to it
+    (:func:`dev_lab.ops.caddy.doors_routed`).
+    """
+    if not role.https_port:
+        return {}
+    relay = shlex.join([
+        config.python, '-m', 'dev_lab.ops.httpsdoor', '--port', str(role.https_port), '--role', name,
+        '--keys', keys_file(account), '--attempts', str(role.https_attempts),
+        '--window-minutes', f'{role.https_window_minutes:g}', '--lock-minutes', f'{role.https_lock_minutes:g}',
+        '--', 'sudo', '-n', *shlex.split(door(config, name, 'serve')),
+    ])  # fmt: skip
+    unit = (
+        f'[Unit]\nDescription=HTTPS door of {name}: relays {PATHS[name]} on 127.0.0.1:{role.https_port} '
+        '(dev_lab.ops)\nWants=network-online.target\nAfter=network-online.target\n'
+        f'[Service]\nUser={account}\nExecStart={relay}\nRestart=always\nRestartSec=5\n'
+        '[Install]\nWantedBy=multi-user.target\n'
+    )
+    return {f'etc/systemd/system/{_https_unit(name)}': unit}
+
+
+def https_doors(config: OpsConfig) -> list[Door]:
+    """The Caddy route of every declared HTTPS door."""
+    roles = (('consent', config.consent), ('breakglass', config.breakglass))
+    return [Door(role.https_site, PATHS[name], role.https_port) for name, role in roles if role and role.https_port]
+
+
+def _https_steps(config: OpsConfig) -> list[str]:
+    """(Re)start every declared HTTPS door's relay (its Caddy route is in the Caddyfile reload step)."""
+    units = [_https_unit(name) for name, role in (('consent', config.consent), ('breakglass', config.breakglass))
+             if role is not None and role.https_port]  # fmt: skip
+    return (
+        ['systemctl daemon-reload', *(f'systemctl enable {unit} && systemctl restart {unit}' for unit in units)]
+        if units
+        else []
+    )
+
+
 def _consent(config: OpsConfig) -> dict[str, str]:
     role = config.consent
-    return {} if role is None else forcecommand.files(_UNIT, role.account, role.keys, door(config, 'consent', 'serve'))
+    if role is None:
+        return {}
+    forced = forcecommand.files(_UNIT, role.account, role.keys, door(config, 'consent', 'serve'))
+    return {**forced, **_https_door(config, 'consent', role, role.account)}
 
 
 def _breakglass(config: OpsConfig) -> dict[str, str]:
@@ -141,6 +191,7 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
         f'etc/systemd/system/{_UNIT}-breakglass-tick.service': tick_service,
         f'etc/systemd/system/{_UNIT}-breakglass-tick.timer': tick_timer,
         **forcecommand.files(_UNIT, role.account, role.keys, door(config, 'breakglass', 'serve')),
+        **_https_door(config, 'breakglass', role, role.account),
         **machine,
     }
 
@@ -168,7 +219,7 @@ def _consent_steps(config: OpsConfig, root: Path) -> list[str]:
     if not under(root, issuer.key).is_file():
         steps.append(door(config, 'consent', 'keygen'))
     if not under(root, issuer.totp).is_file():
-        steps.append(door(config, 'consent', 'enrol'))
+        steps.append(door(config, 'consent', 'enroll'))
     return steps
 
 
@@ -184,6 +235,7 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
         steps += [*forcecommand.steps(_UNIT, role.account), 'systemctl daemon-reload',
                   f'systemctl enable --now {_UNIT}-breakglass-tick.timer']  # fmt: skip
     steps += _consent_steps(config, root)
+    steps += _https_steps(config)
     if (backup := config.backup) is not None and backup.dumpers:
         steps += [f'id {backup.account} || useradd --create-home --shell /bin/sh {backup.account}',
                   f'visudo -cf /etc/sudoers.d/{_UNIT}-{backup.account}', 'sshd -t && systemctl reload ssh']  # fmt: skip
@@ -200,7 +252,7 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
                   'sshd -t && systemctl reload ssh']  # fmt: skip
         if access is not None and access.needs_secret:
             steps.append(
-                f'{door(config, "access", "enrol")}  (first-ever; a phone already holding the host '
+                f'{door(config, "access", "enroll")}  (first-ever; a phone already holding the host '
                 f'secret: {door(config, "access", "adopt", "--secret-file", "-")})'
             )
     if (role := config.supervise) is not None:
@@ -260,7 +312,7 @@ def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Ren
     private = access.private if access is not None else {}
     rendered |= (access.public if access is not None else {}) | private
     done, prepared = prepare_paths(config, root, chown)
-    prepared += install_caddy(config.caddy, root, rendered, config.status)
+    prepared += install_caddy(config.caddy, root, rendered, config.status, https_doors(config))
     accounts = (config.breakglass, config.consent, config.access)
     if any(role is not None for role in accounts) or (config.backup and config.backup.dumpers):
         prepared += keys_dir(root, chown, done)

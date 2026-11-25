@@ -43,13 +43,13 @@ from dev_lab.dev.netverb import (
     spelled,
 )
 
-#: FLOORS. The table is the thing this module's judgement lives in, so a scan of it that reached
+#: FLOORS. The table is the thing this module's judgment lives in, so a scan of it that reached
 #: nothing must not read as agreement. MEASURED 2026-09-17: 5 rows, 38 patterns.
 ROW_FLOOR = 4
 PATTERN_FLOOR = 20
 
 #: A message that is in no row, so it exercises the UNCLASSIFIED default rather than a pattern.
-UNMEASURED = 'fatal: the weather over the datacentre was unfavourable'
+UNMEASURED = 'fatal: the weather over the datacenter was unfavorable'
 
 
 class _Clock:
@@ -506,7 +506,7 @@ def test_uvs_spelling_of_a_forge_auth_failure_is_transient_and_recovers(tmp_path
         ['uv', 'remove', 'x'],
     ],
 )
-def test_every_network_verb_is_recognised(argv: list[str]) -> None:
+def test_every_network_verb_is_recognized(argv: list[str]) -> None:
     """The ONE predicate the arch scan, dep and the spelling all read."""
     assert is_network_verb(argv)
 

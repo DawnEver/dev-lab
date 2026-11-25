@@ -102,3 +102,8 @@ def test_the_cache_lives_in_the_main_checkout_even_from_a_worktree(tmp_path: Pat
     expected = main.resolve().joinpath('output', *CACHE_IN_OUTPUT)
     assert cache_path(lane).resolve() == expected
     assert cache_path(main).resolve() == expected
+
+
+def test_the_cache_is_a_store_under_output_cache() -> None:
+    """User ruling 2026-11-24 (R5): output holds only logs/ and cache/<store>/, so the run cache is cache/runcache."""
+    assert CACHE_IN_OUTPUT == ('cache', 'runcache', 'record.jsonl')

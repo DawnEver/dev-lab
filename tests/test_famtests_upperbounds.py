@@ -144,7 +144,7 @@ def test_a_bound_says_how_it_is_one() -> None:
 # -- THE POPULATIONS, and the silence each floor refuses. ------------------------------------------
 
 
-def test_an_unparseable_manifest_is_skipped_rather_than_counted_as_read(tmp_path: Path) -> None:
+def test_an_unparsable_manifest_is_skipped_rather_than_counted_as_read(tmp_path: Path) -> None:
     (tmp_path / 'broken.toml').write_text('[unclosed\n', encoding='utf-8')
     (tmp_path / 'ok.toml').write_text(_PYPROJECT, encoding='utf-8')
     scan = take_scan(sorted(tmp_path.glob('*.toml')), root=tmp_path, ecosystem='pep508')

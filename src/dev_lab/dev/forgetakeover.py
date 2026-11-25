@@ -5,7 +5,7 @@ F-4eee841cf16c): every identity a local session asserts is forgeable by a same-u
 never the forge's -- only the forge posts ``tests/review``.
 
 * ``review again <pr>`` (:func:`~dev_lab.dev.forgereview_stands.ask_again`) asks the forge to review the PR's head
-  again: after fixing a security finding, or to have grown work read. The forge's next review run honours it.
+  again: after fixing a security finding, or to have grown work read. The forge's next review run honors it.
 * ``review takeover <sha>`` (:func:`takeover`) runs the SAME method and scope and posts the findings comment as a
   session's ADVISORY review: no status, no merge. ``review plan <sha>`` prints the slices only.
 * ``review carry <pr> --resolve ID | --defer ID --reason ...`` (:func:`~dev_lab.dev.forgereview_stands.carry`)

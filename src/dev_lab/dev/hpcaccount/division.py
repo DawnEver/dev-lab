@@ -122,7 +122,7 @@ def reached_machine(accounts: Sequence[str] = ()) -> Machine:
 
     Raises:
         lab_commons.hpc.grants.AccessRefused: an account another role reaches, a machine reaching none, or an
-            unmanaged machine (naming its enrolment door).
+            unmanaged machine (naming its enrollment door).
         LookupError: an account no grant declares.
         ValueError: the ``[hpc]`` declaration is refused.
 

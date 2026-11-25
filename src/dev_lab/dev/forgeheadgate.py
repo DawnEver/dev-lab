@@ -1,6 +1,6 @@
-"""The forge's judgement of an open PR head, as commit statuses on that head; the merge requires the GATES.
+"""The forge's judgment of an open PR head, as commit statuses on that head; the merge requires the GATES.
 
-User ruling 2026-10-24 (toolchain plan P3): a judgement no one read locally is said where the author reads it -- a
+User ruling 2026-10-24 (toolchain plan P3): a judgment no one read locally is said where the author reads it -- a
 status on the PR head, ``failure`` naming the exact command that fixes it. User ruling 2026-11-07 (systemic): A FAMILY
 CHECK NEVER DEPENDS ON A CONSUMER'S LOCAL GIT HOOK BEING CURRENT -- a stale or missing pre-push shim silently disarmed
 the push rows in 4 of 5 consumers. So each push row that can be judged of a PR head is also a status here, from THE
@@ -25,7 +25,7 @@ The other two push rows are not head statuses, by what they judge: ``merge-resol
 judge; ``landed-pr`` judges new commits on a branch whose PR is CLOSED, so no open PR head exists to carry a status.
 
 ONCE PER HEAD SHA, FOR A VERDICT: a head whose context already reads ``success`` or ``failure`` is not judged
-again (a resolution is minutes of network), so a new head earns a new judgement -- save the :data:`VOLATILE`
+again (a resolution is minutes of network), so a new head earns a new judgment -- save the :data:`VOLATILE`
 contexts, whose verdict reads a tip that moves while the head does not (integration's, a sibling's): those are
 judged every time and posted only when the verdict changed. An ``error`` or ``pending`` is not a verdict and is
 judged again. Two producers, one :func:`judge`: Gitea's ``forge serve`` integration step on every open PR into

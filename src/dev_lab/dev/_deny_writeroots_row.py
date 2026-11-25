@@ -1,17 +1,17 @@
-"""The agent deny registry, WRITES-STAY-IN-THE-TREE row -- pure DATA.
+"""The agent deny registry, WRITES-STAY-IN-THE-TREE row -- pure DATA, its pattern a prefilter and its judge a module.
 
-The SHELL half of :mod:`dev_lab.dev.writeroots`: a redirect, ``tee``, ``cp``/``mv``/``Copy-Item``/``Move-Item``
-(by their LAST argument), ``mkdir``/``touch``/``New-Item``, ``Out-File``/``Set-Content``/``Add-Content`` whose
-target is a write-prone root -- temp (``/tmp``, ``/var/tmp``, ``$TEMP``, ``%TEMP%``, ``$env:TEMP``,
-``AppData/Local/Temp``), a drive's or the home's ``tmp``/``temp``/``var``/``src``, or a loose non-dot entry in the
-home. The engine reads text, so the roots are spelled here as a pattern; their one declaration is
-:func:`dev_lab.dev.writeroots.write_prone_roots`, whose hazard and remedy this row speaks. The harness's own
-``<temp>/claude/`` subtree is never matched. Reading a root, and deleting from one, stay allowed.
+The SHELL half of :mod:`dev_lab.dev.writeroots`. The writable roots are a per-machine ALLOWLIST (ruling R8,
+2026-11-24) and whether a target lies inside one is a question of the filesystem and the machine file, which no
+regex reads. So this pattern only PREFILTERS: a line that writes (a redirect, ``tee``, ``mkdir``/``touch``, a copy or
+move, ``dd``, a PowerShell writer) AND spells a target that may leave the call's own directory (an absolute path, the
+home, a variable, ``..``). Only then does the engine ask :func:`dev_lab.dev.writeroots.main` (``--admit``), which
+places every target the line writes -- ``cd`` followed -- and refuses one outside every writable root. A line writing
+only relative paths below its cwd starts no interpreter.
 """
 
 from __future__ import annotations
 
-from dev_lab.dev.writeroots import DRIVE_NAMES, EXCLUDED_GLOBS_IN_TEMP, EXCLUDED_IN_TEMP, HAZARD, REMEDY, RULE_ID
+from dev_lab.dev.writeroots import HAZARD, REMEDY, RULE_ID
 
 __all__ = ['WRITES_STAY_IN_THE_TREE']
 
@@ -21,70 +21,53 @@ def _ci(word: str) -> str:
     return ''.join(f'[{c.lower()}{c.upper()}]' if c.isalpha() else c for c in word)
 
 
-_PATHCHAR = r"""[^\s"';&|()<>]"""
-#: One path SEGMENT: a token character that is no separator.
-_SEG = r"""[^\s"';&|()<>\\/]"""
-_END = r"""(?=["'\s;&|)]|$)"""
-_NAMES = '(?:' + '|'.join(_ci(name) for name in DRIVE_NAMES) + ')'
-_EXCLUDED = '|'.join(n for n in EXCLUDED_IN_TEMP if n not in EXCLUDED_GLOBS_IN_TEMP)  # no agent spells a glob
-#: The OS temp dir, by every spelling a shell gives it, not followed by an excluded name.
-_TEMP = (
-    r'(?:/tmp|/var/tmp|\$\{?(?:TEMP|TMP|TMPDIR)\}?|%(?:TEMP|TMP)%|\$env:(?:TEMP|TMP)'
-    rf'|(?:{_PATHCHAR}*[\\/])?{_ci("AppData")}[\\/]{_ci("Local")}[\\/]{_ci("Temp")})'
-    rf'(?![\\/]+(?:{_EXCLUDED})(?:[\\/"\'\s;&|)]|$))'
-)
-#: A drive root: ``C:/``, ``C:\``, Git Bash's ``/c/``.
-_DRIVE = r'(?:[A-Za-z]:[\\/]+|/[A-Za-z]/)'
-#: The home, by every spelling a shell gives it.
-_HOME = (
-    r'(?:~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%'
-    rf'|[A-Za-z]:[\\/]+{_ci("Users")}[\\/]+{_SEG}+|/[A-Za-z]/{_ci("Users")}/{_SEG}+|/home/{_SEG}+)'
-)
-_SEP = r'[\\/]'
-#: A target path, closing quote included: a root and anything beneath it, or one loose non-dot home entry.
-_TARGET = (
-    r"""["']?(?:"""
-    rf'(?:{_TEMP}|{_DRIVE}{_NAMES}|{_HOME}{_SEP}+{_NAMES})(?:{_SEP}{_PATHCHAR}*)?'
-    rf'|{_HOME}{_SEP}+[^\s"\';&|()<>.\\/]{_SEG}*'
-    rf'){_END}["\']?'
-)
-_WRITERS = (
-    rf'>>?\s*{_TARGET}'
-    rf'|\btee\b(?:\s+-\S+)*\s+{_TARGET}'
-    rf'|\b(?:mkdir|touch|{_ci("New-Item")}|{_ci("Out-File")}|{_ci("Set-Content")}|{_ci("Add-Content")})\b'
-    rf'[^;&|\n]*?\s(?:-\w+\s+)?{_TARGET}'
-    rf'|\b(?:cp|mv|copy|move|rsync|{_ci("Copy-Item")}|{_ci("Move-Item")})\b[^;&|\n]*\s{_TARGET}\s*(?=[;&|)]|$)'
+_VERBS = ('tee', 'mkdir', 'touch', 'cp', 'mv', 'copy', 'move', 'rsync', 'install', 'dd')
+_CMDLETS = ('New-Item', 'ni', 'Out-File', 'Set-Content', 'Add-Content', 'Copy-Item', 'Move-Item')
+#: Something on the line WRITES: a redirect that is no fd duplication, or a writing verb.
+_WRITES = r'(?:>(?!&)|\b(?:' + '|'.join((*_VERBS, *map(_ci, _CMDLETS))) + r')\b)'
+#: Something on the line may name a place outside the call's own directory.
+_LEAVES = (
+    r"""(?:^|[\s"'=>])"""
+    r"""(?:/(?!dev/(?:null|stdout|stderr|tty)(?![\w/]))|[A-Za-z]:[\\/]|~|\$|%\w+%|\.\.(?:[\\/]|$|[\s"']))"""
 )
 
 WRITES_STAY_IN_THE_TREE: dict[str, object] = {
     'id': RULE_ID,
-    'pattern': f'(?:{_WRITERS})',
-    'matches': 'argument',
+    'pattern': rf'^(?=[\s\S]*{_WRITES})(?=[\s\S]*{_LEAVES})',
+    'matches': 'line',
+    'asks': 'dev_lab.dev.writeroots',
     'hazard': HAZARD,
     'remedy': REMEDY,
     'needs': None,
+    # Each is refused by the judge on every machine: no allowlist may hold a temp dir, a drive root or the home.
     'refuses': (
         'echo x > /tmp/probe.py',
+        "cat <<'EOF' > /tmp/run.sh\necho hi\nEOF",
         'python a.py 2>> /var/tmp/err.log',
         'git log | tee -a $TEMP/log.txt',
         'cp a.py /tmp/',
         'mv out.csv "C:/tmp/out.csv"',
         'mkdir -p /c/temp/probe',
-        'touch $HOME/src/x.py',
-        'touch $HOME/src/repo/x',  # a checkout there is no exemption: user ruling 2026-11-06
+        'touch ~/work/repo/x',
+        'cd /tmp && echo x > a.py',
         'Get-Content a | Out-File -FilePath $env:TEMP\\x.txt',
         'New-Item -ItemType File D:\\var\\x.txt',
         'Copy-Item a.py %TEMP%\\a.py',
         'echo x > ~/loose.txt',
+        'echo x > $CLAUDE_JOB_DIR/tmp/a.txt',
+        'echo x > ../sibling/a.txt',
+        'echo x > "D:/Sync/OneDrive - <org>/meeting/fig.png"',
+        'cp fig.png $OneDriveCommercial/share/',
+        'Set-Content -Path $env:OneDrive\notes.txt x',
     ),
     'permits': (
         'cat /tmp/probe.py',
         'ls $TEMP',
-        'cp /tmp/x.csv output/logs/26/11/05/probe/x.csv',
-        'echo x > /tmp/claude/abc/tasks/out.txt',
         'echo x > scratch/26/11/05/probe/run.sh',
-        'echo x > ~/.bashrc',
+        'python -m pkg.run > output/logs/26/11/05/run/log.txt 2>&1',
         'rm /tmp/probe.py',
         'echo x 2>/dev/null',
+        'cat "D:/Sync/OneDrive - <org>/meeting/data.csv"',
+        'echo onedrive > output/logs/26/11/23/sync/note.txt',
     ),
 }

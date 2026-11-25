@@ -13,7 +13,7 @@ THE TWO REFUSALS ARE ABOUT DIFFERENT THINGS, which is why they are separate exce
 one. :class:`ForkedDelta` is about a DELTA -- it drops, anchors or re-states something the base
 cannot carry, or it over-runs its ceiling. :class:`PositionalBase` is about the BASE, and it is the
 newer half: an anchor points ONE way, so every base line renders before every delta line, and in a
-last-match-wins artefact a line whose only contribution is its POSITION therefore cannot be a base
+last-match-wins artifact a line whose only contribution is its POSITION therefore cannot be a base
 line at all. `fork_signals` -- the anti-fork arm one layer over -- would argue FOR promoting exactly
 such a line, because every consumer's delta holds it. These two arms disagree on purpose.
 """
@@ -24,7 +24,7 @@ import re
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from dev_lab.dev._famconfig_rows import GITIGNORE_BANNED, ORDER_SENSITIVE_ARTEFACTS, ORDERED_SECTIONS
+from dev_lab.dev._famconfig_rows import GITIGNORE_BANNED, ORDER_SENSITIVE_ARTIFACTS, ORDERED_SECTIONS
 from dev_lab.dev._famconfig_survey import delta_lines, negated_base_lines, positional_base_lines
 
 if TYPE_CHECKING:
@@ -43,16 +43,16 @@ class ForkedDelta(ValueError):
 
 
 class PositionalBase(ValueError):
-    """A base for a last-match-wins artefact holds a line whose only contribution is its POSITION."""
+    """A base for a last-match-wins artifact holds a line whose only contribution is its POSITION."""
 
 
 def assert_base_is_order_free(base: Base) -> None:
     """Refuse a base that needs an ordering this table cannot express. The one-way anchor's other half.
 
     :attr:`Delta.anchored` renders delta lines AFTER a named base line and there is no expression for
-    the reverse, so every base line precedes every delta line. In a LAST-MATCH-WINS artefact that
+    the reverse, so every base line precedes every delta line. In a LAST-MATCH-WINS artifact that
     makes a re-ignore unpromotable: it would render above the negation it was written to close, and
-    the file would go quietly back to the behaviour the re-ignore was added to fix.
+    the file would go quietly back to the behavior the re-ignore was added to fix.
 
     TWO SHAPES ARE REFUSED, and they are blind to each other. A RE-IGNORE excludes a strict subset of
     what a floating base rule already excludes, so its only contribution is position. A NEGATION
@@ -66,22 +66,22 @@ def assert_base_is_order_free(base: Base) -> None:
     consumer is caught by the subsumption reading with the line named, which is a better refusal than
     "some later negation might have existed". Both fire, and neither is the other's fallback.
 
-    WHICH ARTEFACTS THIS BINDS ON IS DATA -- :data:`ORDER_SENSITIVE_ARTEFACTS`, artefact to its
+    WHICH ARTIFACTS THIS BINDS ON IS DATA -- :data:`ORDER_SENSITIVE_ARTIFACTS`, artifact to its
     floating-rule floor -- so a base outside that map is not silently skipped but declared
     order-insensitive, and adding a second one is a decision somebody typed with its own floor.
     """
-    floor = ORDER_SENSITIVE_ARTEFACTS.get(base.artefact)
+    floor = ORDER_SENSITIVE_ARTIFACTS.get(base.artifact)
     if floor is None:
         return
     # The declared ordered block is exempt ONLY where it is what it claims to be: the TRAILING block,
     # in its own order. Shuffled into the sorted part, its lines are judged like any other.
-    ordered = ORDERED_SECTIONS.get(base.artefact, ())
+    ordered = ORDERED_SECTIONS.get(base.artifact, ())
     if ordered and base.lines[-len(ordered) :] == ordered:
         base = replace(base, lines=base.lines[: -len(ordered)])
     negated = negated_base_lines(base)
     if negated:
         msg = (
-            f'the {base.artefact} base holds {list(negated)}, and a negation re-includes paths some '
+            f'the {base.artifact} base holds {list(negated)}, and a negation re-includes paths some '
             f'EARLIER rule excluded. This table is stored sorted and `!` sorts below every character '
             f'a rule starts with, so the line renders ABOVE the rule it re-includes from and does '
             f'nothing; the anchor points one way, so no delta can push it down either. Leave it in '
@@ -91,7 +91,7 @@ def assert_base_is_order_free(base: Base) -> None:
     positional = positional_base_lines(base, floating_floor=floor)
     if positional:
         msg = (
-            f'the {base.artefact} base holds {list(positional)}, and each excludes a strict subset of '
+            f'the {base.artifact} base holds {list(positional)}, and each excludes a strict subset of '
             f'what a floating base rule already excludes. A rule that adds no path can only be adding '
             f'ORDER -- a re-ignore written below a negation to win a last-match-wins argument -- and '
             f'this base renders before every delta line, so the order it needs is unreachable here. '
@@ -115,13 +115,13 @@ def delta_problems(base: Base, delta: Delta) -> tuple[str, ...]:
     out: list[str] = []
     known = set(base.content_lines)
     out += [
-        f'{delta.repo} drops {line!r} from the {base.artefact} base, and the base does not have that '
+        f'{delta.repo} drops {line!r} from the {base.artifact} base, and the base does not have that '
         f'line. Delete the drop in the edit that removed the base line; a drop that outlives its '
         f'subject reads as a decision and refuses nothing.'
         for line in sorted(set(delta.dropped) - known)
     ]
     out += [
-        f'{delta.repo} adds {line!r} to {base.artefact}, and the base already has it. A delta that '
+        f'{delta.repo} adds {line!r} to {base.artifact}, and the base already has it. A delta that '
         f're-states the base is the base copied into a place the guard does not re-render. If the '
         f'line was restated only to reach a position inside a rendered block, that is what a '
         f'Delta.anchored entry is for: anchor the new lines to the base line they belong under, and '
@@ -129,7 +129,7 @@ def delta_problems(base: Base, delta: Delta) -> tuple[str, ...]:
         for line in sorted(set(delta_lines(delta)) & known)
     ]
     out += _anchor_problems(base, delta, known)
-    if base.artefact == '.gitignore':
+    if base.artifact == '.gitignore':
         out += [
             f'{delta.repo} adds {line!r} to .gitignore, and no repo in the family may: {why}.'
             for line in sorted(set(delta_lines(delta)))
@@ -138,12 +138,12 @@ def delta_problems(base: Base, delta: Delta) -> tuple[str, ...]:
         ]
     if len(delta_lines(delta)) > delta.ceiling:
         out.append(
-            f'{delta.repo} adds {len(delta_lines(delta))} lines to {base.artefact}, past its ceiling '
+            f'{delta.repo} adds {len(delta_lines(delta))} lines to {base.artifact}, past its ceiling '
             f'of {delta.ceiling}. Raise the ceiling with the reason, or move what is shared into the '
             f'base. Anchored lines count here too, or anchoring would be a ceiling nobody chose.'
         )
     out += [
-        f'{delta.repo} drops {line!r} from {base.artefact} with an empty reason. A removal and a '
+        f'{delta.repo} drops {line!r} from {base.artifact} with an empty reason. A removal and a '
         f'drift are the same bytes on disk; the reason is the only thing that tells them apart.'
         for line, reason in sorted(delta.dropped.items())
         if not reason.strip()
@@ -165,25 +165,25 @@ def _anchor_problems(base: Base, delta: Delta, known: set[str]) -> list[str]:
     for line, added in sorted(delta.anchored.items()):
         if line not in known:
             out.append(
-                f'{delta.repo} anchors {len(added)} line(s) to {line!r} in {base.artefact}, and the '
+                f'{delta.repo} anchors {len(added)} line(s) to {line!r} in {base.artifact}, and the '
                 f'base does not have that line. An anchor names a position by the text of a base '
                 f'line, so it dies with the line it names -- move it, or delete it.'
             )
             continue
         if base.occurrences(line) > 1:
             out.append(
-                f'{delta.repo} anchors to {line!r} in {base.artefact}, and the base has it '
+                f'{delta.repo} anchors to {line!r} in {base.artifact}, and the base has it '
                 f'{base.occurrences(line)} times. That names no position. Anchor to a line that '
                 f'occurs once -- a hook id, not a structural key.'
             )
         if line in delta.dropped:
             out.append(
-                f'{delta.repo} drops it and anchors to it: {line!r} in {base.artefact}. One '
+                f'{delta.repo} drops it and anchors to it: {line!r} in {base.artifact}. One '
                 f'declaration says the line goes and the other hangs content off it.'
             )
         if not added:
             out.append(
-                f'{delta.repo} anchors no lines to {line!r} in {base.artefact}. An anchor that adds '
+                f'{delta.repo} anchors no lines to {line!r} in {base.artifact}. An anchor that adds '
                 f'nothing is a waiver nothing uses -- delete the entry.'
             )
     return out

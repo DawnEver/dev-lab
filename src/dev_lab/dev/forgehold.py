@@ -6,9 +6,9 @@ a green PR it could not hold was merged by the tick. A HOLD is the :data:`HOLD_L
 cleared through the forge door (:meth:`~dev_lab.dev.forgework.Client.call`, journaled and retried): a label write
 needs only triage rights. Its parts and review still run; only the merge waits.
 
-The merge decision honours it: :func:`dev_lab.dev.forgemergeready.ready` posts ``tests/merge-ready`` ``pending``
+The merge decision honors it: :func:`dev_lab.dev.forgemergeready.ready` posts ``tests/merge-ready`` ``pending``
 :data:`HELD` and :func:`dev_lab.dev.forgemerge.judged` names it as missing, so nothing merges a held head and the
-reason names the release door. Break-glass honours it too (user ruling D48, 2026-11-17):
+reason names the release door. Break-glass honors it too (user ruling D48, 2026-11-17):
 :mod:`dev_lab.ops.breakglass` refuses a held PR, by hand or swept by a wave, naming the same release door.
 ``python -m dev_lab.dev.forge pr hold <N>`` / ``pr release <N>`` (:func:`main`).
 """

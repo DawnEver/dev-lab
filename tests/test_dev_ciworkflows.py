@@ -26,12 +26,10 @@ from _roles_fixtures import CI_REPO, EVERY_CI, carry
 
 from dev_lab.dev import ciworkflows, ciworkflowshape
 from dev_lab.dev.ciworkflows import (
-    BASE_PATH,
     RENDER_COMMAND,
     RUNNERS,
     SHARED,
     STAMP,
-    base_names,
     drift,
     main,
     render,
@@ -39,7 +37,7 @@ from dev_lab.dev.ciworkflows import (
     workflows,
     write,
 )
-from dev_lab.dev.ciworkflowshape import PR_EVENTS, USE_STEPS, _bare, expand, merge, ready_only
+from dev_lab.dev.ciworkflowshape import BASE_PATH, PR_EVENTS, USE_STEPS, _bare, base_names, expand, merge, ready_only
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
@@ -1079,7 +1077,7 @@ def test_the_gitea_review_checks_out_only_the_root_files(tmp_path: Path) -> None
 
     Measured 2026-11-01, consumer #5397: in the blobless clone a full ``git checkout`` lazily fetched every blob of
     the head tree -- a ``pack-objects`` on the 1.6 GB forge host running 10+ minutes at 314 MiB. A cone sparse
-    checkout with no directories materialises the root files alone.
+    checkout with no directories materializes the root files alone.
     """
     steps = _gitea_review(tmp_path)['jobs']['review']['steps']
     run = next(s for s in steps if s.get('name') == 'Fetch the head')['run']

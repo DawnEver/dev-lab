@@ -3,25 +3,27 @@
 THE RULE (user rulings 2026-10-31, the four-layer plan). A memory entry is immutable once written: a
 correction is a NEW entry naming the old one in ``corrects:``, and a consolidation is a NEW entry naming
 its sources in ``merged_from:``. So a change touching ``**/.claude/memory/**`` may only ADD a file.
-Four shapes are not narrative edits:
+Three shapes are not narrative edits (nothing is ever renamed INTO memory: a closed task is archived in the
+global tasks repo by the task door, :func:`dev_lab.dev.taskledger.ledger`, user ruling 2026-11-23):
 
-* a task leaving the tasks layer -- ``git mv .claude/tasks/<slug> .claude/memory/...`` -- is how a
-  closed task becomes history, and it is the one rename into memory;
 * the one-shot four-layer migration, which removes only the volatile frontmatter fields
   (:data:`dev_lab.dev.memoryentry.VOLATILE_FIELDS`) a reader used to rewrite on every read. A change
   whose ONLY difference is those lines is that migration and nothing else;
-* rem's dedicated dated manual task list: append tasks or toggle existing checkboxes, never
-  rewrite task text or turn narrative memory into a task list. Both versions must match the format;
 * an approved redacting rename (REDACTING-RENAME, user ruling 2026-11-14) -- the one move WITHIN memory: an
   account-like token leaves a published entry's file name, in the same directory, one run of the name's
   ``-`` tokens replaced by ``user`` or dropped, and the entry gains an amendment note whose reason says
   ``renamed`` (:func:`dev_lab.dev.memoryentry.only_renamed_redacting`). Git reads it as ``R`` or, when the
-  text changed too, as ``D`` + ``A``; both are judged as the rename (:func:`_without_redacting_renames`).
-
-The task-list protocol is authored by rem 2.2.0, ``scripts/task-engine.js`` functions ``handleAdd``
-and ``handleMark``. This classifier recognizes that version's complete output, not arbitrary Markdown.
-If its producer changes format, update this boundary and its planted controls together; never
-broaden narrative-memory admission to make a malformed manual file pass.
+  text changed too, as ``D`` + ``A``; both are judged as the rename (:func:`_without_redacting_renames`);
+* an approved attachment deletion (ATTACHMENT-DELETE, user ruling 2026-11-24) -- an ATTACHMENT (a memory file
+  that is not an entry, :func:`dev_lab.dev.memoryentry.is_attachment`) leaves memory when the same pushed range
+  adds an amendment note to an entry whose reason says ``deleted`` and names it under ``.claude/memory/``, with
+  the user's words (:func:`dev_lab.dev.memoryentry.deletion_approved`); without one the deletion is refused by
+  name. An entry is never deleted;
+* an approved root move (ROOT-MOVE, user ruling R7 2026-11-23) -- a nested scope's entry moves into the ROOT
+  ``.claude/memory/`` in the same dated directory, its text byte-identical, when the same pushed range adds an
+  amendment note whose reason says ``moved`` and names ``<old> -> <new>`` (the paths, or two directories ending
+  ``/`` that carry a whole scope), with the user's words (:func:`dev_lab.dev.memoryentry.move_approved`). Git
+  reads it as ``R`` or as ``D`` + ``A``; both are judged as the move (:func:`_without_approved_moves`).
 
 A MERGED ENTRY CITES. An added entry with ``merged_from:`` names sources that are memory files of its
 OWN scope existing at the base the change is judged against or added by that same change, and every
@@ -54,11 +56,14 @@ from lab_commons.log import emit
 from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.memoryentry import (
     AMENDMENT_NOTE,
-    MANUAL_PATH,
+    MEMORY_DIR,
+    amendment_notes,
+    deletion_approved,
+    is_attachment,
     is_memory,
     merged_entry_problems,
+    move_approved,
     only_amended,
-    only_manual_tasks_updated,
     only_redacted,
     only_renamed_redacting,
     only_volatile_stripped,
@@ -80,8 +85,6 @@ _GIT_TIMEOUT_S = 120
 _ZERO = '0' * 40
 _EMPTY_TREE: Final = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'  # git's empty tree: the base before a first push
 _REF_LINE_FIELDS: Final = 4  # git pre-push: <local ref> <local sha> <remote ref> <remote sha>
-_TASK = re.compile(r'(?:^|/)\.claude/tasks/[^/]+/')
-_KIND_TASK = re.compile(r'\A---\r?\n(?:.*\r?\n)*?kind:[ \t]*task[ \t]*\r?\n(?:.*\r?\n)*?---')
 
 
 class MemoryAddsError(RuntimeError):
@@ -137,30 +140,79 @@ def _without_redacting_renames(
     ]
 
 
+def _without_approved_moves(
+    root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]
+) -> list[tuple[str, str, str]]:
+    """*rows* without the ROOT-MOVE pairs: byte-identical text, approved by a note the range adds."""
+    notes = _added_notes(root, old_rev, new_rev, rows)
+    if not notes:
+        return rows
+
+    def blob(rev: str, path: str) -> str:
+        return _git(root, 'rev-parse', f'{rev}:{path}').strip()
+
+    def admitted(old: str, new: str) -> bool:
+        return move_approved(old, new, notes) and blob(old_rev, old) == blob(new_rev, new)
+
+    moved = {(old, new) for status, old, new in rows if status == 'R' and is_memory(old) and admitted(old, new)}
+    gone = [old for status, old, _ in rows if status == 'D' and is_memory(old)]
+    for new in (new for status, _, new in rows if status == 'A' and is_memory(new)):
+        old = next((old for old in gone if admitted(old, new)), None)
+        if old is not None:
+            gone.remove(old)
+            moved.add((old, new))
+    olds, news = {old for old, _ in moved}, {new for _, new in moved}
+    return [
+        (status, old, new)
+        for status, old, new in rows
+        if not ((status in 'RD' and old in olds) or (status in 'RA' and new in news))
+    ]
+
+
+#: SUMMARY-RETIRED (user ruling 2026-11-24): the month summary ``<yyyy>/<mm>/SUMMARY-*.md`` is a retired format, no
+#: entry -- it may leave memory, deleted or moved into a dated entry (judged as that entry's add).
+_RETIRED_SUMMARY: Final = re.compile(r'(?:^|/)\.claude/memory/\d{4}/\d{2}/SUMMARY-[^/]*\.md$')
+_SUMMARY_DOOR: Final = (
+    '; the one file that leaves memory is a retired month summary `<yyyy>/<mm>/SUMMARY-*.md` (deleted, or moved '
+    'into a dated entry)'
+)
+
+
+def _without_retired_summaries(rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """*rows* with each retired month summary's deletion dropped and its move read as the add of its new entry."""
+    out = []
+    for status, old, new in rows:
+        if status in 'DR' and _RETIRED_SUMMARY.search(old):
+            if status == 'R':
+                out.append(('A', new, new))
+            continue
+        out.append((status, old, new))
+    return out
+
+
 def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> tuple[str, ...]:
-    rows = _without_redacting_renames(root, old_rev, new_rev, rows)
+    rows = _without_retired_summaries(rows)
+    rows = _without_approved_moves(root, old_rev, new_rev, _without_redacting_renames(root, old_rev, new_rev, rows))
     added = {new for status, _, new in rows if status in 'AC'}
 
     def exists(path: str) -> bool:
         """A source is at the base, or ADDED by the same change -- a merge and its sources may land together."""
         return path in added or _run(root, 'cat-file', '-e', f'{old_rev}:{path}')[0] == 0
 
-    out: list[str] = []
+    out = list(_unapproved_deletions(root, old_rev, new_rev, rows))
     for status, old, new in rows:
         if status in 'AC' and is_memory(new):
             text = _git(root, 'show', f'{new_rev}:{new}')
-            shape = () if _in_archived_task(root, new_rev, new) else shape_problems(new, text)
-            out.extend((*shape, *merged_entry_problems(new, text, exists)))
+            out.extend((*shape_problems(new, text), *merged_entry_problems(new, text, exists)))
         elif status == 'R' and is_memory(new) and not is_memory(old):
-            if not _TASK.search(old):
-                out.append(f'{new}: only a task (.claude/tasks/<slug>/) moves into memory, not {old}')
+            out.append(
+                f'{new}: nothing moves into memory, not {old}; write a new entry instead (a closed task is '
+                'archived in the global tasks repo by `python -m dev_lab.dev.task close`, never in a checkout)'
+            )
         elif status == 'M' and is_memory(old):
             before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')
             if not (
-                only_volatile_stripped(before, after)
-                or only_manual_tasks_updated(old, before, after)
-                or only_redacted(before, after)
-                or only_amended(before, after)
+                only_volatile_stripped(before, after) or only_redacted(before, after) or only_amended(before, after)
             ):
                 remedy = (
                     'a memory entry is immutable -- write a new entry with `corrects:` instead; a line that is WRONG '
@@ -168,15 +220,51 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                     + AMENDMENT_NOTE.format(day='<yyyy-mm-dd>', reason='<why>', approved="<the user's words>")
                     + '` and lines replaced one-for-one, or only the missing name/description frontmatter added'
                 )
-                if MANUAL_PATH.search(old):
-                    remedy += (
-                        '; rem 2.2.0 task-list format/operation check failed: append tasks or toggle checkboxes '
-                        'without changing existing task text, module or order'
-                    )
                 out.append(f'{old}: {remedy}')
-        elif status in 'DRT' and is_memory(old):
-            out.append(f'{old}: a memory entry is never deleted or moved ({status})')
+        elif status in 'DRT' and is_memory(old) and not (status == 'D' and is_attachment(old)):
+            out.append(
+                f'{old}: a memory entry is never deleted or moved ({status})'
+                f'{_move_door(old, new, status)}{_SUMMARY_DOOR}'
+            )
     return tuple(out)
+
+
+def _move_door(old: str, new: str, status: str) -> str:
+    """The ROOT-MOVE door a refused move into the root could take, named; empty for any other refusal."""
+    note = '> ' + AMENDMENT_NOTE.format(day='{day}', reason=f'moved {old} -> {new}', approved="<the user's words>")
+    if status != 'R' or not move_approved(old, new, [note.format(day='2000-01-01')]):
+        return ''
+    return (
+        ' -- a move into the root is admitted (ROOT-MOVE) with its text byte-identical and the user-approved note `'
+        + note.format(day='<yyyy-mm-dd>')
+        + '` (or one naming both memory directories) added to a memory entry in the same push'
+    )
+
+
+def _unapproved_deletions(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> tuple[str, ...]:
+    """ATTACHMENT-DELETE: each deleted attachment no amendment note the range adds approves, refused by name."""
+    deleted = [old for status, old, _ in rows if status == 'D' and is_attachment(old)]
+    if not deleted:
+        return ()
+    notes = _added_notes(root, old_rev, new_rev, rows)
+    return tuple(
+        f'{old}: a memory attachment is deleted only with approval (ATTACHMENT-DELETE) -- amend an entry with the '
+        'user-approved note `> '
+        + AMENDMENT_NOTE.format(day='<yyyy-mm-dd>', reason='deleted <attachment> <why>', approved="<the user's words>")
+        + f'` naming {old.split(MEMORY_DIR, 1)[1]} in the same push'
+        for old in deleted
+        if not deletion_approved(old, notes)
+    )
+
+
+def _added_notes(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> set[str]:
+    """The amendment note lines the range ADDS to memory entries: a note the base already held approves nothing."""
+    out: set[str] = set()
+    for status, old, new in rows:
+        if status in 'ACM' and is_memory(new) and new.endswith('.md'):
+            before = _git(root, 'show', f'{old_rev}:{old}') if status == 'M' else ''
+            out |= amendment_notes(_git(root, 'show', f'{new_rev}:{new}')) - amendment_notes(before)
+    return out
 
 
 def problems_between(root: Path, base: str, head: str) -> tuple[str, ...]:
@@ -188,18 +276,6 @@ def problems_between(root: Path, base: str, head: str) -> tuple[str, ...]:
     rows = _changes(root, f'{since}...{head}')
     published = _published(root, head, rows)
     return _judge(root, since, head, [row for row in rows if row[0] not in 'ACM' or row[2] not in published])
-
-
-def _in_archived_task(root: Path, rev: str, path: str) -> bool:
-    """*path* sits beside a ``TASK.md`` declaring ``kind: task``: one archived task is ONE entry (rem's model).
-
-    That TASK.md carries the name and description; the journal and other files beside it need none of their own.
-    """
-    folder, _, name = path.rpartition('/')
-    if name == 'TASK.md' or not folder:
-        return False
-    code, text, _ = _run(root, 'show', f'{rev}:{folder}/TASK.md')
-    return code == 0 and _KIND_TASK.search(text) is not None
 
 
 def _published(root: Path, head: str, rows: list[tuple[str, str, str]]) -> set[str]:
@@ -251,7 +327,7 @@ def pushed(root: Path, ref_lines: str) -> tuple[str, ...]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``python -m dev_lab.dev.memoryadds``: git's pre-push ref lines on stdin; ``1`` refuses the push."""
-    del argv  # git's remote name and url; the judgement reads origin/<integration>
+    del argv  # git's remote name and url; the judgment reads origin/<integration>
     root = Path(_git(Path.cwd(), 'rev-parse', '--show-toplevel').strip())
     try:
         problems = pushed(root, '' if sys.stdin.isatty() else sys.stdin.read())

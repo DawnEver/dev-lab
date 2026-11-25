@@ -60,7 +60,7 @@ _SOURCES = sorted(Path(dev_lab.__file__).parent.rglob('*.py'))
 
 
 def test_no_intake_claims_its_input_is_hidden() -> None:
-    """Names match behaviour: every intake shows what is typed, so none may say it does not.
+    """Names match behavior: every intake shows what is typed, so none may say it does not.
 
     PLANTED CONTROL: the pattern catches the wording the intakes used to carry.
     """
@@ -68,8 +68,3 @@ def test_no_intake_claims_its_input_is_hidden() -> None:
         assert _CLAIMS_HIDDEN.search(planted)
     assert _SOURCES
     assert [f.name for f in _SOURCES if _CLAIMS_HIDDEN.search(f.read_text(encoding='utf-8'))] == []
-
-
-def test_no_intake_reads_a_typed_value_through_getpass() -> None:
-    """The hidden prompt took Ctrl+V as a control character (D94); getpass.getuser is a different, harmless call."""
-    assert [f.name for f in _SOURCES if 'getpass.getpass' in f.read_text(encoding='utf-8')] == []

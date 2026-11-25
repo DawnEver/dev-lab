@@ -150,7 +150,7 @@ def test_a_verdict_distribution_supplied_only_under_a_marker_is_unmeasured() -> 
     assert scope(_selecting('dev'), MANIFEST) is Scope.COMPLETE, 'the unmarked manifest must stay measurable'
 
 
-def test_names_are_compared_after_normalisation() -> None:
+def test_names_are_compared_after_normalization() -> None:
     """`img_to_cad` and `img-to-cad` are one extra; comparing raw spellings reports a strand that is not there."""
     assert canon('Img_To.Cad') == 'img-to-cad'
     assert scope(_selecting('IMG_TO_CAD', 'dev'), MANIFEST) is Scope.COMPLETE

@@ -22,7 +22,6 @@ import pytest
 from dev_lab.dev.docwidth import (
     INJECTED_BASENAMES,
     INJECTED_EXEMPT_PREFIXES,
-    INJECTED_PREFIXES,
     WIDTH_CEILING,
     Overwidth,
     VacuousWidthScan,
@@ -42,8 +41,8 @@ _ROOT: Final = Path(__file__).resolve().parents[1]
 #: is the one that added the guard to an already-compliant repo.
 _DECLARED: Final[frozenset[str]] = frozenset()
 
-#: Measured 2026-09-16: this repo tracks exactly 2 `.claude/rules/*.md` pages and no root AGENTS.md
-#: or CLAUDE.md. A floor of 2 refuses an unread corpus without pinning a count that grows on its own.
+#: Since 2026-11-24 this repo's injected corpus is AGENTS.md and CLAUDE.md (`.claude/rules/` retired).
+#: A floor of 2 refuses an unread corpus without pinning a count that grows on its own.
 _FLOOR: Final = 2
 
 
@@ -55,25 +54,18 @@ def test_is_injected_doc_matches_the_measured_default_corpus() -> None:
     assert is_injected_doc('AGENTS.md')
     assert is_injected_doc('attic/motor_solver/AGENTS.md')
     assert is_injected_doc('CLAUDE.md')
-    assert is_injected_doc('.claude/rules/taste.md')
+    assert not is_injected_doc('.claude/rules/taste.md'), '.claude/rules/ retired 2026-11-24'
     assert not is_injected_doc('.claude/memory/2026/09/16/note.md')
     assert not is_injected_doc('src/dev_lab/dev/docwidth.py')
     assert frozenset({'AGENTS.md', 'CLAUDE.md'}) == INJECTED_BASENAMES
-    assert INJECTED_PREFIXES == ('.claude/rules/',)
     assert INJECTED_EXEMPT_PREFIXES == ('.claude/memory/',)
 
 
-def test_a_nested_rules_page_is_recognised_and_a_nested_lookalike_is_not() -> None:
-    """MEASURED on consumer-a: `.claude/rules/` pages are SCOPED per module, not root-only.
-
-    `src/consumer_a/hamilton/.claude/rules/femm.md`, `scripts/.claude/rules/scripts.md` and every
-    `src/consumer_a/*/.claude/rules/MEMORY.md` are real injected pages a root-only prefix would miss
-    entirely -- the width ceiling would then cover nothing that repo actually injects.
-    """
-    assert is_injected_doc('src/consumer_a/hamilton/.claude/rules/femm.md')
-    assert is_injected_doc('scripts/.claude/rules/scripts.md')
+def test_a_prefix_corpus_is_an_option_and_the_default_takes_none() -> None:
+    """`.claude/rules/` retired; a repo with an always-loaded tree passes it as ``prefixes`` explicitly."""
+    assert not is_injected_doc('scripts/.claude/rules/scripts.md')
+    assert is_injected_doc('scripts/.claude/rules/scripts.md', prefixes=('.claude/rules/',))
     assert not is_injected_doc('src/consumer_a/hamilton/.claude/memory/note.md')
-    assert not is_injected_doc('src/pkgnot.claude/rules/x.md'), 'the prefix must start a path segment'
 
 
 def test_the_exemption_is_checked_before_the_prefix_even_when_both_would_match() -> None:
@@ -88,7 +80,7 @@ def test_a_consumer_can_override_every_half_of_the_corpus_definition() -> None:
 
 def test_injected_docs_narrows_a_tracked_list_to_the_corpus() -> None:
     paths = ('AGENTS.md', 'src/a.py', '.claude/rules/taste.md', '.claude/memory/x.md')
-    assert injected_docs(paths) == ('.claude/rules/taste.md', 'AGENTS.md')
+    assert injected_docs(paths) == ('AGENTS.md',)
 
 
 def test_line_widths_counts_every_line_one_based() -> None:

@@ -9,7 +9,7 @@ TEXT buys nothing (merging two wordings destroys the incident evidence each carr
 **IDENTITY plus the mechanism that refuses a violation** is the thing that works: one canonical
 registry, adopted by ID, each repo supplying its own evidence and thresholds.
 
-THE NOUN TEST decides what belongs here, and it is mechanical rather than a judgement call: **delete
+THE NOUN TEST decides what belongs here, and it is mechanical rather than a judgment call: **delete
 every domain noun from the rule -- if it still constrains anything, it is universal.** "The reference
 is a LADDER: one vendor first, a second vendor second" leaves nothing behind and stays home. "A
 declaration that lies is the dominant defect" survives intact and belongs here.
@@ -27,7 +27,7 @@ A RULE WITH NO RESOLVABLE MECHANISM IS A REFUSAL, IN THREE PLACES, and they are 
   selected -- and, for a shared rule, when a repo neither enforces it nor declares it absent.
   Deleting the mechanism reds, which is the whole point -- that check is what the prose never had.
 
-THE MECHANISM IS A PATH OR A LINT CODE, exactly as the registry this is modelled on states:
+THE MECHANISM IS A PATH OR A LINT CODE, exactly as the registry this is modeled on states:
 ``'tests/...py'`` for a test that refuses the hazard, or ``('ruff', 'PLC0415')`` for a lint rule that
 must be selected and not globally ignored. The data half writes them that way; :func:`_mechanism`
 turns them into the two types. Paths are REPO-RELATIVE.
@@ -66,6 +66,7 @@ from dev_lab.dev._rule_rows_citations import ROWS as _ROWS_CITATIONS
 from dev_lab.dev._rule_rows_feedback import ROWS as _ROWS_FEEDBACK
 from dev_lab.dev._rule_rows_hooks import ROWS as _ROWS_HOOKS
 from dev_lab.dev._rule_rows_hosts import ROWS as _ROWS_HOSTS
+from dev_lab.dev._rule_rows_layout import ROWS as _ROWS_LAYOUT
 from dev_lab.dev._rule_rows_memory import ROWS as _ROWS_MEMORY
 from dev_lab.dev._rule_rows_output import ROWS as _ROWS_OUTPUT
 from dev_lab.dev._rule_rows_pr_flow import ROWS as _ROWS_PR_FLOW
@@ -91,7 +92,7 @@ __all__ = [
 
 #: A rule ID is a slug, never a number, and the reason is measured rather than aesthetic: an integer
 #: cannot say WHICH row moved, so when a pin disagrees the honest-looking repair is to edit the digit
-#: (`.claude/rules/rem/integration.md` records a pin that was lowered to a broken reading).
+#: (`<repo>/.claude/rules/integration.md` records a pin that was lowered to a broken reading).
 _ID: Final = re.compile(r'[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*')
 
 #: The one lint-code spelling the data half may use, so `('ruff', ...)` cannot quietly become a
@@ -117,7 +118,7 @@ class TestPath:
     is the whole set. A mechanism is never a single file when the guard is split on the data/checks
     seam, and naming only the checks half would let its table rot unnoticed.
 
-    THE NAME IS ACCURATE AND THEREFORE NEEDS ONE LINE OF DEFENCE: a class whose name starts with
+    THE NAME IS ACCURATE AND THEREFORE NEEDS ONE LINE OF DEFENSE: a class whose name starts with
     ``Test`` is collected by pytest as a test class wherever it is imported, which turns a consumer's
     ``from dev_lab.dev.rules import TestPath`` into a collection error. ``__test__`` is pytest's
     own opt-out and is the honest fix -- renaming the class would trade an accurate name for a
@@ -234,7 +235,7 @@ class Adoption:
     against, and all 70 mechanisms named consumer-a paths. Driven against its own tree, lab-commons
     refused its own registry with **70 failures** -- the module docstring promised "a second adopter
     inherits the statements and must supply the mechanism for its own tree", and there was no way to
-    supply one. A promise the code does not honour is exactly the defect the registry exists to
+    supply one. A promise the code does not honor is exactly the defect the registry exists to
     remove, so it was removed.
 
     *declared_absent* is the honest migration state, and it is three-sided on purpose. A rule that is
@@ -329,6 +330,7 @@ RULES: Final[tuple[Rule, ...]] = _build(
     + _ROWS_HOOKS
     + _ROWS_HOSTS
     + _ROWS_OUTPUT
+    + _ROWS_LAYOUT
 )
 
 #: The rules dev-lab enforces in EVERY repo through the ``pytest11`` plugin

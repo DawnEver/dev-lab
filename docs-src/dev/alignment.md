@@ -10,7 +10,7 @@ is a merge whose conflict set holds no pin, no count and no waiver table.
 - A single global integer is hostile to parallel branches: two branches each legitimately adding one merge
   cleanly and produce a number wrong by one, with neither at fault.
 - Most files in conflict during a large integration are pins, counts, floors and line-anchored waivers; only a
-  minority need real judgement. The remedy is structural, not discipline or better merge tooling.
+  minority need real judgment. The remedy is structural, not discipline or better merge tooling.
 
 ## Stage 1: partition every shared singleton
 

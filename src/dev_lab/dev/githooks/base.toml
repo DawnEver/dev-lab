@@ -41,7 +41,7 @@
 # tip lacks origin/<integration> (fetched afresh) or whose lock pins a floated sibling past the lag window
 # (dev_lab.dev.locklag.within_window, the one window lock/lag reads), naming `forge sync`. Since dev-lab #661 the
 # forge's `pr-current` is an ALARM, never a merge gate, so the row WARNS and never refuses; `forge pr ready` reads the
-# same judgement. A finding the forge cannot see (an untracked stray file) is a post-commit hint.
+# same judgment. A finding the forge cannot see (an untracked stray file) is a post-commit hint.
 
 # The per-file checks, ONE row (dev_lab.dev.filechecks all): the staged paths are handed over once and each file is
 # read once, every check reporting under its own name. A repo skips one (`--skip CHECK`) or narrows one
@@ -49,6 +49,23 @@
 [[pre-commit]]
 id = "filechecks"
 run = ["python", "-m", "dev_lab.dev.filechecks", "all"]
+pass_files = true
+
+# USER-FROZEN-FILES (dev_lab.dev.frozen, user ruling 2026-11-24): in a repo declaring [tool.dev_lab.freeze], a
+# commit changing a frozen file's bytes, deleting it, or adding a path outside freeze.toml's `tracked` is refused.
+# Opt-in; a repo that does not declare it is never judged. The always-on family check is the CI half.
+[[pre-commit]]
+id = "frozen-files"
+run = ["python", "-m", "dev_lab.dev.frozen", "commit"]
+always_run = true
+
+# NATIVE-FIRST (dev_lab.dev.nativefirst, user ruling 2026-11-25): in a repo declaring [tool.dev_lab.native], a staged
+# numeric index loop or stage twin under an orchestration path, or a test comparing a native stage with its Python
+# twin, is refused. Opt-in; an undeclared repo is said to be not judged. The always-on family check is the CI half.
+[[pre-commit]]
+id = "native-first"
+run = ["python", "-m", "dev_lab.dev.nativefirst"]
+files = '\.py$'
 pass_files = true
 
 # The conventional-commit shape, owned once in dev_lab.dev.commitmsg (an empty message is an abort, not a refusal).
@@ -94,9 +111,8 @@ id = "merge-resolution"
 run = ["python", "-m", "dev_lab.dev.mergeresolution"]
 
 # SESSION-COMMITS-UNDER-ITS-TASK (dev_lab.dev.taskgate, user ruling 2026-11-14): in a repo declaring
-# [tool.dev_lab.task] required = true, an agent session pushes only while its USER bound it to an open task
-# (`task: <slug>` prompt, bound by rem's UserPromptSubmit hook and read through dev_lab.dev.taskbinding; D5
-# 2026-11-15), and a pr/ branch only under pr/<task>/. Judged at every commit too: rem's PreToolUse guard is Claude
+# [tool.dev_lab.task] required = true, an agent session pushes only from a branch pr/<task>/<feature> of a task
+# open in the machine's one task ledger (dev_lab.dev.taskledger; user ruling 2026-11-23: the branch is the task). Judged at every commit too: rem's PreToolUse guard is Claude
 # Code's alone, so the git rows are the backstop for Codex, Antigravity or any agent. Opt-in; a repo that does not
 # declare it is never judged.
 [[commit-msg]]
@@ -117,11 +133,20 @@ id = "memory-adds"
 run = ["python", "-m", "dev_lab.dev.memoryadds"]
 always_run = true
 
+# ZERO-CORE-CHANGE (dev_lab.dev.corechange, user ruling 2026-11-24): in a repo declaring [tool.dev_lab.layers], a
+# pushed change set touching an application root AND the core is refused unless a commit of it carries
+# `Architecture-Decision: <task>#D<n>` naming a decision recorded in the task ledger. Judged NET since the merge-base
+# with origin/<integration>, so a split across pushes is one set. Opt-in; an undeclared repo is said to be not judged.
+[[pre-push]]
+id = "zero-core-change"
+run = ["python", "-m", "dev_lab.dev.corechange"]
+always_run = true
+
 # The session-branch invariants at push, local reads only (dev_lab.dev.sessionbranch): a declared session branch
 # or the trunk is published from that very local branch (PUBLISH-IS-THE-LOCAL-REF), by fast-forward
 # (SESSION-HISTORY-ONLY-GROWS), and the integration branch by audited merges (INTEGRATION-IS-MERGES-ONLY);
 # origin takes only a branch the set admits (ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES). EARLY FEEDBACK for a PR head: the
-# forge posts the same judgement as the `session-branch` status on every PR head and the merge requires it
+# forge posts the same judgment as the `session-branch` status on every PR head and the merge requires it
 # (dev_lab.dev.forgeheadgate).
 [[pre-push]]
 id = "session-branch"
@@ -148,7 +173,7 @@ always_run = true
 
 # LOSSLESS-DELETE at push (dev_lab.dev.pushdelete, toolchain O22): EVERY branch a push deletes, however the push was
 # spelled -- a `$refs` variable, xargs, a script; the PUSH-REMOTE-DELETE deny row reads only text -- is judged on git's
-# own ref lines by the judgement `branchprune delete` makes (dev_lab.dev.deletejudge), after `git fetch --prune
+# own ref lines by the judgment `branchprune delete` makes (dev_lab.dev.deletejudge), after `git fetch --prune
 # origin`, against the open PR heads. Irreversible harm, so it refuses; no `refs`: a deletion is the very line a ref
 # filter drops. The door's own push passes it, no exemption. An unreadable forge or origin refuses (fails closed).
 # A tag holds nothing (D22); a branch `[tool.dev_lab.integrator] derived` declares with its producer goes (D23).
@@ -160,7 +185,7 @@ always_run = true
 # PR-HEAD-IS-CURRENT (dev_lab.dev.prcurrent, user ruling 2026-11-07; a TIME window 2026-11-15): a pr/* head lacks
 # no origin/<integration> landing older than locklag.LAG_WINDOW, its lock pins no floated sibling past that window,
 # and the pushing venv holds what that lock pins (else these hooks ran a stale kit); the remedy is `forge sync` (for
-# the kit, the bootstrap door). A WARNING, never a refusal (`advisory`): the forge posts the same judgement as the
+# the kit, the bootstrap door). A WARNING, never a refusal (`advisory`): the forge posts the same judgment as the
 # `pr-current` status on every PR head, an ALARM the merge never waits on (dev_lab.dev.forgeheadgate, W5 dev-lab#644,
 # #661): mergeability is the trial merge at merge time, and a push refused on it would be a gate that does not exist.
 [[pre-push]]
@@ -193,7 +218,7 @@ refs = '^refs/heads/'
 # post-commit is ADVISORY (githooks.table.ADVISORY): the commit is made, and no row can change its exit status.
 
 # STRAY-FILE-REFUSED as a HINT: an untracked, non-ignored file outside the declared stray roots
-# ([tool.dev_lab.placement] stray_roots, plus scratch/) is named with its remedy after the commit
+# (layout.toml stray_roots, plus scratch/) is named with its remedy after the commit
 # (dev_lab.dev.strays). Untracked files are invisible to the forge, so this is the one place it is said.
 [[post-commit]]
 id = "stray-files"

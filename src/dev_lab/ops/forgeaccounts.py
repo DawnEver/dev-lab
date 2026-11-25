@@ -3,7 +3,7 @@
 After the lockdown no agent holds root or a Gitea admin token (user rulings 2026-11-09). A machine account -- one
 declared role, ``[ops.forge.accounts] <login> = {role, repos}`` with role ``read``, ``write``, ``review`` or
 ``breakglass`` -- and each of its per-host tokens are made here, run by the ``ops`` account through its fixed sudo
-line, each use authorised by a SINGLE-USE consent credential the user granted with their code, whose ``subject``
+line, each use authorized by a SINGLE-USE consent credential the user granted with their code, whose ``subject``
 is the request's digest (:mod:`dev_lab.ops.forgerequests`): it consents to exactly that request.
 
 ``account ensure --login L`` reads L's role and repositories from the declaration (one source), makes the login if

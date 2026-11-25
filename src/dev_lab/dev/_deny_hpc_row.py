@@ -5,7 +5,7 @@ forge (VERDICTS-FROM-THE-FORGE), deploys through ``hpcaccount``. The night befor
 connections per diagnosis to the login nodes (six accounts, two hosts, poll loops with ``sleep``) and the cluster
 stopped answering ssh.
 
-HOW A HOST IS RECOGNISED, and why not by name. The declared hosts are the machine file's
+HOW A HOST IS RECOGNIZED, and why not by name. The declared hosts are the machine file's
 ``[hpc.clusters.<name>] hosts``, but the engine reads a COMMITTED ``deny-rules.json`` and cannot read the machine
 file at match time; rendering the names into it would put fleet facts into git history, which user ruling 2026-10-23
 forbids (:mod:`dev_lab.dev.automode`). So the row matches the login-node SHAPE every declared cluster host has --

@@ -2,7 +2,7 @@
 
 An UNTRACKED, non-ignored file outside the declared stray roots (the family's ``scratch/`` plus ``stray_roots``
 of the placement :mod:`dev_lab.dev.codeplace` reads) is a defect the moment it appears: a file a person meant is
-STAGED, an artefact a program wrote belongs under ``output/logs/<yy>/<mm>/<dd>/<kind>/`` (ignored), a one-off in
+STAGED, an artifact a program wrote belongs under ``output/logs/<yy>/<mm>/<dd>/<kind>/`` (ignored), a one-off in
 scratch, and a file a known retirement declares gone is deleted through its door -- never staged (2026-11-17:
 twelve stale rem indexes, eleven under ``src/``, were told to be ``git add``-ed). Which files are retired is the
 CHECKOUT's data, the ``retired`` rows of its placement (:mod:`dev_lab.dev.retiredfiles`), passed to
@@ -36,7 +36,6 @@ from dev_lab.dev import tmpsweep
 from dev_lab.dev.codeplace import (
     CODE_SUFFIXES,
     PRUNED_NAMES,
-    TASK_ROOT,
     PlacementNotDeclared,
     checkout_root,
     declared_placement,
@@ -88,14 +87,14 @@ class StrayCensusUnreadable(RuntimeError):
 def stray_files(root: Path, *, stray_roots: Iterable[str], pruned_paths: Iterable[str] = ()) -> list[str]:
     """Every UNTRACKED, non-ignored file of the checkout *root* outside *stray_roots*, repo-relative POSIX, sorted.
 
-    The index decides, not the filesystem: a staged file was meant, an ignored one is an artefact in its
+    The index decides, not the filesystem: a staged file was meant, an ignored one is an artifact in its
     place (``output/``), and what is left is a file nobody claimed.
 
     Raises:
         StrayCensusUnreadable: git could not list the untracked files of *root*.
 
     """
-    allowed = tuple(f'{r.strip("/")}/' for r in (*stray_roots, *pruned_paths, TASK_ROOT))
+    allowed = tuple(f'{r.strip("/")}/' for r in (*stray_roots, *pruned_paths))
     return sorted(
         rel
         for rel in _untracked(root)

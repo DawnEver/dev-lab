@@ -38,11 +38,13 @@ OPENS_A_CONNECTION: Final[dict[str, str]] = {
     'src/dev_lab/dev/dep_observe.py': 'PyPI, not a forge',
     'src/dev_lab/dev/security.py': 'the OSV database, not a forge',
     'src/dev_lab/supervise/transport.py': 'alert webhooks, not a forge',
+    'src/dev_lab/ops/httpsclient.py': 'not a forge API: the consent / break-glass HTTPS door, one signed request '
+    'per ask -- a failure answers 255 exactly as the ssh transport does, and the caller decides',
 }
 
 #: The openers the scan finds: MEASURED 2026-11-12 at 8, 7 since D77 deleted the Actions artifact client (each row above
-#: is one); a floor refuses an unread corpus.
-OPENER_FLOOR: Final = 7
+#: is one); a floor refuses an unread corpus. 2026-11-24: 8 with the HTTPS door's client.
+OPENER_FLOOR: Final = 8
 
 _CONNECTIONS: Final = frozenset({'HTTPConnection', 'HTTPSConnection'})
 

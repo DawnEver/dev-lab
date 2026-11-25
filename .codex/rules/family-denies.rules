@@ -39,6 +39,12 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["git", "bundle", ["create"]],
+    decision = "forbidden",
+    justification = "ARCHIVE-IS-NO-STORE: a bundle parks unlanded work where nobody reads it again (ONLY-VERSION-TAGS). details: docs-src/dev/refusals.md#archive-is-no-store (dev-lab)",
+)
+
+prefix_rule(
     pattern = ["git", "stash", ["push", "pop", "apply", "drop", "clear", "save"]],
     decision = "forbidden",
     justification = "GIT-STASH: `refs/stash` is repo-wide, so a stash is popped by whoever pops next -- possibly another agent. details: docs-src/dev/refusals.md#git-stash (dev-lab)",
@@ -144,9 +150,12 @@ prefix_rule(
 # MAIN-ONLY-DOOR: scoped to subagents; Codex execpolicy has no agent scope
 # HEAVY-IS-THE-MAIN-SESSIONS: scoped to subagents; Codex execpolicy has no agent scope
 # CONSENT-CODE-FROM-THE-USER: judged on the path it writes or removes, not on the command word
+# USER-FROZEN-FILES: judged on the path it writes or removes, not on the command word
 # REPORTS-LIVE-IN-MEMORY: judged on the path it writes or removes, not on the command word
 # OUTPUT-HOLDS-NO-CODE: judged on the path it writes or removes, not on the command word
 # WRITES-STAY-IN-THE-TREE: judged on the path it writes or removes, not on the command word
+# LEDGER-WRITES-THROUGH-ITS-DOOR: judged on the path it writes or removes, not on the command word
+# NO-BACKUP-COPIES: judged on the path it writes or removes, not on the command word
 # RECURSIVE-DELETE: judged on the path it writes or removes, not on the command word
 # WORKTREES-STAY-INSIDE: judged on the path it writes or removes, not on the command word
 # WORKTREE-NAMES-ITS-TASK: judged on the name of the directory it makes, not on the command word

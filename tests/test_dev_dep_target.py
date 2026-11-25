@@ -228,6 +228,56 @@ def test_a_lane_cannot_target_main_but_main_can_bootstrap_the_lane(tmp_path) -> 
     assert _dep_project.target_root(lane, main) == lane.resolve()
 
 
+def _primary(git: str, checkout: Path) -> Path:
+    subprocess.run([git, 'init', str(checkout)], check=True, capture_output=True)
+    return checkout.resolve()
+
+
+def test_one_primary_checkout_bootstrapping_another_is_told_to_run_from_that_checkout(tmp_path) -> None:
+    """Another repo's primary checkout is refused with ITS cause: bootstrap it from inside that checkout.
+
+    MEASURED 2026-11-25: a session in one repo bootstrapping a sibling repo's primary checkout was told "a worktree
+    may not mutate main" -- neither side was a worktree.
+    """
+    git = shutil.which('git')
+    assert git is not None
+    session, sibling = _primary(git, tmp_path / 'session'), _primary(git, tmp_path / 'sibling')
+    with pytest.raises(ValueError, match='only from that checkout') as refused:
+        _dep_project.target_root(sibling, session)
+    said = str(refused.value)
+    assert 'may not mutate main' not in said, said
+    assert f'cd {sibling} && {sys.executable} -m dev_lab.dev.dep --bootstrap {sibling}' in said, said
+
+
+def test_a_worktree_targeting_its_own_main_keeps_the_worktree_cause(tmp_path) -> None:
+    """PLANTED CONTROL: the same refusal from a linked worktree onto its main still names the worktree."""
+    git = shutil.which('git')
+    assert git is not None
+    main = _primary(git, tmp_path / 'main')
+    subprocess.run(
+        [
+            git,
+            '-C',
+            str(main),
+            '-c',
+            'user.name=c',
+            '-c',
+            'user.email=c@x.invalid',
+            'commit',
+            '--allow-empty',
+            '-m',
+            'c',
+        ],
+        check=True,
+        capture_output=True,
+    )
+    lane = main / 'lane'
+    subprocess.run([git, '-C', str(main), 'worktree', 'add', '-b', 'lane', str(lane)], check=True, capture_output=True)
+    with pytest.raises(ValueError, match='a worktree may not mutate main') as refused:
+        _dep_project.target_root(main, lane)
+    assert 'only from that checkout' not in str(refused.value)
+
+
 def test_an_unknown_extra_refuses_before_sync(tmp_path) -> None:
     (tmp_path / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
     with pytest.raises(ValueError, match='unknown dependency extras'):
@@ -420,8 +470,8 @@ def test_a_failed_lock_upgrade_syncs_nothing(tmp_path) -> None:
     assert {call[1] for call in calls} == {'lock'}, 'a failed lock (retried by netverb) must sync nothing'
 
 
-def test_a_bootstrap_initialises_the_submodules_its_path_dependencies_point_into(tmp_path, monkeypatch) -> None:
-    """A checkout cloned WITHOUT its submodules is synced only after they are initialised (plan C5).
+def test_a_bootstrap_initializes_the_submodules_its_path_dependencies_point_into(tmp_path, monkeypatch) -> None:
+    """A checkout cloned WITHOUT its submodules is synced only after they are initialized (plan C5).
 
     The sync's path dependency points into ``components/engine``; uv saw it as not existing until a
     manual ``git submodule update --init``. The fake sync records whether the engine is there when it runs.
@@ -452,7 +502,7 @@ def test_a_bootstrap_initialises_the_submodules_its_path_dependencies_point_into
     git_in(product, 'commit', '-qm', 'product')
     subprocess.run([git, 'clone', '-q', str(product), str(lane)], check=True, capture_output=True)
     mounted = lane / 'components/engine/pyproject.toml'
-    assert not mounted.exists(), 'PLANTED CONTROL: a plain clone leaves the submodule uninitialised'
+    assert not mounted.exists(), 'PLANTED CONTROL: a plain clone leaves the submodule uninitialized'
     seen = []
 
     def run(argv, **_kwargs: object) -> SimpleNamespace:
@@ -536,7 +586,7 @@ def test_every_sync_compiles_bytecode_so_the_first_hook_after_a_relock_is_warm(t
 
 
 def test_an_explicit_extra_still_selects_it(tmp_path) -> None:
-    """PLANTED CONTROL for the no-extras default: an explicit --extra (e.g. all) is honoured."""
+    """PLANTED CONTROL for the no-extras default: an explicit --extra (e.g. all) is honored."""
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nextras=[]\n[project.optional-dependencies]\ndev=[]\nall=[]\n',
         encoding='utf-8',

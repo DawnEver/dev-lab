@@ -6,7 +6,7 @@ module is dev-lab's ONE adapter onto it (:func:`kind_root`, :func:`output_path`)
 * ``where [<kind>...]`` prints each kind's root for this checkout and whether it is bound.
 * ``render [--to P]`` writes the rclone remotes this machine reaches -- the family's options plus each remote's
   secret, read ONLY from the remote's own declared ``credentials_file`` (placed there by ``ops secret place``) -- to an
-  owner-only file outside every repo (:func:`dev_lab.dev.artefactstores.check_rclone_config`). Nobody
+  owner-only file outside every repo (:func:`dev_lab.dev.artifactstores.check_rclone_config`). Nobody
   hand-edits an rclone config; the secret never reaches argv, a log or this module's output.
 * ``check <remote> [--to P]`` renders, then lists the remote's top level through the pinned rclone: the one proof a
   placed secret reaches it (rclone absent names :func:`dev_lab.dev.toolrelease.door`).
@@ -220,12 +220,12 @@ def rendered(declared: _storage.Storage) -> str:
 
 def render(to: Path, *, repo: Path, declared: _storage.Storage | None = None) -> Path:
     """Write :func:`rendered` to *to* (owner-only, outside *repo*); return the path."""
-    from dev_lab.dev.artefactstores import ArtefactRefused, check_rclone_config  # noqa: PLC0415 -- writers import this module
+    from dev_lab.dev.artifactstores import ArtifactRefused, check_rclone_config  # noqa: PLC0415 -- writers import this module
 
     declared = _storage.declared() if declared is None else declared
     if (to := to.expanduser()).resolve().is_relative_to(repo.resolve()):
         msg = f'the rclone config is never in a repo: render it outside {repo} (e.g. {DEFAULT_RCLONE})'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     to.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(to, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as out:

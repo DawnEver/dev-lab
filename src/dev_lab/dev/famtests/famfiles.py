@@ -6,7 +6,7 @@ Two questions, and a repo answers both with one test file:
   family list (:data:`dev_lab.dev.famfiles.PROJECT_FILES`) or in the repo's own *owned_here* with
   a reason. A file in neither is drifting with nobody saying so.
 * :func:`assert_every_managed_file_is_rendered` -- every famconfig base is declared, no delta restates
-  a base line, and every artefact on disk is what base plus delta render. It COMPOSES the
+  a base line, and every artifact on disk is what base plus delta render. It COMPOSES the
   :mod:`dev_lab.dev.famtests.configrender` bodies rather than re-implementing them.
 
 Every repo-shaped fact -- the root, the repo name, the deltas, the remedy, the owned files -- arrives
@@ -17,10 +17,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from dev_lab.dev._famfiles_disk import project_files_on_disk, unaccounted, unplaced_workflows
 from dev_lab.dev.famconfig import BASES
-from dev_lab.dev.famfiles import PROJECT_FILES, project_files_on_disk, unaccounted
+from dev_lab.dev.famfiles import PROJECT_FILES, RETIRED_PROJECT_FILES
 from dev_lab.dev.famtests.configrender import (
-    assert_artefact_is_rendered,
+    assert_artifact_is_rendered,
     assert_delta_is_not_a_fork,
     assert_every_base_is_accounted_for,
 )
@@ -52,6 +53,15 @@ def assert_every_project_file_is_accounted_for(*, root: Path, owned_here: Mappin
     problems += [
         f'{path}: owned here AND a family row -- delete the local entry' for path in owned_here if path in PROJECT_FILES
     ]
+    problems += [
+        f'{path}: RETIRED -- {RETIRED_PROJECT_FILES[path]}; git rm it (dev_lab.dev.famfiles.RETIRED_PROJECT_FILES)'
+        for path in on_disk
+        if path in RETIRED_PROJECT_FILES
+    ]
+    problems += [
+        f'{path}: a workflow no [tool.dev_lab.ci] table places on this repo`s forge -- declare it, or delete it'
+        for path in unplaced_workflows(root)
+    ]
     problems += [f'{path}: owned here with no reason' for path, why in owned_here.items() if not why.strip()]
     problems += [f'{path}: owned here but not tracked in this repo' for path in owned_here if path not in on_disk]
     problems += [
@@ -69,9 +79,9 @@ def assert_every_managed_file_is_rendered(
     """Every famconfig base is declared, no delta forks its base, and every file is base plus delta.
 
     *rerender_hint* is the repo's own command; ``python -m dev_lab.dev.famfiles`` is the family one and
-    renders every artefact the repo declares at once.
+    renders every artifact the repo declares at once.
     """
     assert_every_base_is_accounted_for(deltas=deltas, repo=repo)
-    for artefact in sorted(BASES):
-        assert_delta_is_not_a_fork(artefact=artefact, deltas=deltas, repo=repo)
-        assert_artefact_is_rendered(root=root, artefact=artefact, deltas=deltas, repo=repo, rerender_hint=rerender_hint)
+    for artifact in sorted(BASES):
+        assert_delta_is_not_a_fork(artifact=artifact, deltas=deltas, repo=repo)
+        assert_artifact_is_rendered(root=root, artifact=artifact, deltas=deltas, repo=repo, rerender_hint=rerender_hint)

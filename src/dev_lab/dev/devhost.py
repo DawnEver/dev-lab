@@ -53,7 +53,6 @@ import json
 import platform
 import tomllib
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -68,12 +67,13 @@ from dev_lab.dev import (
     devschema,
     familyrepos,
     forgecredential,
-    forgeenrol,
+    forgeenroll,
     tomlleaves,
     vendordetect,
 )
+from dev_lab.dev._devhost_layers import family_facts_stay_home
 from dev_lab.dev._machinefile import dumps, merged
-from dev_lab.dev.backedup import replace_backed_up
+from dev_lab.dev.backedup import backups_dir, replace_backed_up
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by, layered, merge
 from dev_lab.dev.devschema import CHANNELS_TABLE, fill_remedy, hpc_reach, unfilled
@@ -103,39 +103,6 @@ def _sources(clone: Path, host: str) -> tuple[Path, Path]:
     return clone / 'family.toml', clone / host_file(host)
 
 
-def _family_facts_stay_home(layered: Mapping[str, Any], family: Mapping[str, Any], clone: Path) -> dict[str, Any]:
-    """*layered* without every leaf the family file holds, and with ``[family] source`` naming that file's clone.
-
-    The machine file is the host and local layers only: a reader layers the family file under it
-    (``lab_commons.config.section``) and refuses any leaf both hold. Measured 2026-11-20: the render copied the
-    family's ``[storage] remotes`` and then ``[breakglass] endpoint`` into the machine file and both readers refused.
-
-    Raises:
-        ValueError: the host layer gives a family leaf another value -- the reader refuses a restated leaf, so the
-            value is changed in the family file (or the host declares a key the family does not hold).
-
-    """
-
-    def strip(rows: Mapping[str, Any], shared: Mapping[str, Any], where: str) -> dict[str, Any]:
-        kept: dict[str, Any] = {}
-        for key, value in rows.items():
-            if key not in shared or key == machineconfig.FAMILY_TABLE:
-                kept[key] = value
-            elif isinstance(value, Mapping) and isinstance(shared[key], Mapping):
-                if inner := strip(value, shared[key], f'{where}.{key}' if where else key):
-                    kept[key] = inner
-            elif value != shared[key]:
-                leaf = f'[{where}].{key}' if where else key
-                msg = (f'{leaf} = {value!r} gives the family key ({shared[key]!r}) another value: change it in the '
-                       f'family file through its pull request, then {RENDER_DOOR}')  # fmt: skip
-                raise ValueError(msg)
-        return kept
-
-    kept = strip(layered, family, '')
-    kept.setdefault(machineconfig.FAMILY_TABLE, {'source': clone.resolve().as_posix()})
-    return kept
-
-
 def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     """The machine file for *host*: family ⊕ host (``[dev]`` aside) ⊕ the *live* file's local-only tables."""
     family_file, host_file = _sources(clone, host)
@@ -151,10 +118,11 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
         dev = declared(host_file, family_file)
         layered = merge(layered, devprofile.bridge_tables(dev, live))
         layered = merge(layered, {OWN_TABLE: {'hooks': dev['hooks']}} if 'hooks' in dev else {})
+        layered = merge(layered, {OWN_TABLE: {'forge_reach': dev['forge_reach']}} if 'forge_reach' in dev else {})
     if channels := parsed.get('dev', {}).get('channels'):
         layered = merge(layered, {CHANNELS_TABLE: {'channels': channels}})
     shared = {k: v for k, v in family.items() if k != 'dev'}
-    layered = _family_facts_stay_home(layered, shared, clone)
+    layered = family_facts_stay_home(layered, shared, clone, door=RENDER_DOOR)
     # a local table never holds a family table: an older render's copy of one is dropped, not kept as local
     local = {k: v for k, v in live.items() if k not in layered and k not in shared and k != OWN_TABLE}
     own = {'host': host, 'source': clone.resolve().as_posix()}  # absolute: never the reader's CWD (#556)
@@ -244,7 +212,7 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
     rest = [line for line in found if line not in first]
     lines = [f'HOST-CONFIG FIRST: {line}' for line in first] + bringup.stale_kit(live or machineconfig.machine())
     if host := devprofile.unmanaged(machineconfig.machine() if live is None else live):
-        lines.insert(0, f'HOST-CONFIG FIRST: {devprofile.enrolment(host)}')
+        lines.insert(0, f'HOST-CONFIG FIRST: {devprofile.enrollment(host)}')
     if rest:
         drifted = '; '.join(rest)
         lines.append(f'HOST-CONFIG: the machine file drifted from its render: {drifted}. Re-render: {RENDER_DOOR}')
@@ -299,7 +267,7 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
         emit(f'refused: {local}; {path} is unchanged', err=True)
         return 2
     if not (clone / host_file(host)).is_file():
-        emit(f'render: {devprofile.enrolment(host)}', err=True)
+        emit(f'render: {devprofile.enrollment(host)}', err=True)
     if names := unfilled(declared(clone / 'hosts' / f'{host}.toml', clone / 'family.toml')):
         emit(f'render: {fill_remedy(names)}', err=True)
     if not args.write:
@@ -310,7 +278,7 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
     except tomllib.TOMLDecodeError as broken:
         emit(f'refused: the render of {host} is not TOML ({broken}); {path} is unchanged', err=True)
         return 2
-    backups = args.backups or Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost'
+    backups = args.backups or backups_dir()
     emit(f'rendered {path}; the previous file is {replace_backed_up(path, text, backups)}')
     return 0
 
@@ -359,14 +327,14 @@ def _local_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -
         text = render(Path(own['source']), own['host'], changed)
     else:  # not a render: set the one key in the text, every other line kept
         text = merged(path.read_text(encoding='utf-8') if path.is_file() else '', {table: {key: value}})
-    backups = args.backups or Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost'
+    backups = args.backups or backups_dir()
     backup = replace_backed_up(path, text, backups)
     emit(f'local: [{table}].{key}: {before!r} -> {value!r} in {path}; the previous file is {backup}')
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    """The verbs: drift, render, detect, session-start, channels, use-store, enrol, admit, bringup (each its help)."""
+    """The verbs: drift, render, detect, session-start, channels, use-store, enroll, admit, bringup (each its help)."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -381,9 +349,11 @@ def main(argv: list[str] | None = None) -> int:
     making.add_argument('--host', default=None, help='the host name (default: the live [devhost] host, else this one)')
     making.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
     making.add_argument('--write', action='store_true', help='back the live file up, then replace it')
-    making.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
+    making.add_argument(
+        '--backups', type=Path, default=None, help='where the backup goes (default: backedup.backups_dir)'
+    )
     forgecredential.add_use_store(verbs)
-    forgeenrol.add_enrol(verbs)
+    forgeenroll.add_enroll(verbs)
     devhostadmit.add_admit(verbs)
     checking = verbs.add_parser('bringup', help='list every wall a new workstation hits, each with its door')
     checking.add_argument('--check', action='store_true', required=True, help='read only; exit 1 while a wall stands')
@@ -395,7 +365,9 @@ def main(argv: list[str] | None = None) -> int:
     gone = local_verbs.add_parser('unset', help='remove <table>.<key>')
     gone.add_argument('key', help='<table>.<key>')
     for sub in (one, gone):
-        sub.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
+        sub.add_argument(
+            '--backups', type=Path, default=None, help='where the backup goes (default: backedup.backups_dir)'
+        )
     args = parser.parse_args(argv)
     path = args.machine or machineconfig.config_path()
     try:  # the render alone repairs the one old shape; every other verb names it and its door
@@ -415,7 +387,7 @@ def main(argv: list[str] | None = None) -> int:
         'use-store': lambda: forgecredential.use_declared(declared_by(live.get(OWN_TABLE, {})), args.host),
         'bringup': lambda: bringup.main(live),
         'admit': lambda: devhostadmit.run(args, live, live.get(OWN_TABLE, {})),
-        'enrol': lambda: forgeenrol.run(args, live.get(OWN_TABLE, {}), declared_by(live.get(OWN_TABLE, {}))),
+        'enroll': lambda: forgeenroll.run(args, live.get(OWN_TABLE, {}), declared_by(live.get(OWN_TABLE, {}))),
     }
     if args.verb in plain:
         return plain[args.verb]()

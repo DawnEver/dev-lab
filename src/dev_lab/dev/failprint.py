@@ -9,7 +9,7 @@ ONE SOURCE. A test names its subjects in its failure text with :func:`subject_li
 ``failure-subject: <subject>`` line each, stable and machine-readable -- and :func:`subjects_of` reads them back
 from whatever text the run record carries. No per-ratchet message parser exists to drift from its message.
 
-THE JUDGEMENT. :func:`new_subjects` keeps, per ``(part, node)`` red on BOTH sides, the subjects the head names and
+THE JUDGMENT. :func:`new_subjects` keeps, per ``(part, node)`` red on BOTH sides, the subjects the head names and
 the base does not. A node red only on the head is pass-to-fail, judged where it always was; a subject that
 disappeared is a repair, never a refusal. :func:`refusal` says the new ones and the door.
 """

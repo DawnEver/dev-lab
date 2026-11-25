@@ -103,7 +103,7 @@ def test_a_recursive_delete_is_refused_with_its_doors(rules: Path, command: str)
         'rd empty-dir',
         'git worktree list --porcelain',
         'git clean -n',
-        'git clean -nd',
+        'git clean -and',
         'git clean -fdx --dry-run',
         'rm -rf /tmp/a /tmp/b',
         'git clean -f',

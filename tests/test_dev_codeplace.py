@@ -85,12 +85,12 @@ def test_an_empty_allow_list_is_REFUSED_rather_than_refusing_everything(tmp_path
 
 def _declare(root, body: str) -> None:
     (root / '.git').mkdir(exist_ok=True)
-    (root / 'pyproject.toml').write_text(f'[tool.dev_lab.placement]\n{body}', encoding='utf-8')
+    (root / 'layout.toml').write_text(body, encoding='utf-8')
 
 
 def test_the_family_code_roots_are_read_off_the_one_placement_map() -> None:
     assert set(FAMILY_CODE_ROOTS) <= set(FAMILY_HOMES.values())
-    assert FAMILY_HOMES['repo-development mechanism'] == 'scripts/'
+    assert 'scripts/' not in FAMILY_HOMES.values(), 'dev mechanisms live in dev-lab (user ruling 2026-11-24)'
     assert FAMILY_HOMES['one-off experiment, probe or verification'] == 'scratch/'
     assert 'docs-src/' not in FAMILY_CODE_ROOTS
     assert 'output/logs/' not in FAMILY_CODE_ROOTS
@@ -137,7 +137,7 @@ def test_the_write_hook_refuses_exactly_what_the_scan_refuses(tmp_path, rel, ref
     reason = refuse_write(tmp_path / rel)
     assert (reason is not None) is refused
     if refused:
-        assert 'pyproject.toml' in reason
+        assert 'layout.toml' in reason
 
 
 def test_a_refusal_names_the_home_a_test_file_belongs_in(tmp_path) -> None:

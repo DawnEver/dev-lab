@@ -21,8 +21,9 @@ the trunk) and its tip has sat idle -- its committer date -- for at least ``max_
   LOSSLESS-DELETE would refuse (D30, user 2026-11-17, retiring the delete of an unmerged no-PR ephemeral head).
 
 THE SERVE TICK'S DELETION IS DATA: the opt-in is a reviewed edit of the repo's ``[tool.dev_lab.branchset]``.
-AN AGENT'S DELETION and THE LANDED SWEEP live in :mod:`dev_lab.dev.branchdelete` (LOSSLESS-DELETE,
-LANDED-BRANCHES-SWEPT); this module keeps their command line (``delete``, ``sweep``).
+AN AGENT'S DELETION, THE USER'S DISCARD and THE LANDED SWEEP live in :mod:`dev_lab.dev.branchdelete`
+(LOSSLESS-DELETE, ``discard <branch> --approved "<words>"``, LANDED-BRANCHES-SWEPT); this module keeps their command
+line (``delete``, ``discard``, ``tag``, ``task``, ``sweep``).
 
 
 EACH DELETION IS PINNED to the sha the survey judged: the live tip is read from the forge first, and a
@@ -35,6 +36,7 @@ unmerged stale one.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import sys
@@ -47,7 +49,8 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.branchdelete import DOOR, delete, delete_contained_tags, delete_task, sweep
+from dev_lab.dev._branch_tags import delete_contained_tags
+from dev_lab.dev.branchdelete import DOOR, UNAPPROVED, delete, delete_task, discard, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.deletejudge import ORIGIN
@@ -278,6 +281,8 @@ RETIRED: Final = {
 
 def retired(argv: Sequence[str]) -> str:
     """The refusal naming the first retired spelling in *argv* and its door; ``''`` when none."""
+    if list(argv[:1]) == ['discard']:
+        argv = [word for word in argv if word.partition('=')[0] != '--approved']
     for word in argv:
         door = RETIRED.get(word.partition('=')[0])
         if door:
@@ -285,16 +290,31 @@ def retired(argv: Sequence[str]) -> str:
     return ''
 
 
+def _unapproved(argv: Sequence[str]) -> str:
+    """:data:`~dev_lab.dev.branchdelete.UNAPPROVED` when a ``discard`` carries no words of the user's; else ``''``."""
+    if list(argv[:1]) != ['discard']:
+        return ''
+    given = [
+        word.partition('=')[2] if '=' in word else ''.join(argv[at + 1 : at + 2])
+        for at, word in enumerate(argv)
+        if word.partition('=')[0] == '--approved'
+    ]
+    return '' if any(one.strip() for one in given) else UNAPPROVED
+
+
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     """``python -m dev_lab.dev.branchprune {delete B... | tag T... | task S | sweep}``."""
     words = list(sys.argv[1:] if argv is None else argv)
-    if why := retired(words):
+    if why := retired(words) or _unapproved(words):
         emit(why, err=True)
         return 2
     parser = argparse.ArgumentParser(prog='dev_lab.dev.branchprune', description=main.__doc__)
     verbs = parser.add_subparsers(dest='verb', required=True)
     deleted = verbs.add_parser('delete', help='a branch whose content is held elsewhere')
     deleted.add_argument('branches', nargs='+')
+    discarded = verbs.add_parser('discard', help='a branch the user ordered dropped unlanded (their words required)')
+    discarded.add_argument('branches', nargs='+')
+    discarded.add_argument('--approved', default='', help="the user's own words ordering the drop (required)")
     tagged = verbs.add_parser('tag', help='an origin tag whose commit integration or the trunk contains (recorded)')
     tagged.add_argument('tags', nargs='+')
     tasked = verbs.add_parser('task', help="a closed task's pr/<slug>/* heads, each deleted losslessly or named")
@@ -309,8 +329,9 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     try:
         client = client_for(root)
         session = os.environ.get(ENV, '')
-        if args.verb == 'delete':
-            return delete(root, args.branches, client=client, session=session, fetch=fetch_origin, say=say)
+        if args.verb in {'delete', 'discard'}:
+            door = functools.partial(discard, approved=args.approved) if args.verb == 'discard' else delete
+            return door(root, args.branches, client=client, session=session, fetch=fetch_origin, say=say)
         if args.verb == 'tag':
             return delete_contained_tags(root, args.tags, fetch=fetch_origin, say=say)
         if args.verb == 'task':

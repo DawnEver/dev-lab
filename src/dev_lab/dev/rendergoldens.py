@@ -1,7 +1,7 @@
 """Every family file the generators render for a set of declaration fixtures, pinned byte for byte as goldens.
 
 THE CONTRACT IT CLOSES: a generator change is shown not to change unrelated repos. A fixture is a directory holding a
-``pyproject.toml`` (its ``[tool.dev_lab.ci]`` declarations), a ``roles.json`` (the executor kinds its family binds,
+``pyproject.toml`` (its ``[tool.dev_lab.ci]`` declarations), a ``roles.jsonl`` (the executor kinds its family binds,
 as :data:`~dev_lab.dev.roles.ROLES_ENV` carries them) and a ``deltas.py`` (its ``DELTAS``); its render is
 every RENDERED famconfig base it declares a delta for, every whole family file (:func:`famfiles.render_agent_files`'s
 set) and every workflow :mod:`dev_lab.dev.ciworkflows` places. :func:`compare` names each render that moved against
@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev import ciworkflows, famfiles
-from dev_lab.dev.famconfig import RENDERED, artefact_base, render
+from dev_lab.dev.famconfig import RENDERED, artifact_base, render
 from dev_lab.dev.roles import Roles
 
 if TYPE_CHECKING:
@@ -46,13 +46,13 @@ __all__ = [
 #: The declaration file of a fixture: its ``[tool.dev_lab.ci]`` tables.
 MANIFEST: Final = 'pyproject.toml'
 #: The file of a fixture naming the executor kind of each role, as a rendered workflow carries them.
-ROLES_FILE: Final = 'roles.json'
+ROLES_FILE: Final = 'roles.jsonl'
 #: The module file of a fixture holding its ``DELTAS``.
 DELTAS_FILE: Final = 'deltas.py'
 #: The suffix of a golden file: a rendered ``.gitignore`` stored bare would be read by git as an ignore rule.
 SUFFIX: Final = '.golden'
 #: What a golden's file name spells a repo-relative ``/`` as. Goldens are FLAT under their fixture: a nested
-#: ``.claude/rem.json`` golden sat under the family's ``**/.claude/**`` ignore, was never committed, and every
+#: ``.claude/<file>`` golden sat under the family's ``**/.claude/**`` ignore, was never committed, and every
 #: other checkout read it as missing.
 SEP: Final = '--'
 
@@ -70,11 +70,11 @@ def _key(path: Path, goldens: Path) -> str:
 def render_fixture(text: str, deltas: Mapping[str, Delta], origin: str, roles: Roles) -> dict[str, str]:
     """Every family file one repo declaring pyproject *text* and *deltas*, under *roles*, renders, by path."""
     out = {
-        artefact: render(artefact_base(artefact), delta)
-        for artefact, delta in deltas.items()
-        if artefact_base(artefact).mode == RENDERED
+        artifact: render(artifact_base(artifact), delta)
+        for artifact, delta in deltas.items()
+        if artifact_base(artifact).mode == RENDERED
     }
-    out.update(famfiles.whole_files())
+    out.update(famfiles.managed_sections())
     forge = ciworkflows.declared_forge(text, origin)
     for name, (directory, workflow) in ciworkflows.placed(text, origin, forge, roles).items():
         out[(directory / name).as_posix()] = ciworkflows.render(workflow)
@@ -87,7 +87,8 @@ def render_fixtures(fixtures: Path) -> dict[str, str]:
     for fixture in sorted(path for path in fixtures.iterdir() if (path / MANIFEST).is_file()):
         manifest = fixture / MANIFEST
         deltas = famfiles.load_deltas(fixture / DELTAS_FILE)
-        roles = Roles.of_kinds(**json.loads((fixture / ROLES_FILE).read_text(encoding='utf-8')))
+        [record] = (fixture / ROLES_FILE).read_text(encoding='utf-8').splitlines()
+        roles = Roles.of_kinds(**json.loads(record))
         rendered = render_fixture(manifest.read_text(encoding='utf-8'), deltas, str(manifest), roles)
         out.update({f'{fixture.name}/{rel}': text for rel, text in rendered.items()})
     return out

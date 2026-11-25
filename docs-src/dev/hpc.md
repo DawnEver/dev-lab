@@ -167,7 +167,7 @@ movable_minutes = 30                 # rerun-safe AND this short = movable
   - *The only opt-in* is the expiring allocation record:
     `python -m dev_lab.dev.hpcaccount allocate --until 2026-10-31T09:00Z --borrow research->verify` (research may land
     on a verify account) or `--borrow verify->research` (a research seat may claim a verify part). Both readers
-    honour it until `--until`; expired, cleared or absent, nothing is borrowed. `allocate --show` prints it.
+    honor it until `--until`; expired, cleared or absent, nothing is borrowed. `allocate --show` prints it.
   - No reader installed, an unreadable forge, or no card declaring `verify`: placement is unchanged. A public
     repository's opaque cards name no account, so they declare nothing here. `run submit` (the forge's own verify
     runs) never reads it.
@@ -248,7 +248,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   Every resource is equal: a tool, an OS, a host fact. A test that needs one carries its marker (registered in
   `[tool.pytest.ini_options] markers` as usual). A test needing a tool marks the TOOL, never the OS the tool
   runs on -- the OS follows from where the tool exists. A test marks an OS only when it proves that OS's
-  behaviour.
+  behavior.
 - **A test's need-set is its part** (`needsets.need_sets`): the declared markers it carries, named sorted and
   `+`-joined (`femm+windows`), or `base` for none. Every id belongs to exactly one part; parts are independent
   and run in any order, in parallel. Status context `tests/<part>`; the name round-trips (`needsets.needs_of`).

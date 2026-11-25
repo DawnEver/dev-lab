@@ -44,17 +44,19 @@ from dev_lab.ops.consent.door import (
     PREFLIGHT_FRESH_S,
     RECEIPT_FRESH_S,
     Send,
+    endpoint_send,
     fresh_receipts,
     offer,
     plan_preflights,
-    ssh_send,
 )
 from dev_lab.ops.consent.plan import parsed, show
 
 __all__ = ['main']
 
 
-def main(argv: Sequence[str] | None = None, *, table: Mapping[str, Any] | None = None, send: Send = ssh_send) -> int:
+def main(
+    argv: Sequence[str] | None = None, *, table: Mapping[str, Any] | None = None, send: Send = endpoint_send
+) -> int:
     """Route ``grant``, ``plan`` and ``recover``; see the module docstring."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.ops.consent', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)

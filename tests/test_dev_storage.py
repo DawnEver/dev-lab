@@ -10,8 +10,8 @@ import pytest
 from lab_commons.storage import StorageError, declared
 
 from dev_lab.dev import storage
-from dev_lab.dev.artefactstores import SCRATCH_PREFIX, ArtefactRefused, check_key
-from dev_lab.dev.writeroots import Root, excluded_paths, refuse_outside_tree
+from dev_lab.dev.artifactstores import SCRATCH_PREFIX, ArtifactRefused, check_key
+from dev_lab.dev.writeroots import Allowance, admitted_paths, refuse_outside_tree
 
 GIT = shutil.which('git') or 'git'
 
@@ -118,18 +118,18 @@ def test_render_refuses_a_missing_secret_and_a_path_inside_the_repo(tmp_path: Pa
 
 
 def test_a_bound_storage_root_is_admitted_by_the_write_guard_and_nothing_else(tmp_path: Path) -> None:
-    """PLANTED CONTROL: a write under a write-prone root is refused unless it is under a bound storage root."""
-    prone = (Root(tmp_path / 'tmp', 'temp'),)
+    """PLANTED CONTROL: a write outside every allowed root is refused unless it is under a bound storage root."""
     bound = _bound(output=str(tmp_path / 'tmp' / 'work' / '{repo}'))
+    allowed = Allowance((tmp_path / 'checkout',), 'declared')
 
-    admitted = excluded_paths(prone, machine={}, env={}, storage=bound)
-    assert refuse_outside_tree(tmp_path / 'tmp' / 'work' / 'repo-a' / 'x', roots=prone, excluded=admitted) is None
-    assert refuse_outside_tree(tmp_path / 'tmp' / 'elsewhere' / 'x', roots=prone, excluded=admitted) is not None
+    admitted = admitted_paths(machine={}, env={}, storage=bound)
+    assert refuse_outside_tree(tmp_path / 'tmp' / 'work' / 'repo-a' / 'x', allowed=allowed, admitted=admitted) is None
+    assert refuse_outside_tree(tmp_path / 'tmp' / 'elsewhere' / 'x', allowed=allowed, admitted=admitted) is not None
 
 
 def test_a_durable_key_never_lands_under_the_aged_out_scratch_prefix() -> None:
     """A remote's lifecycle rule deletes scratch/ after a while; a durable result there would vanish silently."""
-    with pytest.raises(ArtefactRefused, match='the prefix a remote ages out'):
+    with pytest.raises(ArtifactRefused, match='the prefix a remote ages out'):
         check_key(f'{SCRATCH_PREFIX}/vendor/abc.tar.gz')
     check_key('vendor/scratch/abc.tar.gz')  # PLANTED CONTROL: only the FIRST segment is the aged-out prefix
 

@@ -70,14 +70,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             emit(f'commandpart: {node}: {cells[node].why}', err=True)
         # Resolved on PATH first: on Windows `npm` is `npm.cmd`, which a bare name cannot start (WinError 2).
         program = shutil.which(command[0]) or command[0]
-        # D104: the suite temp dirs (the TMPDIR, TEMP and TMP variables) land in one swept system-temp entry.
-        code = (
-            1
-            if failed
-            else _door.run(
-                [program, *command[1:]], cwd=args.root, env=script_temp_env(os.environ), check=False
-            ).returncode
-        )
+        # D104: the suite temp dirs (the TMPDIR, TEMP and TMP variables) land in one owned system-temp entry,
+        # reclaimed when the suite ends.
+        code = 1
+        if not failed:
+            with script_temp_env(os.environ) as env:
+                code = _door.run([program, *command[1:]], cwd=args.root, env=env, check=False).returncode
     except (OSError, subprocess.CalledProcessError) as cannot:
         emit(f'commandpart: unreachable -- cannot run {command[0]!r} here: {cannot}', err=True)
         return unreachable(f'cannot run {command[0]!r}: {cannot}', Owner.ENVIRONMENT)

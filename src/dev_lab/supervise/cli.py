@@ -1,4 +1,4 @@
-"""The three verbs a supervisor is driven by: check once, serve, or summarise a day.
+"""The three verbs a supervisor is driven by: check once, serve, or summarize a day.
 
 CHECK IS THE ONE THAT RUNS UNDER A TIMER. ``serve`` is for a host that keeps a daemon and lets the
 service manager restart it; ``check`` is for a host that would rather use a systemd timer, which

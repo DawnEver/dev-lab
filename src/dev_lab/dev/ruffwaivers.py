@@ -1,4 +1,4 @@
-"""THE TWO RUFF WAIVERS WIDER THAN AN IGNORE, read across every spelling ruff honours, as a KIT.
+"""THE TWO RUFF WAIVERS WIDER THAN AN IGNORE, read across every spelling ruff honors, as a KIT.
 
 WHAT THIS IS FOR. ``exclude`` and ``per-file-ignores`` grant MORE than an ignore does, and every arm
 stated over the GLOBAL ignore list is blind to both: an exclude drops every selector over a subtree
@@ -11,7 +11,7 @@ THE KIT HOLDS NO REPO'S ROWS. Which waivers a repo holds, and why, is a fact abo
 declared in that repo's own tests and judged here. This module ships only the reader, the spelling
 table and the refusal.
 
-THE AXIS THE READER EXISTS FOR IS SPELLING. Ruff honours ``lint.extend-ignore`` and the DEPRECATED
+THE AXIS THE READER EXISTS FOR IS SPELLING. Ruff honors ``lint.extend-ignore`` and the DEPRECATED
 top-level ``ignore`` as well as ``lint.ignore``, so a reader of the one spelling a repo happens to use
 would empty its reading the day an entry moved across spellings while changing nothing ruff does.
 :data:`WAIVER_SPELLINGS` is the table that closes it.

@@ -26,7 +26,7 @@ subject is a function of the reviewed source alone and an operator derives it wi
 
 CLIENT KEYS (``[ops.config] clients``, :mod:`dev_lab.ops.clientkeys`): the same clone's development-machine files
 yield the derived ``[ops.clients]`` the candidate carries (:func:`with_clients`), so the subject covers them and
-authorising a new workstation is one reviewed line in its own host file plus one ``ops.config`` consent here.
+authorizing a new workstation is one reviewed line in its own host file plus one ``ops.config`` consent here.
 
 FIRST CONTACT (:func:`anchor`): a host whose live file has neither ``[ops.consent]`` nor ``[ops.consent_client]``
 can verify no credential, so the table that would let it verify one could never pass the boundary. Exactly that one

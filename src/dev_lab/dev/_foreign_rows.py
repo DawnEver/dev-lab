@@ -72,7 +72,8 @@ SCAN_FLOOR: Final = 80
 #: RE-MEASURED 2026-10-08 at **167** after the root-capability split removed one sibling mention.
 #: RE-MEASURED 2026-10-15 at **162** after box P3 deleted the lease/seat prose.
 #: RE-MEASURED 2026-10-22 at **141** over src/dev_lab after the split (the scan root moved off src/lab_commons).
-PROSE_CEILING: Final = 141
+#: RE-MEASURED 2026-11-25 at **134** on the 1124 wave (its prose rewrites dropped seven sibling mentions).
+PROSE_CEILING: Final = 134
 
 #: ``'<repo-relative module>::<kind>' -> why the deletion is not in this pass``. One handle per
 #: module per kind, so a new module or a new kind cannot arrive under an existing waiver.
@@ -139,10 +140,6 @@ EVICTED: Final[dict[str, str]] = {
 #: anywhere, and a waiver list nobody believes is a waiver list nobody reads. Two-sided all the
 #: same: if the example goes, the handle goes with it.
 SYNTHETIC: Final[dict[str, str]] = {
-    'src/dev_lab/dev/vscodesettings.py::path': (
-        '`.vscode/settings.json`, the file this module RENDERS into each family checkout; it resolves only '
-        'where it was rendered and names no file of a particular sibling.'
-    ),
     'src/dev_lab/supervise/cli.py::path': (
         '`supervise/state.json` and `supervise/cycles.jsonl`, the files this module WRITES under the target`s '
         '`output` storage kind (D75); they exist only where a supervisor ran, and name no tracked file.'
@@ -150,10 +147,6 @@ SYNTHETIC: Final[dict[str, str]] = {
     'src/dev_lab/dev/_deny_machinefile_row.py::path': (
         'the machine file (`lab_commons.config.config_path()`), a per-machine file the deny row names by its '
         'home-relative tail; it lives outside every checkout and names no tracked file.'
-    ),
-    'src/dev_lab/dev/remplugin.py::path': (
-        'each agent host`s plugin registry and settings under the user`s home (Claude Code, Antigravity, Codex), '
-        'read to find the installed rem plugin; machine-local, outside every checkout, naming no tracked file.'
     ),
     'src/dev_lab/dev/automode.py::path': (
         '`.claude/automode.json`, the machine-local file this module WRITES into a consumer checkout; '
@@ -171,8 +164,12 @@ SYNTHETIC: Final[dict[str, str]] = {
         '1 example lane note, `lanes/a-lane.md`, in the prose that explains the dated shape.'
     ),
     'src/dev_lab/dev/famtests/ephemeralrefs.py::path': (
-        'the planted tree`s files -- `scratch/probe.py`, `output/...` artefacts, `src/pkg/a.py` -- which '
+        'the planted tree`s files -- `scratch/probe.py`, `output/...` artifacts, `src/pkg/a.py` -- which '
         'the control writes into a tmp repo and convicts; they name no file in any checkout.'
+    ),
+    'src/dev_lab/dev/claudelayout.py::path': (
+        'CLAUDE_ENTRIES, the closed `.claude/` inventory (`hooks/deny-commands.js` and its siblings): the '
+        'family-managed names every adopting checkout holds; they name no file of a particular sibling.'
     ),
     'src/dev_lab/dev/famfiles.py::path': (
         'the PROJECT_FILES list names family-managed files (`.claude/settings.json`, the hook files) that '

@@ -18,16 +18,10 @@ import pytest
 from _venv_fake import linked_env
 
 from dev_lab.dev import venvpointer, walls
+from dev_lab.dev.githooks import _gitread, runner
 from dev_lab.dev.githooks import main as githooks_main
-from dev_lab.dev.githooks import runner
-from dev_lab.dev.githooks.runner import (
-    PUSH_URL_ENV,
-    ZERO_SHA,
-    borrowed_interpreter,
-    parse_push_lines,
-    resolve,
-    run_stage,
-)
+from dev_lab.dev.githooks._gitread import ZERO_SHA, parse_push_lines
+from dev_lab.dev.githooks.runner import PUSH_URL_ENV, borrowed_interpreter, resolve, run_stage
 from dev_lab.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
 from dev_lab.dev.metrics import PUSH, REFUSAL, read
 
@@ -75,6 +69,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     assert {hook.id for hook in table['pre-push']} == {
         'task-bound',
         'memory-adds',
+        'zero-core-change',
         'session-branch',
         'milestone-base',
         'closed-pr',
@@ -95,6 +90,8 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     }
     assert {hook.id for hook in table['pre-commit']} == {
         'filechecks',
+        'frozen-files',  # USER-FROZEN-FILES (user ruling 2026-11-24): a frozen file's change is refused before it lands
+        'native-first',  # NATIVE-FIRST (user ruling 2026-11-25): a staged numeric loop or Python twin, opt-in
     }, 'the tracked-tree scans (ephemeral refs, scratch) are forge bodies, never a commit-time refusal'
 
 
@@ -131,7 +128,7 @@ def test_a_repo_row_merges_over_a_base_row_by_id_and_appends_a_new_one() -> None
         ('pre-commit', {'id': 'x', 'run': ['a'], 'files': '('}, 'invalid `files` regex'),
     ],
 )
-def test_a_declaration_the_runner_cannot_honour_raises(stage: str, row: dict, needle: str) -> None:
+def test_a_declaration_the_runner_cannot_honor_raises(stage: str, row: dict, needle: str) -> None:
     assert stage in STAGES
     with pytest.raises(HookTableError, match=needle):
         merge({}, {stage: (row,)})
@@ -160,6 +157,7 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
     assert pre_push == [
         'task-bound',
         'memory-adds',
+        'zero-core-change',
         'session-branch',
         'milestone-base',
         'closed-pr',
@@ -272,7 +270,7 @@ def test_the_pre_push_stage_selects_among_the_paths_the_push_changes(repo: Path)
     assert seen.calls[0][1] == stdin, "the hook reads git's own ref lines"
 
 
-def test_push_lines_are_git_s_four_fields_and_a_deletion_is_recognised() -> None:
+def test_push_lines_are_git_s_four_fields_and_a_deletion_is_recognized() -> None:
     lines = parse_push_lines(f'(delete) {ZERO_SHA} refs/heads/x {"a" * 40}\nnoise\n')
     assert len(lines) == 1
     assert lines[0].deleted
@@ -725,7 +723,7 @@ def test_a_failing_git_query_of_the_runner_names_its_cause_and_door(repo: Path, 
 
     (repo / 'clean.txt').write_text('clean\n', encoding='utf-8')
     _git(repo, 'add', 'clean.txt')
-    monkeypatch.setattr(runner, '_git', broken)
+    monkeypatch.setattr(_gitread, 'git', broken)  # the staged-path read is the one that fails
     assert run_stage('pre-commit', root=repo) == 1
     said = capsys.readouterr().err
     assert 'GITHOOKS-GIT-FAILED' in said

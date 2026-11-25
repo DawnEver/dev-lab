@@ -1,4 +1,4 @@
-"""HOLD: a label the merge tick honours, so a green PR is held on a forge that refuses its draft.
+"""HOLD: a label the merge tick honors, so a green PR is held on a forge that refuses its draft.
 
 Driven through the stateful fake forge and the real merge decision (:func:`dev_lab.dev.forgemergeready.ready`).
 """
@@ -32,7 +32,7 @@ def test_a_held_green_pr_is_not_merged_and_the_reason_names_the_release_door(tmp
     assert [merged for merged, _ in forge.merges] == [number]
 
 
-def test_on_gitea_the_merge_job_honours_the_hold_too(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_on_gitea_the_merge_job_honors_the_hold_too(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     work, forge, number, _head = _pr(tmp_path)
     carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     hold(forge, number)

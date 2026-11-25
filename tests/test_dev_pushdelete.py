@@ -3,7 +3,7 @@
 MEASURED 2026-11-17: a session built its refspecs at run time (``refs=$(printf ':refs/heads/pr/%s ' ...)``, then
 ``git push origin $refs``) and deleted nine origin branches holding unlanded commits. The deny row
 ``PUSH-REMOTE-DELETE`` reads command TEXT, which held no ``:ref``; the pre-push hook never judged a delete. Now the
-base ``lossless-delete`` row judges every deleted branch on git's own ref lines with the judgement
+base ``lossless-delete`` row judges every deleted branch on git's own ref lines with the judgment
 ``branchprune delete`` makes (:func:`dev_lab.dev.deletejudge.judge`).
 
 Real git throughout: a bare ``origin``, a clone, and for the end-to-end cases a REAL ``git push`` whose pre-push hook
@@ -29,7 +29,8 @@ from dev_lab.dev import disclosure, forgeclient, pushdelete, walls
 from dev_lab.dev.branchdelete import delete
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.githooks.runner import ZERO_SHA, run_stage
+from dev_lab.dev.githooks._gitread import ZERO_SHA
+from dev_lab.dev.githooks.runner import run_stage
 from dev_lab.dev.githooks.table import base_rows, merge
 from dev_lab.dev.lanepolicy import Derived, policy_from
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
@@ -239,7 +240,7 @@ def test_run_stage_refuses_a_zero_sha_line_for_an_unlanded_sha(tmp_path: Path, m
     assert run_stage('pre-push', ['origin', str(bare)], root=work, stdin=_line('lane/done', landed), hooks=rows) == 0
 
 
-# ------------------------------------------------------------------------------------------- the judgement
+# ------------------------------------------------------------------------------------------- the judgment
 
 
 def test_branches_holding_only_each_others_commits_are_refused_when_deleted_together(tmp_path: Path) -> None:

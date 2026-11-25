@@ -23,7 +23,6 @@ from dev_lab.dev import (
     metrics,
     storage,
     walls,
-    worktree_outputs,
     worktreeplace,
 )
 from dev_lab.dev.hook_adoption import HookAdoption, render
@@ -94,16 +93,6 @@ def test_worktrees_live_in_a_bound_home(repo: Path, tmp_path: Path, monkeypatch:
     assert misplaced.move_to == bound / 'elsewhere'
     (bound / 'orphan').mkdir(parents=True)
     assert checkout.orphan_directories(repo) == ((bound / 'orphan').resolve(),)
-
-
-def test_a_worktree_output_goes_home_to_the_bound_root(
-    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    rel = Path('output', 'logs', '26', 'x.log')
-    assert worktree_outputs._home(repo, rel) == repo / rel, 'PLANTED CONTROL'
-    _bind(monkeypatch, output=str(tmp_path / 'big' / '{repo}'))
-    assert worktree_outputs._home(repo, rel) == tmp_path / 'big' / 'repo-a' / 'logs' / '26' / 'x.log'
-    assert worktree_outputs._home(repo, Path('reports', 'y')) == repo / 'reports' / 'y'
 
 
 def test_the_tree_a_run_never_reads_is_derived_from_the_kinds() -> None:

@@ -118,6 +118,43 @@ def test_a_pr_whose_base_failed_is_not_ready_though_review_and_security_pass(tmp
     assert any(one.startswith('its test parts: ') and 'FAIL' in one for one in found.missing), found.missing
 
 
+def test_a_pr_whose_every_red_part_is_on_record_merges_into_integration(tmp_path: Path) -> None:
+    """RED-INTEGRATION-MERGES (user ruling, repeated; last 2026-11-06): integration MAY be red.
+
+    A head whose parts all RAN merges once every FAIL is on record: one ``Red-On-Record: <part> -- <residual>``
+    line in the PR names it. PLANTED CONTROLS: a red part left off the record, a line with no residual, and a
+    pending part each still wait.
+    """
+    work, head = _work(tmp_path)
+    gates = [r for r in _green() if r['context'] != 'tests/base']
+    red = 'scope=full ran=5882 hands=-'
+    raw = [
+        *gates,
+        {'id': 7, 'context': 'tests/base', 'status': 'failure', 'description': red},
+        {'id': 8, 'context': 'tests/base@windows', 'status': 'failure', 'description': red},
+    ]
+
+    def judge(record: str, statuses: list[dict[str, object]] = raw) -> Decision:
+        return decide(
+            work,
+            POLICY,
+            branch='pr/x',
+            number=78,
+            head=head,
+            statuses=_statuses(statuses),
+            reviewed=status_gate(github_posted),
+            record=record,
+        )
+
+    both = 'Red-On-Record: tests/base -- test_x: 3 subjects\nRed-On-Record: tests/base@windows -- test_x: same\n'
+    assert judge(both).ready, judge(both).missing
+    one = judge('Red-On-Record: tests/base -- test_x: 3 subjects\n')
+    assert any('tests/base@windows' in why for why in one.missing), one.missing
+    assert not judge('Red-On-Record: tests/base --\nRed-On-Record: tests/base@windows --\n').ready, 'no residual'
+    pending = [*gates, {'id': 7, 'context': 'tests/base', 'status': 'pending', 'description': 'scope=full'}]
+    assert not judge('Red-On-Record: tests/base -- a residual\n', pending).ready, 'an unrun part still waits'
+
+
 def test_a_pr_whose_parts_are_absent_or_pending_waits(tmp_path: Path) -> None:
     """An unsettled part is no green: the PR waits, naming its parts, until every one stands PASS."""
     work, head = _work(tmp_path)
@@ -636,3 +673,38 @@ def test_an_environment_or_scheduling_result_never_holds_the_merge(tmp_path: Pat
 def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
     """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
     carry(monkeypatch, HPC_REPO)
+
+
+def test_a_head_adding_a_crate_waits_for_its_measured_port_record(tmp_path: Path) -> None:
+    """MEASURE-BEFORE-PORTING: a new ``Cargo.toml`` with no measured ``Port-Measured:`` trailer holds the merge.
+
+    PLANTED CONTROL: the same crate whose commit carries the measured trailer is ready.
+    """
+    work = _tested(tmp_path)
+    (work / 'rust' / 'fast').mkdir(parents=True)
+    head = advance(work, 'pr/x', 'rust/fast/Cargo.toml', '[package]\nname = "fast"\n', 'feat: fast')
+    (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
+    found = decide(
+        work,
+        POLICY,
+        branch='pr/x',
+        number=4,
+        head=head,
+        statuses=_statuses(_green()),
+        reviewed=status_gate(github_posted),
+    )
+    assert any('MEASURE-BEFORE-PORTING' in one and 'rust/fast/Cargo.toml' in one for one in found.missing), (
+        found.missing
+    )
+    head = advance(work, 'pr/x', 'n.txt', 'n\n', 'perf: fast\n\nPort-Measured: python 18.7 us -> rust 9.08 us, 2.1x')
+    (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
+    found = decide(
+        work,
+        POLICY,
+        branch='pr/x',
+        number=4,
+        head=head,
+        statuses=_statuses(_green()),
+        reviewed=status_gate(github_posted),
+    )
+    assert found.ready, found.missing

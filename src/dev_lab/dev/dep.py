@@ -33,12 +33,12 @@ DETECT where prevention is impossible (the key). An unenumerated spelling that d
 blocklist is still caught at verdict time by the key, so the blocklist stops being load-bearing for
 CORRECTNESS and becomes a signpost pointing here.
 
-RESOLUTION IS ALLOWED, AND THAT IS THE ONE PLACE THIS DIFFERS FROM THE PRIOR ART IT GENERALISES.
+RESOLUTION IS ALLOWED, AND THAT IS THE ONE PLACE THIS DIFFERS FROM THE PRIOR ART IT GENERALIZES.
 ``consumer-a``'s ``scripts/gate/native_install.py`` installs with ``--no-index --no-deps``,
 because its subject is "this must be OUR OWN wheel, built from this checkout, and not a dependency at
 all" -- there, resolving is the hazard. For genuine dependency work resolving is the entire POINT, so
-:attr:`Mode.RESOLVE` is the default and :attr:`Mode.PINNED` keeps the narrow behaviour available for
-a caller whose subject is a local artefact.
+:attr:`Mode.RESOLVE` is the default and :attr:`Mode.PINNED` keeps the narrow behavior available for
+a caller whose subject is a local artifact.
 
 THE PORT NAMES PROJECT-OWNED VERDICT ANCHORS. The exclusion is not a port answer: it is the TARGET
 environment's seat, keyed by its prefix, so a run holding another environment (or the machine's CPU
@@ -61,11 +61,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 from typing import Any, Final
 
@@ -79,11 +77,11 @@ with importing(entry=__name__ == '__main__'):
     from lab_commons.envkey import env_key, env_manifest
     from lab_commons.log import emit
 
-    from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, venvcurrent
+    from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, toolchain, venvcurrent, worktreeseeds
     from dev_lab.dev._dep_aftersync import after_sync, retire_anchors
     from dev_lab.dev._dep_components import changed
     from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
-    from dev_lab.dev._dep_pip import has_pip
+    from dev_lab.dev._dep_pip import Mode, Version, pip_argv
     from dev_lab.dev._dep_publish import publish_built
     from dev_lab.dev.envseat import EnvironmentSeat
     from dev_lab.dev.liverun import Census, env_in_use, executing_from
@@ -92,15 +90,12 @@ __all__ = [
     'CHILD_WALL_S',
     'NO_ANCHORS_DECLARED',
     'HeldEnvironmentError',
-    'Mode',
     'Port',
     'Report',
-    'Version',
     'current_env_key',
     'init_submodules',
     'main',
     'mutate',
-    'pip_argv',
     'retire_anchors',
 ]
 
@@ -114,47 +109,6 @@ NO_ANCHORS_DECLARED: Final = (
 
 class HeldEnvironmentError(RuntimeError):
     """A verdict is in flight for this environment, so the environment must not move under it."""
-
-
-class Mode(Enum):
-    """How the change is allowed to reach the index.
-
-    ``RESOLVE`` is the default because a dependency change that cannot resolve is not a dependency
-    change. ``PINNED`` is the narrow mode whose subject is a LOCAL artefact -- there ``--no-index``
-    makes "no network, no version resolution" a mechanical fact rather than a promise in a docstring.
-    """
-
-    RESOLVE = 'resolve'
-    PINNED = 'pinned'
-
-
-class Version(Enum):
-    """Whether the artefact's VERSION is an IDENTITY for the bytes being installed.
-
-    THIS IS A SECOND AXIS AND NOT A SHADE OF :class:`Mode`, and conflating the two is what hid the
-    defect. ``Mode`` says how the change may reach an index; this says whether pip's
-    already-satisfied shortcut is a correct answer for this artefact. They are independent: a pinned
-    install of a third party's wheel is genuinely already satisfied, and a resolving install of a
-    package whose version repeats would be just as blind.
-
-    ``IDENTIFIES`` is the default and describes every published distribution: two builds carrying one
-    version are the same bytes by the publisher's promise, so skipping is right and forcing would
-    reinstall for nothing on every call.
-
-    ``REPEATS`` is the case where that promise does not exist -- a package with
-    ``dynamic = ["version"]`` reading its number out of a ``Cargo.toml``, rebuilt from a checkout
-    whose SOURCE moved while the number did not. MEASURED against the pip this family ships against
-    (26.2.1, ``_internal/resolution/resolvelib/resolver.py``): for a LOCAL WHEEL already installed at
-    the same version pip logs "is already installed with the same version as the provided wheel. Use
-    --force-reinstall to force an installation of the wheel" and ``continue``s -- and then EXITS
-    ZERO. So the caller is told the install succeeded, the environment did not move, and ``env_key``
-    truthfully agrees that it did not: a no-op that every instrument here reports as a success. Note
-    the narrowness pip's own code shows -- a local sdist or directory DOES reinstall -- so this is a
-    wheel-shaped hazard specifically, which is exactly what a self-build installs.
-    """
-
-    IDENTIFIES = 'identifies'
-    REPEATS = 'repeats'
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,39 +154,6 @@ def _held_refusal(name: str, refused: Refused, prefix: str) -> HeldEnvironmentEr
         f'an environment it never tested. Wait for that run to finish and re-issue; nothing else is '
         f'required.'
     )
-
-
-def pip_argv(
-    requirements: Sequence[str],
-    *,
-    mode: Mode = Mode.RESOLVE,
-    version: Version = Version.IDENTIFIES,
-    python: str | None = None,
-    pip: Callable[[str], bool] = has_pip,
-    uv: str | None = None,
-) -> tuple[str, ...]:
-    """The command that performs the change, into the explicit TARGET interpreter's environment.
-
-    ``sys.executable -m pip`` rather than a bare ``pip`` on ``PATH``: the door's whole claim is about
-    the environment it measured, and a ``pip`` resolved from ``PATH`` can belong to a different one.
-    WHEN THAT INTERPRETER HAS NO PIP -- every uv-created venv -- the same install goes through
-    ``uv pip install --python <that interpreter>``, which targets the same environment by name; *uv*
-    is the uv binary (default: found on ``PATH``). With neither, the pip spelling is returned and
-    fails loudly, which is the honest report of an environment nothing here can install into.
-
-    THIS IS THE ONE PLACE THE ARGV IS DECIDED, and every flag is derived from a DECLARED enum member
-    rather than from a caller's opinion -- which is what makes :attr:`Report.argv` able to be the
-    whole truth. A caller that wants a flag declares the FACT that implies it; there is no free-text
-    extras parameter, because an argv assembled in two places cannot be reported from one.
-    """
-    target = python or sys.executable
-    flags = ('--no-index', '--no-deps') if mode is Mode.PINNED else ()
-    uv_binary = None if pip(target) else uv or shutil.which('uv')
-    if uv_binary is not None:
-        forced = ('--reinstall',) if version is Version.REPEATS else ()
-        return (uv_binary, 'pip', 'install', '--python', target, *flags, *forced, *requirements)
-    forced = ('--force-reinstall',) if version is Version.REPEATS else ()
-    return (target, '-m', 'pip', 'install', *flags, *forced, *requirements)
 
 
 @dataclass(frozen=True, slots=True)
@@ -431,7 +352,7 @@ def _run(
     census: Census,
 ) -> int:
     """One ``dep`` run on *root*; a building one runs under :func:`venvcurrent.exclusive_build`."""
-    base, selected, paths = _dep_project.read_project(root, args.extra or depneeds.bound_task_extras(root))
+    base, selected, paths = _dep_project.read_project(root, args.extra or depneeds.task_extras(root))
     live = Path(base).parent.parent
     if Path(base).is_file() and Path(_snapshot(base)[0]).resolve() != live.resolve():
         msg = f'{base} does not execute in its own environment {live}'
@@ -441,6 +362,11 @@ def _run(
     if syncing and (why := init_submodules(root, dry_run=args.dry_run)):
         emit(f'REFUSED: {why}')
         return 1
+    if args.bootstrap is not None and not args.dry_run:
+        for line in worktreeseeds.seed(root):
+            emit(line)
+        for gap in toolchain.diagnose(root):
+            emit(gap.line())
     if locking:
         code = _dep_project.lock_upgrade(
             root, base, run=run, dry_run=args.dry_run, environment=environment, packages=args.upgrade_package

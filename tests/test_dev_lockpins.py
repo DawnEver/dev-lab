@@ -84,7 +84,7 @@ def test_a_package_the_lock_does_not_pin_by_git_is_not_judged() -> None:
 
 
 def test_the_sync_door_is_the_repos_declaration_else_the_shared_one(tmp_path: Path) -> None:
-    assert sync_door(tmp_path) == DEFAULT_DOOR
+    assert sync_door(tmp_path) == f'{DEFAULT_DOOR} {tmp_path.as_posix()}', 'the shared door names the checkout'
     (tmp_path / 'pyproject.toml').write_text(
         '[tool.dev_lab.doors]\nENV-MUTATION-THROUGH-THE-DOOR = "python scripts/gate/dep_sync.py --sync"\n',
         encoding='utf-8',

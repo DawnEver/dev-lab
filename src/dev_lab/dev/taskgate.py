@@ -1,61 +1,48 @@
-"""A SESSION COMMITS UNDER ITS TASK: a repo declaring it refuses an agent push off its bound task.
+"""A SESSION COMMITS UNDER ITS TASK: a repo declaring it refuses an agent push from a branch naming no open task.
 
 User ruling 2026-11-14 (a pilot in one very large repo; opt-in, never a family default): in a repo declaring
-``[tool.dev_lab.task] required = true``, a native agent session publishes work only while it is bound to an OPEN
-rem task. A human push is not judged.
+``[tool.dev_lab.task] required = true``, a native agent session publishes work only from a branch
+``pr/<slug>/<feature>`` of a task OPEN in the machine's one task ledger. A human push is not judged.
 
-ONE SOURCE, TWO SIDES (2026-11-16). rem owns the ledger and the binding: its ``UserPromptSubmit`` hook binds a
-session on the user's ``task: <slug>`` prompt, and its ``PreToolUse`` task guard covers the work inside the session.
-This gate is the GIT side -- a pure reader of rem's files (:mod:`dev_lab.dev.taskbinding`, rem's documented
-contract), run at commit-msg AND pre-push: rem's PreToolUse guard exists only under Claude Code, so the git side is
-the backstop that holds for Codex, Antigravity or any agent (2026-11-20; sessions read by
-:mod:`dev_lab.dev.native_session`).
+THE BRANCH IS THE TASK (user ruling 2026-11-23): there is no binding store; the checkout's HEAD names the task
+(:func:`dev_lab.dev.taskledger.task_of`) and the ledger (:func:`dev_lab.dev.taskledger.ledger`) judges it open. This
+gate is the GIT side, run at commit-msg AND pre-push: rem's PreToolUse guard exists only under Claude Code, so the
+git side is the backstop that holds for Codex, Antigravity or any agent (2026-11-20; sessions read by
+:mod:`dev_lab.dev.native_session`). WHICH heads an agent session pushes is judged in every repo, not only a required
+one: ``PUSHED-HEAD-CARRIES-ITS-TASK`` in the ``session-branch`` row (:mod:`dev_lab.dev.sessionbranch`).
 
-THE BINDING IS THE USER'S WORD (decision D5, 2026-11-15): the task a session works on is the one its user bound it
-to, never a guess from a worktree directory or a branch name. An unbound session is refused naming rem's door: the
-user's ``task: <slug>`` prompt, which rem's hook binds. WHICH heads a bound session pushes is judged in every repo,
-not only a required one: ``PUSHED-HEAD-CARRIES-ITS-TASK`` in the ``session-branch`` row (D25, 2026-11-17;
-:mod:`dev_lab.dev.sessionbranch`), so this gate never judges a branch name.
-
-rem's journal (JOURNAL.md) is appended to and read only through rem's own CLI, found at :data:`REM_ENV` (a path to
-``task.js``), else in Claude Code's installed-plugins record.
+The journal (JOURNAL.md) is appended to only through the task door, :mod:`dev_lab.dev.task`.
 
 * :func:`refusal` -- the ``task-bound-commit`` commit-msg and ``task-bound`` pre-push rows (``githooks/base.toml``);
   it reads files only, no rem CLI.
-* :func:`record` -- ``forge pr create`` / ``forge issue create`` append the opened URL to the bound task's journal
-  (``task.js log``), so the task names its own PRs and issues.
+* :func:`record` -- ``forge pr create`` / ``forge issue create`` append the opened URL to the branch's task journal
+  (:func:`dev_lab.dev.task.append`, a ``log`` line), so the task names its own PRs and issues.
 * :func:`task_prs` -- the PR numbers a task's journal names: what ``forge watch --task <slug>`` watches.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
-import shutil
 import sys
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Final, Protocol
 
-import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import remplugin, taskbinding
+from dev_lab.dev import taskledger
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.native_session import session_of
-from dev_lab.dev.taskbinding import slug_of
+from dev_lab.dev.taskledger import slug_of
 
 __all__ = [
     'COMMIT_HOOK_ID',
     'HOOK_ID',
-    'REM_ENV',
     'RULE',
-    'Reader',
     'TaskUnreadable',
     'main',
-    'reader_for',
     'record',
     'refusal',
     'required',
@@ -67,20 +54,13 @@ RULE: Final = 'SESSION-COMMITS-UNDER-ITS-TASK'
 #: The id this guard runs under in ``githooks/base.toml``.
 HOOK_ID: Final = 'task-bound'
 COMMIT_HOOK_ID: Final = 'task-bound-commit'
-#: A path to rem's ``task.js``; overrides the installed-plugin lookup.
-REM_ENV: Final = 'DEV_LAB_REM_TASK'
 _TABLE: Final = 'task'
-_REM_PLUGIN: Final = 'rem@'
 _OPENED: Final = re.compile(r'(?:pr|issue) opened: (\S+)')
 _PULL: Final = re.compile(r'/pulls?/(\d+)\b')
-_NODE: Final = shutil.which('node') or 'node'
-
-#: ``read(root, args) -> (exit status, stdout)``: one call of rem's task CLI in *root*.
-Reader = Callable[[Path, Sequence[str]], tuple[int, str]]
 
 
 class TaskUnreadable(RuntimeError):
-    """rem's task ledger cannot be read here: no CLI found, or the CLI failed."""
+    """A task's journal cannot be read here."""
 
 
 def required(root: Path) -> bool:
@@ -93,119 +73,64 @@ def required(root: Path) -> bool:
     return isinstance(table, dict) and table.get('required') is True
 
 
-def _rem_cli(env: Mapping[str, str], home: Path) -> Path | None:
-    if declared := env.get(REM_ENV):
-        return Path(declared)
+def _off_task(root: Path) -> str | None:
+    """Why the checkout at *root* works on no open task: its branch names none, or one the ledger holds not open."""
+    branch = taskledger.branch_of(root)
     try:
-        plugins = json.loads((home / '.claude' / 'plugins' / 'installed_plugins.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return None
-    for name, installs in (plugins.get('plugins') or {}).items():
-        if name.startswith(_REM_PLUGIN) and installs:
-            return Path(installs[-1]['installPath']) / 'scripts' / 'task.js'
+        task = taskledger.task_of(root)
+    except taskledger.LedgerUnresolvedError as unresolved:
+        return f'{RULE}: {branch} names a task, and the task ledger cannot be read: {unresolved}'
+    except ValueError as closed:
+        return f'{RULE}: {branch} names a task the task ledger does not hold open: {closed}.\nDoor: {taskledger.DOOR}.'
+    if task is None:
+        return (
+            f'{RULE}: this repo requires every agent session to work on a task branch, and '
+            f'{branch or "a detached HEAD"} is none.\nDoor: {taskledger.DOOR}.'
+        )
     return None
 
 
-def reader_for(env: Mapping[str, str], home: Path) -> Reader:
-    """Rem's own task CLI as a :data:`Reader`; it raises :class:`TaskUnreadable` when no CLI is found."""
-    cli = _rem_cli(env, home)
-
-    def read(root: Path, args: Sequence[str]) -> tuple[int, str]:
-        if cli is None or not cli.is_file():
-            msg = f"rem's task CLI is not found (set {REM_ENV} to its task.js, or install the rem plugin)"
-            raise TaskUnreadable(msg)
-        done = _door.run(
-            [_NODE, str(cli), *args],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            check=False,
-            timeout=60,
-            env={**os.environ, 'CLAUDE_PROJECT_DIR': str(root)},
-        )
-        return done.returncode, (done.stdout.strip() or done.stderr.strip())
-
-    return read
-
-
-def _unbound(root: Path, env: Mapping[str, str], home: Path) -> tuple[str | None, str | None]:
-    """``(open bound task id, None)``, or ``(None, why)`` -- no session, an unreadable one, none bound, or closed.
-
-    With none bound, the door names the session's binder when its registry shows why it bound nothing (rem absent,
-    disabled or older than the binding release, :func:`dev_lab.dev.remplugin.binder_door`), else the user's prompt.
-    """
-    try:
-        bound = taskbinding.session_binding(env, start=root)
-    except ValueError as unread:
-        return (
-            None,
-            f'{RULE}: this repo requires a session bound to an open task, and the session cannot be read: {unread}',
-        )
-    if bound is None:
-        # The binder's own text is a cause line and a door line; the user's prompt is a door line alone.
-        session = session_of(env)
-        binder = remplugin.binder_door(env, home, root)
-        door = f' {binder}' if binder else f'\nDoor: {taskbinding.DOOR}'
-        return None, (
-            f'{RULE}: this repo requires every agent session to work under the task its user bound it to, '
-            f'and none is bound: session {session} has no binding at {taskbinding.binding_path(session).as_posix()}.'
-            f'{door}.'
-        )
-    task = bound.task
-    try:
-        still = taskbinding.task_in(bound.ledger, slug_of(task))
-    except ValueError:
-        still = None
-    if still != task:
-        closed = (
-            f'{RULE}: this session is bound to task {task} ({bound.path.as_posix()}), which is no longer open '
-            f'in its ledger {bound.ledger.as_posix()}.'
-        )
-        return None, f'{closed}\nDoor: {taskbinding.DOOR}.'
-    return task, None
-
-
-def refusal(root: Path, *, env: Mapping[str, str], home: Path | None = None) -> str | None:
+def refusal(root: Path, *, env: Mapping[str, str]) -> str | None:
     """Why an agent's push (or ``forge sync`` commit) in *root* is refused, or ``None``.
 
-    Judged only in a required repo, for a native agent session: no open task bound to the session in rem's ledger.
+    Judged only in a required repo, for a native agent session: *root*'s branch names no task open in the ledger.
     """
     try:
         judged = required(root) and bool(session_of(env))
     except ValueError as unread:
-        return f'{RULE}: this repo requires a session bound to an open task, and the session cannot be read: {unread}'
-    if not judged:
-        return None
-    return _unbound(root, env, Path.home() if home is None else home)[1]
+        return f'{RULE}: this repo requires an agent session on a task branch, and the session cannot be read: {unread}'
+    return _off_task(root) if judged else None
 
 
-def _bound_slug(root: Path, env: Mapping[str, str]) -> str | None:
-    task = taskbinding.session_task(env, start=root)
+def _task_slug(root: Path) -> str | None:
+    task = taskledger.task_of(root)
     return None if task is None else slug_of(task)
 
 
-def record(root: Path, kind: str, url: str, *, env: Mapping[str, str], read: Reader) -> str | None:
-    """Append ``<kind> opened: <url>`` to the bound task's journal through rem; the line said, or ``None``."""
+def record(root: Path, kind: str, url: str) -> str | None:
+    """Append ``<kind> opened: <url>`` to the journal of *root*'s task through the task door; the line, or ``None``."""
+    from dev_lab.dev import task as door  # noqa: PLC0415 -- the door's imports only when a PR or issue opened
+
     try:
-        if not required(root) or (task := _bound_slug(root, env)) is None:
+        if not required(root) or (slug := _task_slug(root)) is None:
             return None
-        status, said = read(root, ['log', f'{kind} opened: {url}', '--task', task])
-    except (TaskUnreadable, ValueError) as unread:
+        return door.append(slug, 'log', f'{kind} opened: {url}')
+    except (ValueError, LookupError) as unread:
         return f'{RULE}: not recorded in the task journal: {unread}'
-    return said if status == 0 else f'{RULE}: task.js log exited {status}: {said}'
 
 
-def task_prs(root: Path, task: str, read: Reader) -> tuple[int, ...]:
+def task_prs(task: str) -> tuple[int, ...]:
     """The PR numbers *task*'s journal records as opened (:func:`record`), in order, each once.
 
     Raises:
-        TaskUnreadable: rem's CLI failed.
+        TaskUnreadable: the task has no journal in the ledger.
 
     """
-    status, shown = read(root, ['show', task])
-    if status != 0:
-        raise TaskUnreadable(shown or f'task.js show exited {status}')
+    try:
+        shown = (taskledger.ledger() / task / 'JOURNAL.md').read_text(encoding='utf-8')
+    except (OSError, LookupError) as unread:
+        msg = f'task {task} has no journal in the ledger ({unread}).\nDoor: python -m dev_lab.dev.task list'
+        raise TaskUnreadable(msg) from None
     numbers: list[int] = []
     for url in _OPENED.findall(shown):
         if (pull := _PULL.search(url)) is not None and int(pull.group(1)) not in numbers:
@@ -222,7 +147,7 @@ class _PrHeads(Protocol):
     def pr_view(self, number: int) -> _Pr: ...
 
 
-def watch_argv(words: Sequence[str], client: Callable[[], _PrHeads], *, read: Reader | None = None) -> list[str]:
+def watch_argv(words: Sequence[str], client: Callable[[], _PrHeads]) -> list[str]:
     """``forge watch`` argv with ``--task <slug>`` replaced by the head shas of every PR the task records.
 
     Raises:
@@ -233,9 +158,8 @@ def watch_argv(words: Sequence[str], client: Callable[[], _PrHeads], *, read: Re
     if at + 1 >= len(words):
         msg = '--task needs a task slug'
         raise TaskUnreadable(msg)
-    task, root = words[at + 1], Path.cwd()
-    reader = read or reader_for(os.environ, Path.home())
-    prs = task_prs(root, task, reader)
+    task = words[at + 1]
+    prs = task_prs(task)
     forge = client() if prs else None
     heads = [head for n in prs if forge is not None and (head := forge.pr_view(n).head_sha)]
     if not heads:

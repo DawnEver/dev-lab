@@ -34,8 +34,8 @@ def _flooded() -> tuple[StateForge, dict[str, int]]:
         'old': forge.add_issue('run it', labels=[{'name': 'forge:request'}], created_at='2026-09-01T00:00:00+00:00'),
         'young': forge.add_issue('run it', labels=[{'name': 'forge:request'}], created_at='2026-10-10T00:00:00+00:00'),
         'other': forge.add_issue('a human question'),
-        'idle': forge.add_issue('analyse the thing', created_at=LONG_AGO, updated_at=LONG_AGO),
-        'touched': forge.add_issue('analyse more', created_at=LONG_AGO, updated_at='2026-10-11T00:00:00+00:00'),
+        'idle': forge.add_issue('analyze the thing', created_at=LONG_AGO, updated_at=LONG_AGO),
+        'touched': forge.add_issue('analyze more', created_at=LONG_AGO, updated_at='2026-10-11T00:00:00+00:00'),
         'old_red': forge.add_issue('area:old', '- [ ] `tests/c.py::t` red', created_at=LONG_AGO, updated_at=LONG_AGO),
         'alarm': forge.add_issue(
             'integration: integrate/main is BLOCKED', 'x', created_at=LONG_AGO, updated_at=LONG_AGO
@@ -75,7 +75,7 @@ def test_tidy_deletes_machine_duplicates_closes_the_rest_and_leaves_humans_alone
     assert [body.split('\n')[-1] for body in kept] == ['card', 'a human note'], 'only the retired marker went'
     assert f'#{named["dup"]} `forge hosts`: deleted' in summary
     assert 'comment deleted -- machine comment of retired marker kind reserve' in summary
-    assert f'#{named["idle"]} `analyse the thing`: closed -- work issue idle 41 d, past 14 d' in summary
+    assert f'#{named["idle"]} `analyze the thing`: closed -- work issue idle 41 d, past 14 d' in summary
     assert lines[-1] == f'summary created on #{named["home"]}'
     assert tidy(forge, ALL) == ['nothing to close'], 'a second pass changes nothing'
 

@@ -8,8 +8,8 @@ login host, the ACCOUNT'S OWN kit: ``python -m dev_lab.dev.hpcaccount tick-stop-
 
 * refuses a tick YOUNGER THAN ITS WALL by name -- it ends itself there (:mod:`~dev_lab.dev.hpcaccount.tickwall`);
 * says a holder whose process is gone (the next tick takes its lock over by name);
-* VERIFIES the pid before signalling it: still the process that wrote the record (its creation stamp), this user's,
-  and its command line a ``dev_lab.dev.hpcaccount tick`` of that repo -- else refused, nothing signalled;
+* VERIFIES the pid before signaling it: still the process that wrote the record (its creation stamp), this user's,
+  and its command line a ``dev_lab.dev.hpcaccount tick`` of that repo -- else refused, nothing signaled;
 * then sends SIGTERM: the tick ends its serve, releases the lock and prints ``tick: stopped ...`` to its log.
 """
 
@@ -45,7 +45,7 @@ def cmdline(pid: int) -> tuple[str, int | None]:
 
 
 def _judged(holder: tickholder.Holder, now: datetime, read: Callable[[int], tuple[str, int | None]], uid: int) -> str:
-    """Why *holder* may not be signalled; ``''`` when it may."""
+    """Why *holder* may not be signaled; ``''`` when it may."""
     age = tickholder.age(holder, now)
     if age < holder.wall_s:
         left = tickholder.span(holder.wall_s - age)

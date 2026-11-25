@@ -2,39 +2,38 @@
 
 :mod:`dev_lab.dev.memoryadds` refuses every edit under ``.claude/memory/`` but these, each recognized
 whole by the predicates here (the rulings and the formats are stated in that module's docstring):
-the volatile-field migration (:func:`only_volatile_stripped`), rem's dated manual task list
-(:func:`only_manual_tasks_updated`), a privacy redaction (:func:`only_redacted`), an approved
-amendment (:func:`only_amended`) and an approved redacting rename
-(:func:`only_renamed_redacting`). An added entry must carry :data:`REQUIRED_KEYS`
+the volatile-field migration (:func:`only_volatile_stripped`), a privacy redaction (:func:`only_redacted`), an approved
+amendment (:func:`only_amended`), an approved redacting rename (:func:`only_renamed_redacting`) and an
+approved move into the root (:func:`move_approved`). An added entry must carry :data:`REQUIRED_KEYS`
 (:func:`shape_problems`) and a merged one must cite (:func:`merged_entry_problems`). Pure text: no git, no files.
 """
 
 from __future__ import annotations
 
 import re
-from datetime import date
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
 __all__ = [
     'AMENDMENT_NOTE',
     'FRONTMATTER',
-    'MANUAL_PATH',
-    'MANUAL_ROW',
     'MEMORY_DIR',
     'REDACTION_NOTE',
     'REDACTION_ROLES',
     'RENAME_PLACEHOLDER',
     'REQUIRED_KEYS',
     'VOLATILE_FIELDS',
+    'amendment_notes',
+    'deletion_approved',
+    'is_attachment',
     'is_memory',
     'lf',
     'merged_entry_problems',
     'missing_keys',
+    'move_approved',
     'only_amended',
-    'only_manual_tasks_updated',
     'only_redacted',
     'only_renamed_redacting',
     'only_volatile_stripped',
@@ -62,7 +61,7 @@ REDACTION_ROLES: Final = (
     'the private consumer',
     "the second private consumer's",
     'the second private consumer',
-    'an optimisation consumer',
+    'an optimization consumer',
     "the integrator workstation's",
     'the integrator workstation',
 )
@@ -82,8 +81,6 @@ AMENDMENT_NOTE: Final = 'Amended {day}: {reason} -- approved: "{approved}"'
 RENAME_PLACEHOLDER: Final = 'user'
 _RENAMED = re.compile(r'\brenamed\b', re.IGNORECASE)
 _AMEND_LINE = re.compile(r'> Amended \d{4}-\d{2}-\d{2}: \S.*? -- approved: "[^"]*\S[^"]*"(?: \(user, translated\))?')
-MANUAL_PATH = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/manual\.md\Z')
-MANUAL_ROW = re.compile(r'- \[([ x])\] (MANUAL-(\d{8})-\d{3,}) \[(?:HIGH|MEDIUM|LOW)\] .+ \((\d{4}-\d{2}-\d{2})\)')
 
 
 def lf(text: str) -> str:
@@ -211,51 +208,80 @@ def only_renamed_redacting(old_path: str, new_path: str, old: str, new: str) -> 
     return unchanged or only_redacted(old, '\n'.join(rest)) or only_amended(old, new)
 
 
-def _manual_rows(path: str, text: str) -> list[tuple[str, str, str]] | None:
-    """Recognize rem task-engine's dedicated list, not a filename exemption for prose."""
-    match = MANUAL_PATH.search(path)
-    if match is None:
-        return None
-    day = '-'.join(match.groups())
-    try:
-        date.fromisoformat(day)
-    except ValueError:
-        return None
-    header = f'---\nname: manual-{day}\ndescription: Manual tasks created on {day}\nmetadata:\n  type: project\n---\n'
-    text = lf(text)
-    if not text.startswith(header):
-        return None
-    lines = [line for line in text[len(header) :].splitlines() if line]
-    if len(lines) % 2:
-        return None
-    rows = []
-    ids: set[str] = set()
-    for task, module in zip(lines[::2], lines[1::2], strict=True):
-        row = MANUAL_ROW.fullmatch(task)
-        if (
-            row is None
-            or row[2] in ids
-            or row[3] != day.replace('-', '')
-            or row[4] != day
-            or re.fullmatch(r' {6}module: \S.*', module) is None
-        ):
-            return None
-        ids.add(row[2])
-        rows.append((row[1], task[5:], module))
-    return rows
-
-
-def only_manual_tasks_updated(path: str, old: str, new: str) -> bool:
-    """Rem's manual list: tasks appended or checkboxes toggled, every existing row's text kept."""
-    before, after = _manual_rows(path, old), _manual_rows(path, new)
-    if before is None or after is None or len(after) < len(before):
-        return False
-    return all(a[1:] == b[1:] for a, b in zip(before, after[: len(before)], strict=True))
-
-
 def is_memory(path: str) -> bool:
     """*path* (repo-relative) lies under some scope's ``.claude/memory/``."""
     return MEMORY_DIR in f'/{path}'
+
+
+def is_attachment(path: str) -> bool:
+    """*path* is a memory file that is not an entry: any non-``.md`` file, or anything under an ``attachments/``."""
+    if not is_memory(path):
+        return False
+    inside = f'/{path}'.split(f'/{MEMORY_DIR}', 1)[1]
+    return not inside.endswith('.md') or '/attachments/' in f'/{inside}'
+
+
+_DELETED = re.compile(r'\bdeleted\b', re.IGNORECASE)
+
+
+def deletion_approved(path: str, notes: Iterable[str]) -> bool:
+    """ATTACHMENT-DELETE (user ruling 2026-11-24): a NEW amendment note approves deleting the attachment *path*.
+
+    *notes* are the note lines the change added to memory entries. One approves *path* when it is a full
+    :data:`AMENDMENT_NOTE` (its user's words non-empty) whose reason says ``deleted`` and names *path* as
+    written under ``.claude/memory/`` (``<yyyy>/<mm>/<dd>/attachments/<file>``). An entry is never an attachment.
+    """
+    if not is_attachment(path):
+        return False
+    inside = f'/{path}'.split(f'/{MEMORY_DIR}', 1)[1]
+    named = re.compile(rf'(?<![\w./-]){re.escape(inside)}(?![\w/-])')
+    for note in notes:
+        if not _AMEND_LINE.fullmatch(note):
+            continue
+        reason = note[_NOTE_HEAD : note.rindex(' -- approved: "')]
+        if _DELETED.search(reason) and named.search(reason):
+            return True
+    return False
+
+
+_MOVED = re.compile(r'\bmoved\b', re.IGNORECASE)
+_MOVE_PAIR = re.compile(r'(?<!\S)(\S+) -> (\S+)(?!\S)')
+
+
+def move_approved(old: str, new: str, notes: Iterable[str]) -> bool:
+    """ROOT-MOVE (user ruling R7 2026-11-23): a NEW amendment note approves moving a scoped entry to the root.
+
+    *old* lies in a nested scope's ``.claude/memory/``, *new* in the ROOT ``.claude/memory/`` in the same dated
+    directory (``<yyyy>/<mm>/<dd>/``; the file name may differ, e.g. to avoid a collision). *notes* are the note
+    lines the change added to memory entries. One approves the move when it is a full :data:`AMENDMENT_NOTE` (its
+    user's words non-empty) whose reason says ``moved`` and names the pair ``<from> -> <to>``: the two exact paths,
+    or two directories ending ``/`` that *old* and *new* extend by the same rest (one note can carry a whole scope).
+    The text staying byte-identical is the caller's check (it reads blobs; this reads names).
+    """
+    if not (is_memory(old) and is_memory(new)) or scope_of(old) == '' or scope_of(new) != '':
+        return False
+    inside_old = f'/{old}'.split(f'/{MEMORY_DIR}', 1)[1]
+    inside_new = f'/{new}'.split(f'/{MEMORY_DIR}', 1)[1]
+    if inside_old.rpartition('/')[0] != inside_new.rpartition('/')[0]:
+        return False
+    for note in notes:
+        if not _AMEND_LINE.fullmatch(note):
+            continue
+        reason = note[_NOTE_HEAD : note.rindex(' -- approved: "')]
+        if not _MOVED.search(reason):
+            continue
+        for src, dst in _MOVE_PAIR.findall(reason):
+            if (src, dst) == (old, new):
+                return True
+            dirs = src.endswith('/') and dst.endswith('/')
+            if dirs and old.startswith(src) and new.startswith(dst) and old[len(src) :] == new[len(dst) :]:
+                return True
+    return False
+
+
+def amendment_notes(text: str) -> set[str]:
+    """The amendment note lines *text* holds."""
+    return {line for line in lf(text).splitlines() if _AMEND_LINE.fullmatch(line)}
 
 
 def scope_of(path: str) -> str:

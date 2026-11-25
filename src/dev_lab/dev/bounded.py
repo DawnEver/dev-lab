@@ -16,7 +16,7 @@ between 16:20:32 and 16:20:36 (so the wall DID fire), whose process tree was sti
 **A hang detector that hangs** -- raising the wall makes it strictly worse.
 
 THE SAME SHAPE, WRITTEN OUT BY HAND, IS ALREADY IN A SIBLING'S PROSE.
-``consumer-b/.claude/rules/rem/one-heavy-run-at-a-time.md`` records the identical incident in its own
+``consumer-b/.claude/rules/one-heavy-run-at-a-time.md`` records the identical incident in its own
 words -- "``timeout 600 cargo test ...`` killed only the cargo wrapper while the release test
 executable kept running at full core count for 40+ minutes" -- and asks a HUMAN to run
 ``Get-Process | Where-Object ... | Stop-Process`` afterwards. The kill it asks for is
@@ -97,7 +97,7 @@ def reap_tree(pid: int) -> frozenset[int]:
     """End the tree rooted at *pid*, and REFUSE outright when this process is inside it.
 
     THE SELF-MATCH, AND WHY IT IS A REFUSAL RATHER THAN A FILTER. A sweep that reads the process
-    table matches ITSELF: ``consumer-b/.claude/rules/rem/thirty-minute-run-limit.md`` asks a human to
+    table matches ITSELF: ``consumer-b/.claude/rules/thirty-minute-run-limit.md`` asks a human to
     census survivors and then warns, in its own words, that *"the verification command itself
     matches its own command line, so expect one self-match and ignore it"*. Ignoring is a HUMAN
     step, and a human step is the one missing at 2am. Filtering ourselves out of the kill list

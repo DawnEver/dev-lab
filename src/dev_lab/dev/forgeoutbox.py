@@ -16,7 +16,7 @@ THE RULE. A finished run :func:`enqueue`s its post: commit, context, state, desc
 record to attach. :func:`flush` posts every queued entry whose commit is reachable from an ``origin``
 remote-tracking ref -- the local, offline reading of "the forge holds it", which a push updates the
 moment it lands -- and deletes the entry only once the post landed. An entry whose commit is not on
-``origin`` yet is HELD, never dropped. Who flushes: the run itself right after queueing (a commit
+``origin`` yet is HELD, never dropped. Who flushes: the run itself right after queuing (a commit
 already pushed posts at once), ``python -m dev_lab.dev.forge publish`` after a push, and every
 ``forge tick`` (:mod:`dev_lab.dev.forgetick`).
 
@@ -133,7 +133,7 @@ class Post:
     attempt: int = 1
 
     def __post_init__(self) -> None:
-        """A state the forge does not take, or a sha that is not a full commit id, is refused at queueing."""
+        """A state the forge does not take, or a sha that is not a full commit id, is refused at queuing."""
         if self.state not in STATES:
             msg = f'a status state is one of {STATES}, not {self.state!r}'
             raise ValueError(msg)

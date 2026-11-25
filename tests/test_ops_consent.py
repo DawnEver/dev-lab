@@ -35,7 +35,7 @@ class Host:
     clock: list[float] = field(default_factory=lambda: [NOW])
 
     def __post_init__(self) -> None:
-        """Enrol the TOTP secret and make the signing key."""
+        """Enroll the TOTP secret and make the signing key."""
         (self.tmp / 'totp').write_text(RFC_KEY + '\n', encoding='utf-8')
         keygen(self.tmp / 'consent.key')
 

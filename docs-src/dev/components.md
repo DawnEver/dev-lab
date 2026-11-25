@@ -64,6 +64,6 @@ same state.
 
 ## Trees carry their components
 
-Every tree that runs a product's code initialises its submodules at their pinned commits: the forge's
+Every tree that runs a product's code initializes its submodules at their pinned commits: the forge's
 local part trees (`shatree`), the cluster's run trees (`hpc.shell`), and each served checkout that the
 deploy and its tick update (`hpcaccount.steps.update`).

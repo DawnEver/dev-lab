@@ -13,7 +13,7 @@ puts that include above ``@include common-auth`` in the sshd PAM stack, refusing
 
 ONE TOTP SECRET PER CLUSTER (user ruling 2026-11-04): the code the user types is the CLUSTER code, one Authenticator
 entry for every ops host, so pam_oath's users file is DERIVED from the host's copy of it (:func:`secret_file`:
-``[ops.access] totp``, else the consent issuer's) -- by install, and by :func:`enrol` (first-ever enrolment only) or
+``[ops.access] totp``, else the consent issuer's) -- by install, and by :func:`enroll` (first-ever enrollment only) or
 :func:`adopt` (a secret the user's phone already holds, placed on another host) -- never generated independently.
 """
 
@@ -29,7 +29,7 @@ from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consentrole import Access
 from dev_lab.ops.totp import DIGITS, STEP, TotpRefused, uri, write_private
 from dev_lab.ops.totp import adopt as adopt_secret
-from dev_lab.ops.totp import enrol as enrol_secret
+from dev_lab.ops.totp import enroll as enroll_secret
 
 __all__ = [
     'KEYS_DIR',
@@ -37,7 +37,7 @@ __all__ = [
     'PAM_SSHD',
     'Prepared',
     'adopt',
-    'enrol',
+    'enroll',
     'ensure_include',
     'files',
     'keys_file',
@@ -76,7 +76,7 @@ class Prepared:
     """What access adds to an install under a root.
 
     ``public`` files (0644), ``private`` ones (root 600, they carry a secret), and whether the host's one TOTP secret
-    is still missing there (its next step is enrol or adopt).
+    is still missing there (its next step is enroll or adopt).
     """
 
     public: dict[str, str]
@@ -189,21 +189,21 @@ def _role(config: OpsConfig) -> Access:
     return config.access
 
 
-def enrol(config: OpsConfig, *, force: bool = False) -> str:
-    """The FIRST-EVER enrolment: generate the host's one secret, derive the users file, return the URI to scan once.
+def enroll(config: OpsConfig, *, force: bool = False) -> str:
+    """The FIRST-EVER enrollment: generate the host's one secret, derive the users file, return the URI to scan once.
 
     Raises:
-        TotpRefused: the host already holds its secret (that enrolment is reused) and *force* is not given.
+        TotpRefused: the host already holds its secret (that enrollment is reused) and *force* is not given.
 
     """
     role, path = _role(config), Path(secret_file(config))
     if path.is_file() and path.read_text(encoding='utf-8').strip() and not force:
         msg = (
-            f"{path} already holds the cluster's TOTP secret: the existing enrolment is reused (install derives "
+            f"{path} already holds the cluster's TOTP secret: the existing enrollment is reused (install derives "
             f'{role.oath} from it); --force replaces it for every role on this host'
         )
         raise TotpRefused(msg)
-    secret = enrol_secret(path, force=force)
+    secret = enroll_secret(path, force=force)
     write_private(Path(role.oath), oath_users(role, secret))
     return uri(secret, issuer=role.issuer, account=role.account)
 

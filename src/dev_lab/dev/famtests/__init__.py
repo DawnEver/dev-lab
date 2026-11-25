@@ -9,7 +9,7 @@ today: one repo's copy of the hook-installation guard asserts a SUPERSET where t
 exact set, which is the count-pin failure in set form, and it has been green in that weaker shape for
 as long as it has existed.
 
-A 98% TWIN WITH A REPO NOUN WELDED INTO ITS CODE IS A SEAM, NOT A MOVE. That judgement is not this
+A 98% TWIN WITH A REPO NOUN WELDED INTO ITS CODE IS A SEAM, NOT A MOVE. That judgment is not this
 package's invention -- it is how the consumers' own rosters judged their copies -- and it decides the
 shape here: every repo-shaped fact arrives as a KEYWORD ARGUMENT WITH NO DEFAULT. ``LAB_CZ_BASE_REF``
 is the worked example the family already paid for: a guessed ``origin/main`` in a repo whose trunk is
@@ -48,22 +48,24 @@ WHAT IS HERE, one module per shared body:
 * :mod:`dev_lab.dev.famtests.allowguard` -- an agent-hook allow entry may not name a shape the
   deny registry refuses.
 * :mod:`dev_lab.dev.famtests.hookinstall` -- the hooks a repo DECLARES are the hooks git has.
-* :mod:`dev_lab.dev.famtests.principlespage` -- the committed principles page IS the render.
+* :mod:`dev_lab.dev.famtests.agentsection` -- the family section of AGENTS.md IS the render.
+* :mod:`dev_lab.dev.famtests.claudelayout` -- `.claude/` holds only the closed inventory, at the root only.
 * :mod:`dev_lab.dev.famtests.visibility` -- what exists only on this box exists for nobody.
 * :mod:`dev_lab.dev.famtests.agentguard` -- the guard is live, and the rule that fires is the
   rule that was meant to.
-* :mod:`dev_lab.dev.famtests.configrender` -- the rendered family artefacts equal base + delta.
+* :mod:`dev_lab.dev.famtests.configrender` -- the rendered family artifacts equal base + delta.
 * :mod:`dev_lab.dev.famtests.famfiles` -- every project-level file is family-managed or owned
   with a reason, and every managed one is rendered; the configrender bodies, composed.
 * :mod:`dev_lab.dev.famtests.boxneeds` -- a body that judges the live checkout or runs ``node``
   declares that need once, and a consumer test calling it must carry the resource marker, so a host
-  lacking it hands the test to the part that has it instead of reding on the host.
+  lacking it hands the test to the part that has it instead of reading on the host.
 * :mod:`dev_lab.dev.famtests.platformskips` -- no test skips on the platform: an OS is a resource
   every host supplies by itself, so the OS marker is the one spelling and a platform skip runs on no host.
 * :mod:`dev_lab.dev.famtests.hostnode` -- no test launches the host's ``node``: JS runs on the locked
   engine through :mod:`dev_lab.dev.jsrun`, so the lock declares it and every host has it.
 * :mod:`dev_lab.dev.famtests.onboarding` -- a repo is onboarded when its manifest carries every
   declaration the family flow needs, and every missing piece is named at once.
+* :mod:`dev_lab.dev.famtests.layout` -- every top-level directory is declared and holds no forbidden suffix.
 * :mod:`dev_lab.dev.famtests.worktreeplace` -- no checkout of the repo lives outside
   ``<toplevel>/.claude/worktrees/``.
 * :mod:`dev_lab.dev.famtests.tempprefix` -- every ``tempfile`` entry in the shared temp dir carries

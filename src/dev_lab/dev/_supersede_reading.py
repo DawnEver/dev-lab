@@ -5,7 +5,7 @@ installed here, and executing the thing under measurement is how a measurement a
 effect. Everything in this file is that reading: a path in, an :mod:`ast` walk, a frozenset out.
 Nothing here grades, so nothing here has to know what a grade is.
 
-WHY IT IS A FILE OF ITS OWN, and the seam is the one the neighbour's first sentence draws. Next door
+WHY IT IS A FILE OF ITS OWN, and the seam is the one the neighbor's first sentence draws. Next door
 asks *has the family already expressed this?* and answers it in seven grades; that question cannot
 be asked until a file has been turned into a surface and a set of import tokens, and turning it into
 those is a different job with a different failure mode -- next door fails by grading wrongly, this
@@ -90,7 +90,7 @@ class Row:
     readable: bool = True
 
 
-def normalise(names: Iterable[str]) -> frozenset[str]:
+def normalize(names: Iterable[str]) -> frozenset[str]:
     """Strip leading underscores on both sides -- see :mod:`dev_lab.dev.supersede` for the cost."""
     return frozenset(stripped for name in names if (stripped := name.lstrip('_')))
 
@@ -109,8 +109,8 @@ def defined_names(tree: ast.Module) -> frozenset[str]:
 
 
 def public_names(tree: ast.Module) -> frozenset[str]:
-    """A module's own public surface, normalised, with :data:`ENTRY_NAMES` removed."""
-    return normalise(name for name in defined_names(tree) if not name.startswith('_')) - ENTRY_NAMES
+    """A module's own public surface, normalized, with :data:`ENTRY_NAMES` removed."""
+    return normalize(name for name in defined_names(tree) if not name.startswith('_')) - ENTRY_NAMES
 
 
 def named_paths(docstring: str | None) -> frozenset[str]:
@@ -270,7 +270,7 @@ def kit_modules(directory: Path) -> tuple[KitModule, ...]:
             KitModule(
                 name=name,
                 claims=named_paths(ast.get_docstring(tree)) | declared,
-                universe=normalise(defined_names(tree)),
+                universe=normalize(defined_names(tree)),
                 subpackage=_subpackage_of(path, directory),
             )
         )

@@ -133,7 +133,7 @@ def take_scan(paths: Iterable[Path], *, root: Path, ecosystem: str) -> BoundScan
         ecosystem: a member of :data:`ECOSYSTEMS`.
 
     Returns:
-        A :class:`BoundScan`. An unreadable or unparseable manifest is SKIPPED and does not count
+        A :class:`BoundScan`. An unreadable or unparsable manifest is SKIPPED and does not count
         toward ``files_read``, because "could not be parsed" is not evidence of "declares no ceiling".
 
     """

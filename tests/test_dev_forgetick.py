@@ -892,7 +892,7 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     report = _tick(repo, server, seat=SEAT, host='linux', probe=lambda _root: problem)
     assert bool(report.claimed) is claims
-    assert report.artefacts == problem, 'the host card states why'
+    assert report.artifacts == problem, 'the host card states why'
     if not claims:
         assert not any(r['method'] == 'POST' for r in Recorder.received), 'no claim is posted'
         assert any('threshold_mb' in reason and _MISSING in reason for reason in report.refused)
@@ -1088,7 +1088,7 @@ def _stamped_lane(repo: Path, tips: dict[str, str], host: str) -> str:
 
 
 @pytest.mark.parametrize(
-    ('favoured', 'owners', 'second'),
+    ('favored', 'owners', 'second'),
     [
         ({'sessions': ['topic/a']}, {}, 'topic/a'),
         ({'hosts': ['B']}, {'B': ('bob',)}, 'topic/a'),  # bob authored the PR and publishes B: the trailer stands
@@ -1097,11 +1097,11 @@ def _stamped_lane(repo: Path, tips: dict[str, str], host: str) -> str:
     ],
 )
 def test_a_job_this_hosts_priority_names_ranks_first_after_the_integration_tip(
-    server, tmp_path: Path, favoured: dict, owners, second
+    server, tmp_path: Path, favored: dict, owners, second
 ) -> None:
     """User ruling 2026-11-07: the head ranks first always; host priority then orders the PRs, ahead of a boost.
 
-    A favoured PR precedes a user-boosted one; unfavoured, the boosted one leads the PRs.
+    A favored PR precedes a user-boosted one; unfavored, the boosted one leads the PRs.
     """
     repo, tips = _origin(tmp_path)
     lane = _stamped_lane(repo, tips, 'B')
@@ -1109,7 +1109,7 @@ def test_a_job_this_hosts_priority_names_ranks_first_after_the_integration_tip(
     for sha in (lane, tips['integrate/main']):
         answer('GET', f'{API}/statuses/{sha}', (200, []))
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    priority = Priority.of(favoured)
+    priority = Priority.of(favored)
     report = _tick(repo, server, dry_run=True, priority=priority, owners=owners, demand=lambda *_: Demand(cpu=1))
     assert [item.candidate.ref for item in report.queue[:2]] == ['integrate/main', second]
 

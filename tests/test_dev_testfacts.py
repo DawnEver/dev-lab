@@ -142,7 +142,7 @@ def test_a_file_with_no_declaration_reads_as_having_none(tmp_path: Path) -> None
     assert bare.tests == 1
 
 
-def test_an_unparseable_file_is_reported_and_not_dropped(tmp_path: Path) -> None:
+def test_an_unparsable_file_is_reported_and_not_dropped(tmp_path: Path) -> None:
     """A dropped file silently shrinks every population it belonged to, which reads as progress."""
     root = _plant(tmp_path)
     facts = collect(pytest_files(root), root=root, floor=4)
@@ -185,7 +185,7 @@ def test_the_census_cuts_first_match_wins_and_keeps_the_residual(tmp_path: Path)
         floor=4,
         population='claimed',
     )
-    assert out.scanned.files == 4, 'the unparseable file is still SCANNED'
+    assert out.scanned.files == 4, 'the unparsable file is still SCANNED'
     assert out.population.files == 3
     assert out.bucket('vendor').names == ('tests/integration/test_side_effect.py', 'tests/unit/test_rich.py')
     assert out.bucket('priced').names == (), 'test_rich.py already went to vendor: first match wins'

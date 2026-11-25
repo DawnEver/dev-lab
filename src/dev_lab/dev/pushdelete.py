@@ -7,11 +7,14 @@ early refusal, and text cannot be the guarantee. Git's own pre-push ref lines ca
 sha is all zeros, whatever spelled it.
 
 So the base ``lossless-delete`` row (``githooks/base.toml``) judges each deleted ``refs/heads/`` line with the one
-judgement the door makes (:func:`dev_lab.dev.deletejudge.judge`), of the sha the line names as the remote's -- after
+judgment the door makes (:func:`dev_lab.dev.deletejudge.judge`), of the sha the line names as the remote's -- after
 ``git fetch --prune origin``, so a branch origin no longer holds holds nothing, and against the open PR heads the
 forge lists. Branches the same push deletes hold nothing for each other. A refused branch is refused under
 :data:`RULE` naming the door, ``branchprune delete <branch>``; that door pushes its delete through this same hook and
-passes it with no exemption. A tag on origin holds nothing (user ruling D22: "no tags -- merge or delete, never an
+passes it with no exemption. The one lossy delete that passes is the user's order: ``branchprune discard`` holds a
+grant for exactly that branch at that sha while its push runs (:func:`dev_lab.dev.deletejudge.granted`), and a
+refusal whose branch carries a root of its own names that door.
+A tag on origin holds nothing (user ruling D22: "no tags -- merge or delete, never an
 archive tag"): a branch with unlanded work is MERGED through a PR, or LANDED by a declared ``git merge -s ours`` PR,
 and then deleted. A branch the policy declares DERIVED (decision D23, ``[tool.dev_lab.integrator] derived``) is
 regenerated whole by its producer and goes.
@@ -32,7 +35,8 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.deletejudge import judge
+from dev_lab.dev.branchdelete import second_root
+from dev_lab.dev.deletejudge import Verdict, granted, judge
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgeclient import client_for
@@ -67,12 +71,13 @@ def _refusal(rule: str, cause: str, door: str) -> str:
     return f'{rule}: {" ".join(cause.split())}\nDoor: {door}\n{details_for(rule)}'
 
 
-def _door_for(branch: str, *, lost: bool) -> str:
+def _door_for(verdict: Verdict) -> str:
+    branch = verdict.branch
     door = f'{_python()} -m dev_lab.dev.branchprune delete {branch}'
-    if lost:
+    if verdict.lost:
         return (
             f'MERGE what is still wanted through a PR, or LAND the branch with a declared `git merge -s ours` PR '
-            f'into a pr/ branch, then {door}'
+            f'into a pr/ branch, then {door}{second_root(verdict)}'
         )
     return f'{door} -- it fetches afresh and names what holds the branch, or why it stays'
 
@@ -113,12 +118,13 @@ def refusals(
         cause = f'the forge cannot be read ({type(failed).__name__}: {failed}), so whether {named} is an open PR head'
         return [_refusal(UNJUDGED, f'{cause} is unknown', _retry('the forge'))]
     verdicts = (judge(root, policy, branch, sha, open_heads=heads, gone=gone) for branch, sha in gone.items())
-    return [_refusal(RULE, one.refused, _door_for(one.branch, lost=bool(one.lost))) for one in verdicts if one.refused]
+    kept = [one for one in verdicts if one.refused and not (one.lost and granted(root, one.branch, one.sha))]
+    return [_refusal(RULE, one.refused, _door_for(one)) for one in kept]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """The pre-push hook: git's ref lines on stdin; exit 1 refuses, 0 publishes."""
-    del argv  # the runner hands git's remote url as an env variable; the judgement is origin's
+    del argv  # the runner hands git's remote url as an env variable; the judgment is origin's
     top = _door.run(
         [_GIT, 'rev-parse', '--show-toplevel'],
         capture_output=True,

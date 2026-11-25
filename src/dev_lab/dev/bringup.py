@@ -4,16 +4,16 @@
 green. Measured on a workstation 2026-11-20 (the walls, in the order they were hit, then the order they are checked):
 
 1. ``config-source`` -- the machine file names a config-source clone that exists here (``[devhost] source``);
-2. ``enrolment`` -- the config source declares ``hosts/<this host>.toml`` (an undeclared machine renders the
+2. ``enrollment`` -- the config source declares ``hosts/<this host>.toml`` (an undeclared machine renders the
    family default and is refused every write and HPC door, :mod:`dev_lab.dev.devprofile`);
 3. ``bridge-interpreter`` -- the session bridge's interpreter is DERIVED from ``[repos] dev-lab``
    (:func:`dev_lab.dev.devprofile.bridge_python`) and exists; never a hand-set or invented path;
 4. ``dev-lab-kit`` -- the ``[repos] dev-lab`` checkout lags the family's ``[dev] ref`` by no more than
    :data:`~dev_lab.dev.locklag.LAG_WINDOW`, THE one "current enough" (:func:`kit`): a stale kit is a wall, never a
-   silent older behaviour (2026-11-23);
+   silent older behavior (2026-11-23);
 5. ``machine-file`` -- the machine file is its render (:func:`dev_lab.dev.devhost.drift`);
 6. ``client-key`` -- one of this machine's ssh public keys (``~/.ssh/*.pub``) is declared in its host file's
-   ``[dev] client_keys``: the ONE place the approval servers derive their authorised keys from
+   ``[dev] client_keys``: the ONE place the approval servers derive their authorized keys from
    (:mod:`dev_lab.ops.clientkeys`);
 7. ``issuer`` -- the consent issuer (``[consent] endpoint``) is reached with a known host key, admits this key, and
    speaks this client's version (:func:`dev_lab.ops.consent.door.handshake`): the break-glass account takes the
@@ -46,7 +46,7 @@ from dev_lab.dev.relock import RelockFailed
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops.clientkeys import DEV_KEY
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import Send, handshake, ssh_send
+from dev_lab.ops.consent.door import Send, endpoint_send, handshake
 
 __all__ = ['ADMIT_DOOR', 'HOST_KEY_DOOR', 'Wall', 'checkout_lag', 'kit', 'main', 'stale_kit', 'walls']
 
@@ -134,11 +134,11 @@ def _not_admitted(endpoint: str, host: str, *, declared: bool) -> str:
     door = ADMIT_DOOR.format(host=host)
     return (f"{endpoint} does not admit this machine's key: declared but not yet admitted. The door: the agent of ANY "
             f'machine the issuer already admits runs `{door}` (one ops.config code; it prints when to ask); then the '
-            f'forge-credential mint here (`python -m dev_lab.dev.devhost enrol`) waits on it')  # fmt: skip
+            f'forge-credential mint here (`python -m dev_lab.dev.devhost enroll`) waits on it')  # fmt: skip
 
 
 def _issuer(table: Mapping[str, Any], send: Send, host: str = '', *, declared: bool = False) -> Wall:
-    """Reach, host key, authorisation and version of the consent issuer, from ONE ``hello``."""
+    """Reach, host key, authorization and version of the consent issuer, from ONE ``hello``."""
     endpoint = table.get('endpoint')
     if not endpoint:
         return Wall('issuer', green=False, said='the family file declares no [consent] endpoint')
@@ -190,7 +190,7 @@ def _client_key(host: str, host_file: Path, ssh_dir: Path) -> Wall:
 
 
 def walls(
-    live: Mapping[str, Any], *, ssh_dir: Path | None = None, send: Send = ssh_send,
+    live: Mapping[str, Any], *, ssh_dir: Path | None = None, send: Send = endpoint_send,
     exists: Callable[[str], bool] = lambda path: Path(path).is_file(),
     credential: Callable[[Mapping[str, Any]], list[str]] = forgecredential.drift, measure: Measure = checkout_lag,
 ) -> list[Wall]:  # fmt: skip
@@ -206,8 +206,8 @@ def walls(
     found = [Wall('config-source', green=True, said=clone.as_posix())]
     host_file = clone / devhost.host_file(host)
     if not host_file.is_file():
-        return [*found, Wall('enrolment', green=False, said=devprofile.enrolment(host))]
-    found.append(Wall('enrolment', green=True, said=f'{host} is declared'))
+        return [*found, Wall('enrollment', green=False, said=devprofile.enrollment(host))]
+    found.append(Wall('enrollment', green=True, said=f'{host} is declared'))
     dev = declared(host_file, clone / 'family.toml')
     found.append(_interpreter(live, dev, exists))
     if (checkout := live.get(familyrepos.LOCAL_TABLE, {}).get(devprofile.BRIDGE_CHECKOUT)) and dev.get('ref'):

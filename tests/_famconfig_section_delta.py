@@ -117,7 +117,7 @@ CONSUMER_IGNORE_TAIL: Final[tuple[str, ...]] = (
     'UP017',
 )
 
-#: Every repo's delta against every owned table: ``repo -> artefact -> SectionDelta``. The two SCALAR
+#: Every repo's delta against every owned table: ``repo -> artifact -> SectionDelta``. The two SCALAR
 #: tables carry an empty delta in all four, which is a stated answer rather than an omission -- a
 #: repo that widened its own line length would need a drop here, and none does.
 #:

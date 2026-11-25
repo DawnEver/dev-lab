@@ -53,7 +53,7 @@ __all__ = [
 WORKSTATION: Final = 'workstation'
 
 #: HEAVY COMPUTE: every presence-probed tool (:data:`lab_commons.compute.toolchecks.CHECKS`) its probe marks
-#: ``heavy`` -- a vendor solver and its licence seat. Derived, so a newly probed heavy tool needs no edit here; a
+#: ``heavy`` -- a vendor solver and its license seat. Derived, so a newly probed heavy tool needs no edit here; a
 #: plain probed tool (ngspice, node) is not heavy.
 HEAVY: Final = tuple(sorted(name for name, check in CHECKS.items() if check.heavy))
 
@@ -95,7 +95,7 @@ def capabilities(text: str) -> dict[str, dict[str, Any]]:
             out[name]['in_use'] = {'process': list(JMAG_SOLVER_IMAGES)}
     try:
         return provided(out)
-    except ValueError as bad:
+    except (ValueError, LookupError) as bad:  # LookupError: lab-commons' UndeclaredSeat, a vendor tool with no seats
         raise argparse.ArgumentTypeError(str(bad)) from None
 
 

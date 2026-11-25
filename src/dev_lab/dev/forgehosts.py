@@ -18,7 +18,7 @@ platform it serves, its TOOLS as probed -- each present or not with the evidence
 (:func:`lab_commons.compute.probe.inventory`), never a declaration -- its SUPPLY as the tick admitted
 against it and the cluster facts it read locally (partitions, quota), when it last ticked (the forge's
 clock), what it holds with live progress, what else RUNS on it (every claim on its box ledger, a
-cluster run in flight), why each candidate it saw waits, why it cannot write the large artefact store
+cluster run in flight), why each candidate it saw waits, why it cannot write the large artifact store
 when it cannot, and EVERY ALARM the tick raised (:mod:`dev_lab.dev.forgealarm`): an alarm on an
 unattended host is read here, from any machine, not from a cron log nobody opens.
 
@@ -33,7 +33,7 @@ flag (:func:`is_private`, one field on both gitea and GitHub; an answer without 
 public repo gets :meth:`HostCard.redacted`: the host under an opaque stable id (:func:`host_id`, a short
 hash -- never the raw ``<cluster>/<account>`` or machine), and only what scheduling reads -- platform,
 supply, tools present, parts served, holds, waits, alarm kinds and the tick. Facts (storage paths,
-partitions, quota), what else runs, alarm texts, the artefact-store reason, tool evidence and the
+partitions, quota), what else runs, alarm texts, the artifact-store reason, tool evidence and the
 ``[priority]`` subjects are dropped. A card published under the raw name before the repo turned public
 is deleted on the first redacted tick. A ``Forge-Host`` trailer still names the raw host; a reader
 vouches it against either spelling (:func:`dev_lab.dev.forgeorigin.vouched`).
@@ -135,7 +135,7 @@ class HostCard:
     running: tuple[str, ...] = ()  # what else runs here: a box ledger claim, a cluster run in flight
     waiting: Mapping[str, str] = field(default_factory=dict)
     alarms: tuple[Mapping[str, str], ...] = ()  # this tick's: {kind, subject, body}
-    artefacts: str = ''  # why this host cannot write the large artefact store; '' when it can
+    artifacts: str = ''  # why this host cannot write the large artifact store; '' when it can
     tools: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # tool -> {present, evidence}, as probed
     priority: Mapping[str, Sequence[str]] = field(default_factory=dict)  # machine-file [priority]: ordered first
     serves: str = EVERY  # machine-file [serve] parts: which parts this host claims
@@ -145,7 +145,7 @@ class HostCard:
     role: str = ''  # a cluster account's [deploy] role (dev_lab.dev.hpcaccount.spec); '' on a box
     held: Mapping[str, Any] = field(default_factory=dict)  # a cron tick found its lock held: the holder (mark_held)
 
-    def favours(self, candidate: Candidate) -> bool:
+    def favors(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
         return Priority.of(self.priority).matches(candidate)
 
@@ -165,7 +165,7 @@ class HostCard:
             facts={},
             running=(),
             alarms=tuple({'kind': a['kind'], 'subject': '', 'body': ''} for a in self.alarms),
-            artefacts='',
+            artifacts='',
             tools={name: {'present': bool(row.get('present'))} for name, row in self.tools.items()},
             priority={},
         )
@@ -175,7 +175,7 @@ class HostCard:
         holds = ', '.join(self.holds) or 'nothing'
         engines = ''.join(f' + `{name}`' for name in sorted(self.tools_present()))
         head = f'**{self.host}** serves `{self.platform}`{engines} as {self.login}; ticked {self.ticked}; holds {holds}'
-        head += f'\n\nartefacts: {self.artefacts}' if self.artefacts else ''
+        head += f'\n\nartifacts: {self.artifacts}' if self.artifacts else ''
         head += f'\n\nstorage: {self.facts["storage"]}' if 'storage' in self.facts else ''
         head += f'\n\n{usage}' if (usage := hpcusage.table(self.facts.get('usage'))) else ''
         head += f'\n\nrunning: {", ".join(self.running)}' if self.running else ''
@@ -387,7 +387,7 @@ def publish_card(
     table: Mapping[str, Any],
     say: Callable[[str], None],
     alarms: Sequence[Alarm] = (),
-    artefacts: str = '',
+    artifacts: str = '',
     tools: Mapping[str, Mapping[str, Any]] | None = None,
     progress: Mapping[tuple[str, str], str] | None = None,
     supply: Supply | None = None,
@@ -428,7 +428,7 @@ def publish_card(
             running=tuple(running),
             waiting={item.candidate.key: item.blocked for item in queue if item.blocked},
             alarms=tuple({'kind': a.kind, 'subject': a.subject, 'body': a.body} for a in alarms),
-            artefacts=artefacts,
+            artifacts=artifacts,
             tools=dict(tools or {}),
             priority=dict(priority or {}),
             serves=serves,

@@ -2,7 +2,7 @@
 
 The review is an independent acceptance check with advice (:mod:`dev_lab.dev.forgereview_advice`). When it cannot
 give one -- the PR's dollar cap or the month is spent (:mod:`dev_lab.dev.reviewbudget`), the reviewer failed, every
-reviewer was unsupported, exhausted or unauthorised, or the job holds no review key -- the reviewing host RECORDS why
+reviewer was unsupported, exhausted or unauthorized, or the job holds no review key -- the reviewing host RECORDS why
 on the PR (:func:`unreviewed_line`), and the merge waives the review condition alone: tests, the security status,
 conflicts, the audit, draft and every other merge condition still hold (:func:`dev_lab.dev.forgemerge.decide`).
 

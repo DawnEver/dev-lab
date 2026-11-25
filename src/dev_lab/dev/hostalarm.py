@@ -39,10 +39,10 @@ from lab_commons.log import emit
 from dev_lab.dev.forgealarm import PRESSURE, Alarm
 from dev_lab.supervise import hostalarms
 from dev_lab.supervise.alert import Delivery, Notifier
-from dev_lab.supervise.components.resources import psutil_module
 from dev_lab.supervise.config import load_config
 from dev_lab.supervise.notice import Notice, headline, host_label, markdown
 from dev_lab.supervise.pressure import Declared, Measured, measure
+from dev_lab.supervise.reading import psutil_module
 
 __all__ = ['CHANNELS', 'REMINDED_NAME', 'REMIND_EVERY', 'TEST_AGAIN', 'channel_test', 'due', 'hook', 'main', 'step']
 

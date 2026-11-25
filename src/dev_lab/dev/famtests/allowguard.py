@@ -43,7 +43,7 @@ weakening its arm, which was the right call. :func:`contradictions` now takes th
 the family's one spelling for *whose copy* -- defaulting to the one beside the rules it was handed,
 and REFUSING rather than falling back when it is absent.
 
-WHAT THIS DOES NOT PROVE. That the agent client honours ``permissions.allow`` at all; that is a fact
+WHAT THIS DOES NOT PROVE. That the agent client honors ``permissions.allow`` at all; that is a fact
 about a tool's configuration loading, not about any tree here.
 """
 
@@ -83,7 +83,7 @@ _BASH_ROW = re.compile(r'Bash\((.*)\)', flags=re.DOTALL)
 
 #: The instantiation, pinned by a consumer's parametrize. FAMILY rather than repo data: the
 #: ``Bash(...)`` glob spelling belongs to the agent client, not to any repository, and the three
-#: forked copies each pinned it with one repo-flavoured example that taught the next reader nothing.
+#: forked copies each pinned it with one repo-flavored example that taught the next reader nothing.
 GLOB_CASES: tuple[tuple[str, str | None], ...] = (
     ('Bash(pytest *)', 'pytest'),
     ('Bash(git push *)', 'git push'),

@@ -70,6 +70,9 @@ _ENFORCED = {
     'SCRATCH-IS-NEVER-COMMITTED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_scratch.py')),
     'STRAY-FILE-REFUSED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_strays.py')),
     'WRITES-STAY-IN-THE-TREE': (guard('tests/test_dev_writeroots.py'), guard('tests/test_dev_tmpsweep.py')),
+    'LEDGER-WRITES-THROUGH-ITS-DOOR': (guard('tests/test_dev_ledgerguard.py'),),
+    'DECLARED-LAYOUT': (guard('tests/test_dev_layout.py'), guard('tests/test_arch_code_placement.py')),
+    'NO-BACKUP-COPIES': (guard('tests/test_dev_layout.py'), guard('tests/test_dev_nobackup.py')),
     'DECLARATION-LIES': (
         guard('tests/test_arch_public_surface.py'),
         guard('tests/test_arch_rules_pages.py'),
@@ -81,6 +84,21 @@ _ENFORCED = {
         guard('tests/test_the_adoption_accounts_for_every_rule.py'),
     ),
     'ENV-MUTATION-THROUGH-THE-DOOR': (guard('tests/test_dev_dep.py'),),
+    'RED-INTEGRATION-MERGES': (
+        guard('tests/test_dev_forgemerge.py'),
+        guard('tests/test_ops_breakglass.py'),
+        guard('tests/test_dev_integrate.py'),
+    ),
+    'PRIOR-ART-FIRST': (guard('tests/test_dev_priorart.py'),),
+    'ZERO-CORE-CHANGE': (guard('tests/test_dev_corechange.py'),),
+    'NATIVE-FIRST': (guard('tests/test_dev_nativefirst.py'),),
+    'MEASURE-BEFORE-PORTING': (guard('tests/test_dev_portmeasure.py'), guard('tests/test_dev_forgemerge.py')),
+    'ONE-FORMAT-PER-NEED': (
+        guard('tests/test_dev_layout.py'),
+        guard('tests/test_dev_metrics.py'),
+        guard('tests/test_dev_reportplace.py'),
+    ),
+    'MACHINES-MEET-ONLY-THROUGH-THE-FORGE': (guard('tests/test_dev_machineroutes.py'),),
     # ENFORCED rather than declared absent, and the distinction is worth the line. This repo declares
     # no floating requirement -- it IS the kit -- so the cheap reading is "no subject here". But the
     # guard does not merely sit in this tree: it READS this manifest and these door files, so the day
@@ -207,7 +225,6 @@ _ENFORCED = {
     'HEAVY-IS-THE-MAIN-SESSIONS': (guard('tests/test_dev_hooks.py'),),
     'TOLERANCE-CARRIES-A-UNIT': (guard('tests/test_arch_every_approx_states_its_floor.py'),),
     'TRACKED-CITES-NO-EPHEMERAL': (guard('tests/test_famtests_ephemeralrefs.py'),),
-    'MONTHLY-PLANS-CARRIED': (guard('tests/test_famtests_monthsummary.py'),),
     'RATCHET-TWO-SIDES': (
         guard('tests/test_arch_module_size_alarm.py'),
         guard('tests/test_arch_dependencies.py'),
@@ -229,6 +246,10 @@ _ENFORCED = {
     'IMAGES-BY-ABSOLUTE-PATH': (guard('tests/test_dev_imagepath.py'),),
     # User ruling 2026-11-20: worktree work was parked under output/. The deny row and the src/ scan refuse it.
     'OUTPUT-HOLDS-NO-CODE': (guard('tests/test_dev_outputcode.py'),),
+    # 2026-11-24 (user ruling, ruling C): a credential value never reaches an output sink; hashes only.
+    'NEVER-LOG-SECRETS': (guard('tests/test_dev_secretlog.py'),),
+    # 2026-11-23 (user ruling): origin holds only family version tags; pre-push refuses any other tag.
+    'ONLY-VERSION-TAGS': (guard('tests/test_dev_milestonebase.py'),),
     # User 2026-11-20: a research deploy called crontab on a cluster forbidding it; steps derive from `serves`.
     'SCHEDULER-ONLY-FOR-SERVING': (guard('tests/test_hpc_scheduler_only_for_serving.py'),),
     # 2026-11-20: a new workstation's doors died on a bare host-key failure; remote refuses an undeclared key.

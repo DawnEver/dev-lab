@@ -62,7 +62,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'from the parents` trees, never trusted from the message; the FORGE enforces it, refusing to merge a PR '
             'whose head adds a merge commit that leaves one undeclared or declares one the parents do not '
             'conflict on (remedy: redo that merge, a message cannot be amended), and the commit-msg '
-            'hook makes the same judgement early on the merge being committed.'
+            'hook makes the same judgment early on the merge being committed.'
         ),
         ('tests/test_dev_mergeresolution.py',),
     ),
@@ -126,7 +126,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             '(fetched afresh) older than the TIME window `locklag.LAG_WINDOW` (a failed fetch refuses with its '
             'reason), whose lock pins a floated sibling past the lag window `lock/lag` reads '
             '(`locklag.within_window`), or with uncommitted tracked changes. A `pr/*` push is WARNED at pre-push on '
-            'the same judgement and when the pushing venv lacks what that lock pins (`prcurrent.kit_stale`, naming '
+            'the same judgment and when the pushing venv lacks what that lock pins (`prcurrent.kit_stale`, naming '
             'the bootstrap door): the forge status `pr-current` is an alarm, never a merge gate (dev-lab #661). Each '
             'names `forge sync`, which merges integration and relocks the floated siblings (user ruling 2026-11-07).'
         ),
@@ -202,7 +202,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'Every new first-parent commit of the integration branch, from the declared `merges_only_since` '
             'forward, is a two-parent merge naming its branch in a `Merged-Branch:` trailer whose merge audit '
-            'passes (the same judgement the commit-msg hook makes), refused at pre-push, until `pr_merges_since` '
+            'passes (the same judgment the commit-msg hook makes), refused at pre-push, until `pr_merges_since` '
             'stands and INTEGRATION-TAKES-ONLY-FORGE-MERGES replaces this with the forge`s own merge.'
         ),
         ('tests/test_dev_sessionbranch.py', 'tests/test_dev_integrate.py', 'tests/test_dev_hooks.py'),
@@ -239,10 +239,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'Branch names follow the task (user ruling D25, 2026-11-17): an agent session creates or updates a '
             'head in the task namespace (`[tool.dev_lab.branchset] task_heads`, default `pr/<task>/<feature>`) '
-            'only under the task its user bound it to (`dev_lab.dev.taskbinding`), one feature per PR. Another '
-            'task`s head, a flat `pr/<feature>` and the bare `pr/<task>` (which git cannot hold beside its heads) '
-            'are refused at pre-push in the `session-branch` row naming `pr/<task>/`; with no bound task the '
-            'refusal names how a task is bound. A human push and the forge are not judged.'
+            'only as `<task>/<feature>` of a task open in the machine`s one task ledger (`dev_lab.dev.taskledger`; '
+            'user ruling 2026-11-23: the branch IS the task, no binding store), one feature per PR. A flat '
+            '`pr/<feature>`, the bare `pr/<task>` (which git cannot hold beside its heads) and a head naming a task '
+            'the ledger does not hold open are refused at pre-push in the `session-branch` row, naming the door. '
+            'A human push and the forge are not judged.'
         ),
         ('tests/test_dev_sessionbranch.py',),
     ),

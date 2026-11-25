@@ -186,8 +186,8 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/storage.py',
         'PLC0415',
-        'from dev_lab.dev.artefactstores import ArtefactRefused, check_rclone_config',
-    ): 'the forge journal and intent writers import storage.output_path, and artefactstores reaches them '
+        'from dev_lab.dev.artifactstores import ArtifactRefused, check_rclone_config',
+    ): 'the forge journal and intent writers import storage.output_path, and artifactstores reaches them '
     'through the forge layer, so a module-scope import here is a cycle; render() is a rare door',
     (
         'src/dev_lab/dev/storage.py',
@@ -336,7 +336,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'src/dev_lab/dev/forgemergeready.py',
         'BLE001',
         'except Exception as error:',
-    ): 'the merge tick judges every open PR in turn; one PR whose judgement raises (a git timeout, a forge '
+    ): 'the merge tick judges every open PR in turn; one PR whose judgment raises (a git timeout, a forge '
     'call, a corrupt tree) is an error status on that PR and must not end the tick for the PRs after it',
     (
         'src/dev_lab/dev/forgemergeready.py',
@@ -345,7 +345,17 @@ ALLOWED: Final[dict[Site, str]] = {
     ): 'posting the error status of a PR that could not be judged may itself fail for any reason; the cause '
     'is already said on stderr, so the tick moves on to the next PR',
     (
-        'src/dev_lab/supervise/components/resources.py',
+        'src/dev_lab/dev/famtests/testleaks.py',
+        'S108',
+        "WORDS: Final = ('mkdtemp', 'mkstemp', 'gettempdir', 'delete=False', '/tmp', ':\\\\', ':/')",
+    ): "the reader's own pre-filter words: '/tmp' is the text it searches for, never a path it opens",
+    (
+        'tests/test_dev_tmpsweep.py',
+        'PLC0415',
+        'import _winapi',
+    ): '_winapi exists only on Windows; the junction helper imports it on the branch that runs there',
+    (
+        'src/dev_lab/supervise/reading.py',
         'PLC0415',
         'import psutil',
     ): 'psutil is optional on a supervised host; importing it inside the check turns its absence into a '
@@ -449,6 +459,16 @@ ALLOWED: Final[dict[Site, str]] = {
         'S607',
         "['git', '-C', str(root), *arguments],",
     ): 'git through PATH building the scratch checkouts the local-name reader is then asked to read',
+    (
+        'tests/test_dev_purge.py',
+        'S607',
+        "subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True)",
+    ): 'git through PATH building the scratch checkout the purge door is then asked to delete from',
+    (
+        'tests/test_dev_purge.py',
+        'S607',
+        "subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(keep.parent)], check=True, capture_output=True)",
+    ): "Windows' own cmd through PATH planting the junction the purge door must refuse to follow",
     (
         'src/dev_lab/dev/accountsweep.py',
         'S607',
@@ -596,6 +616,244 @@ ALLOWED: Final[dict[Site, str]] = {
         'attr-defined',
         "seen.append(req.get_header('User-agent'))",
     ): 'the fake opener receives the Request the code built; typeshed types it as str | Request',
+    (
+        'src/dev_lab/dev/accountsweep.py',
+        'PLC0415',
+        'import pwd',
+    ): 'POSIX-only module: getuid above already ruled Windows out, so a top-level import would break Windows',
+    (
+        'src/dev_lab/dev/ask.py',
+        'PLC0415',
+        'from dev_lab.dev import secretkit',
+    ): 'secretkit reads git and the lock; only paid when a person is actually asked',
+    (
+        'src/dev_lab/dev/docrows.py',
+        'PLC0415',
+        'from markdown_it import MarkdownIt',
+    ): "markdown_it is an optional docs dependency, gated by Module('markdown_it')",
+    (
+        'src/dev_lab/dev/frozen.py',
+        'PLC0415',
+        'from dev_lab.dev.gitdirs import checkout_of',
+    ): "frozen runs in the write hook's hot path; only the hook entry pays for gitdirs",
+    (
+        'src/dev_lab/dev/frozen.py',
+        'PLC0415',
+        'from dev_lab.dev.venvpath import running_interpreter',
+    ): "the remedy's interpreter is resolved only when a refusal is written",
+    (
+        'src/dev_lab/dev/frozen.py',
+        'PLC0415',
+        'from dev_lab.ops.consent.client import public_key',
+    ): 'dev -> ops consent client: only a repo that declares frozen files pays for the client',
+    (
+        'src/dev_lab/dev/frozen.py',
+        'PLC0415',
+        'from dev_lab.ops.consent.credential import ConsentRefused, verify',
+    ): 'same: the credential verifier loads only when a receipt is judged',
+    (
+        'src/dev_lab/dev/hpcaccount/__init__.py',
+        'PLC0415',
+        'from dev_lab.dev import tickholder',
+    ): 'the hpcaccount package imports no verb at import time; the tick verb loads its own',
+    (
+        'src/dev_lab/dev/hpcaccount/tickstop.py',
+        'attr-defined',
+        'me = os.getuid() if uid is None else uid',
+    ): 'os.getuid is POSIX-only: mypy on Windows lacks it, on POSIX the ignore is unused',
+    (
+        'src/dev_lab/dev/hpcaccount/tickstop.py',
+        'unused-ignore',
+        'me = os.getuid() if uid is None else uid',
+    ): 'the other half of the same platform split (see attr-defined above)',
+    (
+        'src/dev_lab/dev/task.py',
+        'C901',
+        'def _run(args: argparse.Namespace, cwd: Path) -> str:',
+    ): "the task CLI's dispatch: one branch per verb, each a few lines",
+    (
+        'src/dev_lab/dev/task.py',
+        'PLR0911',
+        'def _run(args: argparse.Namespace, cwd: Path) -> str:',
+    ): 'same dispatch: one return per verb',
+    (
+        'src/dev_lab/dev/task.py',
+        'PLR0912',
+        'def _run(args: argparse.Namespace, cwd: Path) -> str:',
+    ): 'same dispatch: one branch per verb',
+    (
+        'src/dev_lab/dev/_task_io.py',
+        'PLC0415',
+        'from dev_lab.dev.forgeclient import client_for',
+    ): 'the network client loads only for open/close, never for a read verb',
+    (
+        'src/dev_lab/dev/_task_io.py',
+        'PLC0415',
+        'from dev_lab.dev.issuekind import create',
+    ): 'same: the issue client loads only when an issue is opened',
+    (
+        'src/dev_lab/dev/_task_io.py',
+        'PLC0415',
+        'from dev_lab.dev.servelock import held',
+    ): 'the serve lock is read only on the verb that needs it',
+    (
+        'src/dev_lab/dev/task.py',
+        'arg-type',
+        'return status(taskjournal.record(folder))',
+    ): 'record() returns Record | None and the branch above already proved the folder holds one',
+    (
+        'src/dev_lab/dev/taskauthority.py',
+        'PLC0415',
+        'from dev_lab.dev.servelock import held',
+    ): 'the prompt hook runs on every prompt and imports nothing it does not use',
+    (
+        'src/dev_lab/dev/taskauthority.py',
+        'PLC0415',
+        'from dev_lab.dev.taskledger import LedgerUnresolvedError, ledger',
+    ): 'same prompt hook: the ledger loads only for a prompt that is a task command',
+    (
+        'src/dev_lab/dev/taskauthority.py',
+        'arg-type',
+        'payload = json.load(stdin or sys.stdin)',
+    ): 'sys.stdin is TextIO | None in typeshed; a hook always has one',
+    (
+        'src/dev_lab/dev/taskgate.py',
+        'PLC0415',
+        'from dev_lab.dev import task as door',
+    ): 'task imports taskgate: the door loads only when a PR or issue opened, and a top-level import is a cycle',
+    (
+        'src/dev_lab/dev/writeroots.py',
+        'S108',
+        "if text == '/tmp' or text.startswith('/tmp/'):",
+    ): "Git Bash's /tmp spelling is recognized to translate it, never written to",
+    (
+        'tests/test_dev_frozen.py',
+        'S607',
+        "subprocess.run(['git', *args], cwd=root, check=True, capture_output=True)",
+    ): "a fixture repo's git on PATH, as every git-initialized fixture here",
+    (
+        'tests/test_dev_frozen.py',
+        'arg-type',
+        '(root / frozen.RECEIPT_FILE).write_bytes(_credential(want, **kwargs))',
+    ): 'the fixture forwards loose kwargs to the credential builder to plant malformed receipts',
+    (
+        'tests/test_dev_frozen.py',
+        'index',
+        'rows = {path: frozen.index_object(root, path)[1] for path in (_SETTINGS, _DOCS)}',
+    ): 'index_object returns None for an untracked path; the fixture tracked both',
+    (
+        'tests/test_dev_large_objects.py',
+        'arg-type',
+        "assert forgeunit.main(['unit=x'], cwd=_checkout(tmp_path), client=object()) == 2",
+    ): 'planted control: a client that is not one, to prove the refusal happens before any call',
+    (
+        'tests/test_dev_writeroots.py',
+        'S108',
+        (
+            '# ruff: noqa: S108 -- /tmp and its kin are the SUBJECT: '
+            'spelled paths a write must be refused into, never used'
+        ),
+    ): 'the guard under test refuses host temp roots, so the module spells them as inputs; nothing writes there',
+    (
+        'src/dev_lab/dev/task.py',
+        'PLC0415',
+        'from dev_lab.dev.branchdelete import DOOR, TASK_HEAD_DOORS',
+    ): 'branchdelete pulls the forge client; only a close that names its head doors pays for it',
+    (
+        'src/dev_lab/dev/_task_io.py',
+        'PLC0415',
+        'from dev_lab.dev.branchdelete import TaskBranches',
+    ): 'the branch prune and its network client load only on close',
+    (
+        'src/dev_lab/dev/_task_io.py',
+        'PLC0415',
+        'from dev_lab.dev.forge import fetch_origin',
+    ): 'the forge CLI module is heavy; only close fetches origin',
+    (
+        'src/dev_lab/dev/corechange.py',
+        'PLC0415',
+        'from dev_lab.dev.rules import tracked_files',
+    ): "the rules registry imports this module's row: a top-level import back is a cycle",
+    (
+        'src/dev_lab/dev/corechange.py',
+        'PLC0415',
+        'from dev_lab.dev.taskledger import ledger',
+    ): 'only a judged change set resolves the task ledger; an undeclared repo never pays',
+    (
+        'src/dev_lab/dev/corechange.py',
+        'PLC0415',
+        'from dev_lab.dev.lanepolicy import policy_at',
+    ): 'only a pushing repo reads its lane policy, in the pre-push row',
+    (
+        'src/dev_lab/dev/famfiles.py',
+        'PLC0415',
+        'from dev_lab.dev import agentsection',
+    ): 'the light merge job reaches famfiles; agentsection pulls the rules registry, which the light door lacks',
+    (
+        'src/dev_lab/dev/nativefirst.py',
+        'PLC0415',
+        'from dev_lab.dev.rules import tracked_files',
+    ): "the rules registry imports this module's row: a top-level import back is a cycle",
+    (
+        'src/dev_lab/dev/_ir_codec.py',
+        'PLR0911',
+        'def _value_out(spec: object, value: object, units: Mapping[str, str], prefix: str) -> object:',
+    ): 'one return per IR field kind: a dispatch, split further it only scatters the table',
+    (
+        'src/dev_lab/dev/_ir_codec.py',
+        'SLF001',
+        'fields = type(record)._ir_fields',
+    ): "the generated record's field table is the codec's input; the runtime and codec own that private slot",
+    (
+        'src/dev_lab/dev/_ir_codec.py',
+        'SLF001',
+        'values = dict(zip((spec.name for spec in fields), record._ir_values(), strict=True))',
+    ): "the generated record's value slot, read by the codec that owns the protocol",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        '_merge(dims, value._ir_dims, path, type(value).__name__)',
+    ): "the runtime owns the generated records' dims slot it merges",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        'for spec, value in zip(cls._ir_fields, record._ir_values(), strict=True):',
+    ): "the runtime validates through the generated records' private protocol it defines",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        'for spec, value in zip(type(record)._ir_fields, record._ir_values(), strict=True)',
+    ): "the runtime walks the generated records' private protocol it defines",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        'record._ir_set(tuple(values.values()), dims)',
+    ): "the runtime sets the generated record's slots after validation; frozen records have no public setter",
+    (
+        'src/dev_lab/dev/ircheck.py',
+        'BLE001',
+        'except Exception:',
+    ): 'pint\'s unit refusals share no base class; any of them means "not a unit", the answer wanted',
+    (
+        'src/dev_lab/dev/irhatch.py',
+        'ARG002',
+        'def initialize(self, version: str, build_data: dict) -> None:',
+    ): "hatchling's build-hook signature; the hook uses neither argument",
+    (
+        'src/dev_lab/dev/irmodel.py',
+        'BLE001',
+        'except Exception:',
+    ): 'pint\'s refusals share no base class; every one means "not coherent SI"',
+    (
+        'src/dev_lab/dev/irrust.py',
+        'PLR0911',
+        'def _check(ir: IR, f: Field, ref: TypeRef, var: str, path: str) -> list[str]:',
+    ): 'one return per IR field kind: the Rust check emitter is a dispatch',
+    (
+        'src/dev_lab/dev/irrustpy.py',
+        'PLR0911',
+        'def _read(f: Field, ref: TypeRef, var: str, path: Path) -> str:',
+    ): 'one return per IR field kind: the pyo3 reader emitter is a dispatch',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

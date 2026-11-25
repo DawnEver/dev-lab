@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from _ops_fixtures import NOW, RFC_KEY, code
 
-from dev_lab.ops.totp import STEP, TotpRefused, accept, code_at, enrol, uri
+from dev_lab.ops.totp import STEP, TotpRefused, accept, code_at, enroll, uri
 
 
 def test_rfc6238_sha1_vectors() -> None:
@@ -55,17 +55,17 @@ def test_a_wrong_or_malformed_code_is_refused(tmp_path: Path) -> None:
     assert not state.exists()
 
 
-def test_no_secret_refuses_naming_enrol(tmp_path: Path) -> None:
-    with pytest.raises(TotpRefused, match='enrol'):
+def test_no_secret_refuses_naming_enroll(tmp_path: Path) -> None:
+    with pytest.raises(TotpRefused, match='enroll'):
         accept(tmp_path / 'absent', tmp_path / 'state', code(), NOW)
 
 
-def test_enrol_writes_a_secret_once_and_its_uri_names_the_issuer(tmp_path: Path) -> None:
+def test_enroll_writes_a_secret_once_and_its_uri_names_the_issuer(tmp_path: Path) -> None:
     target = tmp_path / 'etc' / 'totp'
-    secret = enrol(target)
+    secret = enroll(target)
     assert len(secret) == 32
     assert target.read_text(encoding='utf-8').strip() == secret
     with pytest.raises(TotpRefused, match='already holds'):
-        enrol(target)
-    assert enrol(target, force=True) != secret
+        enroll(target)
+    assert enroll(target, force=True) != secret
     assert uri(secret, issuer='forge break-glass', account='bg').startswith('otpauth://totp/forge%20break-glass%3Abg?')

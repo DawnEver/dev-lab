@@ -118,7 +118,7 @@ def declared_skips(root: Path) -> tuple[str, ...]:
 
     An ABSENT file, an absent ``[tool.dev_lab.verify]`` table and an absent ``allowed_skips``
     key all mean the same thing and all answer ``()``: nothing is declared, so every skip truncates,
-    which is the behaviour every repo in the family has today. A PRESENT key of the wrong shape does
+    which is the behavior every repo in the family has today. A PRESENT key of the wrong shape does
     NOT answer ``()`` -- see :class:`MalformedAllowance`.
 
     Raises:
@@ -159,7 +159,7 @@ def skip_shortfall(
     cannot say WHICH test went quiet, and an allowance that is only a number is one a reader repairs
     by editing the digit.
 
-    BOTH SIDES ARE NORMALISED TO FORWARD SLASHES BEFORE THEY ARE COMPARED, and that is measured
+    BOTH SIDES ARE NORMALIZED TO FORWARD SLASHES BEFORE THEY ARE COMPARED, and that is measured
     rather than defensive: pytest builds a node id with ``/`` but re-spells it against the invocation
     directory, so a declaration committed once -- in a repo four boxes share -- would match on one of
     them and silently truncate on the other. A verdict that depends on which machine ran it is not a

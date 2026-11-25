@@ -3,8 +3,8 @@
 Verbs: ``install``, ``promote``, ``judge``,
 ``upgrade [--sha S --credential F | --subject | --follow]`` (:mod:`.upgrade`, :mod:`.upgradefollow`),
 ``probe``, ``breakglass serve|tick``,
-``consent serve|enrol|keygen|ready`` (:mod:`dev_lab.ops.consentverbs`), ``backup export|pull``,
-``access enrol|adopt``, ``disk``, ``clean`` (:mod:`dev_lab.ops.disk`), ``config apply|tick``
+``consent serve|enroll|keygen|ready`` (:mod:`dev_lab.ops.consentverbs`), ``backup export|pull``,
+``access enroll|adopt``, ``disk``, ``clean`` (:mod:`dev_lab.ops.disk`), ``config apply|tick``
 (:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`),
 ``forge protect plan|apply`` (:mod:`dev_lab.ops.forgeprotection`).
 
@@ -65,11 +65,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     glass.add_argument('action', choices=('serve', 'tick'))
     issuing = verbs.add_parser('consent')
     issuing.add_argument('action', choices=consentverbs.VERBS)
-    issuing.add_argument('--force', action='store_true', help='enrol / keygen: replace an existing secret / key')
-    issuing.add_argument('--uri', action='store_true', help='enrol: print the otpauth URI, not its QR')
+    issuing.add_argument('--force', action='store_true', help='enroll / keygen: replace an existing secret / key')
+    issuing.add_argument('--uri', action='store_true', help='enroll: print the otpauth URI, not its QR')
     verbs.add_parser('backup').add_argument('action', choices=('export', 'pull'))
     opened = verbs.add_parser('access')
-    opened.add_argument('action', choices=('enrol', 'adopt'))
+    opened.add_argument('action', choices=('enroll', 'adopt'))
     opened.add_argument('--force', action='store_true', help='replace an existing secret')
     opened.add_argument('--uri', action='store_true', help='print the otpauth URI, not its QR')
     opened.add_argument('--secret-file', default='-', help="adopt: the host's existing base32 secret (- reads stdin)")

@@ -1,7 +1,7 @@
 """A failure fingerprint: a test id plus the subjects its failure names (finding D13, 2026-11-16).
 
 PLANTED CONTROLS: a base red naming A against a head red on the same test naming {A, B} is refused naming B; the
-same subjects, and a subject that disappeared, are admitted -- over the pure judgement and over the forge merge's
+same subjects, and a subject that disappeared, are admitted -- over the pure judgment and over the forge merge's
 reading of real (planted) run records.
 """
 

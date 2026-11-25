@@ -72,7 +72,7 @@ _TAINT_PASSES = 4
 #: one. Spelled as data so the control's refusal can quote it rather than restate it.
 _PLANTED_ECHO_LINE = 4
 
-#: The planted tree, with the offender and its three honest neighbours in one file so a rule that
+#: The planted tree, with the offender and its three honest neighbors in one file so a rule that
 #: cannot tell them apart fails here rather than in a consumer's suite. Line 4 is the echo: ``say``
 #: is handed ``word`` and the answer it returns is then searched for ``word``.
 _PLANTED_SOURCE = '''def echo(word, say):
@@ -288,7 +288,7 @@ def assert_the_scanner_still_convicts(plant_root: Path, *, roots: Collection[tup
     """THE PLANTED CONTROL, in BOTH directions, driving the REAL scanner over a REAL tree.
 
     A scan that has never been shown to fire proves nothing when it is green, and the opposite error
-    is just as fatal here: this shape's honest neighbours outnumbered its offenders four to one in
+    is just as fatal here: this shape's honest neighbors outnumbered its offenders four to one in
     the package it was found in, so a rule that names them gets deleted rather than obeyed. Every
     distinction is therefore planted at once -- the echo on its own line, beside a container built
     from OTHER arguments, one read off the world, and a token that reaches only the refusal MESSAGE,
@@ -303,7 +303,7 @@ def assert_the_scanner_still_convicts(plant_root: Path, *, roots: Collection[tup
             walked would otherwise pass a control over a tree it never reads.
 
     Raises:
-        AssertionError: the scanner missed the planted echo, or named one of its honest neighbours.
+        AssertionError: the scanner missed the planted echo, or named one of its honest neighbors.
 
     """
     pairs = list(roots)
@@ -320,7 +320,7 @@ def assert_the_scanner_still_convicts(plant_root: Path, *, roots: Collection[tup
     if lines != [_PLANTED_ECHO_LINE]:
         msg = (
             f'the scanner named lines {lines} and the one planted echo is on {_PLANTED_ECHO_LINE}. '
-            f'The three neighbours must all be left alone: a container built from OTHER arguments, '
+            f'The three neighbors must all be left alone: a container built from OTHER arguments, '
             f'one read off the world, and a token that reaches only the refusal message after the '
             f'test has decided. Naming any of them is how this guard gets deleted rather than '
             f'obeyed; missing the echo is the defect it exists for.'

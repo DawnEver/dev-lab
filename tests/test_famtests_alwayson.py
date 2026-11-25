@@ -46,7 +46,7 @@ def test_a_tracked_cjk_file_is_refused(pytester: pytest.Pytester, monkeypatch: p
     """THE PLANTED CONTROL: a repo with no CJK test of its own still reds on a tracked CJK file."""
     _git_repo(pytester.path, {'dirty.md': f'ahead {_CHAR}\n', 'test_x.py': 'def test_x():\n    pass\n'})
     result = _run(pytester, monkeypatch)
-    result.assert_outcomes(passed=1, failed=1)
+    result.assert_outcomes(passed=len(alwayson.rows()), failed=1)
     result.stdout.fnmatch_lines(['*NO-CJK-IN-TRACKED-SOURCE*', '*dirty.md*'])
 
 
@@ -62,13 +62,13 @@ def test_a_clean_tree_passes_and_exemptions_hold(pytester: pytest.Pytester, monk
             'test_x.py': 'def test_x():\n    pass\n',
         },
     )
-    _run(pytester, monkeypatch).assert_outcomes(passed=2)
+    _run(pytester, monkeypatch).assert_outcomes(passed=1 + len(alwayson.rows()))
 
 
 def test_an_orphaned_translation_is_refused(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> None:
     _git_repo(pytester.path, {'lone.zh.md': f'{_CHAR}\n', 'test_x.py': 'def test_x():\n    pass\n'})
     result = _run(pytester, monkeypatch)
-    result.assert_outcomes(passed=1, failed=1)
+    result.assert_outcomes(passed=len(alwayson.rows()), failed=1)
     result.stdout.fnmatch_lines(['*ORPHANED TRANSLATION*lone.zh.md*'])
 
 
@@ -112,8 +112,26 @@ def test_a_family_without_layout_policy_has_not_opted_into_the_layout_guard(
         },
     )
     result = _run(pytester, monkeypatch)
-    result.assert_outcomes(passed=2)
+    result.assert_outcomes(passed=1 + len(alwayson.rows()))
     assert 'MODULE-SIZE-ALARM' not in result.stdout.str()
+
+
+def test_a_declared_layers_table_opts_zero_core_change_in_and_a_core_to_application_import_reds(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ZERO-CORE-CHANGE's static half rides the family plugin only where declared; planted: core imports an app."""
+    _git_repo(
+        pytester.path,
+        {
+            'pyproject.toml': '[tool.dev_lab.layers]\ncore = ["src/pkg/core"]\napplications = "src/pkg/apps/*"\n',
+            'src/pkg/core/a.py': 'import pkg.apps.m\n',
+            'src/pkg/apps/m/__init__.py': '',
+            'test_x.py': 'def test_x():\n    pass\n',
+        },
+    )
+    result = _run(pytester, monkeypatch)
+    result.assert_outcomes(passed=1 + len(alwayson.rows()), failed=1)
+    result.stdout.fnmatch_lines(['*ZERO-CORE-CHANGE*src/pkg/core/a.py*'])
 
 
 @pytest.mark.parametrize(
@@ -138,7 +156,7 @@ def test_a_malformed_layout_policy_is_a_failed_runtime_guard(
         },
     )
     result = _run(pytester, monkeypatch)
-    result.assert_outcomes(passed=2, failed=1)
+    result.assert_outcomes(passed=1 + len(alwayson.rows()), failed=1)
     result.stdout.fnmatch_lines(['*layout*'])
 
 
@@ -173,7 +191,7 @@ def test_valid_explicit_policy_runs_the_required_guard_even_under_a_selected_inv
         },
     )
     result = _run(pytester, monkeypatch, '-k', 'test_x')
-    result.assert_outcomes(passed=3)
+    result.assert_outcomes(passed=2 + len(alwayson.rows()))
     result.stdout.fnmatch_lines(['*family*'])
 
 

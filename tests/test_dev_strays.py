@@ -9,12 +9,13 @@ import io
 import json
 import os
 import time
+from pathlib import PurePosixPath
 
 import _arch_corpus
 import pytest
 from lab_commons import launch
 
-from dev_lab.dev.codeplace import FAMILY_STRAY_ROOTS, TASK_ROOT
+from dev_lab.dev.codeplace import FAMILY_STRAY_ROOTS
 from dev_lab.dev.disclosure import problems
 from dev_lab.dev.retiredfiles import RetiredFile
 from dev_lab.dev.strays import (
@@ -42,11 +43,11 @@ def _plant(root, rel: str, *, age_days: float = 0.0) -> None:
 
 def _repo(root, *, stray_roots: str = '[]', retired: str = '') -> None:
     launch.run(['git', 'init', '-q', str(root)], check=True)
-    (root / 'pyproject.toml').write_text(
-        f"[tool.dev_lab.placement]\npruned_paths = ['lanes']\nstray_roots = {stray_roots}\n{retired}", encoding='utf-8'
+    (root / 'layout.toml').write_text(
+        f"pruned_paths = ['lanes']\nstray_roots = {stray_roots}\n{retired}", encoding='utf-8'
     )
     (root / '.gitignore').write_text('output/\n', encoding='utf-8')
-    launch.run(['git', '-C', str(root), 'add', 'pyproject.toml', '.gitignore'], check=True)
+    launch.run(['git', '-C', str(root), 'add', 'layout.toml', '.gitignore'], check=True)
 
 
 def test_the_incidents_vendor_logs_in_the_root_are_strays_and_staged_ignored_scratch_files_are_not(tmp_path) -> None:
@@ -54,7 +55,7 @@ def test_the_incidents_vendor_logs_in_the_root_are_strays_and_staged_ignored_scr
     for rel in (
         'job_node_10_0_0_1_2026-10-20T12_19_56_1.log',  # the planted control: the 2026-10-20 incident
         'rust/pybind/uv.lock',
-        'output/logs/26/10/20/jobsystem/status.txt',  # ignored: an artefact in its place
+        'output/logs/26/10/20/jobsystem/status.txt',  # ignored: an artifact in its place
         'scratch/probe.py',
         'data/drop.csv',  # a repo-declared stray root
         'lanes/x/junk.txt',  # a pruned path: another checkout, judged by its own run
@@ -72,7 +73,7 @@ def test_the_incidents_vendor_logs_in_the_root_are_strays_and_staged_ignored_scr
 def test_a_clean_checkout_and_an_undeclared_one_are_silent(tmp_path) -> None:
     _repo(tmp_path)
     assert stray_refusal(tmp_path) is None
-    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "x"\n', encoding='utf-8')
+    (tmp_path / 'layout.toml').unlink()
     _plant(tmp_path, 'stray.log')
     assert stray_refusal(tmp_path) is None
 
@@ -227,7 +228,7 @@ def test_no_source_module_holds_the_retired_index_as_a_literal_or_a_glob() -> No
     assert found == []
 
 
-# -- the task ledger is repo state: never a stray, never a demand to commit it (W4) -------------------------------
+# -- no checkout holds a task ledger any more (user ruling 2026-11-23): a leftover one is a stray ------------------
 
 
 def _stop(root) -> str:
@@ -237,16 +238,13 @@ def _stop(root) -> str:
     return out.getvalue()
 
 
-def test_the_untracked_ledger_is_silent_at_stop_while_a_root_stray_still_blocks(tmp_path, monkeypatch) -> None:
-    """The Stop nag that told a session to commit its task on its branch is gone: the ledger is never committed."""
+def test_a_ledger_left_inside_a_checkout_is_a_stray_like_any_other(tmp_path) -> None:
+    """The ledger is the global tasks repo (taskledger.ledger); the in-checkout exemption is gone with it."""
     _repo(tmp_path)
-    for rel in ('plecs-alignment/TASK.md', 'plecs-alignment/JOURNAL.md', '.bindings/s1.json'):
-        _plant(tmp_path, f'{TASK_ROOT}{rel}')
-    assert declared_strays(tmp_path) == []
-    assert _stop(tmp_path) == ''
-    monkeypatch.chdir(tmp_path)
-    assert main(['check']) == 0
-    _plant(tmp_path, 'status.txt')  # the planted control: a genuine stray still blocks
+    assert _stop(tmp_path) == '', 'planted control: a clean tree is silent'
+    leftover = PurePosixPath('.claude', 'tasks', 'plecs-alignment', 'TASK.md').as_posix()  # the retired place
+    _plant(tmp_path, leftover)
+    assert declared_strays(tmp_path) == [leftover]
     assert json.loads(_stop(tmp_path))['decision'] == 'block'
 
 
@@ -260,13 +258,12 @@ def _commit(root, message: str = 'c') -> None:
 
 def _integrated(root) -> None:
     _repo(root)
-    manifest = root / 'pyproject.toml'
-    manifest.write_text(
-        manifest.read_text(encoding='utf-8')
-        + "code_roots = ['src/']\n[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n",
-        encoding='utf-8',
+    placement = root / 'layout.toml'
+    placement.write_text(placement.read_text(encoding='utf-8') + "code_roots = ['src/']\n", encoding='utf-8')
+    (root / 'pyproject.toml').write_text(
+        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n", encoding='utf-8'
     )
-    launch.run(['git', '-C', str(root), 'add', 'pyproject.toml'], check=True)
+    launch.run(['git', '-C', str(root), 'add', 'layout.toml', 'pyproject.toml'], check=True)
     _commit(root)
     launch.run(['git', '-C', str(root), 'branch', '-q', '-M', 'integrate/main'], check=True)
 

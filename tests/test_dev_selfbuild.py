@@ -6,7 +6,7 @@ filenames; the verdict anchors are real files that are really deleted. What is i
 callable -- and that is the seam :mod:`dev_lab.dev.dep` declares for exactly this, not a patch
 over the module under test. It has to be: the only alternative is invoking pip, and pip is how this
 box's SHARED environment moves. A test suite that mutated the interpreter another lane's verdict is
-running in would be committing the offence this whole module exists to police.
+running in would be committing the offense this whole module exists to police.
 
 EVERY CASE NAMES THE DIRECTION IT FAILS IN. The ownership check is the one guard that could be
 deleted and leave every other test green, because ``Mode.PINNED`` still refuses an index without it
@@ -31,7 +31,7 @@ from dev_lab.dev.selfbuild import (
     NothingBuiltError,
     declared_distributions,
     install_self_build,
-    normalise_distribution,
+    normalize_distribution,
     refuse_foreign_wheel,
     wheel_distribution,
 )
@@ -99,7 +99,7 @@ def test_the_names_are_read_from_the_tree_and_folded(tmp_path: Path) -> None:
     assert len(manifests) == 3, "the plant is this case's floor: three manifests, one of them nameless"
     assert declared_distributions(manifests) == frozenset({'consumer_a_native', 'other_native'})
     assert declared_distributions(()) == frozenset()
-    assert normalise_distribution(' Consumer-A-Native ') == 'consumer_a_native'
+    assert normalize_distribution(' Consumer-A-Native ') == 'consumer_a_native'
     assert wheel_distribution(Path(_WHEEL)) == 'consumer_a_native'
     assert wheel_distribution(Path(_WHEEL_RENAMED)) == 'consumera', 'the first field, read as written'
 

@@ -91,7 +91,7 @@ __all__ = [
 RULE_ID: Final = str(LIVE_RUN['id'])
 
 #: The storage kinds no run READS from the tree (:data:`lab_commons.storage.KINDS`): ``build`` is not one -- a run
-#: may load a native artefact built there.
+#: may load a native artifact built there.
 _UNREAD_KINDS: Final = ('output', 'venvs', 'worktrees', 'vendor_cache', 'temp')
 
 #: Top-level directories of a checkout that no run reads: a write there never changes what a run executes. Derived

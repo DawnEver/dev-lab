@@ -19,7 +19,7 @@ def test_a_comment_naming_the_declared_account_and_host_passes() -> None:
 
 
 @pytest.mark.parametrize('comment', ['old@BOX1', 'mislabel', 'acct@BOX1', 'other@box1', ''])
-def test_a_mislabelled_key_is_refused_naming_both_comments_and_its_door(comment: str) -> None:
+def test_a_mislabeled_key_is_refused_naming_both_comments_and_its_door(comment: str) -> None:
     """Planted control beside the passing case: the same key with any other comment must be refused."""
     host = _host(comment) if comment else {'dev': {'client_keys': [KEY], 'hostname': 'box1'}}
     found = [line for line in devschema.check(host, FAMILY) if 'client_keys[0] comment' in line]

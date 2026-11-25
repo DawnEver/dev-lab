@@ -14,7 +14,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'A report a person or agent WRITES -- an audit, analysis, design, plan, findings or workflow write-up '
             '-- is a dated memory entry under `.claude/memory/<yyyy>/<mm>/<dd>/` in the MEMORY-SHAPE (or, while '
-            'its work is live, the journal of a user-opened task under `.claude/tasks/<slug>/`), never a file '
+            'its work is live, the journal of a user-opened task in the global task ledger), never a file '
             'under `output/`, which holds only what a program can regenerate (run logs, run records, '
             'measurements, charts, caches), and the agent guard refuses a Write/Edit or a shell redirect creating '
             'a Markdown file under any `output/`.'
@@ -26,7 +26,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'Source code lives only under a root the repo DECLARES for code -- an allow-list walked over the '
             'filesystem rather than the index, so an untracked probe in an output or data directory is refused '
-            'instead of accumulating there -- with a fix in the function that owns the behaviour and a one-off in '
+            'instead of accumulating there -- with a fix in the function that owns the behavior and a one-off in '
             'scratch.'
         ),
         ('tests/test_arch_code_placement.py', 'tests/test_dev_codeplace.py'),
@@ -46,7 +46,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'An untracked, non-ignored file outside the declared stray roots (scratch, plus what the repo '
             'declares) is a defect found the moment it appears, not at review: a file somebody meant is staged, '
-            'an artefact a program wrote goes to the dated output tree and the program is fixed to write there, '
+            'an artifact a program wrote goes to the dated output tree and the program is fixed to write there, '
             'a one-off goes to scratch, a file a known retirement declares gone is deleted through its door and '
             'never staged, and the census runs after every shell command, at the end of a turn '
             'and after every commit, naming each one with its remedy.'
@@ -58,10 +58,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'An agent never writes into a write-prone root -- the OS temp dir (Git Bash `/tmp` included), the drive '
             'root or home `tmp`, `temp`, `var` or `src`, or loose into the home -- because nothing scans, ignores or '
-            'cleans a file there: an artefact goes to the dated output tree, an experiment to scratch. The roots are '
+            'cleans a file there: an artifact goes to the dated output tree, an experiment to scratch. The roots are '
             'one declared set the machine file may extend; the write hook and the shell guard refuse, the Stop hook '
             'names what a session left, the sweep ages old temp entries out. A checkout under such a root is no '
-            'exemption (user ruling 2026-11-06: one there is an abandoned old version).'
+            'exemption (2026-11-06); OneDrive, a checkout`s siblings and `$CLAUDE_JOB_DIR/tmp` are refused '
+            'the same way (2026-11-23).'
         ),
         ('tests/test_dev_writeroots.py', 'tests/test_dev_tmpsweep.py'),
     ),
@@ -248,10 +249,23 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_ciworkflows.py', 'tests/test_dev_depneeds.py'),
     ),
+    (
+        'TYPED-VALUES-ARE-SHOWN',
+        (
+            'Every value a person types -- a secret, a token, a one-time code -- comes through '
+            '`dev_lab.dev.ask` (`value()`/`code()`), shown as typed and checked against its declared shape before '
+            'anything is spent (D94); no tracked code in any family repo reads one hidden (`getpass`, a `msvcrt` '
+            'key loop, a silent shell `read`, echo switched off, a PowerShell secure string or intercepted key, a '
+            'JavaScript prompt hiding its echo). A kit that is not current -- its venv off its `uv.lock` pin, or '
+            'its checkout past the lag window behind its integration branch -- prompts nobody: it refuses naming '
+            'the pull and sync doors (`dev_lab.dev.secretkit`).'
+        ),
+        ('tests/test_famtests_hiddenintake.py', 'tests/test_dev_secretkit.py', 'tests/test_dev_ask.py'),
+    ),
 )
 
 
 #: Shared required checks; the execution owner also runs them for command/data family producers.
 #: Read by :mod:`dev_lab.dev.rules` into :attr:`Rule.always_on`; nothing else names them.
 #: MODULE-SIZE-ALARM is opt-in: a repo enables it once it declares [tool.dev_lab.layout] and its directories fit.
-ALWAYS_ON: frozenset[str] = frozenset({'NO-CJK-IN-TRACKED-SOURCE'})
+ALWAYS_ON: frozenset[str] = frozenset({'NO-CJK-IN-TRACKED-SOURCE', 'REM-RETIRED', 'TYPED-VALUES-ARE-SHOWN'})

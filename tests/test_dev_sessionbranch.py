@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from _rem_binding import bind_as_rem
+from _task_ledger import open_task, plant_ledger
 
 from dev_lab.dev.branchset import branchset_from
 from dev_lab.dev.breakglass import notices
@@ -24,7 +24,7 @@ from dev_lab.dev.metrics import BYPASS, HAND_ACTION, read
 from dev_lab.dev.native_session import harness_keys
 from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
 from dev_lab.dev.sessionbranch import MACHINE_BRANCHES, P2, P3, P5, P6, P7, head_refusals, refusals
-from dev_lab.dev.taskbinding import DOOR
+from dev_lab.dev.taskledger import DOOR
 
 _GIT = shutil.which('git') or 'git'
 _BASE = 'integrate/main'  # the integration branch whose declaration names the forge
@@ -109,7 +109,7 @@ def test_a_session_branch_published_from_another_ref_is_refused(repo: Path, spec
     assert _remote(repo, spec.split(':')[1]) != _git(repo, 'rev-parse', 'HEAD')
 
 
-def test_a_detached_head_is_refused_and_the_branchs_own_ref_lands(repo: Path) -> None:
+def test_a_detached_head_is_refused_and_the_branches_own_ref_lands(repo: Path) -> None:
     _git(repo, 'checkout', 'feat/s')
     _git(repo, 'commit', '--allow-empty', '-m', 'feat: s')
     _git(repo, 'checkout', '--detach')
@@ -605,13 +605,12 @@ _SESSION = '1d9000bd-6cd0-42ab-873f-102cd963e53d'
 _AGENT = {'CLAUDE_CODE_SESSION_ID': _SESSION}
 
 
-def _tasks(repo: Path) -> None:
-    """Open the tasks `toolchain` and `other` in *repo*'s ledger."""
+def _tasks() -> Path:
+    """Open the tasks `toolchain` and `other` in this machine's one ledger; the ledger."""
+    ledger = plant_ledger()
     for slug in ('toolchain', 'other'):
-        folder = repo / '.claude' / 'tasks' / slug
-        folder.mkdir(parents=True, exist_ok=True)
-        head = f'---\nname: {slug}\nkind: task\nauthority: a1\nstatus: open\n---\n'
-        (folder / 'TASK.md').write_text(head, encoding='utf-8')
+        open_task(ledger, slug)
+    return ledger
 
 
 def _created(repo: Path, branch: str) -> str:
@@ -624,33 +623,33 @@ def _p7(repo: Path, branch: str, env: dict[str, str]) -> list[str]:
     return [line for line in refusals(repo, _created(repo, branch), env=env) if line.startswith(P7)]
 
 
-def test_a_head_under_the_bound_task_is_admitted(repo: Path) -> None:
-    _tasks(repo)
-    bind_as_rem(repo, _SESSION, 'toolchain')
+def test_a_head_naming_an_open_task_is_admitted(repo: Path) -> None:
+    _tasks()
     assert _p7(repo, 'pr/toolchain/x', _AGENT) == []
+    assert _p7(repo, 'pr/other/x', _AGENT) == [], 'the branch names its task; no session holds one'
 
 
-@pytest.mark.parametrize('branch', ['pr/other/x', 'pr/x', 'pr/toolchain'])
-def test_a_head_outside_the_bound_task_is_refused_naming_its_prefix(repo: Path, branch: str) -> None:
-    _tasks(repo)
-    bind_as_rem(repo, _SESSION, 'toolchain')
+@pytest.mark.parametrize('branch', ['pr/x', 'pr/toolchain'])
+def test_a_head_naming_no_task_is_refused_naming_the_shape(repo: Path, branch: str) -> None:
+    _tasks()
     [said] = _p7(repo, branch, _AGENT)
     cause, door = said.split('\n')
-    assert 'pr/toolchain/<feature>' in cause
-    assert door.startswith('Door: `git branch -m ')
-    assert ' pr/toolchain/' in door
+    assert 'pr/<task>/<feature>' in cause
+    assert door.startswith(f'Door: {DOOR}; then push it as pr/<task>/')
 
 
-def test_an_unbound_agent_session_is_refused_naming_how_a_task_is_bound(repo: Path) -> None:
-    _tasks(repo)
-    [said] = _p7(repo, 'pr/x', _AGENT)
-    cause, door = said.split('\n')
-    assert 'bound to no task' in cause
-    assert door == f'Door: {DOOR}; then push it as pr/<task>/x.'
+def test_a_head_naming_a_task_the_ledger_holds_not_open_is_refused(repo: Path) -> None:
+    ledger = _tasks()
+    [said] = _p7(repo, 'pr/nosuch/x', _AGENT)
+    assert 'does not hold open' in said
+    open_task(ledger, 'toolchain', status='closed')
+    [closed] = _p7(repo, 'pr/toolchain/y', _AGENT)
+    assert 'not open' in closed
+    assert closed.endswith(f'Door: {DOOR}.')
 
 
 def test_a_human_push_and_the_forge_are_not_judged(repo: Path) -> None:
-    _tasks(repo)
+    _tasks()
     assert _p7(repo, 'pr/x', {}) == []
     tip = _git(repo, 'rev-parse', 'stable')
     assert not [line for line in head_refusals(repo, tip, 'pr/x') if line.startswith(P7)]
@@ -658,8 +657,7 @@ def test_a_human_push_and_the_forge_are_not_judged(repo: Path) -> None:
 
 @pytest.mark.parametrize('branch', ['lane/x', 'feat/x', 'fix/x'])
 def test_local_fan_out_is_never_a_task_head(repo: Path, branch: str) -> None:
-    _tasks(repo)
-    bind_as_rem(repo, _SESSION, 'toolchain')
+    _tasks()
     assert _p7(repo, branch, _AGENT) == []
     assert any(line.startswith(P6) for line in refusals(repo, _created(repo, branch), env=_AGENT)), (
         'planted control: it stays local -- P6 refuses it on origin'

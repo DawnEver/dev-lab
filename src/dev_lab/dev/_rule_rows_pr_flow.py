@@ -80,13 +80,37 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'TASK-HEARS-ITS-FORGE-EVENTS',
         (
-            'A task hears what it subscribes to without the user relaying it (D79, D81): an issue or PR labelled '
+            'A task hears what it subscribes to without the user relaying it (D79, D81): an issue or PR labeled '
             '`task:<slug>`, and every PR a session of the task opened or pushed. ONE machine hearer (`forgefeed`) '
             'reads each declared repository`s issues and PRs updated since a saved cursor ONCE per tick -- never a '
-            'request per thread -- and routes each change to the sessions bound to its task (none bound: kept for '
-            'the next binding); open PRs` commit statuses are still read per PR. Each is said at the next prompt. '
+            'request per thread -- and routes each change to its task`s queue, which each session whose checkout is on '
+            'a head of the task (`pr/<task>/<feature>`) reads once through its own cursor; open PRs` commit '
+            'statuses are still read per PR. Each is said at the next prompt. '
             'Detail: docs-src/dev/forgefeed.md.'
         ),
         ('tests/test_dev_sessionwatch.py',),
+    ),
+    (
+        'RED-INTEGRATION-MERGES',
+        (
+            # Why: user rulings 2026-11-06/11-12/11-17 (D18) -- integration may be red; only the trunk must be green.
+            'Integration MAY be red and the trunk may not. The forge merges a PR into integration once every hosted '
+            'part it needs RAN and each FAIL is ON RECORD: a `Red-On-Record: <part> -- <residual>` line in the PR '
+            'names it (absent or pending waits; a red off the record waits naming that line; `forgemerge`). A '
+            'break-glass merge records its reds in its comment, audit line and wave summary (`ops.breakglass`). '
+            '`integrate promote` is the one gate to the trunk: a part not posted or not PASS refuses it.'
+        ),
+        ('tests/test_dev_forgemerge.py', 'tests/test_ops_breakglass.py', 'tests/test_dev_integrate.py'),
+    ),
+    (
+        'MEASURE-BEFORE-PORTING',
+        (
+            # Why: a port priced at 10x measured 2x -- numpy/scipy hot paths are already compiled code.
+            'A port is priced on a MEASUREMENT, never an assumed speedup: a head that adds a crate (a `Cargo.toml`) '
+            'carries, in one of its commits, a `Port-Measured:` trailer naming the measured numbers (both paths on '
+            'one input, or the other measured grounds the port stands on); the merge decision refuses it otherwise '
+            '(`portmeasure`, `forgemerge`).'
+        ),
+        ('tests/test_dev_portmeasure.py', 'tests/test_dev_forgemerge.py'),
     ),
 )

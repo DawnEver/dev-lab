@@ -2,7 +2,7 @@
 
 Imports and simple assignments preserve origins; parameters and other local bindings shadow them.
 This is the existing reflection reader's binding mechanism, not a runtime import resolver. Each
-caller declares the builtin names it recognises and judges the returned origins by its own policy.
+caller declares the builtin names it recognizes and judges the returned origins by its own policy.
 """
 
 from __future__ import annotations

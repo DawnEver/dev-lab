@@ -2,7 +2,7 @@
 
 The write goes through :meth:`~dev_lab.dev.forgework.Client.call`, so it is journaled, retried and attributed
 like every other forge write. It is idempotent: a label already present under the same name (compared
-case-insensitively, as both forges do) is reported and never re-posted. The colour is six hex digits; Gitea
+case-insensitively, as both forges do) is reported and never re-posted. The color is six hex digits; Gitea
 spells it ``#rrggbb`` and GitHub ``rrggbb``, and the caller may give either.
 """
 
@@ -35,7 +35,7 @@ def label_create(client: Client, name: str, color: str, description: str) -> str
     """
     matched = _HEX.fullmatch(color.strip())
     if matched is None:
-        said = f'label {name!r}: colour {color!r} is not six hex digits (rrggbb or #rrggbb)'
+        said = f'label {name!r}: color {color!r} is not six hex digits (rrggbb or #rrggbb)'
         raise ValueError(said)
     listed = client.call('GET', f'{client.repo}/labels?{client.backend.page_param}={_PAGE}')
     if any(str(label.get('name', '')).casefold() == name.casefold() for label in listed):

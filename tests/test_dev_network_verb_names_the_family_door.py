@@ -8,6 +8,7 @@ dev_lab.dev.netverb -- git <verb>`` runs from any directory.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -103,3 +104,65 @@ def test_a_rule_whose_door_is_a_file_of_the_target_is_still_told_the_declaration
     assert '[tool.dev_lab.doors] BARE-TEST-INVOCATION = ' in reason, reason
     assert 'netverb' not in reason
     assert 'stoprun' not in reason
+
+
+KIT_DOOR = '<venv python> -m dev_lab.dev.netverb -- git <verb>'
+TAIL = ('Scripts', 'python.exe') if os.name == 'nt' else ('bin', 'python')
+
+
+def _venv(checkout: Path, *, carries_dev_lab: bool) -> Path:
+    """``checkout``'s ``.venv`` interpreter, with dev_lab installed in it or not; the interpreter path."""
+    python = checkout.joinpath('.venv', *TAIL)
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b'')
+    site = checkout.joinpath('.venv', *(('Lib',) if os.name == 'nt' else ('lib', 'python3.12')), 'site-packages')
+    site.mkdir(parents=True)
+    if carries_dev_lab:
+        (site / 'dev_lab-1.0.dist-info').mkdir()
+    return python
+
+
+def _declaring_kit_door(tmp_path: Path, *, carries_dev_lab: bool) -> Path:
+    target = tmp_path / 'declared'
+    (target / '.git').mkdir(parents=True)
+    (target / 'pyproject.toml').write_text(
+        f'[project]\nname = "d"\n\n[tool.dev_lab.doors]\nNETWORK-VERB = "{KIT_DOOR}"\n', encoding='utf-8'
+    )
+    _venv(target, carries_dev_lab=carries_dev_lab)
+    return target
+
+
+def test_a_declared_door_whose_venv_lacks_dev_lab_names_the_bootstrap(
+    repos: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """A declared door whose interpreter lacks dev_lab names the bootstrap, run from the target, first.
+
+    MEASURED 2026-11-25: the refusal named ``<target>/.venv/.../python -m dev_lab.dev.netverb``, a venv without
+    dev_lab, because the door only checked that the interpreter EXISTS -- a door that cannot run.
+    """
+    session, _bare, rules = repos
+    session_python = _venv(session, carries_dev_lab=True)
+    target = _declaring_kit_door(tmp_path, carries_dev_lab=False)
+    said = agenthooks.decide('git fetch origin', rules, cwd=target, hint=True)
+    assert said is not None
+    assert said.startswith('NETWORK-VERB:'), said
+    lowered = said.lower()
+    assert 'does not carry dev_lab' in lowered, said
+    bootstrap = (
+        f'cd {target.as_posix()} && {session_python.as_posix()} -m dev_lab.dev.dep --bootstrap {target.as_posix()}'
+    )
+    assert bootstrap.lower() in lowered, said
+
+
+def test_a_declared_door_whose_venv_carries_dev_lab_is_named_as_is(
+    repos: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """PLANTED CONTROL: the target's venv carries dev_lab, so its netverb door is the exit and no bootstrap is."""
+    session, _bare, rules = repos
+    _venv(session, carries_dev_lab=True)
+    target = _declaring_kit_door(tmp_path, carries_dev_lab=True)
+    said = agenthooks.decide('git fetch origin', rules, cwd=target, hint=True)
+    assert said is not None
+    door = f'{target.joinpath(".venv", *TAIL).as_posix()} -m dev_lab.dev.netverb -- git <verb>'
+    assert door.lower() in said.lower(), said
+    assert 'dev_lab.dev.dep --bootstrap' not in said, said

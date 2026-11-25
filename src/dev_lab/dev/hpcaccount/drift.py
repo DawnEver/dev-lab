@@ -30,7 +30,6 @@ import re
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -40,7 +39,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import devhost
 from dev_lab.dev._machinefile import render_value
-from dev_lab.dev.backedup import replace_backed_up
+from dev_lab.dev.backedup import backups_dir, replace_backed_up
 from dev_lab.dev.devdeclared import layered
 from dev_lab.dev.diskusage import count_files
 from dev_lab.dev.hpcaccount import deploy
@@ -232,7 +231,7 @@ def _discard(drift: Drift, *, home: Path, machine: Path, clone: Path, host: str,
         return 1
     live = read_machine(machine)
     text = devhost.render(clone, host, {key: value for key, value in live.items() if key == devhost.OWN_TABLE})
-    backup = replace_backed_up(machine, text, home / '.cache' / 'dev-lab' / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost')
+    backup = replace_backed_up(machine, text, backups_dir(home))
     emit(f'discarded {len(drift.only_on_account)} item(s); re-rendered {machine}; the previous file is {backup}{items}')
     return 0
 

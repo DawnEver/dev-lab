@@ -6,7 +6,7 @@ so a relock that only moved the ``dev-lab`` git pin re-ran a consumer's whole su
 Now :func:`resolve_lock` replaces a changed :data:`LOCK` by ``import:<name>`` for the import names of the
 packages whose locked entry changed, closed over the lock's dependency graph IN REVERSE (a numpy bump
 reaches scipy's importers). Doubt reaches everything by leaving :data:`LOCK` itself in the diff: a change
-outside ``[[package]]`` (header, resolution markers, ``requires-python``), an unparseable lock, a package
+outside ``[[package]]`` (header, resolution markers, ``requires-python``), an unparsable lock, a package
 :func:`import_names` cannot map, or one the RUNNER loads whatever a test imports (``pytest``, a ``pytest11``
 plugin, a ``.pth`` installer). ``pyproject.toml`` stays in :data:`ALWAYS`: it carries pytest's and this
 module's configuration, and splitting it by table is a second TOML differ no measured waste asks for yet.

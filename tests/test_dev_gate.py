@@ -19,6 +19,14 @@ from lab_commons.file_io import read_toml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEV_ROOT = REPO_ROOT / 'src' / 'dev_lab' / 'dev'
 
+#: THE NAMED SET of dev modules that import past the tier, each with why no install pulls it: the import runs
+#: only under the tool that owns the dependency, so ``pip install`` still pulls exactly what it did. Two-sided:
+#: an entry nothing imports any more reds as an orphan.
+OPTIONAL_IMPORTS: dict[tuple[str, str], str] = {
+    ('docrows.py', 'markdown_it'): "lazy, inside the markdown kind, which declares Module('markdown_it') as its need",
+    ('irhatch.py', 'hatchling'): "the IR build hook: only hatchling imports it, at a consumer's package build",
+}
+
 
 def _declared_requirements() -> frozenset[str]:
     """Every distribution ``[project] dependencies`` names, by its bare (unversioned) name.
@@ -92,12 +100,15 @@ class TestTheOptInGate:
         question is what this layer DECLARES, not what this box happens to have.
         """
         allowed = _declared_requirements() | set(sys.stdlib_module_names) | {'lab_commons', 'dev_lab'}
-        offenders = {
-            source.name: sorted(_imported_roots(source) - allowed)
+        reach = {
+            (source.name, root)
             for source in sorted(DEV_ROOT.glob('*.py'))
-            if _imported_roots(source) - allowed
+            for root in _imported_roots(source) - allowed
         }
-        assert not offenders, f'dev modules reach beyond stdlib + tier 1: {offenders}'
+        named = set(OPTIONAL_IMPORTS)
+        assert reach <= named, f'dev modules reach beyond stdlib + tier 1: {sorted(reach - named)}'
+        assert named <= reach, f'ORPHANED optional imports -- delete them: {sorted(named - reach)}'
+        assert all(why.strip() for why in OPTIONAL_IMPORTS.values()), 'every optional import carries its reason'
 
     def test_the_scan_has_a_floor(self) -> None:
         """A scan that read no file would pass every one of the assertions above, vacuously."""

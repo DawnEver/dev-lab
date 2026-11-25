@@ -8,8 +8,8 @@ would have refused it, and the diff looks like one change.
 IT IS A SEPARATE FILE FROM :mod:`dev_lab.dev._famconfig_rows` BECAUSE ITS SUBJECT IS A DIFFERENT
 KIND OF THING, and that is this arm's whole finding rather than a filing decision. That module's
 bases are WHOLE FILES keyed by FILENAME; a ruff base owns a named TOML TABLE and must leave every
-other table in the file alone. Measured 2026-09-18 against the live kit, `artefact_base('ruff.toml')`
-and `artefact_base('pyproject.toml')` both raise `ForkedDelta`, and pointing the whole-file mechanism
+other table in the file alone. Measured 2026-09-18 against the live kit, `artifact_base('ruff.toml')`
+and `artifact_base('pyproject.toml')` both raise `ForkedDelta`, and pointing the whole-file mechanism
 at `pyproject.toml` is not the workaround: `RENDERED` would then demand the base own
 `[build-system]`, `[project]`, `[tool.pytest.ini_options]` and `[tool.pyright]` as well.
 
@@ -31,7 +31,7 @@ intersections, never line counts:
   would be legislating a floor that is a fact about each repo's own interpreter, and one of the
   consumers derives it from its own ``requires-python`` under its own test.
 
-THE ARTEFACT IS NOT A FILE, and this table is keyed accordingly. consumer-a keeps these tables in
+THE ARTIFACT IS NOT A FILE, and this table is keyed accordingly. consumer-a keeps these tables in
 ``ruff.toml`` (where they lose the ``tool.ruff`` prefix and the root table is the file itself); the
 other three keep them in ``pyproject.toml``. The kit already ruled that the PATH is per-repo data --
 :data:`dev_lab.dev.profile.DEFAULT_LINT_CONFIG` says so, and
@@ -70,7 +70,7 @@ __all__ = [
 #: The 58 selector groups, MEASURED as the four-way intersection and equal to the four-way UNION.
 #: Sorted, so the order is re-derivable by anybody who repeats the measurement; a ruff ``select`` is
 #: a set and nothing here depends on position, which is what makes sorting safe in a way it is NOT
-#: safe for a last-match-wins `.gitignore` (see `_famconfig_rows.ORDER_SENSITIVE_ARTEFACTS`).
+#: safe for a last-match-wins `.gitignore` (see `_famconfig_rows.ORDER_SENSITIVE_ARTIFACTS`).
 RUFF_SELECT: Final[tuple[str, ...]] = (
     'A',
     'AIR',
@@ -193,7 +193,7 @@ RUFF_SECTION_PREFIX: Final[tuple[str, ...]] = ('tool', 'ruff')
 #: ``(dotted path, EXACT scalars, SET-valued keys)``; what the machinery adds is the prefix rule, the
 #: comparison and the refusals, and this table owns WHICH tables and WHICH keys and nothing else.
 RUFF_SECTION_ROWS: Final[dict[str, tuple[tuple[str, ...], dict[str, object], dict[str, tuple[str, ...]]]]] = {
-    '[tool.ruff]': (('tool', 'ruff'), {'line-length': RUFF_LINE_LENGTH}, {}),
+    '[tool.ruff]': (('tool', 'ruff'), {'line-length': RUFF_LINE_LENGTH, 'cache-dir': 'output/cache/ruff'}, {}),
     '[tool.ruff.lint]': (('tool', 'ruff', 'lint'), {}, {'select': RUFF_SELECT, 'ignore': RUFF_IGNORE_CORE}),
     '[tool.ruff.format]': (('tool', 'ruff', 'format'), {'quote-style': RUFF_QUOTE_STYLE}, {}),
 }

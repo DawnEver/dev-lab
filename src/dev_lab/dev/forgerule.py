@@ -29,7 +29,7 @@ AN ABSENT KEY IS NOT A FALSE AND AN INERT LIST IS NOT AN UNAPPLIED ONE. :data:`U
 own measurement; a report that collapses either into ``NOT_APPLIED`` sends a reader to the wrong one.
 
 A STATUS CONTEXT IS REPORTED AND, WHEN DECLARED EMPTY, NEVER WRITTEN -- ``status_contexts=()`` is a
-declared absence :func:`protection_body` honours, because a branch protected against a status nobody
+declared absence :func:`protection_body` honors, because a branch protected against a status nobody
 publishes is indistinguishable from a broken gate.
 """
 

@@ -3,7 +3,7 @@
 ``status_paths`` is exercised against real ``git status`` output on real temporary repositories --
 tracked edits, untracked files, staged renames -- because the parsing is entirely about a format
 this code does not own, and a fixture that produced the format would be asserting the author's
-belief about it rather than git's behaviour.
+belief about it rather than git's behavior.
 
 ``verdict_dirt`` is pure over two readings, so its arms are tables: that is the half where every
 wrong answer is a policy mistake rather than a parsing one, and where the planted controls belong.
@@ -94,7 +94,7 @@ def test_a_directory_that_is_not_a_checkout_reads_as_None(tmp_path: Path) -> Non
     [
         (' M src/a.py', 'src/a.py'),
         ('?? output/log.txt', 'output/log.txt'),
-        ('A  .claude/tasks/t.json', '.claude/tasks/t.json'),
+        ('A  .claude/notes/t.json', '.claude/notes/t.json'),
         ('R  old.py -> new.py', 'new.py'),
         ('?? "has space.txt"', 'has space.txt'),
         ('', ''),
@@ -133,7 +133,7 @@ def test_only_the_paths_that_APPEARED_are_named_and_not_the_whole_end_reading() 
 
 def test_a_NEUTRAL_path_appearing_mid_run_does_not_disqualify() -> None:
     """The escape hatch, with its ceiling: it applies only to prefixes the CALLER measured and named."""
-    got = verdict_dirt((), ('?? .claude/tasks/t.json',), neutral_prefixes=('.claude/tasks/',))
+    got = verdict_dirt((), ('?? .claude/notes/t.json',), neutral_prefixes=('.claude/notes/',))
     assert got == Dirt(Kind.CLEAN, ())
 
 
@@ -143,13 +143,13 @@ def test_the_SAME_path_DISQUALIFIES_when_the_caller_declared_nothing() -> None:
     Identical to the arm above in every respect but the declaration, which is what makes the
     declaration -- rather than a hard-coded set inherited from another repo -- the thing deciding.
     """
-    got = verdict_dirt((), ('?? .claude/tasks/t.json',), neutral_prefixes=())
+    got = verdict_dirt((), ('?? .claude/notes/t.json',), neutral_prefixes=())
     assert got.kind is Kind.MOVED
 
 
-def test_a_neutral_PREFIX_does_not_neutralise_a_path_that_merely_contains_it() -> None:
-    """A prefix is anchored at the start, or ``src/.claude/tasks/`` would be waved through too."""
-    got = verdict_dirt((), ('?? src/.claude/tasks/t.json',), neutral_prefixes=('.claude/tasks/',))
+def test_a_neutral_PREFIX_does_not_neutralize_a_path_that_merely_contains_it() -> None:
+    """A prefix is anchored at the start, or ``src/.claude/notes/`` would be waved through too."""
+    got = verdict_dirt((), ('?? src/.claude/notes/t.json',), neutral_prefixes=('.claude/notes/',))
     assert got.kind is Kind.MOVED
 
 

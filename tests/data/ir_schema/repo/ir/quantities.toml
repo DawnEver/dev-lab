@@ -1,0 +1,40 @@
+# dimension = exponents of M L T I Theta N J.
+[quantity.mass]
+unit = "kg"
+dimension = "1 0 0 0 0 0 0"
+[quantity.length]
+unit = "m"
+dimension = "0 1 0 0 0 0 0"
+[quantity.time]
+unit = "s"
+dimension = "0 0 1 0 0 0 0"
+[quantity.temperature]
+unit = "K"
+dimension = "0 0 0 0 1 0 0"
+[quantity.pressure]
+unit = "Pa"
+dimension = "1 -1 -2 0 0 0 0"
+[quantity.sound_pressure]
+unit = "Pa"
+dimension = "1 -1 -2 0 0 0 0"
+db_reference = 2e-5
+db_scale = 20
+[quantity.force]
+unit = "N"
+dimension = "1 1 -2 0 0 0 0"
+[quantity.velocity]
+unit = "m/s"
+dimension = "0 1 -1 0 0 0 0"
+[quantity.voltage]
+unit = "V"
+dimension = "1 2 -3 -1 0 0 0"
+[quantity.current]
+unit = "A"
+dimension = "0 0 0 1 0 0 0"
+
+[port_domain.electrical]
+effort = "voltage"
+flow = "current"
+[port_domain.translational]
+effort = "force"
+flow = "velocity"

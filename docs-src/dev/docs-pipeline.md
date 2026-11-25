@@ -24,7 +24,7 @@ skip mean; the repo owns which packages, paths and flags.
 
 - **A crate or package list is DERIVED** from the workspace manifest, never enumerated, and any exclusion list is
   rendered on the portal.
-- **A licence notice refuses rather than degrades**: a dependency whose licence cannot be identified fails the
+- **A license notice refuses rather than degrades**: a dependency whose license cannot be identified fails the
   build. It is a row, never a committed file, so it cannot drift.
 - **Relative links are rewritten to the output suffix**, so a tree that reads correctly on the forge navigates
   correctly once rendered; external URLs are untouched.

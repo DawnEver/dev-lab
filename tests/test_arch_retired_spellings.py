@@ -23,7 +23,7 @@ from _arch_corpus import assert_floor, docs_pages, module_names, rel, rules_page
 from dev_lab.dev import branchprune, pushwatch, sessionprs
 
 #: dev-lab's own tables, moved from ``[tool.lab_commons]`` to ``[tool.dev_lab]`` (plan A3); ``schedule``,
-#: ``tools``, ``hpc``, ``tests`` and ``artefacts`` stay, because lab-commons code reads them.
+#: ``tools``, ``hpc``, ``tests`` and ``artifacts`` stay, because lab-commons code reads them.
 MOVED_TABLES: Final = (
     'areas', 'automode', 'branchset', 'carry', 'ci', 'components', 'dep', 'doors', 'ephemeral_refs', 'forge',
     'hooks', 'integrator', 'parts', 'placement', 'requests', 'review', 'stoprun', 'verify', 'worktrees',
@@ -31,6 +31,20 @@ MOVED_TABLES: Final = (
 
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
+    'rulesinject': (
+        'AGENTS.md, the one always-loaded page every harness reads natively (dev_lab.dev.agentsection)',
+        '2026-11-24: .claude/rules/ retired, so the SessionStart injection of it had nothing left to inject',
+    ),
+    **dict.fromkeys(
+        ('remhome', 'remconfig', 'only_manual_tasks_updated'),
+        (
+            (
+                'dev_lab.dev.remretired (the leftovers refused, `migrate` per repo, `uninstall` per machine) and '
+                'dev_lab.dev.memory (memory write and search); rem`s todo list is an entry like any other'
+            ),
+            'user rulings 2026-11-23: memory stays in each repo root; the rem plugin is archived and not installed',
+        ),
+    ),
     'forgeroute.reconcile': (
         'alarms on the host card (forge queue); the audit of a break-glass wave in the wave ledger',
         'user ruling 2026-11-19: issues never record events (break-glass, starved, integration rows)',
@@ -154,6 +168,16 @@ RETIRED_SPELLINGS: Final = {
         ),
     ),
     **dict.fromkeys(
+        ('worktree_outputs', 'home_outputs', 'archive-outputs', 'outputs not moved home'),
+        (
+            (
+                'a removed worktree is deleted with its output/ (reclaim, worktrees --remove); results of record '
+                'live in the run store'
+            ),
+            'NO-BACKUP-COPIES (user 2026-11-23): moving a tree outputs into the main checkout was a backup',
+        ),
+    ),
+    **dict.fromkeys(
         (
             'worktree_archive',
             'worktree-archive',
@@ -246,9 +270,9 @@ RETIRED_SPELLINGS: Final = {
     ),
     'OVER_CAP_TAKEOVER': ('Scope.unread', 'D123 2026-10-31, then 2026-11-06: an oversize head is sliced, never held'),
     **dict.fromkeys(
-        ('breakglass enrol', 'wave_hours =', 'max_merges =', '--max-merges'),
+        ('breakglass enroll', 'wave_hours =', 'max_merges =', '--max-merges'),
         (
-            'consent enrol; a breakglass.wave consent credential whose params are hours and max_merges',
+            'consent enroll; a breakglass.wave consent credential whose params are hours and max_merges',
             'user-approved design 2026-11-07: the wave TOTP check moved onto consent credentials; no code path stays',
         ),
     ),
@@ -284,7 +308,7 @@ RETIRED_SPELLINGS: Final = {
     **dict.fromkeys(
         ('taskbinding bind', 'taskbinding status', 'binding_gap', 'BIND_PROMPT'),
         (
-            "rem's UserPromptSubmit task hook binds (rem's task.js status shows it); dev_lab.dev.taskbinding reads",
+            'the branch pr/<slug>/<feature> names the task (taskledger.task_of); python -m dev_lab.dev.task status',
             'H4 2026-11-16: a stale venv failed the binder and blocked every prompt; rem owns binding, the gate reads',
         ),
     ),
@@ -327,8 +351,8 @@ RETIRED_SPELLINGS: Final = {
         ),
     ),
     'Ref.of(': (
-        'artefactstores.ref_of_entry (the Ref is lab_commons.compute.store.Ref; .key is .ref)',
-        'L3 Ref half 2026-11-19: one Ref for artefacts and large objects; run_id_of / manifest_of are functions',
+        'artifactstores.ref_of_entry (the Ref is lab_commons.compute.store.Ref; .key is .ref)',
+        'L3 Ref half 2026-11-19: one Ref for artifacts and large objects; run_id_of / manifest_of are functions',
     ),
     'RETIRED_FILES': (
         "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to strays.retired_copies",
@@ -345,10 +369,89 @@ RETIRED_SPELLINGS: Final = {
             '2026-11-22, user ruling "deleting is the DEFAULT": the old copies became a retention rule',
         ),
     ),
+    **dict.fromkeys(
+        (
+            'taskbinding',
+            'session_binding',
+            'bound_sessions',
+            'take_task_pending',
+            'bound_task_extras',
+            'UnmigratedBindingError',
+            'RETIRED_BINDINGS',
+            'remplugin',
+            'binder_door',
+            'taskcarry',
+        ),
+        (
+            (
+                'dev_lab.dev.taskledger: ledger() (the global tasks repo) and task_of(cwd) (the task its branch '
+                'pr/<slug>/<feature> names); forgefeed.take_task_unread; depneeds.task_extras'
+            ),
+            'user ruling 2026-11-23: the task ledger is one global repo and the binding store is cancelled',
+        ),
+    ),
+    **dict.fromkeys(
+        ('monthsummary', 'MONTHLY-PLANS-CARRIED', 'is_month_summary', 'MONTH_SUMMARY'),
+        (
+            'nothing: a plan lives in the task ledger (python -m dev_lab.dev.task) and dated memory entries',
+            'user ruling 2026-11-24: the month summary files are retired entirely',
+        ),
+    ),
+    'taskguard': (
+        'dev_lab.dev.ledgerguard (LEDGER-WRITES-THROUGH-ITS-DOOR): one guard of the task files and ledger dir',
+        '2026-11-24 fold: two guards of one ledger became one',
+    ),
     'tick.RERENDER': (
         'dev_lab.dev.hpcaccount.grantslice.RERENDER, beside the grant refusal it completes',
         '2026-11-22: the grant slice owns its refusal and its remedy',
     ),
+    **dict.fromkeys(
+        ('RUFF_STEPS', 'read_ruff'),
+        (
+            'dev_lab.dev.verifysteps.LINT_STEPS and dev_lab.dev.reports.read_lint: typos joined ruff as a lint step',
+            'user ruling 2026-11-24 (v1-migration D35): US-SPELLING-IS-CHECKED',
+        ),
+    ),
+    # spelling-off -- the British spellings this ruling retired, each beside its US replacement
+    **{
+        old: (new, 'user ruling 2026-11-24 (v1-migration D35): the family spells US English')
+        for old, new in {
+            'names-match-behaviour': 'names-match-behavior (the principle slug)',
+            'dev_lab.dev.artefacts': 'dev_lab.dev.artifacts',
+            'artefactfolder': 'dev_lab.dev.artifactfolder',
+            'artefactindex': 'dev_lab.dev.artifactindex',
+            'artefactpack': 'dev_lab.dev.artifactpack',
+            'artefactrestore': 'dev_lab.dev.artifactrestore',
+            'artefactscan': 'dev_lab.dev.artifactscan',
+            'artefactstores': 'dev_lab.dev.artifactstores',
+            'forgeenrol': 'dev_lab.dev.forgeenroll',
+            'ArtefactRefused': 'artifactstores.ArtifactRefused',
+            'ArtefactStore': 'artifactstores.ArtifactStore',
+            'ArtefactReport': 'famconfig.ArtifactReport',
+            'artefact_base': 'famconfig.artifact_base',
+            'assert_artefact_is_rendered': 'famtests.configrender.assert_artifact_is_rendered',
+            'ORDER_SENSITIVE_ARTEFACTS': 'ORDER_SENSITIVE_ARTIFACTS',
+            'EnrolRefused': 'forgeenroll.EnrollRefused',
+            'Enrolment': 'forgeenroll.Enrollment',
+            'load_enrolment': 'forgeenroll.load_enrollment',
+            'add_enrol': 'forgeenroll.add_enroll',
+            'devprofile.enrolment': 'devprofile.enrollment',
+            'devhost enrol': 'devhost enroll (the CLI verb)',
+            'access enrol': 'access enroll (the CLI verb)',
+            'consent enrol': 'consent enroll (the CLI verb)',
+            'breakglass enrol': 'breakglass enroll (the CLI verb)',
+            'licence_outage': 'producer.license_outage',
+            'VENDOR_LICENCE': 'producer.Owner.VENDOR_LICENSE',
+            'vendor-licence': 'vendor-license (the producer release class)',
+            'licence_server': 'license_server (a [dev] vendors key)',
+            'licence_feature': 'license_feature (a [dev] vendors key)',
+            'labelled_issues': 'labeled_issues',
+            'Judgement': 'forgesecurity.Judgment',
+            'normalise_distribution': 'selfbuild.normalize_distribution',
+            'amortised': 'amortized',
+        }.items()
+    },
+    # spelling-on
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a
@@ -359,7 +462,8 @@ _THIS: Final = Path(__file__).resolve()
 
 
 def _pattern(spelling: str) -> re.Pattern[str]:
-    return re.compile(rf'\b{re.escape(spelling)}', re.IGNORECASE)
+    """The retired word, not a longer word it begins: ``forgeenrol`` is retired, ``forgeenroll`` its successor."""
+    return re.compile(rf'\b{re.escape(spelling)}(?![a-z])', re.IGNORECASE)
 
 
 def _hits(text: str) -> list[str]:
@@ -386,6 +490,8 @@ def test_planted_retired_spelling_is_found() -> None:
     """PLANTED CONTROL: the matcher sees the old word in prose, any case, and not inside another word."""
     assert _hits('the Steward merges nothing') == ['steward']
     assert _hits('the integrator merges nothing') == []
+    assert _hits('python -m dev_lab.dev.forgeenrol') == ['forgeenrol']  # spelling-ignore-line
+    assert _hits('python -m dev_lab.dev.forgeenroll') == [], 'a successor that extends the old word is live'
 
 
 def test_every_row_names_its_replacement_and_decision() -> None:
@@ -396,7 +502,7 @@ def test_every_row_names_its_replacement_and_decision() -> None:
 def test_the_retired_push_entry_points_are_absent() -> None:
     """dev-lab #640 unwired them; deleted, no shim. Their spellings live only here, so their absence is pinned here.
 
-    PLANTED CONTROL: the live neighbours of each stay -- the module that kept its parsing, the pre-push verb.
+    PLANTED CONTROL: the live neighbors of each stay -- the module that kept its parsing, the pre-push verb.
     """
     assert importlib.util.find_spec('dev_lab.dev.pushstop') is None
     assert importlib.util.find_spec('dev_lab.dev.pushwatch') is not None

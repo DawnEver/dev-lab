@@ -10,7 +10,7 @@ one place that says, for each file, which mechanism owns it -- or that the repo 
 :data:`PROJECT_FILES` IS THAT LIST. A tracked project-level file in any repo of the family is either a
 row here, or a row in the repo's own ``owned_here`` mapping with a reason; anything else is a file
 drifting with nobody saying so, and :mod:`dev_lab.dev.famtests.famfiles` refuses it. ONE command,
-:func:`render_all` (``python -m dev_lab.dev.famfiles``), writes every RENDERED artefact a repo
+:func:`render_all` (``python -m dev_lab.dev.famfiles``), writes every RENDERED artifact a repo
 declares a delta for, so a base edit here reaches a repo by one re-render rather than one per file.
 
 THE ONE DOOR (2026-11-13). ``python -m dev_lab.dev.famfiles`` WITHOUT ``--files`` runs every renderer due in
@@ -24,7 +24,7 @@ is due only where its input is declared. The door prints one line per renderer: 
 
 THE TWO KINDS, and the line between them is the noun test the rules registry uses: a file whose
 CONTENT is about the family's toolchain is managed; a file whose content is about the repo (its
-licence, its architecture, its release history) is owned, and the row says which noun made it so.
+license, its architecture, its release history) is owned, and the row says which noun made it so.
 """
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import re
-import shutil
 import sys
 import tomllib
 from collections.abc import Callable
@@ -43,8 +42,8 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import principles, remconfig
-from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
+from dev_lab.dev import ciworkflowshape
+from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artifact_base, inspect_file, render
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
 if TYPE_CHECKING:
@@ -60,21 +59,20 @@ __all__ = [
     'RENDERERS',
     'RENDER_COMMAND',
     'RENDER_TABLE',
+    'RETIRED_PROJECT_FILES',
     'ProjectFile',
     'Renderer',
     'due_renderers',
     'is_member',
     'load_deltas',
     'main',
+    'managed_sections',
     'plan',
-    'project_files_on_disk',
     'render_agent_files',
     'render_all',
     'render_argv',
     'render_repo',
-    'unaccounted',
     'undeclared_inputs',
-    'whole_files',
 ]
 
 #: The one command a repo re-renders every family file with (its own deltas module named).
@@ -103,7 +101,7 @@ class Renderer:
     repo_flag: str = '--repo'
     inputs: tuple[tuple[str, str], ...] = ()
     required: frozenset[str] = frozenset()
-    declared_by: str = ''  # set: due where the repo DECLARES this input, not where a file it writes is present
+    present_only: bool = False  # set: due only where a file it writes is present, member or not
     needs: str = ''  # set: in a family repo with no file it writes, due only where the renderer named here is
 
 
@@ -116,13 +114,17 @@ HOOK_ADOPTION: Final = Renderer(
     required=frozenset({'adoption'}),
 )  # fmt: skip
 CIWORKFLOWS: Final = Renderer('ciworkflows', ('dev_lab.dev.ciworkflows', 'render'), repo_flag='--root')
+#: The editor's managed keys; every other key of the file stays the user's (dev_lab.dev.vscodesettings).
+VSCODE: Final = Renderer('vscodesettings', ('dev_lab.dev.vscodesettings', 'render'))
 AUTODOORS: Final = Renderer(
     'autodoors', ('dev_lab.dev.autodoors', '--write'), inputs=(('shell_doors', '--shell-door'),)
 )
-DEVDOCS: Final = Renderer(
-    'devdocs', ('dev_lab.dev.devdocs',), inputs=(('docs_base', '--base'),), required=frozenset({'docs_base'}),
-    declared_by='docs_base',
-)  # fmt: skip
+#: The family Rust toolchain, where a repo carries one (it commits Rust: dev_lab.dev.lockcheck).
+RUST_TOOLCHAIN: Final = Renderer('rusttoolchain', ('dev_lab.dev.rusttoolchain', 'render'), present_only=True)
+#: The whole .claude/settings.json: hooks, the door allow rows (autodoors' source) and the env, plus the delta.
+CLAUDE_SETTINGS: Final = Renderer(
+    'claudesettings', ('dev_lab.dev.claudesettings', 'render'), inputs=(('shell_doors', '--shell-door'),)
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,48 +157,75 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
     row.path: row
     for row in (
         _g('.gitignore', 'famconfig RENDERED: consumer core + GITIGNORE_FAMILY_LINES, plus the repo Delta', FAMFILES),
-        _g('.gitattributes', 'famconfig RENDERED: the shipped-shell-payload line, plus the repo Delta', FAMFILES),
-        _g('.rgignore', 'famconfig RENDERED: what ripgrep and Grep skip (attic/), plus the repo Delta', FAMFILES),
-        _m('Makefile', 'famconfig REQUIRED: the target headers and the verify recipe must be present'),
-        _m('ruff.toml', 'famconfig section bases RUFF_SECTIONS (or the same tables under [tool.ruff])'),
+        _g(
+            '.gitattributes',
+            'famconfig RENDERED: the one repo-wide LF line, plus the repo Delta',
+            FAMFILES,
+        ),
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
-        _m('.claude/settings.json', 'agent_guard.wire_settings (the guard and stray hooks) and allow_adoption'),
+        _g(
+            '.claude/settings.json',
+            'claudesettings RENDERED: hooks, door allow rows, MPLBACKEND=Agg, plus [tool.dev_lab.claude]',
+            CLAUDE_SETTINGS,
+        ),
         _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte', AGENT_GUARD),
         _g('.claude/hooks/venv_resolver.js', 'agent_guard install: the one environment resolver', AGENT_GUARD),
-        _g('.claude/rules/principles.md', 'principles.render via famfiles: the family principles', FAMFILES),
-        _g('.claude/rem.json', 'remconfig.render via famfiles: the backlog is the issue tracker', FAMFILES),
         _g('.claude/hooks/deny-rules.json', 'hook_adoption: the deny registry plus the repo remedies', HOOK_ADOPTION),
         _g('.codex/rules/family-doors.rules', 'autodoors --write: the family doors plus the repo`s', AUTODOORS),
         _g('.codex/rules/family-denies.rules', 'autodoors --write: the deny registry as Codex rules', AUTODOORS),
-        _g('.github/workflows/ci.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
-        _g('.github/workflows/review-again.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
-        _g('.github/workflows/merge-tick.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
-        _g('.github/workflows/continue.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
-        _g('uv.lock', 'famtests.lockpin pins it; forge relock and forge sync freshen it (PIN + FRESHNESS)', None),
         ProjectFile(
-            'docs-src/dev/index.md',
+            '.vscode/settings.json',
             MANAGED,
-            'devdocs.write_pointer_table writes the family pointer table; the rest of the index is the repo`s',
-            renderer=DEVDOCS,
+            'vscodesettings renders the editor excludes; every other key is the user`s',
+            renderer=VSCODE,
         ),
-        _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
+        _g(
+            'rust-toolchain.toml',
+            'rusttoolchain RENDERED: the family channel + components, plus [tool.dev_lab.rust]',
+            RUST_TOOLCHAIN,
+        ),
+        _g('uv.lock', 'famtests.lockpin pins it; forge relock and forge sync freshen it (PIN + FRESHNESS)', None),
+        _o('LICENSE', 'the license is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),
-        _o(
+        _o('Makefile', 'its targets and recipes are the repo`s; the family contract retired 2026-11-24'),
+        ProjectFile(
             'AGENTS.md',
-            'its subject is the repo`s architecture; shared rules are cited by ID from dev_lab.dev.rules',
+            MANAGED,
+            'agentsection renders the family section between its markers via famfiles; the rest is the repo`s',
+            renderer=FAMFILES,
         ),
         _o('CLAUDE.md', 'a pointer to AGENTS.md; the shared rule pages arrive through famtests.rulespages'),
+        _o('layout.toml', 'its placement and DECLARED-LAYOUT tables (dev_lab.dev.layout): the tree is the repo`s'),
         _o('CHANGELOG.md', 'the repo`s release history'),
     )
 }
 
+#: RETIRED-NAMES-REGISTERED (user ruling 2026-11-24): a project file the family no longer renders or requires,
+#: with why. Tracked again in any repo, it is refused by name (:mod:`dev_lab.dev.famtests.famfiles`).
+RETIRED_PROJECT_FILES: Final[dict[str, str]] = {
+    '.claude/rem.json': 'the backlog is the Gitea tasks repo plus the issue tracker; no per-repo rem config',
+    '.claude/sharp-review.json': 'the forge review is the one review (2026-11-05); no sharp-review ledger',
+    '.rgignore': 'no family search-skip file (user ruling 2026-11-24)',
+    'ruff.toml': 'ruff config lives only under [tool.ruff] in pyproject.toml',
+}
+
 #: Every family file a mechanism writes whole: what a PR review never reads (:mod:`dev_lab.dev.forgereview_scope`).
-GENERATED: Final = frozenset(row.path for row in PROJECT_FILES.values() if row.generated)
+#: Every base workflow path on either forge (``ci_base.toml``): rendered whole by ciworkflows wherever placed.
+#: Not rows -- a repo keeps only the ones its ``[tool.dev_lab.ci]`` places (:func:`ciworkflows.declared_paths`).
+WORKFLOW_FILES: Final = frozenset(
+    (directory / name).as_posix()
+    for forge, directory in ciworkflowshape.WORKFLOW_DIRS.items()
+    for name in ciworkflowshape.base_names(forge)
+)
+
+GENERATED: Final = frozenset(row.path for row in PROJECT_FILES.values() if row.generated) | WORKFLOW_FILES
 
 #: Every renderer, read off :data:`PROJECT_FILES` in row order: the one list a relock re-runs (user ruling
 #: 2026-11-07: a relock that moved dev-lab left every generated file stale and the consumer red). NOT here:
 #: ``automode write``, whose file is machine-local and never committed, and the lock, which is the door's.
-RENDERERS: Final = tuple(dict.fromkeys(row.renderer for row in PROJECT_FILES.values() if row.renderer))
+RENDERERS: Final = tuple(
+    dict.fromkeys((*(row.renderer for row in PROJECT_FILES.values() if row.renderer), CIWORKFLOWS))
+)
 
 
 def due_renderers(root: Path) -> tuple[Renderer, ...]:
@@ -212,18 +241,18 @@ def plan(root: Path) -> tuple[tuple[Renderer, str | None], ...]:
     """Every renderer of :data:`RENDERERS` with ``None`` when it is due in *root*, else why it is skipped.
 
     Due: a file it writes is present, or -- in a family repo (:func:`is_member`) -- its required inputs are all
-    declared. A ``declared_by`` renderer writes part of a repo-owned file and is due only where that is declared.
+    declared.
     """
     text = _manifest(root)
     declared = _render_table(text)
     member = is_member(text)
-    present = set(_due(lambda path: (root / path).is_file(), declared))
+    present = set(_due(lambda path: (root / path).is_file()))
 
     def why(renderer: Renderer) -> str | None:
         if renderer in present:
             return None
-        if renderer.declared_by:
-            return f'[{RENDER_TABLE}] {renderer.declared_by} is not declared'
+        if renderer.present_only:
+            return 'no file it writes is present (a repo committing Rust carries rust-toolchain.toml: lockcheck)'
         if not member:
             return 'not a family repo (no dev-lab dependency, no [tool.dev_lab.*] table) and no file it writes exists'
         if missing := sorted(renderer.required - set(declared)):
@@ -235,13 +264,15 @@ def plan(root: Path) -> tuple[tuple[Renderer, str | None], ...]:
     return tuple((renderer, why(renderer)) for renderer in RENDERERS)
 
 
-def _due(has: Callable[[str], bool], declared: Mapping[str, object]) -> tuple[Renderer, ...]:
+def _due(has: Callable[[str], bool]) -> tuple[Renderer, ...]:
     def due(row: ProjectFile) -> bool:
         if row.renderer is None:
             return False
-        return row.renderer.declared_by in declared if row.renderer.declared_by else has(row.path)
+        return has(row.path)
 
     present = {row.renderer for row in PROJECT_FILES.values() if due(row)}
+    if any(has(path) for path in WORKFLOW_FILES):
+        present.add(CIWORKFLOWS)
     return tuple(renderer for renderer in RENDERERS if renderer in present)
 
 
@@ -278,7 +309,7 @@ def undeclared_inputs(text: str, has: Callable[[str], bool]) -> list[str]:
     re-render that tree's family files, and they go stale.
     """
     declared = _render_table(text)
-    return [f'{r.name} {key}' for r in _due(has, declared) for key in sorted(r.required - set(declared))]
+    return [f'{r.name} {key}' for r in _due(has) for key in sorted(r.required - set(declared))]
 
 
 def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
@@ -328,40 +359,6 @@ def _run(argv: list[str], root: Path) -> int:
     return _door.run(argv, cwd=root, check=False).returncode
 
 
-def _git_lines(root: Path, *args: str) -> tuple[str, ...]:
-    done = _door.run(
-        [shutil.which('git') or 'git', '-C', str(root), *args],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        check=False,
-        timeout=60,
-    )
-    if done.returncode != 0:
-        msg = f'git {" ".join(args)} failed in {root}: {done.stderr.strip()}'
-        raise RuntimeError(msg)
-    return tuple(line for line in done.stdout.splitlines() if line)
-
-
-def project_files_on_disk(root: Path) -> tuple[str, ...]:
-    """The tracked project-level files of *root*: every top-level FILE, plus the registry's nested paths."""
-    tracked = _git_lines(root, 'ls-files')
-    nested = {path for path in PROJECT_FILES if '/' in path}
-    return tuple(sorted(path for path in tracked if '/' not in path or path in nested or _is_workflow(path)))
-
-
-_WORKFLOWS: Final = '.github/workflows/'
-
-
-def _is_workflow(path: str) -> bool:
-    return path.startswith(_WORKFLOWS) and '/' not in path[len(_WORKFLOWS) :]
-
-
-def unaccounted(root: Path, owned_here: Mapping[str, str]) -> tuple[str, ...]:
-    """Project-level files in *root* that neither the family list nor the repo's own *owned_here* names."""
-    return tuple(path for path in project_files_on_disk(root) if path not in PROJECT_FILES and path not in owned_here)
-
-
 def load_deltas(path: Path) -> Mapping[str, Delta]:
     """The ``DELTAS`` mapping a repo declares, read from the module file at *path* (its own convention)."""
     spec = importlib.util.spec_from_file_location(path.stem, path)
@@ -375,56 +372,41 @@ def load_deltas(path: Path) -> Mapping[str, Delta]:
 
 
 def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple[str, ...]:
-    """Every RENDERED base this repo declares, re-rendered into *root*; one line per artefact, what happened.
+    """Every RENDERED base this repo declares, re-rendered into *root*; one line per artifact, what happened.
 
-    A REQUIRED base (the Makefile) is NOT written -- it is presence-only, and rendering it would clobber
-    the recipes that are the repo's own. Its status is reported, so one command still answers for all.
     With *write* false nothing is written and the lines say what WOULD change: the check mode.
     """
     out: list[str] = []
-    for artefact in sorted(deltas):
-        base = artefact_base(artefact)
-        path = root / artefact
-        report = inspect_file(path, base, deltas[artefact])
+    for artifact in sorted(deltas):
+        base = artifact_base(artifact)
+        path = root / artifact
+        report = inspect_file(path, base, deltas[artifact])
         if report.status == INSTALLED:
-            out.append(f'{artefact}: current')
+            out.append(f'{artifact}: current')
         elif base.mode != RENDERED:
-            out.append(f'{artefact}: {report.status} ({base.mode}, not written) -- {report.detail}')
+            out.append(f'{artifact}: {report.status} ({base.mode}, not written) -- {report.detail}')
         elif write:
-            path.write_bytes(render(base, deltas[artefact]).encode('utf-8'))
-            out.append(f'{artefact}: rendered (was {report.status})')
+            path.write_bytes(render(base, deltas[artifact]).encode('utf-8'))
+            out.append(f'{artifact}: rendered (was {report.status})')
         else:
-            out.append(f'{artefact}: would render (is {report.status})')
+            out.append(f'{artifact}: would render (is {report.status})')
     undeclared = sorted(set(BASES) - set(deltas))
-    out += [f'{artefact}: NO DELTA DECLARED -- this repo has not adopted the family base' for artefact in undeclared]
+    out += [f'{artifact}: NO DELTA DECLARED -- this repo has not adopted the family base' for artifact in undeclared]
     return tuple(out)
 
 
-def whole_files() -> tuple[tuple[str, str], ...]:
-    """The family files every repo carries whole, with no delta: (repo-relative path, its text)."""
-    return ((principles.PAGE_REL, principles.render()), (remconfig.REL, remconfig.render()))
+def managed_sections() -> tuple[tuple[str, str], ...]:
+    """The family sections every repo carries inside a file of its own: (repo-relative path, the section text)."""
+    from dev_lab.dev import agentsection  # noqa: PLC0415 -- the light merge job imports famfiles
+
+    return ((agentsection.AGENTS_REL, agentsection.render_section()),)
 
 
 def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
-    """The family files with no delta, re-rendered into *root*; one line per file. *write* false: the check mode.
+    """The family section of AGENTS.md, re-rendered into *root*; one line. *write* false: the check mode."""
+    from dev_lab.dev import agentsection  # noqa: PLC0415 -- the light merge job imports famfiles
 
-    ``.claude/rem.json`` that differs is the repo's own choice and is reported, never overwritten.
-    """
-    out: list[str] = []
-    for rel, text in whole_files():
-        path = root / rel
-        held = path.read_text(encoding='utf-8') if path.is_file() else None
-        if held == text:
-            out.append(f'{rel}: current')
-        elif rel == remconfig.REL and held is not None:
-            out.append(f'{rel}: the repo`s own choice, not written -- reconcile it with {text.strip()} by hand')
-        elif write:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text, encoding='utf-8', newline='\n')
-            out.append(f'{rel}: rendered')
-        else:
-            out.append(f'{rel}: would render ({"absent" if held is None else "drifted"})')
-    return tuple(out)
+    return (agentsection.render_into(root, write=write),)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -434,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
     names the repo's module (no deltas: no per-file overrides, no base written); exit 0 when every one is current
     (after writing, unless --check), else 1. ``--deltas`` implies ``--files``.
     """
-    parser = argparse.ArgumentParser(description='Render every family artefact a repo declares (the one door).')
+    parser = argparse.ArgumentParser(description='Render every family artifact a repo declares (the one door).')
     parser.add_argument('--repo', type=Path, default=Path.cwd())
     parser.add_argument('--files', action='store_true', help='only the famfiles renderer: whole + base/delta files')
     parser.add_argument('--deltas', type=Path, help='the repo DELTAS module; implies --files')

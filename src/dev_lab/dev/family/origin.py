@@ -35,7 +35,7 @@ class Snapshot:
         return path in self.paths
 
     def names(self, directory: PurePath | str) -> set[str]:
-        """The file names directly inside *directory* (a relative path of either flavour)."""
+        """The file names directly inside *directory* (a relative path of either flavor)."""
         wanted = PurePosixPath(*PurePath(directory).parts)
         return {PurePosixPath(p).name for p in self.paths if PurePosixPath(p).parent == wanted}
 

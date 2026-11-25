@@ -304,7 +304,7 @@ def _strip_comment(line: str) -> str:
     """*line* with a TOML comment removed, quoted text left alone.
 
     Stripping keeps a comment out of the record entirely: a full-line comment strips to an empty string, so a comment
-    that READS as an assignment (`# gap_mm = 12.5 ...`) cannot match. The rest is defence in depth -- the key set
+    that READS as an assignment (`# gap_mm = 12.5 ...`) cannot match. The rest is defense in depth -- the key set
     comes from the parse, so no line scan can invent a name -- and a `#` mis-cut out of a string value can at worst
     move a line number.
     """

@@ -55,7 +55,8 @@ from lab_commons.log import emit
 from dev_lab.dev import _protect_gitea, _protect_github
 from dev_lab.dev._forgebackends import GITHUB, backend_for
 from dev_lab.dev._protect_steps import Step
-from dev_lab.dev.ciworkflows import WORKFLOW_DIRS, placed
+from dev_lab.dev.ciworkflows import placed
+from dev_lab.dev.ciworkflowshape import WORKFLOW_DIRS
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.familyrepos import FAMILY_TABLE
 from dev_lab.dev.forge import Forge, forge_of_url

@@ -1,0 +1,7 @@
+# Boundary input: units here, absolute SI after the codec.
+id = "w-001"
+finish = "painted"
+mass = "250 g"
+operating_temperature = "85 degC"
+ambient_pressure = "1 atm"
+seal_pressure = "2 bar"

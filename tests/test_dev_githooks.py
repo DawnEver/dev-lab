@@ -6,7 +6,7 @@ WHY THESE ARMS AND NOT OTHERS. Every arm below is a difference MEASURED between 
 repo-specific decisions from the environment. A test that only proved "the script runs" would pass
 over every one of them.
 
-THE REACHABILITY HALF IS AS IMPORTANT AS THE BEHAVIOUR HALF. A "shared" script each repo copies is
+THE REACHABILITY HALF IS AS IMPORTANT AS THE BEHAVIOR HALF. A "shared" script each repo copies is
 the fork it claims to remove, so :func:`test_the_hook_resolves_through_the_installed_package` pins
 that the payload is reached by NAME through the installed package rather than by a path a consumer
 wrote down.

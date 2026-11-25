@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from _task_ledger import on_branch, open_task, plant_ledger
 
-from dev_lab.dev import depneeds, taskbinding
+from dev_lab.dev import depneeds
 
 _MANIFEST = (
     '[project]\nname="example"\nversion="0"\n'
@@ -18,6 +19,7 @@ _MANIFEST = (
 
 
 def _root(tmp_path: Path, text: str = _MANIFEST) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     (tmp_path / 'pyproject.toml').write_text(text, encoding='utf-8')
     return tmp_path
 
@@ -102,17 +104,14 @@ def test_a_malformed_needs_line_is_refused_by_name(tmp_path: Path) -> None:
         depneeds.task_needs(_ledger(tmp_path, 'simba windows'), 'work@abc')
 
 
-def test_dep_selects_the_bound_tasks_extras_and_none_without_a_binding(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The dep door reads the session's bound task; with no binding it keeps the default (planted control)."""
-    root = _root(tmp_path)
-    ledger = _ledger(tmp_path, '[simba]')
-    bound = taskbinding.Binding('work@abc', ledger, ledger / '.bindings' / 's.json')
-    monkeypatch.setattr(taskbinding, 'session_binding', lambda _env, **_kw: bound)
-    assert depneeds.bound_task_extras(root, {}) == ('dev', 'simba')
-    monkeypatch.setattr(taskbinding, 'session_binding', lambda _env, **_kw: None)
-    assert depneeds.bound_task_extras(root, {}) is None
+def test_dep_selects_the_branches_task_extras_and_none_off_a_task_branch(tmp_path: Path) -> None:
+    """The dep door reads the task the checkout's branch names; on no task head it keeps the default (control)."""
+    root = _root(tmp_path / 'work')
+    open_task(plant_ledger(), 'work', extra='needs: [simba]\n')
+    on_branch(root, 'main')
+    assert depneeds.task_extras(root) is None
+    on_branch(root, 'pr/work/x')
+    assert depneeds.task_extras(root) == ('dev', 'simba')
 
 
 def test_a_root_with_no_manifest_needs_nothing(tmp_path: Path) -> None:
