@@ -76,6 +76,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'docsite': ('adopted_by', 'scripts/repo/docs.py'),
     # the shared-temp prefix scan (2026-11-11): each consumer's temp test names its facts and delegates here.
     'tempprefix': ('adopted_by', 'tests/test_temp.py'),
+    # the uv.lock / Cargo rev agreement, lifted from one consumer's sibling-address test (2026-11-25).
+    'cratepin': ('supersedes', 'tests/architecture/declarations/test_every_in_house_sibling_has_one_address.py'),
     # SUPERSEDES consumer-b's `scripts/durations.py`, which is the LEDGER half and nothing else -- the
     # verdict taken on it stays in that repo's `test_slow_is_discovered_by_the_wall.py`, which is
     # therefore NOT named here: it holds `WALL_SECONDS`, `SLOW_BAR`, `FAST_CEILING`, the ledger floor
