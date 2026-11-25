@@ -42,6 +42,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
+from dev_lab.dev.tablequantity import quantity
 from dev_lab.ops.sshkey import ENV as AUTH_ENV
 
 __all__ = [
@@ -94,14 +95,15 @@ class HttpsDoor:
 
     ``https_port`` is the relay's port on 127.0.0.1; ``https_site`` the ``[ops.caddy]`` site that routes
     :data:`PATHS` to it (it must be an allowlisted one). A peer may fail ``https_attempts`` admissions per
-    ``https_window_minutes``; the one past that locks it out for ``https_lock_minutes``.
+    ``https_window`` (a duration, ``"15 min"``); the one past that locks it out for ``https_lock`` (``"60 min"``).
+    Both are held in seconds (:mod:`dev_lab.dev.tablequantity`).
     """
 
     https_port: int = 0
     https_site: str = ''
     https_attempts: int = 5
-    https_window_minutes: float = 15.0
-    https_lock_minutes: float = 60.0
+    https_window: float = quantity('duration', 15 * 60.0, retired=('https_window_minutes', 'min'))
+    https_lock: float = quantity('duration', 60 * 60.0, retired=('https_lock_minutes', 'min'))
 
     def __post_init__(self) -> None:
         """Refuse a door that lies: a port outside 1..65535, no site, or a throttle that admits without bound."""
@@ -117,8 +119,8 @@ class HttpsDoor:
         if not self.https_site:
             msg = 'https_port is declared without https_site (the allowlisted [ops.caddy] site that routes it)'
             raise ValueError(msg)
-        if not (self.https_attempts >= 1 and self.https_window_minutes > 0 and self.https_lock_minutes > 0):
-            msg = 'https_attempts, https_window_minutes and https_lock_minutes must be positive (the failure throttle)'
+        if not (self.https_attempts >= 1 and self.https_window > 0 and self.https_lock > 0):
+            msg = 'https_attempts, https_window and https_lock must be positive (the failure throttle)'
             raise ValueError(msg)
 
 
@@ -232,10 +234,10 @@ class Gate:
                 raise
 
     def _strike(self, peer: str, now: float) -> None:
-        window = self.door.https_window_minutes * 60
+        window = self.door.https_window
         seen = [at for at in self._fails.get(peer, []) if now - at < window] + [now]
         if len(seen) > self.door.https_attempts:
-            self._locked[peer], seen = now + self.door.https_lock_minutes * 60, []
+            self._locked[peer], seen = now + self.door.https_lock, []
             emit(f'[httpsdoor] {self.role}: locked peer {peer}', err=True)
         self._fails[peer] = seen
 
@@ -410,15 +412,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--role', choices=sorted(PATHS), required=True)
     parser.add_argument('--keys', required=True, help="the role account's authorized-keys file (the ssh key set)")
     parser.add_argument('--attempts', type=int, default=HttpsDoor.https_attempts)
-    parser.add_argument('--window-minutes', type=float, default=HttpsDoor.https_window_minutes)
-    parser.add_argument('--lock-minutes', type=float, default=HttpsDoor.https_lock_minutes)
+    parser.add_argument('--window-minutes', type=float, default=HttpsDoor.https_window / 60)
+    parser.add_argument('--lock-minutes', type=float, default=HttpsDoor.https_lock / 60)
     parser.add_argument('serve', nargs=argparse.REMAINDER, help='-- then the sudo serve command line')
     args = parser.parse_args(argv)
     serve = args.serve[1:] if args.serve[:1] == ['--'] else args.serve
     if not serve:
         parser.error('give the serve command after --')
     door = HttpsDoor(https_port=args.port, https_site='-', https_attempts=args.attempts,
-                     https_window_minutes=args.window_minutes, https_lock_minutes=args.lock_minutes)  # fmt: skip
+                     https_window=args.window_minutes * 60, https_lock=args.lock_minutes * 60)  # fmt: skip
     relay(args.port, Gate(args.role, keys_file(Path(args.keys)), door), sudo_run(serve))
     return 0
 

@@ -99,7 +99,7 @@ def home(tmp_path: Path) -> Path:
     return tmp_path
 
 
-POLICY = Policy(log_max_mb=1, uv_prune=False)
+POLICY = Policy(log_max=1024**2, uv_prune=False)
 SOURCES = {'a3', 'a4', 'a5'}
 
 
@@ -199,7 +199,7 @@ def test_a_sha_whose_other_part_is_unrecorded_is_an_unrecorded_run(tmp_path: Pat
 def test_in_flight_is_live_occupied_ungathered_or_being_built(home: Path) -> None:
     """The ONE definition every keep-for-flight rule reads; the abandoned and the gathered are not in it."""
     flying = in_flight(home / 'lab', POLICY, now=NOW, live={'x9'}, occupied={'a2'})
-    assert flying == {'x9', 'a2', 'building'}, 'f1 is past abandon_days: only its live run file keeps it'
+    assert flying == {'x9', 'a2', 'building'}, 'f1 is past abandon: only its live run file keeps it'
 
 
 def test_an_env_is_kept_for_an_in_flight_run_or_its_repos_newest_run_only(home: Path) -> None:
@@ -262,7 +262,7 @@ def test_the_cli_is_a_dry_run_reporting_paths_bytes_and_files_per_rule(home: Pat
     monkeypatch.setenv('LAB_ROOT', (home / 'lab').as_posix())
     monkeypatch.setattr(retention, 'read_usage', lambda *_a, **_k: quota)
     monkeypatch.setattr(retention, '_live_shas', set)
-    monkeypatch.setattr(retention, 'section', lambda _name: {'log_max_mb': 1, 'uv_prune': False})
+    monkeypatch.setattr(retention, 'section', lambda _name: {'log_max': '1 MiB', 'uv_prune': False})
     monkeypatch.setattr(retention, 'emit', said.append)
     assert retention.main(['--cluster']) == 0
     assert (home / 'lab' / 'runs' / 'a1' / 'base').exists(), 'without --apply nothing is touched'
@@ -313,7 +313,12 @@ def test_workstation_plan_removes_stale_forge_trees_only(tmp_path: Path) -> None
 
 
 def test_policy_is_data_and_an_unknown_key_is_refused() -> None:
-    assert load_policy({'abandon_days': 5}).abandon_days == 5
+    assert load_policy({'abandon': '5 d'}).abandon == 5 * 86400
+    assert load_policy({'min_age': '90 min', 'log_max': '2 MiB'}) == Policy(min_age=5400.0, log_max=2 * 1024**2)
+    with pytest.raises(ValueError, match=r'\[retention\] abandon = 5 is a bare number'):
+        load_policy({'abandon': 5})
+    with pytest.raises(ValueError, match=r'abandon_days = 5 is retired.*write abandon = "5 d"'):
+        load_policy({'abandon_days': 5})  # FORMATS-MIGRATE-ONCE: the unit-suffixed key is never read
     assert load_policy({}) == Policy()
     with pytest.raises(ValueError, match='carry_keep'):
         load_policy({'carry_keep': 5})  # retired: the carry's own selection decides
@@ -446,7 +451,7 @@ def test_a_superseded_run_is_not_in_flight_and_its_streams_outlive_its_tree(home
     doomed = {d.path: d for d in plan.doomed}
     assert doomed[tree].rule == 'tree-not-in-flight'
     assert doomed[home / 'lab' / 'envs' / 'e7'].rule == 'env-unreferenced', 'envs follow the trees'
-    assert home / 'lab' / 'runs' / 's1' not in doomed, 'its state is a carry source, kept until abandon_days'
+    assert home / 'lab' / 'runs' / 's1' not in doomed, 'its state is a carry source, kept until abandon'
     apply(plan, POLICY, usage=None, dry_run=False, say=lambda _: None, run=_no_run)
     assert not tree.exists()
     run = home / 'lab' / 'runs' / 's1'
