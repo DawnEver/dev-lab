@@ -205,6 +205,9 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
 #: with why. Tracked again in any repo, it is refused by name (:mod:`dev_lab.dev.famtests.famfiles`).
 RETIRED_PROJECT_FILES: Final[dict[str, str]] = {
     '.claude/rem.json': 'the backlog is the Gitea tasks repo plus the issue tracker; no per-repo rem config',
+    '.claude/rules/principles.md': (
+        'the principles render only inside AGENTS.md`s family section (dev_lab.dev.agentsection); no rule page'
+    ),
     '.claude/sharp-review.json': 'the forge review is the one review (2026-11-05); no sharp-review ledger',
     '.rgignore': 'no family search-skip file (user ruling 2026-11-24)',
     'ruff.toml': 'ruff config lives only under [tool.ruff] in pyproject.toml',

@@ -150,7 +150,8 @@ def test_famfiles_writes_the_agents_section_and_keeps_the_repo_text(tmp_path: Pa
 
 
 #: Retired 2026-11-24 (user ruling): no family row, no renderer, no requirement -- each refused by name.
-_RETIRED: Final = ('.claude/rem.json', '.rgignore', 'ruff.toml')
+#: `.claude/rules/principles.md`: 5e474fa1 retired its render; 2026-11-25 a consumer still tracked it, stale.
+_RETIRED: Final = ('.claude/rem.json', '.claude/rules/principles.md', '.rgignore', 'ruff.toml')
 
 
 def test_the_retired_project_files_are_registered_and_have_no_row() -> None:
