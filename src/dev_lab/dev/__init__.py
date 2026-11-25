@@ -351,7 +351,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.selfbuild` -- the one environment mutation that is NOT a dependency change:
   installing a wheel this workspace built from the checkout you are standing in. It composes with
   :mod:`~dev_lab.dev.dep` rather than repeating it -- that door decides WHEN an environment may
-  move, this one decides WHOSE wheel may go through it in :attr:`~dev_lab.dev.dep.Mode.PINNED`.
+  move, this one decides WHOSE wheel may go through it in :attr:`~dev_lab.dev._dep_pip.Mode.PINNED`.
   Without the ownership half, ``--no-index`` is a safety catch on a loaded gun: it stops an index
   being read and says nothing at all about ``pip install ./somebody-elses.whl``. The set of
   distributions a workspace builds is READ from the manifests the caller hands in, never spelled in a
