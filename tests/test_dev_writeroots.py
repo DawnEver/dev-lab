@@ -21,6 +21,7 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import writeroots
 from dev_lab.dev._deny_writeroots_row import WRITES_STAY_IN_THE_TREE
+from dev_lab.dev._writeroots_shell import shell_targets
 from dev_lab.dev.codeplace import main
 from dev_lab.dev.famtests import tempprefix
 from dev_lab.dev.writeroots import (
@@ -32,7 +33,6 @@ from dev_lab.dev.writeroots import (
     judge,
     owned_globs,
     refuse_outside_tree,
-    shell_targets,
     write_prone_roots,
 )
 
