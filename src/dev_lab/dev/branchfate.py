@@ -17,8 +17,9 @@ bundle, patch or file copy is written anywhere; what is not landed is LISTED wit
   once the PR is gone, and the next run here finds it ownerless);
 * ``merged``: no owner, its tip is on a holder and its tree (if any) holds no tracked change and no untracked,
   not-ignored file (:func:`dev_lab.dev.reclaim.unlanded_work`). CLEANED: the tree is removed
-  (:func:`dev_lab.dev.reclaim.removed_approved`: outputs home, all or nothing) and the branch deleted, pinned to
-  the judged sha. A step that fails keeps the rest and is a ``FAILED`` line naming why; the next run retries it.
+  (:func:`dev_lab.dev.reclaim.removed_approved`: its output/ deleted with it, all or nothing) and the branch
+  deleted, pinned to the judged sha. A step that fails keeps the rest and is a ``FAILED`` line naming why; the next
+  run retries it.
 * ``unlanded``: no owner, but commits no holder has or work in its tree. KEPT and LISTED with its doors
   (:data:`dev_lab.dev.reclaim.UNLANDED_DOORS`): commit it on its branch and land it through a PR, or the user
   discards it with ``branchset --discard``. Nothing of it is touched.
