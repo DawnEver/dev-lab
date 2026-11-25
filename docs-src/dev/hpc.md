@@ -95,7 +95,14 @@ while it drifts, naming each item; `--discard-drift` accepts the loss (`dev_lab.
 
 **Cleaning an account completely** (user ruling 2026-11-25) goes per directory: read it
 (`look --account <user> inventory <path>`); a directory of caches, or of checkouts all proven pushed, goes through
-`python -m lab_commons.hpc clean`; anything holding results of record is first archived,
+`python -m lab_commons.hpc clean`. A checkout NOT PUSHED is first brought home,
+`python -m dev_lab.dev.hpcaccount salvage --account <user> <path|.> [--apply]`: per checkout a bundle of the
+commits on no remote, `git diff HEAD --binary` and a tar of the untracked files up to 1 MiB (larger ones listed),
+carried over the Runner's stdout (nothing written on the account) into the invoking checkout's
+`output/logs/<yy>/<mm>/<dd>/salvage/<user>/` with a sha256 `manifest.json`; `hpcaccount salvage-fetch <salvaged
+checkout> --into <repo> [--apply]` then fetches a bundle into the repo whose remote has its origin's repository name,
+as `salvage/<user>/<checkout>/<ref>` branches (`dev_lab.dev.hpcaccount.salvage`). Anything holding results of record
+is first archived,
 `python -m dev_lab.dev.hpcaccount archive --account <user> <path> [--as <name>] [--apply]`: tar parts of at most
 4 GiB piped from the account to `<[storage] runs>/archive/<user>/<path>/part-NNNNN.tar`, each read back from the
 store (`rclone hashsum sha256 --download`) and compared with the sha256 taken on the way up, then

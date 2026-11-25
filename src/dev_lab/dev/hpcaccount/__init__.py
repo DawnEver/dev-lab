@@ -42,6 +42,12 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   (:mod:`~dev_lab.dev.hpcaccount.archive`) send ``~/<path>`` to the family's run store as tar parts, each read back
   and its sha256 compared, under a manifest; then delete it through ``lab_commons.hpc clean`` only once that
   archive is proved and the tree unchanged.
+* ``salvage --account <user> <path> [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.salvage`) brings every checkout's
+  own git work under ``~/<path>`` home before the account is cleaned -- a bundle of the commits on no remote, the
+  tracked diff, the untracked files -- through the Runner's stdout, writing nothing on the account, under the
+  invoking checkout's dated ``salvage`` output with a sha256 manifest; ``salvage-fetch <salvaged checkout> --into
+  <repo> [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.salvagefetch`) fetches one bundle into a local repo as
+  ``salvage/<account>/<checkout>/<name>`` branches, matched by its origin's repository name.
 * ``reclaim-foreign --account <user> <home-relative path> [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.reclaim`)
   removes the entries OTHER declared fleet accounts own under one account's home: grants each owner traverse,
   has each owner delete its own, removes the rest, revokes and re-reads every grant; without ``--apply`` the plan.
@@ -83,7 +89,7 @@ _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
     '{deploy [...] | deploy-fleet [...] | drift[-fleet] [...] | ci-pause[-fleet] [...] | '
     'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | keys [...] | look [...] | '
-    'archive [...] | archive-clean [...] | '
+    'archive [...] | archive-clean [...] | salvage [...] | salvage-fetch [...] | '
     'reclaim-foreign [...] | storage-check [...] | '
     'tick-status [...] | tick-stop [...] | '
     'tick <repo>... [--lock <path> --wall-minutes <m>] | allocate [...]}'
@@ -105,6 +111,8 @@ def main(argv: list[str] | None = None) -> int:
         keys,
         look,
         reclaim,
+        salvage,
+        salvagefetch,
         storage,
         storagecheck,
         tickstop,
@@ -128,6 +136,8 @@ def main(argv: list[str] | None = None) -> int:
         'look': look.main,
         'archive': archive.main,
         'archive-clean': lambda rest: archive.main(rest, verb='archive-clean'),
+        'salvage': salvage.main,
+        'salvage-fetch': salvagefetch.main,
         'reclaim-foreign': reclaim.main,
         'tick-status': tickstop.main_status,
         'tick-stop': tickstop.main_stop,
