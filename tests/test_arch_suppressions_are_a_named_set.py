@@ -795,6 +795,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'from dev_lab.dev import agentsection',
     ): 'the light merge job reaches famfiles; agentsection pulls the rules registry, which the light door lacks',
     (
+        'src/dev_lab/dev/nativefirst.py',
+        'PLC0415',
+        'from dev_lab.dev.rules import tracked_files',
+    ): "the rules registry imports this module's row: a top-level import back is a cycle",
+    (
         'src/dev_lab/dev/_ir_codec.py',
         'PLR0911',
         'def _value_out(spec: object, value: object, units: Mapping[str, str], prefix: str) -> object:',
