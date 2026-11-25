@@ -102,6 +102,10 @@ _Rendered by `dev_lab.dev.agentsection` from `dev_lab.dev.principles`; a hand ed
   Rust from its first line; a Python version of it is only a scratch prototype, never a second implementation;
   acceptance is against references (analytic, the vendor ladder, the previous implementation during a migration), never
   against a Python twin.
+- **Everything in its place** (`everything-in-its-place`): Each thing lives in the one owner responsible for it; a
+  misplaced thing moves, never leaving a pointer or a copy.
+- **No detour** (`no-detour`): Every hop must add something; a rule that forces a detour is the defect. Complexity is
+  measured, not guessed.
 
 ## Family workflow
 

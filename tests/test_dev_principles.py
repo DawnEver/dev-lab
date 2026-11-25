@@ -21,7 +21,7 @@ def test_the_set_is_the_named_set_and_keeps_valuable_options() -> None:
         'first-principles', 'no-historical-baggage', 'occams-razor', 'single-source-of-truth',
         'layered-decoupling', 'names-match-behavior', 'no-backward-compatibility', 'progressive-disclosure',
         'keep-valuable-options', 'every-wall-teaches', 'no-barrier-fan-out', 'images-by-absolute-path',
-        'worktree-names-its-task', 'native-first',
+        'worktree-names-its-task', 'native-first', 'everything-in-its-place', 'no-detour',
     ]  # fmt: skip
     kept = {one.id: one for one in PRINCIPLES}['keep-valuable-options']
     assert kept.name == 'Keep every valuable parameter and option'
@@ -88,6 +88,22 @@ def test_native_first_is_the_ruling_verbatim_and_has_its_mechanism() -> None:
         'Python twin.'
     )
     assert 'NATIVE-FIRST' in {rule.id for rule in RULES}
+
+
+def test_everything_in_its_place_and_no_detour_are_the_rulings_verbatim() -> None:
+    """User-approved 2026-11-25 (v1 D67/D68): both statements are the user's words; OWNER-DAG is their mechanism."""
+    by_id = {one.id: one for one in PRINCIPLES}
+    place, detour = by_id['everything-in-its-place'], by_id['no-detour']
+    assert place.name == 'Everything in its place'
+    assert place.statement == (
+        'Each thing lives in the one owner responsible for it; a misplaced thing moves, never leaving a pointer or a '
+        'copy.'
+    )
+    assert detour.name == 'No detour'
+    assert detour.statement == (
+        'Every hop must add something; a rule that forces a detour is the defect. Complexity is measured, not guessed.'
+    )
+    assert {'OWNER-DAG', 'NO-DETOUR'} <= {rule.id for rule in RULES}
 
 
 def test_the_json_flag_prints_the_payload(capsys: pytest.CaptureFixture[str]) -> None:

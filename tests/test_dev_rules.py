@@ -145,6 +145,8 @@ _IDS = frozenset(
         'ONE-FORMAT-PER-NEED',
         'ZERO-CORE-CHANGE',
         'NATIVE-FIRST',
+        'OWNER-DAG',
+        'NO-DETOUR',
         'MACHINES-MEET-ONLY-THROUGH-THE-FORGE',
     }
 )

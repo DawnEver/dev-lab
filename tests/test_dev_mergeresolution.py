@@ -38,6 +38,12 @@ def test_every_class_is_grounded_in_a_principle_and_every_principle_is_placed() 
     assert ungrounded() == ()
 
 
+def test_a_moved_thing_and_a_detour_ground_their_classes() -> None:
+    """2026-11-25: a resolution ports content to its owner (never a pointer back), and drops a hop adding nothing."""
+    assert 'everything-in-its-place' in GROUNDS['newer-structure']
+    assert 'no-detour' in GROUNDS['simpler-side']
+
+
 def test_a_principle_no_class_or_reason_places_is_refused() -> None:
     """PLANTED CONTROLS: an unplaced principle, a ground naming no principle, a placement with no reason."""
     planted = (*PRINCIPLES, Principle('planted-principle', 'Planted', 'A principle nobody maps.'))

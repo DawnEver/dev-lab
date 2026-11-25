@@ -92,6 +92,12 @@ _ENFORCED = {
     'PRIOR-ART-FIRST': (guard('tests/test_dev_priorart.py'),),
     'ZERO-CORE-CHANGE': (guard('tests/test_dev_corechange.py'),),
     'NATIVE-FIRST': (guard('tests/test_dev_nativefirst.py'),),
+    'OWNER-DAG': (
+        guard('tests/test_dev_ownerdag.py'),
+        guard('tests/test_dev_rustdeps.py'),
+        guard('tests/test_dev_deptable.py'),
+    ),
+    'NO-DETOUR': (guard('tests/test_dev_passthrough.py'),),
     'MEASURE-BEFORE-PORTING': (guard('tests/test_dev_portmeasure.py'), guard('tests/test_dev_forgemerge.py')),
     'ONE-FORMAT-PER-NEED': (
         guard('tests/test_dev_layout.py'),

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import codeplace, floors, layout
+from dev_lab.dev import _layout_table, codeplace, floors, layout
 from dev_lab.dev._layout_table import REQUIRED, LayoutNotDeclared, declared_layout
 from dev_lab.dev.codeplace import main
 from dev_lab.dev.famtests.layout import assert_layout_holds
@@ -98,6 +98,17 @@ apps = []
 'tests/unit' = {{ mirror = 'apps', allow = ['.py'], extra = ['verification'] }}
 'tests/baselines' = {{ mirror = 'tests/unit', allow = ['.json'] }}
 """
+
+
+def test_declares_reads_the_rows_never_the_disk(tmp_path) -> None:
+    """A row declares a path whether it exists or not; an undeclared one is refused (PLANTED CONTROLS both ways)."""
+    table = declared_layout(_checkout(tmp_path, _MIRRORED))
+    assert _layout_table.declares('apps/motor/sim', table)  # declared, never created
+    assert _layout_table.declares('tests/unit/motor/sim', table)  # a mirrored twin
+    assert _layout_table.declares('apps/motor/sim/run.py', table)  # a file its directory allows
+    assert not _layout_table.declares('apps/pump', table)  # no row
+    assert not _layout_table.declares('apps/motor/sim/run.json', table)  # a format the row does not allow
+    assert not _layout_table.declares('tests/unit/pump', table)  # a twin of nothing
 
 
 def test_a_mirror_row_declares_exactly_the_twins_of_its_mirrored_root(tmp_path) -> None:

@@ -1,22 +1,23 @@
-"""The DECLARED half of :mod:`dev_lab.dev.layout`: ``[layout]`` of ``layout.toml`` read and validated as rows.
+"""The DECLARED half of :mod:`dev_lab.dev.layout`: ``[layout]`` of ``layout.toml`` read, validated and matched.
 
 Split out of :mod:`dev_lab.dev.layout` (2026-11-25, MODULE-SIZE-ALARM) along its own seam: this module turns the
-table into rows and refuses a malformed one; that module judges a tree against the rows and scans it.
+table into rows, refuses a malformed one, and matches a path against the rows (:func:`row_for`, :func:`declares` --
+the rows alone, never the disk, so OWNER-DAG asks it of a path not created yet); that module judges a tree against
+the rows and scans it.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import fnmatch
 import hashlib
 import json
 import re
-from typing import TYPE_CHECKING, Final
+from pathlib import Path
+from typing import Final
 
 from dev_lab.dev._deny_outputcode_row import CODE_SUFFIXES
 from dev_lab.dev.codeplace import FAMILY_HOMES, LAYOUT_FILE, PlacementNotDeclared, placement_table
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 __all__ = [
     'ANY',
@@ -25,9 +26,13 @@ __all__ = [
     'RULE_ID',
     'TABLE',
     'TOOL_CACHE_ROOT',
+    'AmbiguousRowError',
     'Layout',
     'LayoutNotDeclared',
+    'allowed',
     'declared_layout',
+    'declares',
+    'row_for',
 ]
 
 RULE_ID: Final = 'DECLARED-LAYOUT'
@@ -149,3 +154,93 @@ def _mirror_row(manifest: Path, pattern: str, value: dict) -> tuple[object, tupl
     if not isinstance(extra, list) or not all(isinstance(e, str) and e.strip('/') for e in extra):
         raise _refuse(manifest, f'{pattern} mirror extra = {extra!r} must list relative directory names')
     return value['allow'], (target.strip('/'), tuple(e.strip('/') for e in extra), depth)
+
+
+#: What makes a pattern segment a glob (:func:`fnmatch.fnmatchcase`): each match is one wildcard.
+_GLOB: Final = re.compile(r'[*?]|\[[^]]*\]')
+#: How many mirror hops a twin lookup follows (a mirror of a mirror is two); a cycle stops here, undeclared.
+_MIRROR_HOPS: Final = 8
+
+
+class AmbiguousRowError(ValueError):
+    """Two or more rows judge one directory with equal precedence: the table must say which."""
+
+
+def _precedence(pattern: str) -> tuple[bool, int]:
+    """Among the rows of one depth: an explicit (unglobbed) row wins, then fewer wildcards win."""
+    wildcards = len(_GLOB.findall(pattern))
+    return (wildcards == 0, -wildcards)
+
+
+def _mirrored(parts: list[str], pattern: str, layout: Layout, hops: int) -> bool:
+    """Whether MIRROR row *pattern* declares the directory *parts*: an extra name, or a declared twin."""
+    segs = pattern.split('/')
+    if len(segs) >= len(parts) or not all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False)):
+        return False
+    target, extra, depth = layout.mirrors[pattern]
+    if depth is not None and len(parts) - len(segs) > depth:
+        return False  # below the twinned levels: the ordinary rows judge it
+    rel = '/'.join(parts[len(segs) :])
+    if rel in extra:
+        return True
+    if hops >= _MIRROR_HOPS:
+        return False
+    try:
+        return row_for(f'{target}/{rel}', layout, hops + 1) is not None
+    except AmbiguousRowError:
+        return True  # the twin is declared; its own files are named ambiguous
+
+
+def row_for(rel_dir: str, layout: Layout, hops: int = 0) -> tuple[str, frozenset[str]] | None:
+    """The row of *rel_dir* ITSELF (``.`` is the root) by :func:`_precedence`, with what it allows; no inheritance.
+
+    A directory no row of its own depth matches is declared by a MIRROR row above it whose twin is declared.
+
+    Raises:
+        AmbiguousRowError: rows tied on precedence, named.
+
+    """
+    if rel_dir == '.':
+        return ('.', layout.rows['.']) if '.' in layout.rows else None
+    parts = rel_dir.split('/')
+    matching = [
+        pattern
+        for pattern in layout.rows
+        if pattern != '.'
+        and len(segs := pattern.split('/')) == len(parts)
+        and all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False))
+    ] or [pattern for pattern in layout.mirrors if _mirrored(parts, pattern, layout, hops)]
+    if not matching:
+        return None
+    top = max(map(_precedence, matching))
+    best = sorted(p for p in matching if _precedence(p) == top)
+    if len(best) > 1:
+        msg = (
+            f'rows {best} judge {rel_dir} equally (same depth, same wildcard count): ambiguous; declare an explicit '
+            f'row for it or make one pattern narrower'
+        )
+        raise AmbiguousRowError(msg)
+    return best[0], layout.rows[best[0]]
+
+
+def declares(rel: str, layout: Layout) -> bool:
+    """Whether *layout* declares the repo-relative path *rel*, never asking the disk (it may not exist yet).
+
+    A directory with a row of its own (or a mirrored twin), or a file -- a last segment with a suffix -- that its
+    directory's row allows. Rows tied on precedence still declare the path; the scan names their ambiguity.
+    """
+    rel = rel.strip('/') or '.'
+    rel_dir, _, name = rel.rpartition('/')
+    try:
+        if row_for(rel, layout) is not None:
+            return True
+        row = row_for(rel_dir or '.', layout)
+    except AmbiguousRowError:
+        return True
+    return row is not None and bool(Path(name).suffix) and allowed(name, row[1])
+
+
+def allowed(name: str, allows: frozenset[str]) -> bool:
+    """Whether file *name* is one of *allows*: ``*``, its exact (lower-cased) name, or its suffix (``""``: none)."""
+    lower = name.lower()
+    return ANY in allows or lower in allows or Path(lower).suffix in allows
