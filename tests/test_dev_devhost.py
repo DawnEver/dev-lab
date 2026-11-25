@@ -48,7 +48,7 @@ os = "windows"
 cpu = "cpu-x"
 cores = 16
 logical_cores = 24
-memory_gb = 64
+memory = "64 GiB"
 gpu = "gpu-x"
 
 [dev.vendors.solverx]
@@ -278,12 +278,27 @@ def test_drift_writes_nothing_and_render_write_backs_up_first(tmp_path: Path) ->
 
 
 def test_a_shared_box_offers_its_allotment_never_its_total() -> None:
-    whole = {'resources': {'cores': 20, 'memory_gb': 160}}
-    assert devschema.usable(whole) == (20, 160)
+    whole = {'resources': {'cores': 20, 'memory': '160 GiB'}}
+    assert devschema.usable(whole) == (20, 160 * 1024**3)
     shared = {'resources': {**whole['resources'], 'shared': True}}
     assert devschema.usable(shared) == (None, None)
-    allotted = {'resources': {**shared['resources'], 'allotted_cores': 8, 'allotted_memory_gb': 48}}
-    assert devschema.usable(allotted) == (8, 48)
+    allotted = {'resources': {**shared['resources'], 'allotted_cores': 8, 'allotted_memory': '48 GiB'}}
+    assert devschema.usable(allotted) == (8, 48 * 1024**3)
+
+
+def test_machine_memory_carries_its_unit_and_the_old_key_is_refused_with_its_line(tmp_path: Path) -> None:
+    """User ruling 2026-11-25: ``memory = "64 GiB"`` passes; a bare number and ``memory_gb`` are refused by name."""
+    clone = _clone(tmp_path)
+    assert check_host(clone / 'hosts/ws.toml', clone / 'family.toml') == [], 'PLANTED CONTROL: the new shape passes'
+    clone = _clone(tmp_path / 'bare', HOST.replace('memory = "64 GiB"', 'memory = 64'))
+    found = check_host(clone / 'hosts/ws.toml', clone / 'family.toml')
+    assert any('resources.memory = 64 is a bare number' in line and '"64 GiB"' in line for line in found), found
+    clone = _clone(tmp_path / 'old', HOST.replace('memory = "64 GiB"', 'memory_gb = 64'))
+    found = check_host(clone / 'hosts/ws.toml', clone / 'family.toml')
+    assert any('memory_gb = 64 is retired' in line and 'write memory = "64 GiB"' in line for line in found), found
+    clone = _clone(tmp_path / 'time', HOST.replace('memory = "64 GiB"', 'memory = "64 min"'))
+    found = check_host(clone / 'hosts/ws.toml', clone / 'family.toml')
+    assert any('is a duration, not a size' in line for line in found), found
 
 
 def test_a_resources_type_defect_is_refused(tmp_path: Path) -> None:
@@ -347,7 +362,7 @@ def test_a_path_needing_an_unfilled_home_refuses_with_the_remedy() -> None:
 
 
 def test_a_session_fair_box_is_sized_live_and_its_share_is_a_declared_enum(tmp_path: Path) -> None:
-    fair = {'resources': {'logical_cores': 20, 'memory_gb': 160, 'shared': True, 'cpu_share': 'session-fair'}}
+    fair = {'resources': {'logical_cores': 20, 'memory': '160 GiB', 'shared': True, 'cpu_share': 'session-fair'}}
     assert devschema.usable(fair) == (None, None)
     clone = _clone(tmp_path, HOST.replace('gpu = "gpu-x"', 'gpu = "gpu-x"\nshared = true\ncpu_share = "even"'))
     assert any('cpu_share' in line for line in check_host(clone / 'hosts/ws.toml', clone / 'family.toml'))
