@@ -9,9 +9,9 @@ A task hears what it subscribes to without anyone relaying it (`TASK-HEARS-ITS-F
   repository's saved cursor (`issues?state=all&since=`). Labels come with each row, so routing costs no further
   read; adding a label moves the thread's `updated_at`, so it is heard on the next tick. A 304 to the stored ETag
   costs nothing. Commit statuses are in no listing, so open PRs still have their statuses read.
-- **The tick is a setting:** `[forgefeed] tick_s` in the machine file, default 120 seconds.
+- **The tick is a setting:** `[forgefeed] tick` in the machine file, a duration such as `"2 min"`; default 120 s.
 - **The prune duty rides on its own interval.** Where the family binds `prune = { host = "<this machine>" }`, every
-  `[forgefeed] prune_duty_s` (default 1800 s) the hearer fetches each declared checkout and runs the prune duty:
+  `[forgefeed] prune_duty` (a duration; default `"30 min"`) the hearer fetches each declared checkout and runs the prune duty:
   close landed PRs, sweep, prune merged heads, observe the branch policy ([branch set](branch-set.md)).
 - **A break-glass wave awaiting review is news, never an issue.** Where the machine file declares a `[breakglass]`
   endpoint, the hearer asks its status at most every 30 minutes and each session is told each wave in `audit`

@@ -164,6 +164,7 @@ from dev_lab.dev.forgeservesteps import (
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client
+from dev_lab.dev.hpcaccount.spec import schedule_tick
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.testcost import read_budget
@@ -209,7 +210,7 @@ def serve(
     boxed: Callable[[Sequence[Holding]], Box | None] = box_now,
     submit: Callable[[forgerunstate.Run], str] | None = None,
 ) -> ServeReport:
-    """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes).
+    """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick).
 
     *present* re-probes this host's tools where due (:func:`lab_commons.compute.presence.refresh`), before
     anything reads them; *supplied* is what a round admits against
@@ -242,7 +243,7 @@ def serve(
     for card in unbound:
         say(f'[serve] {card.host} is bound to no role of this repo: its card is not read -- {RETIRE} {card.host}')
     every = lease.total_seconds() / 3 if renew_s is None else renew_s
-    beat_s = float(table.get('tick_minutes', 5)) * 60
+    beat_s = schedule_tick(table)
     fetched = locked_fetch(fetch)  # the tick and every producer fetch into one repository
     for line in reattach(root, client(root), lease=lease, say=say):  # runs a dead serve left journaled
         say(line)

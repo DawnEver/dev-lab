@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons import home as _home
 from lab_commons.config import section
+from lab_commons.quantity import Renamed, parse, refuse_renamed
 
 if TYPE_CHECKING:
     from dev_lab.dev.forge import Forge
@@ -28,6 +29,7 @@ __all__ = [
     'PAGE',
     'Thread',
     'cursor',
+    'declared_seconds',
     'feed_dir',
     'is_own',
     'own',
@@ -35,7 +37,6 @@ __all__ = [
     'read_json',
     'record_own',
     'route',
-    'seconds',
 ]
 
 #: The label prefix that subscribes a thread to a task: ``task:<slug>``.
@@ -175,17 +176,24 @@ def route(thread: Thread, labels: tuple[str, ...], pr_tasks: dict[str, set[str]]
     return named | pr_tasks.get(thread.key, set())
 
 
-def seconds(table_name: str, key: str, default: int, table: object = None) -> int:
-    """``[<table_name>] <key>`` of the machine file (or *table*) as positive whole seconds, else *default*.
+#: ``[forgefeed]`` keys retired by the 2026-11-25 ruling (the value carries its unit), refused with their new line.
+FEED_RENAMED: Final = {'tick_s': Renamed('tick', 's'), 'prune_duty_s': Renamed('prune_duty', 's')}
+
+
+def declared_seconds(table_name: str, key: str, default: float, table: object = None) -> float:
+    """``[<table_name>] <key>`` of the machine file (or *table*): a positive duration, in seconds, else *default*.
+
+    Read through :func:`lab_commons.quantity.parse` (``tick = "2 min"``); a retired ``<key>_s`` is refused with its
+    new line (:data:`FEED_RENAMED`).
 
     Raises:
-        ValueError: the declared value is not a positive integer (named, with its key).
+        ValueError: the declared value is not a positive duration, or is a retired key (named, with its key).
 
     """
     if table is None:
         table = section(table_name)
-    value = table.get(key, default) if isinstance(table, dict) else default
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        msg = f'[{table_name}] {key} must be a positive integer of seconds, not {value!r}'
-        raise ValueError(msg)
-    return value
+    held = table if isinstance(table, dict) else {}
+    refuse_renamed(f'[{table_name}]', held, FEED_RENAMED)
+    if key not in held:
+        return float(default)
+    return parse(f'[{table_name}] {key}', held[key], 'duration', positive=True)

@@ -23,6 +23,12 @@ _EXEMPT: Final = {
     'src/dev_lab/dev/ci_base.toml: ci.yml.jobs.part.timeout-minutes': (
         "the forge's own workflow vocabulary (GitHub/Gitea `timeout-minutes`), emitted by the renderer"
     ),
+    'src/dev_lab/dev/forgereview_scope.py: Budget.slice_bytes': (
+        'a projection of Review.max_diff (bytes) for the slicer, built in code and never read from TOML'
+    ),
+    'src/dev_lab/dev/forgereview_scope.py: Budget.total_bytes': (
+        'a projection of Review.max_total (bytes) for the slicer, built in code and never read from TOML'
+    ),
     "src/dev_lab/dev/artifactfolder.py: _MANIFEST_KEYS['bytes']": (
         'a JSON manifest field of an artifact folder (a record, not config: UNITS-GO-THROUGH-PINT`s JSON half)'
     ),

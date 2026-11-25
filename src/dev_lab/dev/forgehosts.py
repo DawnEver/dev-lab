@@ -84,6 +84,7 @@ from dev_lab.dev.forgepulls import (
     marker_kinds,
 )
 from dev_lab.dev.forgework import Client, Comment
+from dev_lab.dev.hpcaccount.spec import schedule_tick
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.roles import bound_accounts, machine_layer, roles_at
@@ -140,7 +141,7 @@ class HostCard:
     login: str
     platform: str
     ticked: str  # the forge's clock, ISO 8601
-    tick_minutes: float = 5.0
+    tick: float = 300.0  # seconds: the period it ticks at, [schedule] tick
     supply: Mapping[str, Any] = field(default_factory=dict)  # what the tick admitted against
     facts: Mapping[str, Any] = field(default_factory=dict)
     holds: tuple[str, ...] = ()
@@ -168,7 +169,7 @@ class HostCard:
 
     def stale(self, now: datetime) -> bool:
         """Older than :data:`STALE_TICKS` of its own period on the forge's clock."""
-        return now - datetime.fromisoformat(self.ticked) > timedelta(minutes=STALE_TICKS * self.tick_minutes)
+        return now - datetime.fromisoformat(self.ticked) > timedelta(seconds=STALE_TICKS * self.tick)
 
     def redacted(self) -> HostCard:
         """The card as a PUBLIC repository may show it: an opaque host id and only what scheduling reads."""
@@ -453,7 +454,7 @@ def publish_card(
             login=built.whoami(),
             platform=serving(host or this_platform(), seat).platform,
             ticked=forge_now(built).isoformat(),
-            tick_minutes=float(table.get('tick_minutes', 5)),
+            tick=schedule_tick(table),
             supply=dict((supply or standing.supply).resources) if supply or standing else {},
             facts=standing.facts if standing else {},
             holds=runs

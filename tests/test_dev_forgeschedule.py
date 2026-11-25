@@ -222,3 +222,51 @@ def test_only_the_integration_tip_runs_the_full_suite_unless_a_head_asks_for_it(
 ) -> None:
     """User ruling 2026-11-07: one PR's tests finish within an hour -- a PR head runs at incremental scope."""
     assert scope_of(kind, labels) == scope
+
+
+def _schedule(tmp_path: Path, body: str) -> Schedule:
+    (tmp_path / 'pyproject.toml').write_text(f'[tool.lab_commons.schedule]\n{body}', encoding='utf-8')
+    return load_schedule(tmp_path)
+
+
+def test_the_schedule_durations_carry_their_units_and_land_in_the_schedules_hours(tmp_path: Path) -> None:
+    """User ruling 2026-11-25: each duration is a quantity string, read once; the Schedule keeps its hour fields."""
+    declared = _schedule(
+        tmp_path,
+        'starve_after = {pr = "30 min"}\ndaily_budget = {branch = "200 h"}\n'
+        'prior_cost = "90 min"\nrequest_unadmitted = "1 d"\n',
+    )
+    assert declared.starve_after_hours['pr'] == pytest.approx(0.5, abs=1e-12)
+    assert declared.starve_after_hours['integration'] == FAMILY.starve_after_hours['integration'], 'merged key by key'
+    assert declared.daily_budget_core_h == {'branch': pytest.approx(200.0, abs=1e-9)}
+    assert declared.prior_cost_h == pytest.approx(1.5, abs=1e-12)
+    assert declared.request_unadmitted_hours == pytest.approx(24.0, abs=1e-12)
+
+
+@pytest.mark.parametrize(
+    ('body', 'named'),
+    [
+        ('prior_cost = 4.0\n', r'prior_cost = 4\.0 is a bare number'),
+        ('starve_after = {pr = 12}\n', r'starve_after\.pr = 12 is a bare number'),
+        ('starve_after = "12 h"\n', 'starve_after is a table'),
+        ('request_unadmitted = "6 GiB"\n', 'is a size, not a duration'),
+    ],
+)
+def test_a_schedule_duration_without_its_unit_is_refused_by_name(tmp_path: Path, body: str, named: str) -> None:
+    with pytest.raises(ValueError, match=named):
+        _schedule(tmp_path, body)
+
+
+@pytest.mark.parametrize(
+    ('body', 'line'),
+    [
+        ('prior_cost_h = 4.0\n', 'write prior_cost = "4 h"'),
+        ('request_unadmitted_hours = 6\n', 'write request_unadmitted = "6 h"'),
+        ('starve_after_hours = {pr = 12}\n', r'write starve_after = \{pr = "12 h"\}'),
+        ('daily_budget_core_h = {branch = 200}\n', r'write daily_budget = \{branch = "200 h"\}'),
+    ],
+)
+def test_a_retired_schedule_key_is_refused_with_its_new_line(tmp_path: Path, body: str, line: str) -> None:
+    """FORMATS-MIGRATE-ONCE: the unit-suffixed key is never read; the refusal writes its replacement."""
+    with pytest.raises(ValueError, match=rf'is retired.*{line}'):
+        _schedule(tmp_path, body)

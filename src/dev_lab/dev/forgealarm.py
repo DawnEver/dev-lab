@@ -35,7 +35,7 @@ AND EVERY ALARM A TICK RAISES RIDES ON THAT HOST'S CARD (:mod:`dev_lab.dev.forge
 
 A CRON TICK EVERY FIVE MINUTES MUST NOT PAGE EVERY FIVE MINUTES. A delivery of one ``(kind, repo)``
 is repeated at most once per REPEAT WINDOW, which belongs to the person the alarms reach and so is
-declared in the machine file's ``[alerts] repeat_hours`` (:func:`repeat_window`; absent: 6 h)
+declared in the machine file's ``[alerts] repeat`` (:func:`repeat_window`, a duration; absent: 6 h)
 (state: ``forge-alarms.json`` beside the machine file);
 the structured line is written every time, because it is the log, and says ``"repeat": true`` inside
 that window so a consumer routes only the first. A channel that failed is retried on the next tick.
@@ -54,6 +54,7 @@ from typing import TYPE_CHECKING, Any, Final
 from lab_commons.compute.durable import durable_text, read_table
 from lab_commons.config import config_path, section
 from lab_commons.log import emit
+from lab_commons.quantity import Renamed, parse, refuse_renamed
 
 from dev_lab.dev import metrics
 from dev_lab.supervise.alert import Notifier
@@ -131,9 +132,18 @@ FAMILY: Final = 'family'
 PROMPTS: Final = (INTEGRATION, STALE_BRANCH)
 
 
+#: ``[alerts]`` keys retired by the 2026-11-25 ruling (the value carries its unit), refused with their new line.
+ALERTS_RENAMED: Final = {'repeat_hours': Renamed('repeat', 'h')}
+#: How long one delivery waits before it is delivered again when ``[alerts] repeat`` is undeclared.
+DEFAULT_REPEAT: Final = timedelta(hours=6)
+
+
 def repeat_window(alerts: Mapping[str, Any]) -> timedelta:
-    """How long one delivery waits before it is delivered again: ``[alerts] repeat_hours``, absent 6 h."""
-    return timedelta(hours=float(alerts.get('repeat_hours', 6)))
+    """How long one delivery waits before it is delivered again: ``[alerts] repeat`` (a duration), absent 6 h."""
+    refuse_renamed('[alerts]', alerts, ALERTS_RENAMED)
+    if 'repeat' not in alerts:
+        return DEFAULT_REPEAT
+    return timedelta(seconds=parse('[alerts] repeat', alerts['repeat'], 'duration', positive=True))
 
 
 @dataclass(frozen=True)

@@ -30,11 +30,16 @@ family default and a repository overrides key by key (a table key by table key):
     [tool.lab_commons.schedule]
     classes = {integration = 100, pr = 60, feature = 45, branch = 30, request = 20}
     aging_rate = 10                  # value per hour waited
-    starve_after_hours = {integration = 6, pr = 12, feature = 18, branch = 24, request = 48}
-    daily_budget_core_h = {branch = 200}   # per ref of the class, per 24 h; absent = unbounded
+    starve_after = {integration = "6 h", pr = "12 h", feature = "18 h", branch = "24 h", request = "48 h"}
+    daily_budget = {branch = "200 h"}      # core time per ref of the class, per 24 h; absent = unbounded
     boosts = {"priority:user" = 1000}
     classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}  # ordered; replaces whole
-    prior_cost_h = 4.0
+    prior_cost = "4 h"
+    request_unadmitted = "6 h"         # a request waiting unclaimed this long is told why, once
+
+Every duration is a quantity string (:mod:`lab_commons.quantity`); the loader maps it onto
+:class:`~lab_commons.compute.model.Schedule`'s hour fields, and a retired unit-suffixed key (``prior_cost_h``,
+``starve_after_hours``, ...) is refused with its new line (user ruling 2026-11-25).
 
 ONE RUN PER REF AND PART (D6, user ruling 2026-10-17). A ref of a ``coalesce`` class has at most one run
 of a part in flight across the fleet; its current tip waits behind that run
@@ -46,7 +51,7 @@ earlier tip never claimed is never a candidate. A lane is tested at every pushed
 WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): waiting behind its ref's
 run in flight, no host serves its part, over its ref's budget, or not admitted here -- naming the resources it lacks
 (:func:`lab_commons.compute.admission.admit`). A candidate waiting longer than its class's
-``starve_after_hours`` is STARVED and raises a ``forgealarm`` naming that reason.
+``starve_after`` is STARVED and raises a ``forgealarm`` naming that reason.
 
 The pure scoring -- :class:`~lab_commons.compute.model.Schedule`, :func:`~lab_commons.compute.model.rank` -- lives
 in :mod:`lab_commons.compute.model`; this module gathers candidates and loads the numbers (I/O).
@@ -78,6 +83,7 @@ from lab_commons.compute.model import (
 from lab_commons.hpc.needsets import scarce_parts, vocabulary_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.shell import FULL, INCREMENTAL
+from lab_commons.quantity import Renamed, form, parse, refuse_renamed
 
 from dev_lab.dev._forgeschedule_requests import issue_labels, request_candidates
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
@@ -125,6 +131,17 @@ NO_ROOM: Final = 'no room'
 
 _TRACKING: Final = 'refs/remotes/origin/'
 
+#: The schedule's durations: declared key -> (:class:`Schedule` field, held in hours; a table of class -> duration).
+#: The Schedule's field names are lab-commons'; this table is where the declared, unit-free keys meet them.
+_HOURS: Final = {
+    'starve_after': ('starve_after_hours', True),
+    'daily_budget': ('daily_budget_core_h', True),
+    'prior_cost': ('prior_cost_h', False),
+    'request_unadmitted': ('request_unadmitted_hours', False),
+}
+#: The unit-suffixed keys the 2026-11-25 ruling retired (the value carries its unit), each refused with its new line.
+SCHEDULE_RENAMED: Final = {field: Renamed(key, 'h') for key, (field, _table) in _HOURS.items()}
+
 
 def load_schedule(root: Path) -> Schedule:
     """*root*'s ``[tool.lab_commons.schedule]`` over the family default; an unknown key is refused."""
@@ -134,6 +151,8 @@ def load_schedule(root: Path) -> Schedule:
         with manifest.open('rb') as handle:
             declared = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get(SCHEDULE_TABLE, {})
     default = Schedule()
+    where = f'[tool.lab_commons.{SCHEDULE_TABLE}] in {manifest}:'
+    _refuse_unit_keys(where, declared)
     retired = [
         f'{key} is retired: {RETIRED[f"{SCHEDULE_TABLE}] {key}"]}'
         for key in declared
@@ -142,7 +161,7 @@ def load_schedule(root: Path) -> Schedule:
     if retired:
         msg = f'[tool.lab_commons.{SCHEDULE_TABLE}] in {manifest}: ' + '; '.join(retired)
         raise ValueError(msg)
-    known = {one.name for one in dataclasses.fields(Schedule)}
+    known = {one.name for one in dataclasses.fields(Schedule)} - set(SCHEDULE_RENAMED) | set(_HOURS)
     unknown = sorted(set(declared) - known)
     if unknown:
         msg = (
@@ -152,7 +171,7 @@ def load_schedule(root: Path) -> Schedule:
         raise ValueError(msg)
     merged: dict[str, Any] = {}
     defaults = dataclasses.asdict(default)
-    for key, given in declared.items():
+    for key, given in _in_hours(where, declared).items():
         current = defaults[key]
         replaces = key == 'classes_by_ref' or not isinstance(current, Mapping)
         merged[key] = given if replaces else {**current, **given}
@@ -165,6 +184,44 @@ def load_schedule(root: Path) -> Schedule:
         )
         raise ValueError(msg)
     return schedule
+
+
+def _refuse_unit_keys(where: str, declared: Mapping[str, Any]) -> None:
+    """Refuse a retired unit-suffixed key, writing its new line from its own value (a table: each class's)."""
+    for old, new in SCHEDULE_RENAMED.items():
+        table = declared.get(old) if isinstance(declared.get(old), Mapping) else None
+        if table is not None:
+            pairs = ', '.join(f'{name} = {form(hours, new.unit)}' for name, hours in table.items())
+            msg = (
+                f'{where} {old} is retired (user ruling 2026-11-25: a value carries its unit, parsed once by '
+                f'lab_commons.quantity): write {new.key} = {{{pairs}}}'
+            )
+            raise ValueError(msg)
+    refuse_renamed(where, declared, SCHEDULE_RENAMED)
+
+
+def _in_hours(where: str, declared: Mapping[str, Any]) -> dict[str, Any]:
+    """*declared* keyed by :class:`Schedule` field, each duration read once and held in hours (its field's unit)."""
+
+    def hours(label: str, value: object, *, positive: bool) -> float:
+        return parse(f'{where} {label}', value, 'duration', positive=positive) / 3600
+
+    out: dict[str, Any] = {}
+    for key, given in declared.items():
+        if key not in _HOURS:
+            out[key] = given
+            continue
+        field, table = _HOURS[key]
+        positive = key != 'daily_budget'  # a zero budget is a class never claimed on a cluster: declarable
+        if table and not isinstance(given, Mapping):
+            msg = f'{where} {key} is a table of class -> duration, such as {{integration = "6 h"}}'
+            raise ValueError(msg)
+        out[field] = (
+            {name: hours(f'{key}.{name}', value, positive=positive) for name, value in given.items()}
+            if table
+            else hours(key, given, positive=positive)
+        )
+    return out
 
 
 def host_weights(table: Mapping[str, Any]) -> dict[str, float]:

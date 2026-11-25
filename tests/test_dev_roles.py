@@ -298,7 +298,7 @@ def test_a_ci_repo_without_its_rendered_ci_is_refused(tmp_path: Path) -> None:
 
 
 def test_a_ci_repo_declaring_what_only_the_hpc_queue_reads_is_refused(tmp_path: Path) -> None:
-    root = _repo(tmp_path, OWN + '\n[tool.lab_commons.schedule]\nprior_cost_h = 1.0\n', GITHUB)
+    root = _repo(tmp_path, OWN + '\n[tool.lab_commons.schedule]\nprior_cost = "1 h"\n', GITHUB)
     assert [line for line in repo_refusals(root, 'github', GITHUB) if 'tool.lab_commons.schedule' in line]
 
 

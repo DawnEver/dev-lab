@@ -78,7 +78,7 @@ def untrusted(root: Path, sha: str, author: str, *, trunks: Sequence[str], autho
     return f"{sha[:12]} is on neither {on}, and {who} is not in this host's [{REQUESTS_TABLE}] authors"
 
 
-#: The mark of the one comment a request waiting past ``request_unadmitted_hours`` gets.
+#: The mark of the one comment a request waiting past ``request_unadmitted`` gets.
 UNADMITTED: Final = '**unadmitted**'
 
 
