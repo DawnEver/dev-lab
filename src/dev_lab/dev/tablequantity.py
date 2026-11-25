@@ -30,7 +30,7 @@ class Spec:
     retired: tuple[str, str] | None = None  # (old unit-suffixed key, the unit its number was in)
 
 
-def quantity(dimension: str, default: float, *, retired: tuple[str, str] | None = None, positive: bool = True) -> Any:  # noqa: ANN401 -- a dataclass field
+def quantity(dimension: str, default: float, *, retired: tuple[str, str] | None = None, positive: bool = True) -> float:
     """A dataclass field holding a declared quantity in its base unit, *default* when undeclared."""
     return field(default=default, metadata={QUANTITY: Spec(dimension, positive, retired)})
 
