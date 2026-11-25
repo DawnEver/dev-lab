@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 __all__ = ['VERSION', 'Facts', 'facts', 'forwards']
 
 #: Bump when what a fact means changes: every journaled fact of an older version is re-read.
-VERSION: Final = 1
+VERSION: Final = 2  # 2: a builtin read and never bound is a use, builtins.<name>
 _JOURNAL: Final = ('dev-lab', 'pyfacts.json')
 
 

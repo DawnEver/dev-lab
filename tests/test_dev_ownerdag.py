@@ -237,3 +237,90 @@ def test_a_malformed_declaration_is_refused_by_check_and_refusal(tmp_path: Path)
     with pytest.raises(AssertionError, match='alpha lists itself'):
         ownerdag.check(tmp_path)
     assert 'alpha lists itself' in (ownerdag.refusal(tmp_path) or '')
+
+
+#: T4: stdlib rows the checker must understand -- dotted members, a builtin, the Windows spelling, a private module.
+STDLIB_FORMS = (
+    DECLARED
+    + """
+"os.system" = { owners = ["src/pkg/gamma"], reason = "programs launch only in gamma" }
+"builtins.open" = { owners = ["src/pkg/gamma"], reason = "files are opened only in gamma" }
+"nt.environ" = { owners = ["src/pkg/gamma"], reason = "the Windows spelling of os.environ" }
+_thread = { owners = ["src/pkg/gamma"], reason = "threads only in gamma" }
+"""
+)
+
+
+@pytest.mark.parametrize(
+    ('source', 'row'),
+    [
+        ('import os\nos.system("x")\n', '[python.stdlib] os.system'),
+        ('def f():\n    return open("x")\n', '[python.stdlib] builtins.open'),
+        ('import nt\nnt.environ.get("X")\n', '[python.stdlib] nt.environ'),
+        ('import _thread\n', '[python.stdlib] _thread'),
+    ],
+)
+def test_a_stdlib_member_builtin_or_private_row_admits_its_holder_and_refuses_elsewhere(
+    tmp_path: Path, source: str, row: str
+) -> None:
+    """THE PLANTED PAIR per form: the same source passes where the row holds it and is refused where it does not."""
+    admitted = _problems(tmp_path, {'src/pkg/gamma/use.py': source}, declared=STDLIB_FORMS)
+    assert admitted == [], admitted
+    refused = _problems(tmp_path / 'other', {'src/pkg/alpha/use.py': source}, declared=STDLIB_FORMS)
+    assert len(refused) == 1, refused
+    assert refused[0].startswith('src/pkg/alpha/use.py: uses ')
+    assert f'but {row} allows it only in src/pkg/gamma' in refused[0]
+
+
+def test_a_rebound_builtin_name_is_the_modules_own(tmp_path: Path) -> None:
+    source = 'def open(path):\n    return path\n\nopen("x")\n'
+    assert _problems(tmp_path, {'src/pkg/alpha/use.py': source}, declared=STDLIB_FORMS) == []
+
+
+def test_a_name_a_reason_cites_and_no_row_grants_is_refused_beside_an_honest_one(tmp_path: Path) -> None:
+    """T3: the honest row cites a granted name and passes; the planted one cites ungranted names and is refused."""
+    honest = DECLARED.replace('reason = "the one log"', 'reason = "the one log; `os.environ` is never read"')
+    assert _problems(tmp_path, declared=honest) == []
+    planted = DECLARED.replace(
+        'reason = "launching tools"', 'reason = "launching tools; the pack is `zipfile` plus `tomlkit`"'
+    )
+    found = _problems(tmp_path / 'planted', declared=planted)
+    assert found == [
+        (
+            'dependencies.toml [python.stdlib] subprocess cites zipfile in its reason, '
+            'which no [python.stdlib] row grants'
+        ),
+        (
+            'dependencies.toml [python.stdlib] subprocess cites tomlkit in its reason, '
+            'which no [python.packages] row grants'
+        ),
+    ]
+
+
+def test_a_parent_importing_its_child_is_refused_by_name(tmp_path: Path) -> None:
+    """v1 D112 F3: the parent package alpha importing its child alpha/one is refused."""
+    found = _problems(tmp_path, {'src/pkg/alpha/up.py': 'from pkg.alpha.one import x\n'})
+    assert found == [
+        (
+            'src/pkg/alpha/up.py: alpha imports its own child alpha/one (pkg.alpha.one.x); '
+            'a parent never imports its children'
+        )
+    ]
+
+
+def test_a_child_importing_its_parent_passes(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL beside it: alpha/one importing alpha (the base tree's x.py does) and a nested child too."""
+    assert _problems(tmp_path, {'src/pkg/alpha/one/a/m.py': 'from pkg.alpha import common\n'}) == []
+
+
+def test_a_nested_siblings_table_is_keyed_by_child_path(tmp_path: Path) -> None:
+    """``[python.siblings."alpha/one"]`` admits its listed edge; a nested key naming no child is refused."""
+    nested = DECLARED.replace('two = ["one"]', 'two = ["one"]\n\n[python.siblings."alpha/one"]\nb = ["a"]')
+    extra = {'src/pkg/alpha/one/b/m.py': 'from ..a import f\n', 'src/pkg/alpha/one/a/__init__.py': ''}
+    assert _problems(tmp_path, extra, declared=nested) == []
+    ghost = nested.replace('[python.siblings."alpha/one"]', '[python.siblings."alpha/gone"]')
+    found = _problems(tmp_path / 'ghost', declared=ghost)
+    assert (
+        'dependencies.toml [python.siblings."alpha/gone"] names src/pkg/alpha/gone, which no layout.toml row declares'
+        in found
+    )
