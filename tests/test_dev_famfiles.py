@@ -16,6 +16,7 @@ from typing import Final
 import pytest
 from _famconfig_delta import DELTAS, REPO
 
+from dev_lab.dev._famfiles_disk import project_files_on_disk, unplaced_workflows
 from dev_lab.dev.agentsection import AGENTS_REL, BEGIN, END, render_section
 from dev_lab.dev.famconfig import BASES, RENDERED
 from dev_lab.dev.famfiles import (
@@ -28,12 +29,10 @@ from dev_lab.dev.famfiles import (
     is_member,
     main,
     managed_sections,
-    project_files_on_disk,
     render_agent_files,
     render_all,
     render_argv,
     render_repo,
-    unplaced_workflows,
 )
 from dev_lab.dev.famtests.famfiles import (
     assert_every_managed_file_is_rendered,

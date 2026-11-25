@@ -17,14 +17,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from dev_lab.dev._famfiles_disk import project_files_on_disk, unaccounted, unplaced_workflows
 from dev_lab.dev.famconfig import BASES
-from dev_lab.dev.famfiles import (
-    PROJECT_FILES,
-    RETIRED_PROJECT_FILES,
-    project_files_on_disk,
-    unaccounted,
-    unplaced_workflows,
-)
+from dev_lab.dev.famfiles import PROJECT_FILES, RETIRED_PROJECT_FILES
 from dev_lab.dev.famtests.configrender import (
     assert_artifact_is_rendered,
     assert_delta_is_not_a_fork,

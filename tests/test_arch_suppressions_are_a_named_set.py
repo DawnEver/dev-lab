@@ -787,11 +787,6 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/famfiles.py',
         'PLC0415',
-        'from dev_lab.dev.ciworkflows import declared_paths',
-    ): 'the light merge job reaches famfiles (deletejudge reads GENERATED); ciworkflows pulls pytest through jobparts',
-    (
-        'src/dev_lab/dev/famfiles.py',
-        'PLC0415',
         'from dev_lab.dev import agentsection',
     ): 'the light merge job reaches famfiles; agentsection pulls the rules registry, which the light door lacks',
     (
