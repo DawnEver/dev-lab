@@ -39,7 +39,10 @@ def test_every_python_door_names_a_module_that_exists() -> None:
 def test_the_forge_write_remedy_names_every_door_it_is_the_exit_of() -> None:
     """The defect the table ends: the hand-copied remedy said `pr create|close`, omitting ready, draft (and close)."""
     exits = exits_of('FORGE-WRITE-VIA-CLI', 'dev_lab.dev.forge')
-    assert exits == 'issue create|comment|close|label, pr create|ready|draft|hold|release|close|continue, review carry'
+    assert (
+        exits
+        == 'issue create|comment|close|label, pr create|ready|draft|hold|release|close|edit|continue, review carry'
+    )
     assert exits in _RULES['FORGE-WRITE-VIA-CLI'].remedy
 
 

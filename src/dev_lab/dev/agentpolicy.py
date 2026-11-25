@@ -184,6 +184,12 @@ POLICY: Final[tuple[Door, ...]] = (
         _FORGE_WRITE,
     ),
     Door(
+        _forge('pr', 'edit'),
+        MAIN,
+        "Replacing a pull request's body from a file, or adding lines after it (a merge-ready Red-On-Record line).",
+        _FORGE_WRITE,
+    ),
+    Door(
         _forge('pr', 'continue'),
         MAIN,
         'Opening the continuation pull request of a branch whose pull request already merged and '
