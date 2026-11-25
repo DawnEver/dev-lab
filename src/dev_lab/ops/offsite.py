@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
@@ -26,6 +25,7 @@ from typing import Protocol
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.harness import child_env
 from dev_lab.ops.backup import BackupRefused
 from dev_lab.ops.backuprole import Offsite
 
@@ -97,7 +97,7 @@ class AwsCli:
         argv = [self._aws, 's3api', *args, '--bucket', site.bucket, '--endpoint-url', site.endpoint, '--output', 'json']
         argv += ['--region', site.region] if site.region else []
         argv += ['--profile', site.profile] if site.profile else []
-        env = {**os.environ, 'AWS_CONFIG_FILE': site.config_file}
+        env = child_env({'AWS_CONFIG_FILE': site.config_file})
         env |= {'AWS_SHARED_CREDENTIALS_FILE': site.credentials_file} if site.credentials_file else {}
         done = _door.run(argv, capture_output=True, text=True, encoding='utf-8', check=False, timeout=3600, env=env)
         if done.returncode != 0:

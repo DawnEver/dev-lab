@@ -8,7 +8,6 @@ so only a STORED git credential answers; none is ever read or printed.
 
 from __future__ import annotations
 
-import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -16,6 +15,7 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.workstationfile import WORKSTATION
 
@@ -79,7 +79,7 @@ def refused_credentials(git: Sequence[str], urls: Mapping[str, str]) -> list[str
     denied = []
     for name, url in urls.items():
         argv = [*git, '-c', 'credential.interactive=never', 'ls-remote', '-q', url, 'HEAD']
-        rc = run_network_verb(argv, env={**os.environ, **_NO_PROMPT}).returncode
+        rc = run_network_verb(argv, env=child_env(_NO_PROMPT)).returncode
         emit(f'  {name}: {"ok" if rc == 0 else f"refused (exit {rc})"}')
         if rc:
             denied.append(name)

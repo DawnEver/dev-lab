@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.temp import TEMP_PREFIX
 
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops import clientkeys
 
@@ -176,7 +177,7 @@ def boundary(changed: tuple[str, ...]) -> tuple[str, ...]:
 
 def git_with_env(argv: list[str], env: Mapping[str, str]) -> tuple[int, str]:
     """Run one network git through the retry door with *env* added; git's output may echo a header: never returned."""
-    report = run_network_verb(argv, env=os.environ | dict(env), timeout=300)
+    report = run_network_verb(argv, env=child_env(env), timeout=300)
     return report.returncode, ''
 
 

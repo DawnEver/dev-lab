@@ -14,12 +14,13 @@ branch name that already exists.
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
+
+from dev_lab.dev.harness import child_env
 
 __all__ = ['SUFFIX', 'Refused', 'reword']
 
@@ -77,13 +78,13 @@ def reword(root: Path, sha: str, message: str) -> tuple[str, str]:
 def _commit(root: Path, old: str, parents: list[str], message: str) -> str:
     """A commit with *old*'s tree, author and dates, *parents* and *message*."""
     who = _git(root, 'log', '-1', '--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI', old).split('\0')
-    env = os.environ | dict(
+    env = child_env(dict(
         zip(
             ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_AUTHOR_DATE',
              'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL', 'GIT_COMMITTER_DATE'),
             who, strict=True,
         )
-    )  # fmt: skip
+    ))  # fmt: skip
     argv = ['git', 'commit-tree', f'{old}^{{tree}}', *(arg for p in parents for arg in ('-p', p))]
     done = _door.run(argv, cwd=root, capture_output=True, check=True, env=env, input=message.encode('utf-8'))
     return done.stdout.decode('utf-8').strip()

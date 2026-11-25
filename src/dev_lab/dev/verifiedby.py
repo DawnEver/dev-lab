@@ -26,7 +26,6 @@ is untouched by this module and stays INCONCLUSIVE -- never a silent pass.
 
 from __future__ import annotations
 
-import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +44,7 @@ from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.famtests.alwayson import run_checks
 from dev_lab.dev.forgestatus import head_sha, verdict_commit
 from dev_lab.dev.gitenv import unlocated
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.localpart import local_record, part_selection, post_local
 from dev_lab.dev.netverb import run_network_verb
@@ -211,7 +211,7 @@ def _one(
     if not rows:
         msg = f'{member} declares no [tool.dev_lab.data.<name>] row naming {url}: the [tool.dev_lab.verify] by row lies'
         raise VerifyByRefused(msg)
-    env = {key: value for key, value in os.environ.items() if key != PRODUCING_VAR}  # never a producer there
+    env = child_env(drop=(PRODUCING_VAR,))  # never a producer there
     env[datadeps.OVERRIDE] = ','.join(f'{dep.name}={head}' for dep in rows)
     roots = [r for r in load_policy(tree).test_roots if (tree / r).exists()] or ['tests']
     argv = ['-m', 'dev_lab.dev.verify', '--', *roots, *part_selection(tree, consumer.part)]

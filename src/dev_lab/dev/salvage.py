@@ -18,7 +18,6 @@ refused by ``--remove`` because git lists no such tree, with no door at all.
 
 from __future__ import annotations
 
-import os
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -29,6 +28,7 @@ from lab_commons.census import processes
 from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.checkout import linked, worktrees
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.liverun import Census, describe, removal_holders
 from dev_lab.dev.reclaim import _removed, repository_at
 
@@ -45,7 +45,7 @@ _TIMEOUT_S: Final = 600
 
 def _git(cwd: Path, *args: str, index: Path | None = None, stdin: str | None = None) -> str | None:
     """``git <args>`` in *cwd*, optionally on a temporary *index*; stdout, or ``None`` when git failed."""
-    env = dict(os.environ, GIT_INDEX_FILE=str(index)) if index is not None else None
+    env = child_env({'GIT_INDEX_FILE': str(index)}) if index is not None else None
     try:
         done = _door.run(
             [_GIT, *args],

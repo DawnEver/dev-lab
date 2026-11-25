@@ -25,7 +25,6 @@ FETCH FIRST: the CLI fetches origin through the retry door; :func:`tick` reads w
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import sys
 import tempfile
@@ -45,6 +44,7 @@ from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgepulls import issues
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.platformparts import standing
@@ -224,7 +224,7 @@ class GitProduct:
     def open_lane(self, path: str, sha: str, message: str) -> bool:
         """Create :data:`LANE` moving *path* to *sha*, only if absent; ``False`` when another host won."""
         with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
-            env = {**os.environ, 'GIT_INDEX_FILE': str(Path(scratch) / 'index')}
+            env = child_env({'GIT_INDEX_FILE': str(Path(scratch) / 'index')})
             self._git('read-tree', self.base, env=env)
             self._git('update-index', '--add', '--cacheinfo', f'{_GITLINK},{sha},{path}', env=env)
             tree = self._git('write-tree', env=env)

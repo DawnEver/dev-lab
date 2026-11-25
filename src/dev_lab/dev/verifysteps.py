@@ -15,7 +15,6 @@ drag the verdict to INCONCLUSIVE, so all three run and the verdict names the one
 from __future__ import annotations
 
 import functools
-import os
 import shutil
 import subprocess
 import sys
@@ -38,6 +37,7 @@ from dev_lab.dev._verify_coverage import cache_env, coverage_args, coverage_env,
 from dev_lab.dev.commandtests import declared_command, script_paths, selected_command
 from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.envseat import EnvironmentSeat
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.jsrun import NoEngine, node_path
 from dev_lab.dev.logref import LogRef
@@ -210,7 +210,7 @@ def _tee(
     """
     handle.write(f'$ {" ".join(command)}\n')
     handle.flush()
-    env = os.environ | {'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'} | (extra_env or {})
+    env = child_env({'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'}, extra_env or {})
     with _door.popen(
         command,
         cwd=cwd,

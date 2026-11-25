@@ -78,6 +78,7 @@ from dev_lab.dev.forgerequesthost import result, settle
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
 from dev_lab.dev.forgewait import claim_vector
 from dev_lab.dev.forgework import Client
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import origin_url, parts_of, run_tag
 from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, box_release_reason, owned, producing, release_reason
@@ -256,9 +257,9 @@ def _run(
         spawn,
         held,
         cwd=tree,
-        env=os.environ
-        | producing(context, item.sha)
-        | producer.outage_env(record),  # an outage is DECLARED, never an exit
+        env=child_env(
+            producing(context, item.sha), producer.outage_env(record)
+        ),  # an outage is DECLARED, never an exit
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

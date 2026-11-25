@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import tempfile
@@ -28,6 +27,7 @@ from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgestatus import CommitStatus, fingerprints_at, status_list
 from dev_lab.dev.forgework import Client, Transport, forge_transport
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.reviewgate import manifest_at
 from dev_lab.ops.config import Breakglass
 from dev_lab.ops.served import app_of_forge
@@ -54,7 +54,7 @@ def fast_forward(url: str, header: str, trunk: str, integration: str, sha: str) 
     and nothing is pushed. *header* (``Authorization: ...``, may be ``''``) reaches git through the environment,
     never argv, so no process listing shows the token. A blobless fetch into a throwaway directory: nothing is kept.
     """
-    env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+    env = child_env({'GIT_TERMINAL_PROMPT': '0'})
     if header:
         env |= {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'http.extraHeader', 'GIT_CONFIG_VALUE_0': header}
     with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}breakglass-promote-') as held:

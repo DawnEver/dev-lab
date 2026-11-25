@@ -13,7 +13,6 @@ from __future__ import annotations
 import getpass
 import http.client
 import json
-import os
 import pathlib
 import re
 import socket
@@ -25,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 import lab_commons.launch as _door
 from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S, NoCredential, credential_for, store_credential
 
-from dev_lab.dev import gitdirs
+from dev_lab.dev import gitdirs, harness
 from dev_lab.dev.forgecred import (
     AUTH_GONE,
     AUTH_KEPT,
@@ -111,7 +110,7 @@ def user_agent(forge: Forge) -> str:
         login = getpass.getuser()
     except (OSError, KeyError):
         login = '?'
-    machine = os.environ.get('HARNESS_MACHINE', '').strip() or socket.gethostname().split('.')[0]
+    machine = harness.context().machine or socket.gethostname().split('.')[0]
     return f'dev-lab ({login}@{machine}; {forge.owner}/{forge.repo})'
 
 

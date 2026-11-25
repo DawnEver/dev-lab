@@ -49,7 +49,6 @@ idle with work pending.
 from __future__ import annotations
 
 import dataclasses
-import os
 import re
 import socket
 from collections.abc import Mapping, Sequence
@@ -64,6 +63,7 @@ from lab_commons.hpc.account import ClusterAccount, cluster_account
 from lab_commons.hpc.cluster import local_runner
 from lab_commons.hpc.shell import FULL
 
+from dev_lab.dev import harness
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import ClusterPart, part_context
@@ -216,7 +216,7 @@ def this_machine() -> str:
     Never ``''``, so two workstations on one forge login are two owners, as two login hosts of one
     cluster account are; :func:`dev_lab.dev.forgehosts.card_host` names a cluster seat's card instead.
     """
-    return os.environ.get('HARNESS_MACHINE', '').strip() or socket.gethostname().split('.')[0]
+    return harness.context().machine or socket.gethostname().split('.')[0]
 
 
 def assess(

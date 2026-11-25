@@ -6,7 +6,6 @@ A repo declares the judge by running ``cz-push-range`` in a pre-push hook row; :
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +15,7 @@ import lab_commons.launch as _door
 
 from dev_lab.dev.githooks import PYTHON_ENV, bash_executable, hook_path
 from dev_lab.dev.githooks.table import hook_table
+from dev_lab.dev.harness import child_env
 
 if TYPE_CHECKING:
     from dev_lab.dev.githooks.table import Hook
@@ -67,7 +67,7 @@ def message_wait(root: Path, base: str, head: str) -> str | None:
             encoding='utf-8',
             errors='replace',
             check=False,
-            env={**os.environ, PYTHON_ENV: sys.executable, **row.env},
+            env=child_env({PYTHON_ENV: sys.executable}, row.env),
             timeout=MESSAGE_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:

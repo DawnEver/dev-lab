@@ -41,7 +41,6 @@ import configparser
 import dataclasses
 import hashlib
 import json
-import os
 import tomllib
 import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
@@ -51,7 +50,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import forgeprotect
+from dev_lab.dev import forgeprotect, harness
 from dev_lab.dev._forgebackends import backend_for
 from dev_lab.dev.forge import Forge as Remote
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -331,7 +330,7 @@ def _run(
             emit(f'refused: {ACTION} needs --credential (its subject: {found.subject()})', err=True)
             return 2
         granted = json.loads(Path(args.credential).read_text(encoding='utf-8'))
-        by = os.environ.get('SUDO_USER', '') or 'root'
+        by = harness.context().sudo_user or 'root'
         left = apply(api, found, redeem=redeem_for()(ACTION), credential=granted, log=role.log, by=by)
     except (ForgeRefused, ConsentRefused, ForgeCallFailed, OSError, ValueError) as refused:
         emit(f'refused: {refused}', err=True)

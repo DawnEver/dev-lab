@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shlex
 import sys
 from pathlib import Path
@@ -29,6 +28,7 @@ from typing import TYPE_CHECKING, BinaryIO, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev import harness
 from dev_lab.dev._deny_journal_row import JOURNAL_VERBS, REMEDY
 from dev_lab.dev.agent_wiring import SHELL_TOOLS
 from dev_lab.dev.ephemeralrefs import RULE, cited_in_text
@@ -96,7 +96,7 @@ def refusal(payload: Mapping[str, object]) -> str | None:
         return None
     texts = appended_texts(str(tool_input.get('command', '')))
     # the door runs in CLAUDE_PROJECT_DIR, else its cwd: judge in the same repo.
-    where = os.environ.get('CLAUDE_PROJECT_DIR') or str(payload.get('cwd') or Path.cwd())
+    where = harness.context().project_dir or str(payload.get('cwd') or Path.cwd())
     root = _toplevel(where) if texts else None
     if root is None:
         return None

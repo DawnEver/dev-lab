@@ -13,7 +13,6 @@ A cluster account's tick is the same rule through its own keyed build (:func:`de
 
 from __future__ import annotations
 
-import os
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -23,6 +22,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.checkoutfollow import holders
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.hpcaccount.steps import Step
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.venvfollow import stale, stamp
@@ -40,7 +40,7 @@ def read(argv: Sequence[str], env: Mapping[str, str] | None = None) -> subproces
     """A READ-ONLY call, also under ``--dry-run``; its output is never echoed."""
     return _door.run(
         argv, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False,
-        stdin=subprocess.DEVNULL, env={**os.environ, **(env or {})},
+        stdin=subprocess.DEVNULL, env=child_env(env or {}),
     )  # fmt: skip
 
 
@@ -67,7 +67,7 @@ def follow(step: Step, git: Sequence[str], checkout: Path, *, busy: Callable[[Pa
 def network(step: Step, what: str, argv: Sequence[str]) -> Moved:
     """A CHANGING network *argv* through the retry door (NETWORK-RETRY-THEN-REPORT); its remedy when it fails."""
     emit(f'  {what}')
-    env = {**os.environ, **({'PATH': step.path} if step.path else {})}
+    env = child_env({'PATH': step.path} if step.path else {})
     report = run_network_verb(argv, env=env)
     return Moved(0) if report.ok else Moved(report.returncode or 1, why=report.remedy)
 

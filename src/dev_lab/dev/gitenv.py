@@ -9,8 +9,9 @@ cache or throwaway repository runs in :func:`unlocated`.
 
 from __future__ import annotations
 
-import os
 from typing import Final
+
+from dev_lab.dev.harness import child_env
 
 __all__ = ['REPOSITORY_LOCATORS', 'unlocated']
 
@@ -25,4 +26,4 @@ REPOSITORY_LOCATORS: Final = frozenset({
 
 def unlocated() -> dict[str, str]:
     """The current process environment without :data:`REPOSITORY_LOCATORS`."""
-    return {name: value for name, value in os.environ.items() if name not in REPOSITORY_LOCATORS}
+    return child_env(drop=REPOSITORY_LOCATORS)

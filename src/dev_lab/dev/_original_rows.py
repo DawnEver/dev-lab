@@ -453,4 +453,5 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'salvage',  # ORIGINAL: 2026-11-24, worktrees --salvage and --reap-orphans record a tree's work first
     'branchlocal',  # ORIGINAL: 2026-11-25, branchdelete --local deletes local branches their content landed
     'envreads',  # ORIGINAL: 2026-11-25, ENV-IS-READ-ONCE, the environment is read in a declared entry only
+    'harness',  # ORIGINAL: 2026-11-25, dev-lab's ENV-IS-READ-ONCE entry, the harness context as a typed record
 )

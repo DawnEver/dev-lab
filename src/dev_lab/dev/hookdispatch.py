@@ -32,7 +32,6 @@ from __future__ import annotations
 import contextlib
 import importlib
 import io
-import os
 import sys
 import threading
 import time
@@ -43,7 +42,7 @@ from typing import Any, Final, TextIO
 
 from lab_commons.log import emit
 
-from dev_lab.dev import hookhandoff
+from dev_lab.dev import harness, hookhandoff
 from dev_lab.dev._hookanswer import CONTEXT_EVENTS, Outcome, answer, deferred_text, parsed
 from dev_lab.dev._hookonce import first_runs
 from dev_lab.dev.agent_wiring import (
@@ -117,7 +116,7 @@ def _cwd(payload: dict[str, Any]) -> Path:
 
 def _repo_root(payload: dict[str, Any]) -> Path:
     """The checkout whose settings run this hook: ``$CLAUDE_PROJECT_DIR``, else the payload's ``cwd``."""
-    return Path(os.environ.get('CLAUDE_PROJECT_DIR') or _cwd(payload))
+    return Path(harness.context().project_dir or _cwd(payload))
 
 
 def _repo_wires(root: Path) -> tuple[tuple[Wire, ...], str]:

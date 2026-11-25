@@ -8,7 +8,6 @@ command whose model batch is still running at the end of its wait (:data:`PENDIN
 
 from __future__ import annotations
 
-import os
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -18,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.reviewbudget import Spend, open_share, read_spend
 
 if TYPE_CHECKING:
@@ -77,7 +77,7 @@ def can_start(argv: Sequence[str], root: Path) -> str | None:
         case [_, '-m', module, *_]:
             probe = _door.run(
                 [found, '-c', _PROBE, module], cwd=root, capture_output=True, timeout=120, check=False,
-                env={**os.environ, **SAFE_PATH},
+                env=child_env(SAFE_PATH),
             )  # fmt: skip
             if probe.returncode == _UNSAFE_PATH_EXIT:
                 return f'unsupported: the review interpreter {argv[0]!r} reports no sys.flags.safe_path (3.11+)'
@@ -101,7 +101,7 @@ def run_command(argv: Sequence[str], root: Path, env: Mapping[str, str] | None =
     try:
         done = _door.run(
             list(argv), cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
-            timeout=_COMMAND_TIMEOUT_S, check=False, env={**os.environ, **SAFE_PATH, **(env or {})},
+            timeout=_COMMAND_TIMEOUT_S, check=False, env=child_env(SAFE_PATH, env or {}),
         )  # fmt: skip
     except FileNotFoundError:
         msg = f'unsupported: the review command {argv[0]!r} is not installed on this host'

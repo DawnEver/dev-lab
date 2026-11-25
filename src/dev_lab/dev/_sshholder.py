@@ -26,6 +26,7 @@ from typing import Any, Final
 import lab_commons.launch as _door
 
 from dev_lab.dev import sshhold, sshholdrun, sshholdstate, sshholdwire
+from dev_lab.dev.harness import child_env
 
 _ANSWER_ENV: Final = 'SSHHOLD_ANSWER'
 _PROBE_S: Final = 120.0
@@ -60,7 +61,7 @@ class Holder:
     """The ssh child, its output queue, and the framed exchange over it."""
 
     def __init__(self, argv: list[str], code: str) -> None:
-        env = dict(os.environ, SSH_ASKPASS=str(askpass_helper()), SSH_ASKPASS_REQUIRE='force')
+        env = child_env({'SSH_ASKPASS': str(askpass_helper()), 'SSH_ASKPASS_REQUIRE': 'force'})
         env.setdefault('DISPLAY', ':0')  # an ssh before 8.4 consults askpass only with a DISPLAY
         env[_ANSWER_ENV] = code
         pipe = subprocess.PIPE

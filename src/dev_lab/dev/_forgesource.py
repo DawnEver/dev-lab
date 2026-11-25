@@ -6,7 +6,6 @@ refused, never degraded, when any of these says no.
 
 from __future__ import annotations
 
-import os
 import re
 import urllib.parse
 from pathlib import Path
@@ -15,6 +14,7 @@ from typing import Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.forge import _GIT
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.netverb import Diagnosis, run_network_verb
 
 __all__ = ['LOCK_FILE', 'REACH_TIMEOUT_S', 'git_sources', 'unreachable_source', 'unreproducible', 'unserved']
@@ -82,7 +82,7 @@ def unreachable_source(root: Path, sha: str) -> str:
     refusal is not): a source behind a credential this host lacks fails here, before a claim, rather than
     mid-bootstrap after one.
     """
-    quiet = {**os.environ, 'GCM_INTERACTIVE': 'never'}
+    quiet = child_env({'GCM_INTERACTIVE': 'never'})
     for url in git_sources(root, sha):
         report = run_network_verb([_GIT, 'ls-remote', '-q', url, 'HEAD'], timeout=REACH_TIMEOUT_S, env=quiet)
         if report.diagnosis is Diagnosis.TIMED_OUT:

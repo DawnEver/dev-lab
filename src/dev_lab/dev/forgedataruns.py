@@ -17,7 +17,6 @@ the serve's own flush delivers it. A head whose context the data repo already ho
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -30,6 +29,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import Post, enqueue, unprompted_client
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.venvpath import checkout_interpreter, current_os_name
 
@@ -68,10 +68,10 @@ def step(
                 if run.context in held:
                     continue
                 python = str(interpreter(run.root))
-                env = {**os.environ, **run.env}
+                env = child_env(run.env)
                 execute([python, *_SYNC], run.root, env)
                 code = execute([python, *run.argv[1:]], run.root, env)
-                restored = {key: value for key, value in os.environ.items() if key != datadeps.OVERRIDE}
+                restored = child_env(drop=(datadeps.OVERRIDE,))
                 execute([python, *_SYNC], run.root, restored)  # the copy goes back to the pin
                 state = 'success' if code == 0 else 'failure'
                 enqueue(

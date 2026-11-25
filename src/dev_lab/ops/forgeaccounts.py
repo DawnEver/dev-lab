@@ -30,13 +30,13 @@ use and the door deletes after it.
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from lab_commons.log import emit
 
+from dev_lab.dev import harness
 from dev_lab.ops import forgeprotection
 from dev_lab.ops.consent.actions import STANDING
 from dev_lab.ops.consent.credential import ConsentRefused
@@ -387,7 +387,7 @@ def _read(role: Forge, gitea: GiteaAdmin, request: _Request) -> None:
 def _redeemed(role: Forge, gitea: GiteaAdmin, request: _Request, redeem: Redeem, path: str) -> None:
     """Run *request* under the credential at *path*, printing what it did (a minted token ONCE)."""
     granted = json.loads(Path(path).read_text(encoding='utf-8'))
-    by = os.environ.get('SUDO_USER', '') or 'root'
+    by = harness.context().sudo_user or 'root'
     if isinstance(request, AccountRequest):
         for line in ensure(role, gitea, request, redeem=redeem, credential=granted, by=by):
             emit(f'[ops forge] {line}')
