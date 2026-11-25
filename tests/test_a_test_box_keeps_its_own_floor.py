@@ -1,6 +1,6 @@
 """A test's box keeps a free-space floor OF ITS OWN: the host's free disk never decides a test's result.
 
-The box refuses a hold whose volumes are under the machine's ``[storage] free_floor_gb`` (default 50 GiB), and a
+The box refuses a hold whose volumes are under the machine's ``[storage] free_floor`` (default "50 GiB"), and a
 test's ledger lives under ``tmp_path`` -- the SYSTEM temp volume. A hosted Windows runner's system drive had
 30 GiB free: every test that took a real hold was refused at once (``ledger.py: Refused``, dev-lab
 tests/base@windows 2026-11-22, 112 tests through the box and the dependency door, more behind them). So the
@@ -18,7 +18,7 @@ from lab_commons.box import box_path
 from lab_commons.box.disk import verdict
 from lab_commons.compute import floor
 from lab_commons.config import CONFIG_ENV
-from lab_commons.storage import FREE_FLOOR_GB_DEFAULT, free_floor
+from lab_commons.storage import FREE_FLOOR_DEFAULT, free_floor
 
 _GIB = 1024**3
 #: What the hosted Windows runner's system drive had free when the suite was refused.
@@ -34,7 +34,7 @@ def _refusal(monkeypatch: pytest.MonkeyPatch) -> str | None:
 def test_a_test_hold_is_not_refused_on_a_host_whose_temp_volume_is_under_the_machine_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assert _HOSTED_FREE < FREE_FLOOR_GB_DEFAULT * _GIB, 'the planted volume must sit under the default floor'
+    assert _HOSTED_FREE < FREE_FLOOR_DEFAULT, 'the planted volume must sit under the default floor'
     assert _refusal(monkeypatch) is None
 
 
@@ -42,7 +42,7 @@ def test_a_test_that_declares_the_machine_default_is_refused_on_that_host(monkey
     """PLANTED CONTROL: the same reading under a declared 50 GiB floor is the refusal the hosted runner gave."""
     machine = Path(os.environ[CONFIG_ENV])
     machine.parent.mkdir(parents=True, exist_ok=True)
-    machine.write_text(f'[storage]\nfree_floor_gb = {FREE_FLOOR_GB_DEFAULT}\n', encoding='utf-8')
+    machine.write_text(f'[storage]\nfree_floor = "{FREE_FLOOR_DEFAULT // _GIB} GiB"\n', encoding='utf-8')
     said = _refusal(monkeypatch)
     assert said is not None
     assert 'below the floor 50.0 GiB' in said
