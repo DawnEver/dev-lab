@@ -9,7 +9,9 @@
 // A STALE VENV NAMES ITS FIX (every-wall-teaches, 2026-11-13): a hook module the venv's dev-lab predates fails
 // `No module named dev_lab...`. When the installed dev-lab commit is not the one this checkout's uv.lock pins,
 // that is ONE line naming both shas and the bootstrap door, one walls-ledger line (the shape of
-// dev_lab.dev.walls.record -- the venv may not hold that module either), and exit 0.
+// dev_lab.dev.walls.record -- the venv may not hold that module either), and exit 0. A venv carrying NO dev_lab
+// (VENV-CARRIES-DEV-LAB, 2026-11-25) cannot run that door: it is named, and the bootstrap names an interpreter
+// that carries dev_lab, run from the checkout.
 //
 // A HOOK THAT CANNOT START NEVER BLOCKS (dev-lab #639): a child's argparse usage exit (2 with `usage:` or
 // `error: argument` / `invalid choice` / `unrecognized arguments`) or a missing module is a wiring fault, not a
@@ -92,6 +94,18 @@ if (!fault) {
   process.exit(run.status === null ? 1 : run.status);
 }
 const main = (roots.length > 1 ? roots : withMain())[roots.length - 1];
+// VENV-CARRIES-DEV-LAB (2026-11-25): a venv with no dev_lab at all cannot run the bootstrap door it would be told to
+// run, so the door names an interpreter that carries dev_lab (another checkout's on this path), run from `main`.
+if (!carriesDevLab(python)) {
+  const carrier = roots.map(interpreter).find((other) => other && other !== python && carriesDevLab(other));
+  const bootstrap = `cd ${main} && ${carrier || '<an interpreter carrying dev_lab>'} -m dev_lab.dev.dep --bootstrap ${main}`;
+  process.stderr.write(
+    `[hook] VENV-CARRIES-DEV-LAB: ${python} carries no dev_lab at all, so ${args.join(' ')} could not start ` +
+      `(${fault}); not a refusal, so it passed -- run: ${bootstrap}\n`,
+  );
+  recordWall(main, args, 'VENV-CARRIES-DEV-LAB');
+  process.exit(0);
+}
 const behind = staleness(python);
 const door = `${python} -m dev_lab.dev.dep --bootstrap ${main}`;
 process.stderr.write(
@@ -103,8 +117,18 @@ process.stderr.write(
         `(if the installed dev-lab is current, the hook row names what dev-lab does not ship: re-render the wiring ` +
         `with ${python} -m dev_lab.dev.agent_guard --install)\n`,
 );
-if (behind) recordWall(main, args);
+if (behind) recordWall(main, args, 'VENV-FOLLOWS-THE-LOCK');
 process.exit(0);
+
+// Whether `python`'s environment has a dev-lab distribution installed at all (the question staleness() and the deny
+// engine's carriesDevLab ask); a probe that cannot answer counts as carrying it, so the older lines still speak.
+function carriesDevLab(python) {
+  const probe = spawnSync(python, [
+    '-c',
+    'import importlib.metadata as m, sys\ntry: m.distribution("dev-lab")\nexcept m.PackageNotFoundError: sys.exit(3)',
+  ]);
+  return probe.status !== 3;
+}
 
 // What kept the child from starting -- a missing module, or argparse refusing its argv (exit 2 with its usage or an
 // `error: argument` line) -- else null: a decision, passed through.
@@ -146,7 +170,7 @@ function staleness(python) {
 }
 
 // One WALLS-ARE-RECORDED line in <main>/output/logs/<yy>/<mm>/<dd>/walls/walls.jsonl (local date, as datedlog).
-function recordWall(root, argv) {
+function recordWall(root, argv, rule) {
   try {
     const now = new Date();
     const two = (n) => String(n).padStart(2, '0');
@@ -156,7 +180,7 @@ function recordWall(root, argv) {
     const line = {
       command_sha256: crypto.createHash('sha256').update(argv.join(' ')).digest('hex').slice(0, 16),
       remedy_present: true,
-      rule: 'VENV-FOLLOWS-THE-LOCK',
+      rule,
       session,
       ts: now.toISOString(),
     };
