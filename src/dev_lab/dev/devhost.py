@@ -71,6 +71,7 @@ from dev_lab.dev import (
     tomlleaves,
     vendordetect,
 )
+from dev_lab.dev._devhost_layers import family_facts_stay_home
 from dev_lab.dev._machinefile import dumps, merged
 from dev_lab.dev.backedup import backups_dir, replace_backed_up
 from dev_lab.dev.checkout import git_out
@@ -102,39 +103,6 @@ def _sources(clone: Path, host: str) -> tuple[Path, Path]:
     return clone / 'family.toml', clone / host_file(host)
 
 
-def _family_facts_stay_home(layered: Mapping[str, Any], family: Mapping[str, Any], clone: Path) -> dict[str, Any]:
-    """*layered* without every leaf the family file holds, and with ``[family] source`` naming that file's clone.
-
-    The machine file is the host and local layers only: a reader layers the family file under it
-    (``lab_commons.config.section``) and refuses any leaf both hold. Measured 2026-11-20: the render copied the
-    family's ``[storage] remotes`` and then ``[breakglass] endpoint`` into the machine file and both readers refused.
-
-    Raises:
-        ValueError: the host layer gives a family leaf another value -- the reader refuses a restated leaf, so the
-            value is changed in the family file (or the host declares a key the family does not hold).
-
-    """
-
-    def strip(rows: Mapping[str, Any], shared: Mapping[str, Any], where: str) -> dict[str, Any]:
-        kept: dict[str, Any] = {}
-        for key, value in rows.items():
-            if key not in shared or key == machineconfig.FAMILY_TABLE:
-                kept[key] = value
-            elif isinstance(value, Mapping) and isinstance(shared[key], Mapping):
-                if inner := strip(value, shared[key], f'{where}.{key}' if where else key):
-                    kept[key] = inner
-            elif value != shared[key]:
-                leaf = f'[{where}].{key}' if where else key
-                msg = (f'{leaf} = {value!r} gives the family key ({shared[key]!r}) another value: change it in the '
-                       f'family file through its pull request, then {RENDER_DOOR}')  # fmt: skip
-                raise ValueError(msg)
-        return kept
-
-    kept = strip(layered, family, '')
-    kept.setdefault(machineconfig.FAMILY_TABLE, {'source': clone.resolve().as_posix()})
-    return kept
-
-
 def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     """The machine file for *host*: family ⊕ host (``[dev]`` aside) ⊕ the *live* file's local-only tables."""
     family_file, host_file = _sources(clone, host)
@@ -154,7 +122,7 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     if channels := parsed.get('dev', {}).get('channels'):
         layered = merge(layered, {CHANNELS_TABLE: {'channels': channels}})
     shared = {k: v for k, v in family.items() if k != 'dev'}
-    layered = _family_facts_stay_home(layered, shared, clone)
+    layered = family_facts_stay_home(layered, shared, clone, door=RENDER_DOOR)
     # a local table never holds a family table: an older render's copy of one is dropped, not kept as local
     local = {k: v for k, v in live.items() if k not in layered and k not in shared and k != OWN_TABLE}
     own = {'host': host, 'source': clone.resolve().as_posix()}  # absolute: never the reader's CWD (#556)
