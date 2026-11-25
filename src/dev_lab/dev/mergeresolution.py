@@ -70,16 +70,17 @@ __all__ = [
 ]
 
 #: How a conflicted file may be resolved, each class -> the principle(s) that decide it:
-#: ``newer-structure`` the newer structure, the other side's content re-expressed inside it;
-#: ``simpler-side`` the simpler correct side kept, older or not;
+#: ``newer-structure`` the newer structure, the other side's content re-expressed inside it (moved to its owner,
+#: never a pointer or copy left behind);
+#: ``simpler-side`` the simpler correct side kept, older or not (a hop that adds nothing is not kept);
 #: ``one-source`` two copies of one fact made one, the rest derived from it;
 #: ``deleted-as-baggage`` obsolete structure, a compat layer, an alias or an upgrade path deleted;
 #: ``renamed-to-reality`` a name changed to what the thing is;
 #: ``both-needed`` both sides' content is live, composed from what the code must do now;
 #: ``kept-capability`` a parameter or option one side dropped is kept because a case uses or needs it.
 GROUNDS: Final[dict[str, tuple[str, ...]]] = {
-    'newer-structure': ('no-backward-compatibility', 'single-source-of-truth'),
-    'simpler-side': ('occams-razor',),
+    'newer-structure': ('no-backward-compatibility', 'single-source-of-truth', 'everything-in-its-place'),
+    'simpler-side': ('occams-razor', 'no-detour'),
     'one-source': ('single-source-of-truth',),
     'deleted-as-baggage': ('no-historical-baggage', 'no-backward-compatibility'),
     'renamed-to-reality': ('names-match-behavior',),
