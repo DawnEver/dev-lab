@@ -3,7 +3,8 @@
 :mod:`dev_lab.dev.irpython` writes the copy, so this file imports nothing from dev-lab.
 
 The one runtime every generated IR module of this package shares: validation driven by each record's
-field table, the canonical JSON, the stored envelope and the import-time freshness check. numpy only.
+field table, the canonical JSON and the import-time freshness check; the stored envelope and the record
+surface are its sibling template ``_ir_surface.py``. numpy only.
 """
 
 from __future__ import annotations
@@ -22,7 +23,6 @@ import numpy as np
 
 _I64 = (-(2**63), 2**63 - 1)
 _GENERATE = 'python -m dev_lab.dev.irschema generate'
-_MIGRATE = 'python -m dev_lab.dev.irschema migrate'
 
 
 class IRValidationError(ValueError):
@@ -354,76 +354,6 @@ def from_tree(cls: type, tree: object, path: str | None = None) -> object:
     if missing:
         fail(f'{path}.{missing[0]}', 'a value', 'nothing')
     return build(cls, kwargs, path)
-
-
-# -- the stored envelope ------------------------------------------------------------------------------------
-
-
-def _major(version: str) -> int:
-    return int(version.split('.', maxsplit=1)[0])
-
-
-def envelope(record: object) -> bytes:
-    cls = type(record)
-    return canonical({'record': cls._ir_name, 'schema_version': cls._ir_version, 'value': to_tree(record)})
-
-
-def read_envelope(cls: type, data: bytes, where: str) -> object:
-    """The record stored in *data*, refused by name when its version or shape is not this reader's."""
-    try:
-        stored = json.loads(data)
-        name, version, value = stored['record'], stored['schema_version'], stored['value']
-    except (ValueError, KeyError, TypeError) as error:
-        refuse_read(f'{where}: not an IR envelope ({error})')
-    if name != cls._ir_name:
-        refuse_read(f'{where}: holds {name}, not {cls._ir_name}')
-    ours = cls._ir_version
-    if _major(version) < _major(ours):
-        refuse_read(f'IR-OLD-RECORD: {where}: schema_version {version}, current {ours} -- {_MIGRATE} {where}')
-    if _major(version) > _major(ours):
-        refuse_read(f'IR-STALE-GENERATED: {where}: schema_version {version} is newer than {ours} -- {_GENERATE}')
-    try:
-        return from_tree(cls, value)
-    except IRValidationError as error:
-        if 'IR-UNKNOWN-FIELD' in error.got:
-            door = _GENERATE if version.split('.')[:2] > ours.split('.')[:2] else f'{_MIGRATE} {where}'
-            refuse_read(f'IR-UNKNOWN-FIELD: {where}: {error} -- {door}')
-        raise
-
-
-# -- the record surface -------------------------------------------------------------------------------------
-
-
-def record_eq(self: object, other: object) -> bool:
-    return type(self) is type(other) and canonical(to_tree(self)) == canonical(to_tree(other))
-
-
-def record_hash(self: object) -> int:
-    return hash(canonical(to_tree(self)))
-
-
-def to_json(self: object) -> bytes:
-    return canonical(to_tree(self))
-
-
-def content_hash(self: object) -> str:
-    return hashlib.sha256(to_json(self)).hexdigest()
-
-
-def dump(self: object, path: str | Path) -> None:
-    Path(path).write_bytes(envelope(self))
-
-
-def surface(cls: type) -> type:
-    """Attach the shared methods to a generated record class."""
-    cls.__eq__ = record_eq
-    cls.__hash__ = record_hash
-    cls.to_json = to_json
-    cls.content_hash = content_hash
-    cls.dump = dump
-    cls.from_json = classmethod(lambda c, data: from_tree(c, json.loads(data)))
-    cls.load = classmethod(lambda c, path: read_envelope(c, Path(path).read_bytes(), str(path)))
-    return cls
 
 
 def ir_dims() -> object:
