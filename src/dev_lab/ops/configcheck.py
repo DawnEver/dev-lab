@@ -38,17 +38,31 @@ from urllib.parse import urlsplit
 
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devschema, rolecheck, roles, writeroots
+from dev_lab.dev import accounthost, devschema, oraclegc, rolecheck, roles, writeroots
 from dev_lab.dev.machineroutes import route_defects
 from dev_lab.ops import clientkeys
 from dev_lab.ops import config as opsconfig
 from dev_lab.ops.configdoor import boundary, changes
 from dev_lab.supervise.config import DEFAULTS
 
-__all__ = ['LABEL', 'LOCAL_ONLY', 'check_family', 'check_host', 'check_roles', 'check_routes', 'main', 'needs_consent']
+__all__ = [
+    'FAMILY_ONLY',
+    'LABEL',
+    'LOCAL_ONLY',
+    'check_family',
+    'check_host',
+    'check_roles',
+    'check_routes',
+    'main',
+    'needs_consent',
+]
 
 #: Tables a machine holds for itself; the family layer never carries them.
 LOCAL_ONLY: Final = ('repos', 'writeroots', 'sync')
+#: Tables only the family layer holds: one fact for every machine, refused in a host file.
+FAMILY_ONLY: Final = {
+    'oraclegc': 'the GC root set is the same on every machine',
+}
 #: The label a PR gets when its change needs consent at apply time.
 LABEL: Final = 'needs-consent'
 
@@ -80,6 +94,8 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
     if accounthost.is_account(parsed):
         return allow + [f'{path.name}: {line}' for line in accounthost.check(path, parsed, shared)]
     found = allow + rolecheck.host_refusals(path.name, parsed)
+    found += [f'{path.name}: [{name}] is a family fact ({why}); it lives in family.toml'
+              for name, why in FAMILY_ONLY.items() if name in parsed]  # fmt: skip
     if clientkeys.TABLE in parsed.get('ops', {}):
         found.append(f'{path.name}: [ops.{clientkeys.TABLE}] is derived by config fetch ([ops.config] clients); '
                      f'declare a machine key as [dev] {clientkeys.DEV_KEY} in its own host file')  # fmt: skip
@@ -102,7 +118,8 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
         **({'ssh': {}} if 'dev' in parsed else {}),
         **({app: {} for app in devschema.app_tables(shared)} if 'dev' in parsed else {}),
     }
-    return found + [f'{path.name}: {key} is not a declared key' for key in _undeclared(parsed, schema)]
+    undeclared = _undeclared({k: v for k, v in parsed.items() if k not in FAMILY_ONLY}, schema)
+    return found + [f'{path.name}: {key} is not a declared key' for key in undeclared]
 
 
 def _forge_repos(ops: Mapping[str, Any], family: Mapping[str, Any]) -> list[str]:
@@ -155,6 +172,10 @@ def check_family(path: Path) -> list[str]:
         for name in LOCAL_ONLY
         if name in parsed
     ]
+    try:
+        oraclegc.family_patterns(parsed.get('oraclegc', {}))
+    except oraclegc.PatternRefused as bad:
+        found.append(f'{path.name}: {bad}')
     remotes = parsed.get('storage', {}).get('remotes', {})
     for name, remote in remotes.items():  # a remote's own secret_keys is the one source of which keys are secret
         found += [

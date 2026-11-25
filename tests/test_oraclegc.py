@@ -207,9 +207,11 @@ def test_a_malformed_own_declaration_aborts_the_report_by_name(tmp_path: Path) -
     assert store.asked == 0
 
 
-def test_the_family_table_is_read_from_the_machine_file() -> None:
-    machine = {'oraclegc': {'repos': {'frozen': {'roots': [{'glob': 'cases/**/*.toml', 'key': 'sha256'}]}}}}
-    assert oraclegc.family_patterns(machine) == {'frozen': (FIELD,)}
+def test_the_family_table_is_read_from_the_oraclegc_section() -> None:
+    section = {'repos': {'frozen': {'roots': [{'glob': 'cases/**/*.toml', 'key': 'sha256'}]}}}
+    assert oraclegc.family_patterns(section) == {'frozen': (FIELD,)}
     assert oraclegc.family_patterns({}) == {}
     with pytest.raises(oraclegc.PatternRefused, match=r'\[oraclegc.repos\] frozen'):
-        oraclegc.family_patterns({'oraclegc': {'repos': {'frozen': {'roots': [{'key': 'sha256'}]}}}})
+        oraclegc.family_patterns({'repos': {'frozen': {'roots': [{'key': 'sha256'}]}}})
+    with pytest.raises(oraclegc.PatternRefused, match='holds only repos'):
+        oraclegc.family_patterns({'roots': []})

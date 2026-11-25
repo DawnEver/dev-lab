@@ -14,8 +14,9 @@ in other tracked files declares them in its own pyproject, read at EACH branch t
 ``roots = [{ glob = "cases/**/*.toml", key = "sha256" }]``). A repo that cannot declare (a frozen pre-v1
 repo whose goldens and material cards carry ``sha256 = "..."`` until v1's migration re-homes them under D86) is
 declared for it in :data:`FAMILY_TABLE` of the FAMILY file (the config source's ``family.toml``), which every machine
-file renders identically (:mod:`dev_lab.dev.devhost`). Not a host file or a local table: a root set that differs per
-machine would make one box's garbage another box's live object. Not dev-lab's pyproject: a member's name is a
+file layers under it (:func:`lab_commons.config.section`); ``configcheck`` checks it there and refuses it in a host
+file. Not a host file or a local table: a root set that differs per machine would make one box's garbage another
+box's live object. Not dev-lab's pyproject: a member's name is a
 private fact a tracked public file does not hold. A malformed pattern is :class:`PatternRefused`.
 
 ``--apply`` (deleting what the report lists) does not exist and is not to be added on this module's say: it is
@@ -209,9 +210,12 @@ def patterns_of(table: object, where: str) -> tuple[Pattern, ...]:
     return tuple(_pattern(entry, where) for entry in table.get('roots', []))
 
 
-def family_patterns(machine: Mapping[str, Any]) -> dict[str, tuple[Pattern, ...]]:
-    """:data:`FAMILY_TABLE` of the parsed *machine* file: repo name -> its declared root patterns."""
-    repos = machine.get('oraclegc', {}).get('repos', {})
+def family_patterns(section: Mapping[str, Any]) -> dict[str, tuple[Pattern, ...]]:
+    """The ``[oraclegc]`` section (family layer under the machine file): repo name -> its declared root patterns."""
+    if set(section) - {'repos'} or not isinstance(section.get('repos', {}), dict):
+        msg = f'[oraclegc] holds only repos.<name> = {{ roots = [...] }}, got {dict(section)!r}'
+        raise PatternRefused(msg)
+    repos = section.get('repos', {})
     return {name: patterns_of(table, f'{FAMILY_TABLE} {name}') for name, table in repos.items()}
 
 
@@ -373,7 +377,7 @@ class _RunStore:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``report [--lock NAME ...]``: write the report; exit 1 naming the unread repos when the roots are partial."""
-    from lab_commons.config import config_path  # noqa: PLC0415
+    from lab_commons.config import section  # noqa: PLC0415
     from lab_commons.home import repos  # noqa: PLC0415
 
     from dev_lab.dev.datedlog import dated_log, declared_output  # noqa: PLC0415
@@ -386,8 +390,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     tree = Path.cwd()
     now = datetime.now(UTC)
     try:
-        machine = config_path()
-        family = family_patterns(tomllib.loads(machine.read_text(encoding='utf-8')) if machine.is_file() else {})
+        family = family_patterns(section('oraclegc'))
         found = report(
             repos(), GitForge(), _RunStore(tree), now=now, names=tuple(args.lock or LOCK_NAMES), family=family
         )

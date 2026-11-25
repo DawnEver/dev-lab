@@ -301,3 +301,21 @@ def test_an_account_file_takes_its_root_from_the_family_cluster() -> None:
     path = Path('c-u.toml')
     assert not rootless(accounthost.check(path, host, family({'root': '/fs/{user}/lab'})))
     assert rootless(accounthost.check(path, host, family({})))
+
+
+ORACLEGC = '[oraclegc.repos.frozen]\nroots = [{ glob = "cases/**/*.toml", key = "sha256" }]\n'
+
+
+def test_the_family_file_admits_an_oraclegc_root_declaration(tmp_path: Path) -> None:
+    """PLANTED CONTROL beside it: a malformed entry is refused by name."""
+    assert check_family(_write(tmp_path, 'family.toml', ORACLEGC)) == []
+    bad = ORACLEGC.replace(', key = "sha256"', '')
+    assert [line for line in check_family(_write(tmp_path, 'bad.toml', bad)) if '[oraclegc.repos] frozen' in line]
+    stray = '[oraclegc]\nroots = []\n'
+    assert [line for line in check_family(_write(tmp_path, 'stray.toml', stray)) if '[oraclegc]' in line]
+
+
+def test_an_oraclegc_root_declaration_is_family_only(tmp_path: Path) -> None:
+    found = check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + ORACLEGC))
+    want = 'G.toml: [oraclegc] is a family fact (the GC root set is the same on every machine); it lives in family.toml'
+    assert found == [want]
