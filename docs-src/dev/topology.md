@@ -215,7 +215,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
   Its merge ASKS the forge to override the branch's unmet required checks: Gitea does so only on `force_merge` from
   a login the protection admits (`dev_lab.dev.forgemergecall.merge`, `force`); GitHub's ruleset names the actor.
 - It runs only inside a WAVE the user opened with a `breakglass.wave` credential whose params are the window
-  (`hours`) and the cap (`max_merges`), each up to the host's `[ops.breakglass] wave_hours_max` / `max_merges_max`
+  (`hours`) and the cap (`max_merges`), each up to the host's `[ops.breakglass] wave_ceiling` / `max_merges_max`
   -- above a ceiling it is refused, never clamped. The merge that reaches the cap ends the wave.
 - While a wave is open, the host's `tick` sweeps it: each green, non-draft PR (`pr-current` is an alarm, never a condition) in
   `[ops.breakglass] repos` lands; a refused one is skipped with its reason (`dev_lab.ops.wavesweep`).

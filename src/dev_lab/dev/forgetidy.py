@@ -6,8 +6,8 @@ only TUNES them, once, as data in its pyproject -- absent, the defaults below ap
     [tool.dev_lab.forge.issue_hygiene]
     host_duplicates = true         # DELETE every machine-made `forge hosts` issue but the OLDEST (the one home)
     green_areas = true             # close an open `area:<name>` issue with no `- [ ]` red row left
-    request_max_age_days = 14      # close an open request issue (`forge:request`) older than this
-    work_max_idle_days = 14        # close an open WORK issue not updated for longer than this
+    request_max_age = "14 d"       # close an open request issue (`forge:request`) older than this
+    work_max_idle = "14 d"         # close an open WORK issue not updated for longer than this
 
 A WORK issue is one no machinery keeps: not a hosts issue, not an ``area:`` issue, not a request, and carrying
 no hidden marker. A comment, a claim or an edit updates it, so only an issue nobody touched goes.
@@ -51,12 +51,14 @@ from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_list, comm
 from dev_lab.dev.forgepulls import issues as list_issues
 from dev_lab.dev.forgeroute import still_red, title_of
 from dev_lab.dev.forgework import Client, Comment
+from dev_lab.dev.tablequantity import quantity, values
 
 __all__ = ['Closing', 'Hygiene', 'apply', 'load_hygiene', 'main', 'plan', 'retired_markers', 'tidy']
 
 _AREA_PREFIX: Final = title_of('')
 _MACHINE_PREFIXES: Final = (_AREA_PREFIX,)
 _LIVE_KINDS: Final = frozenset(str(kind) for kind in Marker)
+_DAY: Final = 86400.0
 
 
 @dataclass(frozen=True)
@@ -65,8 +67,8 @@ class Hygiene:
 
     host_duplicates: bool = True
     green_areas: bool = True
-    request_max_age_days: float = 14
-    work_max_idle_days: float = 14
+    request_max_age: float = quantity('duration', 14 * _DAY, retired=('request_max_age_days', 'd'))
+    work_max_idle: float = quantity('duration', 14 * _DAY, retired=('work_max_idle_days', 'd'))
     request_label: str = Schedule.request_label
 
 
@@ -95,11 +97,11 @@ def load_hygiene(root: Path) -> Hygiene:
         return Hygiene()
     with manifest.open('rb') as handle:
         table = declared_table(tomllib.load(handle), 'forge', {})
-    declared = table.get('issue_hygiene', {})
+    where = f'[tool.dev_lab.forge.issue_hygiene] in {manifest}'
+    declared = values(Hygiene, table.get('issue_hygiene', {}), where)
     known = {field.name for field in dataclasses.fields(Hygiene)}
     unknown = sorted(set(declared) - known)
     if unknown:
-        where = f'[tool.dev_lab.forge.issue_hygiene] in {manifest}'
         msg = f'{where} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     return Hygiene(**declared)
@@ -161,13 +163,13 @@ def plan(
         idle = now - datetime.fromisoformat(raw.get('updated_at') or raw['created_at'])
         if hygiene.green_areas and title.startswith(_AREA_PREFIX) and not still_red(body):
             closing.append(Closing(number, title, 'area issue with no red row left'))
-        elif hygiene.request_label in _labels(raw) and age > timedelta(days=hygiene.request_max_age_days):
+        elif hygiene.request_label in _labels(raw) and age > timedelta(seconds=hygiene.request_max_age):
             closing.append(
-                Closing(number, title, f'request open {age.days} d, past {hygiene.request_max_age_days:g} d')
+                Closing(number, title, f'request open {age.days} d, past {hygiene.request_max_age / _DAY:g} d')
             )
-        elif _work(raw, hygiene) and idle > timedelta(days=hygiene.work_max_idle_days):
+        elif _work(raw, hygiene) and idle > timedelta(seconds=hygiene.work_max_idle):
             closing.append(
-                Closing(number, title, f'work issue idle {idle.days} d, past {hygiene.work_max_idle_days:g} d')
+                Closing(number, title, f'work issue idle {idle.days} d, past {hygiene.work_max_idle / _DAY:g} d')
             )
     return tuple(closing)
 

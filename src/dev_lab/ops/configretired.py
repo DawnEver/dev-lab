@@ -32,11 +32,11 @@ RETIRED: Final = (
     Retired('upgrade', 'overrides', 'delete it: the family revisions come from the dev-lab lock'),
     Retired('breakglass', 'totp', 'move it to [ops.consent] totp (#311: the consent issuer holds the TOTP seed)'),
     Retired('breakglass', 'wave_hours', "delete it: a wave's window is its breakglass.wave credential's param "
-                                        '(#311); the ceiling is [ops.breakglass] wave_hours_max'),
+                                        '(#311); the ceiling is [ops.breakglass] wave_ceiling'),
     Retired('breakglass', 'max_merges', "delete it: a wave's merge cap is its breakglass.wave credential's param "
                                         '(#311); the ceiling is [ops.breakglass] max_merges_max'),
     Retired('breakglass', 'lockout_after', 'move it to [ops.consent] lockout_after (#311: the issuer locks codes out)'),
-    Retired('breakglass', 'lockout_minutes', 'move it to [ops.consent] lockout_minutes (#311)'),
+    Retired('breakglass', 'lockout_minutes', 'move it to [ops.consent] lockout = "<n> min" (#311)'),
     Retired('forge', 'read_only', 'declare each login as [ops.forge.accounts.<login>] role = "read", '
                                   'repos = ["<owner>/<name>", ...] (#402)'),
 )  # fmt: skip

@@ -6,8 +6,9 @@ was a hand-written ``ssh ... sudo ...`` line, which no rule could tell from any 
 
 THE SERVERS ARE THE MACHINE FILE'S ``[[server]]`` TABLES -- ``name``, ``target`` (``ops@<host>``), and optionally
 ``root`` (the server's kit checkout, :data:`DEFAULT_ROOT`), ``config`` (its supervise file,
-:data:`DEFAULT_CONFIG`), ``gitea_data`` (:data:`dev_lab.ops.disk.DEFAULT_GITEA_DATA`) and ``journal_max_mb`` (the
-journal's retention for ``clean``, :data:`dev_lab.ops.disk.DEFAULT_JOURNAL_MAX_MB`). Nothing here lists a host, and a
+:data:`DEFAULT_CONFIG`), ``gitea_data`` (:data:`dev_lab.ops.disk.DEFAULT_GITEA_DATA`) and ``journal_max`` (the
+journal's retention for ``clean``, a size such as ``"500 MiB"``; default
+:data:`dev_lab.ops.disk.DEFAULT_JOURNAL_MAX_MB` MiB). Nothing here lists a host, and a
 name not declared is refused before any ssh.
 
 THE VERBS ARE THE OPS ACCOUNT'S FIXED SUDO LIST (user ruling 2026-11-04), nothing wider: ``install`` (the ops door's
@@ -31,7 +32,7 @@ import argparse
 import re
 import shlex
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import UTC, datetime
 from http import HTTPStatus
 from pathlib import PurePosixPath
@@ -41,6 +42,7 @@ from lab_commons.config import machine
 from lab_commons.log import emit
 
 from dev_lab.dev.remote import run, ssh_argv
+from dev_lab.dev.tablequantity import quantity, values
 from dev_lab.dev.venvpath import venv_interpreter
 from dev_lab.ops.disk import DEFAULT_GITEA_DATA, DEFAULT_JOURNAL_MAX_MB
 from dev_lab.supervise import card
@@ -73,6 +75,7 @@ VERBS: Final = (*UNIT_VERBS, 'daemon-reload', 'install', *DISK_VERBS, 'card')
 #: The server name ``card`` reads every declared card under; no ``[[server]]`` may take it.
 ALL: Final = 'all'
 _CARD_TIMEOUT_S: Final = 15
+_MIB: Final = 1024**2
 _CARD_TRIES: Final = 3
 _DATA: Final = re.compile(r'/[A-Za-z0-9/_.-]+')
 _JOURNAL_FLOOR_MB: Final = 50
@@ -89,8 +92,12 @@ class Server:
     root: str = DEFAULT_ROOT
     config: str = DEFAULT_CONFIG
     gitea_data: str = DEFAULT_GITEA_DATA
-    journal_max_mb: int = DEFAULT_JOURNAL_MAX_MB
+    journal_max: float = quantity('size', DEFAULT_JOURNAL_MAX_MB * _MIB, retired=('journal_max_mb', 'MiB'))
     status: str = ''
+
+
+#: The keys a ``[[server]]`` table is read by; another key in it is not this door's.
+_SERVER_KEYS: Final = frozenset(f.name for f in fields(Server))
 
 
 def declared_servers(file: Mapping[str, Any]) -> dict[str, Server]:
@@ -103,15 +110,8 @@ def declared_servers(file: Mapping[str, Any]) -> dict[str, Server]:
         if row['name'] == ALL:
             msg = f'a [[server]] may not be named {ALL!r}: `card` reads every server under that name'
             raise ValueError(msg)
-        out[row['name']] = Server(
-            row['name'],
-            row['target'],
-            row.get('root', DEFAULT_ROOT),
-            row.get('config', DEFAULT_CONFIG),
-            row.get('gitea_data', DEFAULT_GITEA_DATA),
-            row.get('journal_max_mb', DEFAULT_JOURNAL_MAX_MB),
-            row.get('status', ''),
-        )
+        declared = values(Server, row, f'[[server]] {row["name"]}')
+        out[row['name']] = Server(**{key: value for key, value in declared.items() if key in _SERVER_KEYS})
     return out
 
 
@@ -137,9 +137,9 @@ def remote_line(server: Server, verb: str, unit: str | None) -> str:
     if not _DATA.fullmatch(server.gitea_data) or '..' in server.gitea_data:
         msg = f'gitea_data must be an absolute plain path, got {server.gitea_data!r}'
         raise ValueError(msg)
-    mb = server.journal_max_mb
-    if isinstance(mb, bool) or not isinstance(mb, int) or mb < _JOURNAL_FLOOR_MB:
-        msg = f'journal_max_mb must be an integer >= {_JOURNAL_FLOOR_MB}, got {mb!r}'
+    mb = int(server.journal_max // _MIB)
+    if mb < _JOURNAL_FLOOR_MB:
+        msg = f'journal_max must be at least "{_JOURNAL_FLOOR_MB} MiB", got {server.journal_max:g} bytes'
         raise ValueError(msg)
     return f'{door} {verb} --gitea-data {server.gitea_data} --journal-max-mb {mb}'
 

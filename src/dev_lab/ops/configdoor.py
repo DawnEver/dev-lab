@@ -84,7 +84,7 @@ ROUTINE: Final[tuple[str, ...]] = (
     'ops.*.tick',
     'ops.*.memory_max',
     'ops.breakglass.min_reason',
-    'ops.breakglass.wave_hours_max',
+    'ops.breakglass.wave_ceiling',
     'ops.breakglass.max_merges_max',
     'ops.backup.keep*',
     'ops.backup.retention*',
