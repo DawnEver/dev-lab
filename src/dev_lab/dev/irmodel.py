@@ -60,6 +60,14 @@ _DOORS: Final = {
     'IR-NON-SI-UNIT': 'use the coherent SI unit (no prefix, offset, gauge or dB)',
     'IR-DIMENSION-MISMATCH': 'correct the catalogue row',
     'IR-FIELD-SPEC': 'see docs-src/dev/ir-schema.md, "A schema file"',
+    'IR-NO-BOUNDARY': (
+        'declare `boundary = "<module>"` in [tool.dev_lab.ir_schema]: the consumer module whose to_si/from_si is its '
+        'one unit boundary (docs-src/dev/ir-schema.md, "Units cross once, at the boundary")'
+    ),
+    'IR-UNIT-LIBRARY': (
+        'generated code holds SI only and reads no unit; units cross at the declared `boundary` module, so fix the '
+        'generator template that names it'
+    ),
 }
 
 
@@ -157,6 +165,7 @@ class Declaration:
     package_dir: str
     quantities: str
     migrations: str
+    boundary: str
     modules: dict[str, str]
     external: dict[str, str] = field(default_factory=dict)
     external_rust: dict[str, str] = field(default_factory=dict)
@@ -190,6 +199,8 @@ def _declaration(root: Path, read: Reader) -> Declaration | None:
     if table is None:
         return None
     major, minor, patch = (int(part) for part in table['version'].split('.'))
+    if not table.get('boundary'):
+        refuse('IR-NO-BOUNDARY', 'pyproject.toml [tool.dev_lab.ir_schema]', 'no `boundary` module is declared')
     return Declaration(
         root=root,
         version=(major, minor, patch),
@@ -197,6 +208,7 @@ def _declaration(root: Path, read: Reader) -> Declaration | None:
         package_dir=table['package_dir'],
         quantities=table['quantities'],
         migrations=table.get('migrations', ''),
+        boundary=table['boundary'],
         modules=dict(table['modules']),
         external=dict(table.get('external', {})),
         external_rust=dict(table.get('external_rust', {})),

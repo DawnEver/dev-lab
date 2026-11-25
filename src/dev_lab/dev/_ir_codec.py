@@ -1,10 +1,12 @@
-"""THE IR CODEC TEMPLATE, copied verbatim into each consumer package as ``_ir_codec.py`` (git-ignored).
+"""THE IR CODEC TEMPLATE, copied into each consumer package as ``_ir_codec.py`` (git-ignored), boundary rendered.
 
 :mod:`dev_lab.dev.irpython` writes the copy, so this file imports nothing from dev-lab.
 
-The boundary: the one place a unit is read or written. A value crosses ONCE, through Pint, into the
-catalogue's coherent SI unit (affine temperatures as absolute, gauge pressure relative to its declared
-reference field, dB through the quantity's catalogue reference); the generated types hold SI only.
+The record walk of the boundary. A unit is read or written in ONE place, the consumer's declared boundary module
+(``boundary`` in ``[tool.dev_lab.ir_schema]``): its ``to_si(magnitude, unit, si_unit)`` and
+``from_si(magnitude, si_unit, unit)`` do every conversion, so this file imports no unit library (IR-UNIT-LIBRARY).
+Gauge pressure adds its declared reference field and dB uses the quantity's catalogue reference -- catalogue data,
+not units; the generated types hold SI only.
 """
 
 from __future__ import annotations
@@ -13,13 +15,11 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+import _ir_unit_boundary as _boundary  # replaced by the generator with the declared boundary module
 import numpy as np
-import pint
 
 from ._ir_runtime import IRValidationError, build, fail, target
 
-#: The process's one registry (pint's application registry), so a re-import never rebuilds it.
-UREG = pint.get_application_registry()
 _NUMBER_UNIT = re.compile(r'^\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*(.*?)\s*$')
 
 
@@ -36,9 +36,8 @@ def _to_si(spec: object, magnitude: object, unit: str, path: str) -> object:
         reference, scale = spec.db
         return reference * np.power(10.0, np.asarray(magnitude) / scale)
     try:
-        quantity = UREG.Quantity(magnitude, unit)
-        return quantity.to(spec.unit).magnitude
-    except (pint.UndefinedUnitError, pint.DimensionalityError, AttributeError, ValueError):
+        return _boundary.to_si(magnitude, unit, spec.unit)
+    except Exception:  # noqa: BLE001 -- the boundary's refusals share no base; every one means "does not convert"
         raise _refuse(path, f'a unit convertible to {spec.unit}', unit) from None
 
 
@@ -89,7 +88,7 @@ def _from_si(spec: object, magnitude: object, unit: str) -> object:
     if unit == 'dB':
         reference, scale = spec.db
         return scale * np.log10(np.asarray(magnitude) / reference)
-    return UREG.Quantity(magnitude, spec.unit).to(unit).magnitude
+    return _boundary.from_si(magnitude, spec.unit, unit)
 
 
 def _value_out(spec: object, value: object, units: Mapping[str, str], prefix: str) -> object:  # noqa: PLR0911 -- one return per kind
@@ -127,4 +126,4 @@ def to_boundary(record: object, units: Mapping[str, str] | None = None, prefix: 
     return out
 
 
-__all__ = ['UREG', 'from_boundary', 'to_boundary']
+__all__ = ['from_boundary', 'to_boundary']

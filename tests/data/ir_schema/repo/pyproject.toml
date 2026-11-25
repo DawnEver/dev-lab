@@ -18,6 +18,7 @@ package = "sample_pkg"
 package_dir = "src/sample_pkg"
 quantities = "ir/quantities.toml"
 migrations = "sample_pkg.ir_migrations"
+boundary = "sample_units"
 
 [tool.dev_lab.ir_schema.modules]
 widgets = "ir/widgets.toml"

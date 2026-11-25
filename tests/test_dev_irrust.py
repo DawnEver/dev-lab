@@ -19,6 +19,7 @@ import pytest
 
 from dev_lab.dev import irpython, irrust
 from dev_lab.dev.ircheck import load
+from dev_lab.dev.irmodel import IRSchemaError
 
 FIXTURE = Path(__file__).parent / 'data' / 'ir_schema' / 'repo'
 CARGO = shutil.which('cargo')
@@ -72,6 +73,18 @@ def test_the_rust_carries_every_record_enum_and_id(repo: Path) -> None:
     assert '#[serde(with = "ir_runtime::array")]\n    pub time: ndarray::ArrayD<f64>,' in text
     assert 'pub gain: ir_runtime::Complex,' in text
     assert 'const BOUNDS: &ir_runtime::Bounds = &[("n", Some(1), None)];' in text
+
+
+def test_generated_rust_is_unit_free(repo: Path) -> None:
+    text = irrust.render(load(repo))
+    assert not any(f'{crate}::' in text for crate in irrust.UNIT_CRATES)
+
+
+def test_generated_rust_naming_a_unit_crate_is_refused(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    planted = irrust.RUNTIME_RS.replace('use serde_json::Value;', 'use uom::si::f64::Length;', 1)
+    monkeypatch.setattr(irrust, 'RUNTIME_RS', planted)
+    with pytest.raises(IRSchemaError, match=r'IR-UNIT-LIBRARY: ir\.rs: .*uom'):
+        irrust.render(load(repo))
 
 
 def test_write_lands_ir_rs_in_the_build_directory(repo: Path, tmp_path: Path) -> None:

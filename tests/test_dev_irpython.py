@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import base64
 import hashlib
 import importlib
@@ -18,6 +19,7 @@ import pytest
 
 from dev_lab.dev import irpython
 from dev_lab.dev.ircheck import load
+from dev_lab.dev.irmodel import IRSchemaError
 
 FIXTURE = Path(__file__).parent / 'data' / 'ir_schema' / 'repo'
 
@@ -85,6 +87,42 @@ def test_every_generated_file_carries_its_fingerprint_and_is_ignored(repo: Path)
     assert first == irpython.FINGERPRINT_PREFIX + irpython.fingerprint(ir, 'widgets')
     assert '_ir_*.py' in (repo / 'src' / 'sample_pkg' / '.gitignore').read_text(encoding='utf-8')
     assert irpython.write(ir) == (), 'an unchanged IR rewrites nothing'
+
+
+def _imported(source: str) -> set[str]:
+    names = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names |= {alias.name.split('.')[0] for alias in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names.add(node.module.split('.')[0])
+    return names
+
+
+def test_generated_python_holds_si_only_and_imports_no_unit_library(repo: Path) -> None:
+    files = irpython.expected_files(load(repo))
+    sources = {path.name: text for path, text in files.items() if path.suffix == '.py'}
+    assert all('pint' not in _imported(text) for text in sources.values())
+    assert 'import sample_units as _boundary' in sources['_ir_codec.py'], 'the codec delegates to the declared module'
+
+
+def test_a_generated_module_importing_pint_is_refused(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    planted = tmp_path / '_ir_codec.py'
+    planted.write_text('import pint\n', encoding='utf-8')
+    monkeypatch.setitem(irpython._TEMPLATES, '_ir_codec.py', planted)
+    with pytest.raises(IRSchemaError, match=r'IR-UNIT-LIBRARY: .*_ir_codec\.py.*pint'):
+        irpython.write(load(repo))
+    assert not (repo / 'src' / 'sample_pkg' / '_ir_codec.py').exists(), 'a refused generation writes nothing'
+
+
+def test_a_declaration_without_a_unit_boundary_is_refused(repo: Path) -> None:
+    pyproject = repo / 'pyproject.toml'
+    text = pyproject.read_text(encoding='utf-8')
+    pyproject.write_text(text.replace('boundary = "sample_units"\n', ''), encoding='utf-8')
+    with pytest.raises(IRSchemaError, match='IR-NO-BOUNDARY'):
+        load(repo)
 
 
 def test_a_record_is_frozen_and_equal_by_content(ir: SimpleNamespace) -> None:
