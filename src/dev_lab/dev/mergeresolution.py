@@ -95,6 +95,7 @@ UNCLASSED: Final[dict[str, str]] = {
     'no-barrier-fan-out': 'a property of how work is scheduled, not a side; a merge resolves one lane at a time',
     'images-by-absolute-path': 'a property of what a turn hands the user, not a side; the Stop hook refuses one',
     'worktree-names-its-task': 'a property of where the work is done, not a side; the deny row refuses the name',
+    'native-first': 'a property of where a stage computes, not a side; NATIVE-FIRST refuses a Python twin',
 }
 
 CLASSES: Final = frozenset(GROUNDS)

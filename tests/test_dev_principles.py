@@ -21,7 +21,7 @@ def test_the_set_is_the_named_set_and_keeps_valuable_options() -> None:
         'first-principles', 'no-historical-baggage', 'occams-razor', 'single-source-of-truth',
         'layered-decoupling', 'names-match-behavior', 'no-backward-compatibility', 'progressive-disclosure',
         'keep-valuable-options', 'every-wall-teaches', 'no-barrier-fan-out', 'images-by-absolute-path',
-        'worktree-names-its-task',
+        'worktree-names-its-task', 'native-first',
     ]  # fmt: skip
     kept = {one.id: one for one in PRINCIPLES}['keep-valuable-options']
     assert kept.name == 'Keep every valuable parameter and option'
@@ -75,6 +75,19 @@ def test_an_image_is_delivered_by_absolute_path_and_a_worktree_is_named_for_its_
     for clause in ('physical meaning tied to its task', '`agent-<hex>`', 'is forbidden', 'WORKTREE-NAMES-ITS-TASK'):
         assert clause in by_id['worktree-names-its-task']
     assert {'IMAGES-BY-ABSOLUTE-PATH', 'WORKTREE-NAMES-ITS-TASK'} <= {rule.id for rule in RULES}
+
+
+def test_native_first_is_the_ruling_verbatim_and_has_its_mechanism() -> None:
+    """User ruling 2026-11-25 (D51 L2): the statement is the user's words; NATIVE-FIRST is its opt-in mechanism."""
+    native = {one.id: one for one in PRINCIPLES}['native-first']
+    assert native.name == 'Native first'
+    assert native.statement == (
+        'Python declares and orchestrates, Rust computes. A stage Rust owns is written in Rust from its first line; '
+        'a Python version of it is only a scratch prototype, never a second implementation; acceptance is against '
+        'references (analytic, the vendor ladder, the previous implementation during a migration), never against a '
+        'Python twin.'
+    )
+    assert 'NATIVE-FIRST' in {rule.id for rule in RULES}
 
 
 def test_the_json_flag_prints_the_payload(capsys: pytest.CaptureFixture[str]) -> None:

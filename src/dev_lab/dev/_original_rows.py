@@ -401,6 +401,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'consentguard',  # CONSENT-CODE-FROM-THE-USER: the consent state dir and the planted-credential refusal, new here
     'frozen',  # USER-FROZEN-FILES: the user's frozen files and closed tracked inventory (2026-11-24), new here
     'corechange',  # ZERO-CORE-CHANGE: application work leaves the core, else a recorded decision (2026-11-24), new here
+    'nativefirst',  # NATIVE-FIRST: Python orchestrates, the native stage computes (2026-11-25), new here
     'machineguard',  # MACHINE-FILE-IS-RENDERED: the machine file is written by its doors alone, new here
     'familyrepos',  # FAMILY-REPO-IS-CHECKED-OUT: [repos] against the family's repos, listed and enforced, new here
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here

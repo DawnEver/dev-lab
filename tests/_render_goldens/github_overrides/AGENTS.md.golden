@@ -30,6 +30,10 @@ _Rendered by `dev_lab.dev.agentsection` from `dev_lab.dev.principles`; a hand ed
   ABSOLUTE path, never a relative one (IMAGES-BY-ABSOLUTE-PATH).
 - **A worktree is named for its task** (`worktree-names-its-task`): A worktree's name has a physical meaning tied to its
   task; a hash-like name (`agent-<hex>`, an appended hash) is forbidden (WORKTREE-NAMES-ITS-TASK).
+- **Native first** (`native-first`): Python declares and orchestrates, Rust computes. A stage Rust owns is written in
+  Rust from its first line; a Python version of it is only a scratch prototype, never a second implementation;
+  acceptance is against references (analytic, the vendor ladder, the previous implementation during a migration), never
+  against a Python twin.
 
 ## Family workflow
 
@@ -67,7 +71,7 @@ _Each rule is cited by ID; its full statement and refusing mechanism live in `de
 - `NETWORK-RETRY-THEN-REPORT`: The forge is a REMOTE service: a network verb goes through the retry wrapper rather than
   being called directly, and a write that still fails is REPORTED with its diagnosis instead of hammered.
 - `PRODUCTION-ENTRY-POINT`: Reproduce a behavior through the PRODUCTION entry point, never an ad-hoc script handed out
-  beside it, and treat a behavior not reachable from there as a gap to FIX, the boundary being the SUBJECT, not the
-  tree the code happens to live in.
+  beside it, and treat a behavior not reachable from there as a gap to FIX, the boundary being the SUBJECT, not the tree
+  the code happens to live in.
 
 <!-- END dev-lab family section -->

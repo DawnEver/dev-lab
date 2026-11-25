@@ -102,6 +102,14 @@ PRINCIPLES: Final = (
         "A worktree's name has a physical meaning tied to its task; a hash-like name (`agent-<hex>`, an appended "
         'hash) is forbidden (WORKTREE-NAMES-ITS-TASK).',
     ),
+    Principle(
+        'native-first',
+        'Native first',
+        'Python declares and orchestrates, Rust computes. A stage Rust owns is written in Rust from its first line; '
+        'a Python version of it is only a scratch prototype, never a second implementation; acceptance is against '
+        'references (analytic, the vendor ladder, the previous implementation during a migration), never against a '
+        'Python twin.',
+    ),
 )
 
 

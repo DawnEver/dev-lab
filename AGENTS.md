@@ -98,6 +98,10 @@ _Rendered by `dev_lab.dev.agentsection` from `dev_lab.dev.principles`; a hand ed
   ABSOLUTE path, never a relative one (IMAGES-BY-ABSOLUTE-PATH).
 - **A worktree is named for its task** (`worktree-names-its-task`): A worktree's name has a physical meaning tied to its
   task; a hash-like name (`agent-<hex>`, an appended hash) is forbidden (WORKTREE-NAMES-ITS-TASK).
+- **Native first** (`native-first`): Python declares and orchestrates, Rust computes. A stage Rust owns is written in
+  Rust from its first line; a Python version of it is only a scratch prototype, never a second implementation;
+  acceptance is against references (analytic, the vendor ladder, the previous implementation during a migration), never
+  against a Python twin.
 
 ## Family workflow
 

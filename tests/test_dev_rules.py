@@ -144,6 +144,7 @@ _IDS = frozenset(
         'MEASURE-BEFORE-PORTING',
         'ONE-FORMAT-PER-NEED',
         'ZERO-CORE-CHANGE',
+        'NATIVE-FIRST',
         'MACHINES-MEET-ONLY-THROUGH-THE-FORGE',
     }
 )

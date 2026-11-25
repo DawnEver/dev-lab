@@ -39,7 +39,7 @@ from lab_commons.hpc.testcells import TestCell
 from lab_commons.launch import run
 from lab_commons.outcomes import Cell, Reason, Status
 
-from dev_lab.dev import cjk, corechange, frozen, remretired
+from dev_lab.dev import cjk, corechange, frozen, nativefirst, remretired
 from dev_lab.dev.family import declared_table, is_member
 from dev_lab.dev.famtests import hiddenintake, modulealarm, treechecks
 from dev_lab.dev.rules import ALWAYS_ON, tracked_files
@@ -179,6 +179,8 @@ def _applicable(root: Path) -> dict[str, Callable[[Path], None]]:
             checks[frozen.RULE_ID] = frozen.check
         if corechange.declared(root):
             checks[corechange.RULE_ID] = corechange.check
+        if nativefirst.declared(root):
+            checks[nativefirst.RULE_ID] = nativefirst.check
         checks.update(treechecks.applicable(root))
     return checks
 

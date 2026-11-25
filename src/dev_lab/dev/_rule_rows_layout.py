@@ -47,6 +47,21 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_corechange.py',),
     ),
     (
+        'NATIVE-FIRST',
+        (
+            # Why: user ruling 2026-11-25 (principle `native-first`) -- Python orchestrates, Rust computes.
+            'In a repo declaring `[tool.dev_lab.native] orchestration = [...]` and `[tool.dev_lab.native.stages] '
+            '<stage> = "<native module>"` (opt-in; an undeclared repo is said to be not judged), an AST read refuses, '
+            'under an orchestration path, an index loop (`range`/`ndindex`, or a counted `while`) that stores, '
+            'updates or computes on an element or calls `math` per element, and a module named for a native-owned '
+            'stage that never imports its native module; anywhere, a test importing a stage`s native module AND a '
+            'Python module of the same stage name. No types: a dict index loop reads as an array one; direct '
+            'iteration, comprehensions and a renamed twin are not seen. The `native-first` pre-commit row and the '
+            'always-on family check (`dev_lab.dev.nativefirst`).'
+        ),
+        ('tests/test_dev_nativefirst.py',),
+    ),
+    (
         'ONE-FORMAT-PER-NEED',
         (
             # Why: user ruling R3 -- one format per need, so no reader ever parses a second shape of one fact.
