@@ -9,13 +9,14 @@ requires-python = ">=3.12"
 # dev-lab IS the development system, so what lab-commons shipped as its `dev` extra is this package's base
 # install: the lab-commons runtime it is built on (logging, paths, config, units for the duration/quantity
 # parsers) plus the tools it DRIVES as executables (pytest, ruff, `cz check` for the base commit-msg hook).
-# Floor: lab-commons 87ca03d2 (hatch-vcs 0.3.1.dev1579), the first carrying lab_commons.storage, which dev-lab
-# imports at load (2026-11-20: a relock moving dev-lab alone left kits on an older lab-commons that died importing
-# it); a floor any dev-lab import needs is raised here, so `--upgrade-package dev-lab` pulls lab-commons along.
+# Floor: lab-commons d7b30ec3 (hatch-vcs 0.3.1.dev1731), the first carrying toolchecks.FEMM_VERSION_FILE, which
+# the account deploy's femm step imports at load (2026-11-20: a relock moving dev-lab alone left kits on an older
+# lab-commons that died importing what dev-lab needed); a floor any dev-lab import needs is raised here, so
+# `--upgrade-package dev-lab` pulls lab-commons along.
 # One bare git URL graph-wide, as the
 # consumers spell it, so uv.lock pins its tip -- never a machine-local path.
 dependencies = [
-    "lab-commons[units,paths,io,structured]>=0.3.1.dev1715",
+    "lab-commons[units,paths,io,structured]>=0.3.1.dev1731",
     "pytest",
     # The verify door runs a selection on every core its claim admits (verifybox.selection_workers); without the
     # plugin xdist_installed() answers False and every part ran serially -- this repo's hosted part measured 483 s

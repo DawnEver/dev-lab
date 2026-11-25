@@ -46,7 +46,11 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   to `<file>.lab-deploy.bak` first, so the login shell runs what the tick runs; builds each `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native` build on a
   uv-managed CPython (skipped while its inputs are unchanged) -- exactly what the repo's committed `uv.lock`
   pins, with nothing installed over it, so a repo's producers import the lab-commons its commit was tested
-  with (PIN + FRESHNESS, user ruling 2026-10-17); replaces its own marked crontab lines; runs one tick of each repo and prints it.
+  with (PIN + FRESHNESS, user ruling 2026-10-17); where the machine file declares `[capabilities.femm]`, builds the
+  family's one FEMM 5 release from its pinned source (`dev_lab.dev.toolrelease.FEMM_QT`) on the login node and
+  installs it, with its `version.env`, into `<tools>/femm/<version>/bin` (`dev_lab.dev.hpcaccount.femm`: a current
+  install is skipped; a failed build is refused naming its log and keeps the install in place); replaces its own
+  marked crontab lines; runs one tick of each repo and prints it.
 - A grant's compute-node `setup` (e.g. `module load git`) is a cluster fact the deploy cannot read: add it to
   the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.

@@ -18,6 +18,7 @@ from typing import Final
 
 import pytest
 from _roles_fixtures import EVERY_CI, HPC_REPO, carry
+from lab_commons.home import HOME_ENV
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.retired import RETIRED
 
@@ -1193,3 +1194,26 @@ def test_a_machine_file_without_a_root_deploys_at_the_root_its_grant_table_decla
     assert spec.root == '/r/declared/lab'
     with pytest.raises(ValueError, match='no root declared'):
         declaration(parser().parse_args([]), machine)
+
+
+def test_a_refused_femm_install_is_reported_and_the_repos_are_still_served(
+    box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``[capabilities.femm]`` builds FEMM 5 in the deploy (user ruling 2026-11-25); its refusal never unserves a repo.
+
+    The fake shell builds nothing, so the build "succeeds" and its stage does not verify: refused, exit 2, every
+    cron line written. PLANTED CONTROL: the same account without the capability deploys clean.
+    """
+    monkeypatch.setenv(HOME_ENV, str(tmp_path / 'machinehome'))
+    assert box.run(*DECLARE) == 0, 'PLANTED CONTROL: undeclared, nothing is built and the deploy is clean'
+    assert 'cmake --build' not in box.logged()
+    box.machine.write_text(box.machine.read_text(encoding='utf-8') + '\n[capabilities.femm]\n', encoding='utf-8')
+    capsys.readouterr()
+    assert box.run() == 2
+    err = capsys.readouterr().err
+    assert 'femm: refused -- the build does not verify' in err
+    assert 'refused to install: femm' in err
+    assert 'cmake --build' in box.logged()
+    marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
+    assert {line.rsplit(deploy_spec.MARK, 1)[1] for line in marked} == {'dev-lab', 'alpha', 'beta'}
+    assert not (tmp_path / 'machinehome' / 'tools' / 'femm' / '5.0.20261112').exists(), 'nothing half installed'

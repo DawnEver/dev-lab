@@ -16,6 +16,11 @@ with the download discarded unless the digest equals the pin (:class:`ChecksumMi
 declared member read out of the archive (never ``extractall``: no path from the archive is ever joined to a
 directory) and written into :func:`tool_dir` by an atomic replace. Nothing from the download runs before that.
 
+BUILT FROM SOURCE. A tool with no upstream binary for a host is a :class:`SourceRelease`: its git remote, the tag
+of the pinned release and the commit that tag peeled to when the pin was set -- a tag that has since moved is
+refused, never built. FEMM 5 on a cluster account (:data:`FEMM_QT`) is one; the account deploy builds it
+(:mod:`dev_lab.dev.hpcaccount.femm`).
+
 WHERE. :func:`tool_dir` is user-space and removable: ``~/.local/bin`` on POSIX (already first on a cluster tick's
 PATH, :func:`dev_lab.dev.hpcaccount.spec.tick_dirs`), ``%LOCALAPPDATA%/dev-lab/bin`` on Windows. :func:`resolve`
 reads that directory first, then ``PATH``; absent from both is :class:`ToolAbsent`, whose message names this door.
@@ -42,12 +47,14 @@ from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
 __all__ = [
+    'FEMM_QT',
     'RCLONE',
     'RELEASES',
     'USER_AGENT',
     'ChecksumMismatch',
     'DownloadRefused',
     'Release',
+    'SourceRelease',
     'ToolAbsent',
     'UnsupportedPlatform',
     'door',
@@ -113,6 +120,29 @@ RCLONE: Final = Release(
         ),
     },
     member='{stem}/rclone',
+)
+
+
+@dataclass(frozen=True)
+class SourceRelease:
+    """One tool's pinned upstream SOURCE release: the git remote, the release's tag and the commit it peels to."""
+
+    name: str  # the capability it provides (``[capabilities.<name>]``)
+    version: str  # the version the built install states, as lab_commons reads it back
+    url: str  # the https git remote
+    tag: str
+    commit: str  # the tag's commit when the pin was set: a moved tag is refused, never built
+
+
+#: FEMM 5 (femm-qt), the ONE release the family uses (user ruling 2026-11-25). Pinned 2026-11-25 from
+#: ``git ls-remote --tags https://github.com/dcm3c/femm-qt``: ``refs/tags/v5.0.20261112^{}`` is 31ee4bf6, and the
+#: tagged ``CMakeLists.txt`` declares ``project(femm-qt VERSION 5.0.20261112)``, the number its build stamp states.
+FEMM_QT: Final = SourceRelease(
+    name='femm',
+    version='5.0.20261112',
+    url='https://github.com/dcm3c/femm-qt.git',
+    tag='v5.0.20261112',
+    commit='31ee4bf6a8cae1a1860c108e7934ab3403bfd6e3',
 )
 
 #: Every tool a host's setup installs through this door, by name.

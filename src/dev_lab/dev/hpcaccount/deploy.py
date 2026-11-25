@@ -37,7 +37,9 @@ once, the file backed up first); build each ``.venv`` with the repo's own ``[too
 (and its ``native`` build) -- exactly what its committed lock pins, nothing installed over it -- skipped when
 the key of its inputs (the lock's hash among them) is unchanged; warn, naming the recipe, when a repo declares an rclone
 artifact store this account's remote cannot reach (:func:`lab_commons.hpc.rclone.probe`; parts with outputs
-are then not claimed here); replace this tool's marked crontab lines (one per served repo and the kit, every
+are then not claimed here); build and install the family's pinned FEMM 5 where the machine file declares
+``[capabilities.femm]`` (:mod:`dev_lab.dev.hpcaccount.femm`; a refused install is reported, the deploy finishes and
+exits 2); replace this tool's marked crontab lines (one per served repo and the kit, every
 ``[schedule] tick_minutes`` at a minute offset derived per account, each tick under its own lock and wall,
 :mod:`dev_lab.dev.hpcaccount.tickwall`)
 and touch no other line; run one tick of each and print it. ``--dry-run`` reads but changes nothing;
@@ -70,20 +72,21 @@ from pathlib import Path
 from typing import Any, Final
 
 import lab_commons.launch as _door
+from lab_commons import home as machinehome
 from lab_commons.config import config_path
 from lab_commons.hpc.declared import REFUSALS
 from lab_commons.hpc.rclone import declared_remote, probe
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev.hpcaccount import headroom
+from dev_lab.dev.hpcaccount import femm, headroom
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
 from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, follow_uv, merge_tree_refusal, runs, tool_plan
 from dev_lab.dev.hpcaccount.cimark import paused_refusal
 from dev_lab.dev.hpcaccount.declaration import parser, resolve, store
 from dev_lab.dev.hpcaccount.deployhost import host_refusal
 from dev_lab.dev.hpcaccount.division import account_role
-from dev_lab.dev.hpcaccount.grantslice import Unreadable, grant_setup
+from dev_lab.dev.hpcaccount.grantslice import Unreadable, grant_setup, machine_table
 from dev_lab.dev.hpcaccount.spec import (
     Deployment,
     Repo,
@@ -227,7 +230,7 @@ def _tools(
 #: (cron) and what it alone needs -- the serve tick's git, a tick now. Rule ``SCHEDULER-ONLY-FOR-SERVING``.
 PHASES: Final = (
     'credentials', 'reader', 'grant', 'store', 'serve-git', 'headroom', 'checkouts', 'tools', 'login', 'venvs',
-    'artifacts', 'cron', 'tick',
+    'artifacts', 'femm', 'cron', 'tick',
 )  # fmt: skip
 SERVING_PHASES: Final = frozenset({'serve-git', 'cron', 'tick'})
 
@@ -294,16 +297,41 @@ def _artifacts(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
     return 0  # a warning, never a refusal: most parts declare no large outputs
 
 
+def _femm(step: Step, spec: Deployment, home: Path, path: Path, failed: list[str], *, slurm: Sequence[str]) -> int:
+    """FEMM 5 where the machine file at *path* declares it, built in the tick's environment, its grant setup too.
+
+    The grant setup is read here, not taken from ``serve-git``: an account that never serves has no such phase, and
+    its build needs the compiler that setup loads all the same. A refusal is recorded in *failed*, never stops the
+    deploy: the repos are served whatever FEMM's install did.
+    """
+    try:
+        machine = machine_table(path) if path.is_file() else {}
+        setup = grant_setup(path, step.read([*step.tools.id, '-un']).stdout.strip()) if machine else ()
+    except Unreadable as broken:
+        emit(f'  femm: refused -- {broken}', err=True)
+        failed.append('femm')
+        return 0
+    environment = tick_environment(home, spec.root, slurm, setup, spec.env)
+    if femm.install(step, machine, environment=environment, tools_root=machinehome.tools(), home=home):
+        failed.append('femm')
+    return 0
+
+
 def _sound(url: str, subject: str, body: str) -> object:
     """One forge ``run`` alarm, raised by :mod:`dev_lab.dev.forgealarm` in a subprocess."""
     argv = [sys.executable, '-m', 'dev_lab.dev.forgealarm', 'run', url, subject, body]
     return _door.run(argv, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
 
 
-def _report(spec: Deployment, refused: Refused, host: str, alarm: AlarmSink) -> int:
-    """0 when every repo is served; else name each refused repo, alarm its owner, and return 2."""
+def _report(spec: Deployment, refused: Refused, host: str, alarm: AlarmSink, failed: Sequence[str] = ()) -> int:
+    """0 when every repo is served and every declared install done; else name each refusal and return 2.
+
+    A refused repo alarms its owner; a refused capability install (*failed*) was named in its phase with its log.
+    """
+    if failed:
+        emit(f'deploy refused to install: {", ".join(failed)} (each named above with its log)', err=True)
     if not refused:
-        return 0
+        return 2 if failed else 0
     for repo in spec.repos:
         if why := refused.get(repo.name):
             alarm(repo.url, f'the deploy on {host} refused {repo.name}; it is not served there', why)
@@ -361,6 +389,7 @@ def deploy(
         emit(f'deploy refused: {slurm}', err=True)
         return 2
     refused: Refused = {}
+    failed: list[str] = []  # the capabilities whose install was refused: reported in their phase, exit 2 at the end
     setup: list[str] = []  # the grant's setup lines: every tick runs inside them
     artifacts = '[artifacts] the rclone remote, where a repo declares one'
     every: dict[str, Callable[[], int]] = {
@@ -378,6 +407,7 @@ def deploy(
             or prune_uv(step, spec)
         ),
         'artifacts': lambda: _each(step, spec, home, artifacts, _artifacts, refused=refused),
+        'femm': lambda: _femm(step, spec, home, path, failed, slurm=slurm),
         'cron': lambda: _cron(step, spec, home, refused, serves=serves, slurm=slurm, setup=setup),
         'tick': lambda: _each(
             step,
@@ -391,7 +421,7 @@ def deploy(
     for name in phases_of(serves=serves):
         if rc := every[name]():
             return rc
-    return _report(spec, refused, short, alarm)
+    return _report(spec, refused, short, alarm, failed)
 
 
 def main(argv: Sequence[str]) -> int:
