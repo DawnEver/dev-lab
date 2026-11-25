@@ -106,8 +106,8 @@ def test_the_retired_allow_list_is_refused_by_name_with_the_rule_that_replaced_i
 
 
 def test_an_unknown_schedule_key_is_refused(tmp_path: Path) -> None:
-    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.schedule]\nagin_rate = 1\n', encoding='utf-8')
-    with pytest.raises(ValueError, match='again_rate'):
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.schedule]\naging_rates = 1\n', encoding='utf-8')
+    with pytest.raises(ValueError, match=r"\['aging_rates'\]"):
         load_schedule(tmp_path)
 
 
