@@ -14,11 +14,14 @@ login host (where its crontab and its ticks live), ONE of a CLOSED set of reads 
 * ``stuck <path>`` -- why entries under ``~/<path>`` cannot be removed (measured 2026-11-23: 206,412 entries kept
   with "Operation not permitted" and no read could say why): ``id``, the filesystem type, ``ls -ld`` and
   ``lsattr -d`` of every ancestor (GPFS keeps no such flags: ``lsattr`` says so), the owners and modes counted,
-  the directories lacking ``u+wx``, and ``stat``/``lsattr``/``getfacl`` of one sample file.
+  the directories lacking ``u+wx``, and ``stat``/``lsattr``/``getfacl`` of one sample file;
+* ``inventory <path>`` -- what ``~/<path>`` holds before it is archived or cleaned: each entry's files, bytes and
+  newest change, and every git checkout in it judged pushed or NOT PUSHED (:mod:`~dev_lab.dev.hpcaccount.inventory`,
+  whose rows are printed instead of the raw lines).
 
 There is no free-form command: each read is a fixed shell line whose only inputs are the declared root, a repo
 name of :data:`REPO_NAME`'s shape and a home-relative path of such names
-(``stuck``), so the door cannot write. Anything else is refused naming the set. A verification
+(``stuck``, ``inventory``), so the door cannot write. Anything else is refused naming the set. A verification
 account needs this session's integrator role, as every verb (:func:`~dev_lab.dev.hpcaccount.division.reached_machine`).
 """
 
@@ -35,6 +38,7 @@ from typing import Final
 from lab_commons.hpc.cluster import Runner, Unreachable
 from lab_commons.log import emit
 
+from dev_lab.dev.hpcaccount import inventory
 from dev_lab.dev.hpcaccount.division import reached_machine
 from dev_lab.dev.hpcaccount.fleet import declared_target
 from dev_lab.dev.hpcaccount.storage import UNREACHABLE, Pin, on_host
@@ -53,9 +57,10 @@ READS: Final = {
     'log': "the tail of one repo's tick/cron log (log <repo>)",
     'crontab': 'crontab -l',
     'stuck': 'why entries under ~/<path> cannot be removed (stuck <path>)',
+    'inventory': 'what ~/<path> holds: entries, and each git checkout pushed or not (inventory <path>)',
 }
-#: The reads that take an argument: ``log`` a repo name, ``stuck`` a home-relative path of such names.
-_TAKES = {'log': 'repo', 'stuck': 'path'}
+#: The reads that take an argument: ``log`` a repo name, ``stuck`` and ``inventory`` a home-relative path of such names.
+_TAKES = {'log': 'repo', 'stuck': 'path', 'inventory': 'path'}
 _TIMEOUT_S: Final = 120.0
 
 
@@ -83,10 +88,12 @@ def command_of(what: str, repo: str, root: str) -> str:
         msg = f'look: {what!r} is not a read -- the reads are {", ".join(READS)}; there is no free-form command'
         raise ValueError(msg)
     if (what in _TAKES) != bool(repo):
-        msg = 'look: log takes exactly one repo, stuck one home-relative path; no other read takes one'
+        msg = 'look: log takes exactly one repo, stuck and inventory one home-relative path; no other read takes one'
         raise ValueError(msg)
     if repo:
         home_path(repo, _TAKES[what])
+    if what == 'inventory':
+        return inventory.command(repo)
     serve = shlex.quote(f'{root}/serve')
     return {
         'processes': 'ps -u "$(id -un)" -o pid=,ppid=,etimes=,args= | cut -c1-300',
@@ -139,7 +146,7 @@ def look(
         say(str(refused) if str(refused).startswith('look:') else f'look: {user}: refused -- {refused}')
         return 2
     say(f'{user}@{target.host}: {what}{f" {repo}" if repo else ""}')
-    for line in out.rstrip().splitlines():
+    for line in inventory.rows(out) if what == 'inventory' else out.rstrip().splitlines():
         say(line)
     return 0
 
@@ -149,6 +156,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount look', description=__doc__.splitlines()[0])
     parser.add_argument('--account', required=True, help='one account of the fleet')
     parser.add_argument('what', help=f'one of: {", ".join(READS)}')
-    parser.add_argument('repo', nargs='?', default='', help='the repo of `log`, the home-relative path of `stuck`')
+    parser.add_argument(
+        'repo', nargs='?', default='', help='the repo of `log`, the home-relative path of `stuck` and `inventory`'
+    )
     args = parser.parse_args(list(argv or ()))
     return look(args.account, args.what, args.repo, connect=functools.partial(grant_runner, timeout=_TIMEOUT_S))
