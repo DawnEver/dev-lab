@@ -25,6 +25,7 @@ DOOR = 'src/lab_commons/launch.py'
 STANDALONE: dict[str, str] = {
     'src/lab_commons/hpc/pytest_item.py': 'shipped as TEXT to a cluster node and run there; imports no lab_commons',
     'src/dev_lab/dev/accountsweep.py': 'streamed as TEXT to a cluster account interpreter on stdin; stdlib only',
+    'src/dev_lab/dev/hpcaccount/archivestream.py': 'streamed as TEXT to a cluster account interpreter; stdlib only',
 }
 #: The kit's source-module floor; MEASURED 2026-10-16 well above it.
 SOURCE_FLOOR = 100

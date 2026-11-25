@@ -36,6 +36,23 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import IO
 
+__all__ = [
+    'MANIFEST',
+    'MODES',
+    'PART_BYTES',
+    'VERDICT',
+    'Refused',
+    'archive',
+    'main',
+    'part_name',
+    'plan',
+    'read_manifest',
+    'release',
+    'tree_state',
+    'upload',
+    'verify',
+]
+
 #: Bytes per part: well under every backend's streamed-upload ceiling (S3: 10,000 chunks of 5 MiB).
 PART_BYTES = 4 << 30
 #: The manifest's name under the destination.

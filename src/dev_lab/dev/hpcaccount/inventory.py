@@ -31,6 +31,12 @@ __all__ = ['DEPTH', 'SHOWN', 'Checkout', 'Entry', 'Inventory', 'command', 'parse
 DEPTH: Final = 4
 #: How many changed paths, unpushed commits and ignored paths of one checkout are shown.
 SHOWN: Final = 20
+#: An ``E`` row's fields: files, bytes, newest change and the entry's path.
+_E_FIELDS: Final = 4
+#: An ``R`` row's fields: the remote's name and its url.
+_R_FIELDS: Final = 2
+#: One binary unit step of :func:`_size`.
+_KIB: Final = 1024
 
 _GIT_STEPS: Final = (
     'd=${g%/.git}; printf "G\\t%s\\n" "$d"; '
@@ -121,13 +127,13 @@ def _line(found: Inventory, tag: str, rest: list[str]) -> None:
     last = found.checkouts[-1] if found.checkouts else None
     if tag in {'P', 'A'}:
         found.path, found.absent = rest[0], tag == 'A'
-    elif tag == 'E' and len(rest) == 4 and all(v.isdigit() for v in rest[:3]):  # noqa: PLR2004 -- the E row's arity
+    elif tag == 'E' and len(rest) == _E_FIELDS and all(v.isdigit() for v in rest[:3]):
         found.entries.append(Entry(rest[3], int(rest[0]), int(rest[1]), int(rest[2])))
     elif tag == 'G':
         found.checkouts.append(Checkout(rest[0]))
     elif last is None:
         found.unread.append('\t'.join([tag, *rest]))
-    elif tag == 'R' and len(rest) == 2:  # noqa: PLR2004 -- name and url
+    elif tag == 'R' and len(rest) == _R_FIELDS:
         last.remotes.append((rest[0], rest[1]))
     elif tag == 'S':
         last.changed = int(rest[0]) if rest[0].isdigit() else None
@@ -135,8 +141,10 @@ def _line(found: Inventory, tag: str, rest: list[str]) -> None:
         target = {'s': last.changes, 'I': last.ignored, 'u': last.commits}.get(tag)
         if target is not None:
             target.append('\t'.join(rest))
-        elif tag in {'U', 'T'}:
-            setattr(last, 'unpushed' if tag == 'U' else 'stash', '\t'.join(rest).strip())
+        elif tag == 'U':
+            last.unpushed = '\t'.join(rest).strip()
+        elif tag == 'T':
+            last.stash = '\t'.join(rest).strip()
         else:
             found.unread.append('\t'.join([tag, *rest]))
 
@@ -154,9 +162,9 @@ def parse(text: str) -> Inventory:
 def _size(count: int) -> str:
     value = float(count)
     for unit in ('B', 'K', 'M', 'G'):
-        if value < 1024:  # noqa: PLR2004 -- binary units
+        if value < _KIB:
             return f'{value:.1f}{unit}' if unit != 'B' else f'{count}B'
-        value /= 1024
+        value /= _KIB
     return f'{value:.1f}T'
 
 

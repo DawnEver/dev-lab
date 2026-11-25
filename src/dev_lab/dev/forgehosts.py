@@ -57,7 +57,6 @@ import dataclasses
 import hashlib
 import json
 import re
-import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
@@ -294,9 +293,7 @@ def publish(client: Client, card: HostCard) -> str:
 
     On a public repository the card is :meth:`HostCard.redacted` and a card left under the raw name is deleted.
     """
-    number = hosts_issue(client)
-    if number is None:
-        number = _open_hosts_issue(client)
+    number = hosts_issue(client) or _open_hosts_issue(client)  # an issue number is never 0
     if not is_private(client):
         _delete_card(client, number, card.host)
         card = card.redacted()
@@ -396,8 +393,7 @@ def this_host() -> str:
     The one name a tick here publishes its card under and the ``Forge-Host`` stamp writes
     (:mod:`dev_lab.dev.forgeorigin`), so a job made here names the card it came from.
     """
-    seat = this_seat()
-    return card_host(this_machine(), seat)
+    return card_host(this_machine(), this_seat())
 
 
 def recording(alarm: Callable[[Alarm], object], raised: list[Alarm]) -> Callable[[Alarm], object]:
@@ -483,7 +479,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge hosts', description=main.__doc__)
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('retire', help='delete HOST card; it rejoins by ticking again').add_argument('host')
-    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    args = parser.parse_args(argv)
     try:
         outcome = retire(client_for(Path.cwd() if cwd is None else cwd), args.host)
     except (ForgeCallFailed, ListingIncomplete, OSError) as failed:

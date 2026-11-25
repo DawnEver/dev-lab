@@ -68,7 +68,9 @@ def spec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
 
 
 def _store(spec: dict[str, object]) -> Path:
-    return Path(str(spec['rclone'][2])) / 'bucket' / 'archive' / 'u1' / 'work' / 'data'  # type: ignore[index]
+    rclone = spec['rclone']
+    assert isinstance(rclone, list)
+    return Path(str(rclone[2])) / 'bucket' / 'archive' / 'u1' / 'work' / 'data'
 
 
 def _run(spec: dict[str, object], mode: str) -> tuple[dict[str, object], list[str]]:
@@ -89,7 +91,9 @@ def test_an_archive_is_parts_that_restore_the_tree_and_a_verified_manifest(spec:
     assert all(p['sha256'] == p['remote_sha256'] for p in manifest['parts'])
     stream = b''.join((_store(spec) / p['name']).read_bytes() for p in manifest['parts'])
     with tarfile.open(fileobj=io.BytesIO(stream)) as tar:
-        assert tar.extractfile('data/deep/b.bin').read() == bytes(range(256)) * 9  # type: ignore[union-attr]
+        member = tar.extractfile('data/deep/b.bin')
+        assert member is not None
+        assert member.read() == bytes(range(256)) * 9
     assert manifest['state'] == archivestream.tree_state(Path.home() / 'work' / 'data')
 
 

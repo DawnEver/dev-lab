@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,7 +55,7 @@ LIVE_S: Final = 3600.0
 #: An entry touched this recently is in use: only its owner clears it without the user's approval.
 RECENT_S: Final = 1800.0
 #: A command claims an entry it names only when the entry was born this recently: the longest foreground tool call
-#: (ten minutes), so naming an old ownerless entry (``cat scratch/old.txt``) never adopts it.
+#: (ten minutes), so naming an old ownerless entry (``cat scratch/<old entry>``) never adopts it.
 CLAIM_WINDOW_S: Final = 600.0
 
 
@@ -162,7 +163,9 @@ def release(root: Path, names: list[str]) -> None:
 def born(path: Path) -> float:
     """When *path* was created where the platform says so, else when it last changed; never following a link."""
     stat = path.lstat()
-    return getattr(stat, 'st_birthtime', stat.st_mtime)
+    if sys.platform == 'linux':  # Linux's stat carries no birth time
+        return stat.st_mtime
+    return stat.st_birthtime
 
 
 def touched(path: Path) -> float:
