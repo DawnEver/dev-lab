@@ -71,7 +71,7 @@ def snapshot(tree: Path) -> str | None:
         index = Path(scratch) / 'index'
         if _git(tree, 'read-tree', 'HEAD', index=index) is None:
             return None
-        if _git(tree, 'add', '--all', '--ignore-errors', '--', '.', index=index) is None:
+        if _git(tree, 'add', '--all', '--ignore-errors', index=index) is None:  # a pathspec trips ignored dirs
             return None
         made = _git(tree, 'write-tree', index=index)
     return made.strip() if made else None
@@ -161,16 +161,28 @@ def _unheld_file(main: Path, directory: Path, reachable: frozenset[str]) -> str 
     return next((path for path, blob in zip(files, hashed.split(), strict=False) if blob not in reachable), '')
 
 
+def _reachable_blobs(main: Path) -> frozenset[str] | None:
+    """Every blob a ref reaches in *main* and in each submodule gitdir under ``.git/modules``; ``None``: unread."""
+    modules = main / '.git' / 'modules'
+    gitdirs = [main / '.git', *(head.parent for head in modules.rglob('HEAD') if (head.parent / 'objects').is_dir())]
+    blobs: set[str] = set()
+    for gitdir in gitdirs:
+        listed = _git(main, f'--git-dir={gitdir}', 'rev-list', '--objects', '--all', '--filter=object:type=blob')
+        if listed is None:
+            return None
+        blobs.update(line.split(maxsplit=1)[0] for line in listed.splitlines() if line)
+    return frozenset(blobs)
+
+
 def reap_orphans(root: Path, *, census: Census = processes) -> tuple[str, ...]:
     """THE ORPHAN DOOR: remove every orphan tree directory whose content some ref reaches; one line each."""
     main = root.resolve()
     orphans = list(_orphans(main))
     if not orphans:
         return ()
-    listed = _git(main, 'rev-list', '--objects', '--all', '--filter=object:type=blob')
-    if listed is None:
+    reachable = _reachable_blobs(main)
+    if reachable is None:
         return (f'refused  git could not list the reachable blobs of {main}; nothing was removed',)
-    reachable = frozenset(line.split(maxsplit=1)[0] for line in listed.splitlines() if line)
     lines = []
     for directory in orphans:
         if live := removal_holders(directory, census=census):

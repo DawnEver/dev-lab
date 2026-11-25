@@ -178,6 +178,58 @@ def test_a_registered_tree_is_never_an_orphan(work: Path) -> None:
     assert _tree(work, 'lane').is_dir()
 
 
+def test_a_tree_tracking_a_file_under_an_ignored_directory_is_salvaged(work: Path) -> None:
+    """A tracked path under an ignored directory does not stop the snapshot.
+
+    Measured 2026-11-24: ``git add --all -- .`` exits 1 there, so six integrate/main trees read as 'could not
+    snapshot'. The snapshot stages without a pathspec.
+    """
+    kept = work / 'output' / 'keep.txt'
+    kept.parent.mkdir()
+    kept.write_text('tracked though ignored', encoding='utf-8')
+    _git(work, 'add', '-f', 'output/keep.txt')
+    _git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'force')
+    tree = _tree(work, 'lane')
+    _git(tree, 'merge', '-q', '--ff-only', 'main')
+    _dirty(work)
+    ok, line = salvage(work, 'lane', census=_idle)
+    assert ok, line
+
+
+def _with_submodule(work: Path, tmp_path: Path) -> Path:
+    (tmp_path / 'sub').mkdir()
+    sub = plant_checkout(tmp_path / 'sub', trunk='main').work
+    _git(work, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', str(sub), 'vendored')
+    _git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'vendor')
+    tree = _tree(work, 'lane')
+    _git(tree, 'merge', '-q', '--ff-only', 'main')
+    _git(tree, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init')
+    return tree
+
+
+def test_an_orphan_holding_a_submodule_checkout_is_judged_by_the_submodule_objects(work: Path, tmp_path: Path) -> None:
+    """A submodule's files are judged reachable in its own gitdir under ``.git/modules``.
+
+    Measured 2026-11-24: eleven consumer orphans were kept for a submodule file the SUPERPROJECT's objects
+    cannot hold.
+    """
+    _with_submodule(work, tmp_path)
+    aside = _orphan(work)
+    lines = reap_orphans(work, census=_idle)
+    assert any(line.startswith('removed') for line in lines), lines
+    assert not aside.exists()
+
+
+def test_an_orphan_submodule_file_no_object_holds_is_kept(work: Path, tmp_path: Path) -> None:
+    """PLANTED CONTROL: a new file inside the submodule checkout is still work."""
+    _with_submodule(work, tmp_path)
+    aside = _orphan(work)
+    (aside / 'vendored' / 'fresh.txt').write_text('only here', encoding='utf-8')
+    lines = reap_orphans(work, census=_idle)
+    assert any(line.startswith('kept') and 'fresh.txt' in line for line in lines), lines
+    assert aside.is_dir()
+
+
 def test_a_live_orphan_is_kept_naming_its_pid(work: Path) -> None:
     aside = _orphan(work)
     holder = Process(78, 1, 'C:/py/python.exe', 'python x', 600.0, str(aside))
