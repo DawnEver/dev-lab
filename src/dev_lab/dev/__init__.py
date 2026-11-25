@@ -585,6 +585,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   the pending ledger of existing reads only shrinks.
 * :mod:`dev_lab.dev.harness` -- dev-lab's ENV-IS-READ-ONCE entry: the harness context as a typed record, and the
   environment a child process inherits.
+* :mod:`dev_lab.dev.complexity` -- the per-owner complexity report (fan-out, call path, public surface): a dated
+  JSONL record per run and its trend view; a report, not a gate.
 * :mod:`dev_lab.dev.consentguard` -- CONSENT-CODE-FROM-THE-USER: where granted consent credentials live, and the
   refusal of an agent writing there (:mod:`dev_lab.ops.consent`).
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
