@@ -590,6 +590,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.ownerdag` -- OWNER-DAG: actual Python imports against the declared owner graph;
   :mod:`dev_lab.dev.rustdeps` is its Rust half (Cargo dependencies, std uses).
 * :mod:`dev_lab.dev.passthrough` -- NO-DETOUR: a module or crate file that only forwards names what the hop adds.
+* :mod:`dev_lab.dev.ownercov` -- OWNER-COVERAGE: each declared owner meets the family line/branch bar (a repo may
+  only raise it) and a floor that ratchets up; :mod:`dev_lab.dev.covreports` reads coverage.py's and
+  ``cargo llvm-cov``'s JSON reports per file.
 * :mod:`dev_lab.dev.consentguard` -- CONSENT-CODE-FROM-THE-USER: where granted consent credentials live, and the
   refusal of an agent writing there (:mod:`dev_lab.ops.consent`).
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.

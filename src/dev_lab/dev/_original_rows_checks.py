@@ -21,4 +21,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'ownerdag',  # ORIGINAL: 2026-11-25, OWNER-DAG: actual imports against the declared owner graph
     'rustdeps',  # ORIGINAL: 2026-11-25, OWNER-DAG over Rust: Cargo dependencies and std uses
     'passthrough',  # ORIGINAL: 2026-11-25, NO-DETOUR: a forwarding module names what its hop adds
+    'covreports',  # ORIGINAL: 2026-11-25, a coverage tool's JSON report (coverage.py, cargo llvm-cov) per file
+    'ownercov',  # ORIGINAL: 2026-11-25, OWNER-COVERAGE: per-owner coverage bars and a ratcheting floor
 )
