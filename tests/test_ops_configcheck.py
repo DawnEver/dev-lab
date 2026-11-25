@@ -304,29 +304,29 @@ def test_an_account_file_takes_its_root_from_the_family_cluster() -> None:
     assert rootless(accounthost.check(path, host, family({})))
 
 
-BUDGET = '[test_budget]\ntest_s = 600\ncores = 16\nmemory_gb = 16\n'
+BUDGET = '[test_budget]\ntest = "10 min"\n'
 
 
 def test_a_dev_host_file_declares_its_test_budget(tmp_path: Path) -> None:
     """``[test_budget]`` is a machine table (dev_lab.dev.testcost); PLANTED CONTROL: a malformed one is refused."""
     assert check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + BUDGET)) == []
-    found = check_host(_write(tmp_path, 'H.toml', DEV_HOST + '\n' + BUDGET.replace('600', '0')))
-    assert [line for line in found if line.startswith('H.toml: [test_budget] test_s') and 'positive' in line], found
+    found = check_host(_write(tmp_path, 'H.toml', DEV_HOST + '\n' + BUDGET.replace('10 min', '0 min')))
+    assert [line for line in found if line.startswith('H.toml: [test_budget] test') and 'positive' in line], found
 
 
 def test_an_account_file_declares_its_test_budget() -> None:
     """The tests executor is an account: its budget is its own fact. PLANTED CONTROL: a malformed one is refused."""
-    host = {'deploy': {'host': 'login01'}, 'test_budget': {'test_s': 7200, 'cores': 96, 'memory_gb': 360}}
+    host = {'deploy': {'host': 'login01'}, 'test_budget': {'test': '2 h'}}
     assert not [line for line in accounthost.check(Path('c-u.toml'), host, {}) if 'test_budget' in line]
-    host['test_budget'] = {'test_s': -1, 'cores': 96, 'memory_gb': 360}
+    host['test_budget'] = {'test': '-1 h'}
     found = accounthost.check(Path('c-u.toml'), host, {})
-    assert [line for line in found if '[test_budget] test_s' in line and 'positive' in line], found
+    assert [line for line in found if '[test_budget] test' in line and 'positive' in line], found
 
 
 @pytest.mark.parametrize('key', ['test_seconds', 'gpus'])
 def test_an_undeclared_test_budget_key_is_refused_naming_the_declared_ones(tmp_path: Path, key: str) -> None:
     found = check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + BUDGET + f'{key} = 1\n'))
-    assert [line for line in found if f'[test_budget] {key}' in line and 'test_s' in line], found
+    assert [line for line in found if f'[test_budget] {key}' in line and 'only test' in line], found
 
 
 def test_an_undeclared_machine_table_names_the_declared_ones_and_where_to_open_one(tmp_path: Path) -> None:

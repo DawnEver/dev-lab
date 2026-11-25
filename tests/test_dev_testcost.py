@@ -16,7 +16,7 @@ from dev_lab.dev.testcost import Budget, plan
 
 pytest_plugins = ['pytester']
 
-_BUDGET = Budget(test_s=100.0, cores=8, memory_gb=32.0)
+_BUDGET = Budget(test=100.0)
 
 
 def test_a_test_measured_over_the_budget_is_handed_and_one_under_runs_here() -> None:
@@ -35,34 +35,43 @@ def test_a_measured_test_gets_a_deadline_derived_from_its_reading() -> None:
 
 def test_a_derived_deadline_never_exceeds_the_host_budget() -> None:
     planned = plan(['t::near'], {'t::near': 90.0}, _BUDGET)
-    assert planned.deadlines['t::near'] == pytest.approx(_BUDGET.test_s, abs=1e-9)
+    assert planned.deadlines['t::near'] == pytest.approx(_BUDGET.test, abs=1e-9)
 
 
 def test_a_never_measured_test_runs_here_once_with_the_budget_as_its_deadline() -> None:
     """Its first run IS the measurement; a kill at the deadline is filed as cost >= deadline (durations)."""
     planned = plan(['t::new'], {}, _BUDGET)
     assert planned.local == ('t::new',)
-    assert planned.deadlines['t::new'] == pytest.approx(_BUDGET.test_s, abs=1e-9)
+    assert planned.deadlines['t::new'] == pytest.approx(_BUDGET.test, abs=1e-9)
     assert planned.unmeasured == ('t::new',)
 
 
 def test_a_kill_at_the_deadline_makes_the_test_over_budget_next_time() -> None:
     """The ledger row a deadline kill leaves (filed AT the deadline) hands the test on the next plan."""
-    filed = testcost.killed_at(_BUDGET.test_s)
+    filed = testcost.killed_at(_BUDGET.test)
     assert plan(['t::new'], {'t::new': filed}, _BUDGET).handed == ('t::new',)
 
 
 @pytest.mark.parametrize(
     ('table', 'named'),
     [
-        ({'cores': 8, 'memory_gb': 32}, 'test_s'),
-        ({'test_s': 0, 'cores': 8, 'memory_gb': 32}, 'test_s'),
-        ({'test_s': 60, 'cores': 'many', 'memory_gb': 32}, 'cores'),
+        ({'test': '0 s'}, r'\[test_budget\] test = "0 s" must be positive'),
+        ({'test': 600}, r'\[test_budget\] test = 600 is a bare number'),
+        ({'test': '10 GiB'}, r'\[test_budget\] test = "10 GiB" is a size, not a duration'),
+        ({'test_s': 600}, r'test_s = 600 is retired.*write test = "600 s"'),
+        ({'test': '10 min', 'cores': 8}, r'cores is retired: delete it'),
+        ({'test': '10 min', 'memory_gb': 32}, r'memory_gb is retired: delete it'),
+        ({'test': '10 min', 'gpus': 1}, r'gpus is not a declared key.*only test'),
     ],
 )
 def test_a_malformed_budget_is_refused_naming_the_key(table: dict[str, object], named: str) -> None:
     with pytest.raises(ValueError, match=named):
         testcost.budget_of(table)
+
+
+def test_the_budget_is_one_duration() -> None:
+    """User ruling 2026-11-25: ``[test_budget]`` keeps only ``test = "10 min"``, read in seconds."""
+    assert testcost.budget_of({'test': '10 min'}) == Budget(test=600.0)
 
 
 def test_no_declared_budget_is_none_and_never_a_default() -> None:
@@ -101,7 +110,7 @@ def test_verify_runs_what_fits_and_hands_the_rest(pytester: pytest.Pytester, mon
     root = pytester.path
     pytester.makefile('.toml', pyproject='[tool.dev_lab.parts]\noutput = "out/logs"\n')
     machine = root / 'machine.toml'
-    machine.write_text('[test_budget]\ntest_s = 100\ncores = 2\nmemory_gb = 4\n', encoding='utf-8')
+    machine.write_text('[test_budget]\ntest = "100 s"\n', encoding='utf-8')
     monkeypatch.setenv('LAB_COMMONS_CONFIG', str(machine))
     rows = [Row('test_sched.py::test_dear', 999.0), Row('test_sched.py::test_cheap', 0.1)]
     write(root, rows, selector='all', worker=None, tree='', env='')
@@ -114,7 +123,7 @@ def test_verify_runs_what_fits_and_hands_the_rest(pytester: pytest.Pytester, mon
 def test_a_host_whose_budget_a_part_exceeds_leaves_it_for_one_that_fits() -> None:
     """FORGE PLACEMENT, both sides: the same part is left by a small host and claimable by a large one."""
     costs = {'tests/test_a.py::test_long': 900.0, 'tests/test_a.py::test_short': 1.0}
-    small, large = Budget(test_s=600.0, cores=4, memory_gb=8.0), Budget(test_s=3600.0, cores=32, memory_gb=128.0)
+    small, large = Budget(test=600.0), Budget(test=3600.0)
     why = testcost.beyond_budget(costs, small, part='base')
     assert 'tests/test_a.py::test_long' in why
     assert '600' in why
@@ -130,7 +139,7 @@ def test_the_claim_pass_asks_the_budget_for_a_part_and_never_for_a_request() -> 
         return {'t::long': 900.0}
 
     host = SimpleNamespace(
-        repo='origin', part_costs=costs, test_budget=Budget(test_s=600.0, cores=4, memory_gb=8.0),
+        repo='origin', part_costs=costs, test_budget=Budget(test=600.0),
         budgets=lambda _needs: None, starved={},
     )  # fmt: skip
     part = SimpleNamespace(kind='part', platform='base')
@@ -155,7 +164,7 @@ def test_a_deadline_kill_without_workers_still_leaves_its_ledger_row(
     root = pytester.path
     pytester.makefile('.toml', pyproject='[tool.dev_lab.parts]\noutput = "out/logs"\n')
     machine = root / 'machine.toml'
-    machine.write_text('[test_budget]\ntest_s = 1\ncores = 1\nmemory_gb = 1\n', encoding='utf-8')
+    machine.write_text('[test_budget]\ntest = "1 s"\n', encoding='utf-8')
     monkeypatch.setenv('LAB_COMMONS_CONFIG', str(machine))
     pytester.makepyfile(test_hang='import time\ndef test_hang():\n    time.sleep(60)\n')
     pytester.runpytest_subprocess(
@@ -173,7 +182,7 @@ def test_a_test_that_ends_inside_its_deadline_is_filed_at_what_it_took(
     root = pytester.path
     pytester.makefile('.toml', pyproject='[tool.dev_lab.parts]\noutput = "out/logs"\n')
     machine = root / 'machine.toml'
-    machine.write_text('[test_budget]\ntest_s = 30\ncores = 1\nmemory_gb = 1\n', encoding='utf-8')
+    machine.write_text('[test_budget]\ntest = "30 s"\n', encoding='utf-8')
     monkeypatch.setenv('LAB_COMMONS_CONFIG', str(machine))
     pytester.makepyfile(test_quick='def test_quick():\n    pass\n')
     result = pytester.runpytest_subprocess('-p', 'no:cacheprovider', '-p', 'dev_lab.dev.durations', '-p', 'no:xdist')
@@ -214,7 +223,7 @@ def test_verify_hands_a_test_only_the_forge_measured(
     root = pytester.path
     pytester.makefile('.toml', pyproject='[tool.dev_lab.parts]\noutput = "out/logs"\n')
     machine = root / 'machine.toml'
-    machine.write_text('[test_budget]\ntest_s = 100\ncores = 2\nmemory_gb = 4\n', encoding='utf-8')
+    machine.write_text('[test_budget]\ntest = "100 s"\n', encoding='utf-8')
     monkeypatch.setenv('LAB_COMMONS_CONFIG', str(machine))
     monkeypatch.setattr(testcost, 'origin_of', lambda _root: 'origin')
     monkeypatch.setattr(learned, 'learned', lambda _repo: {'durations': {'test_forge.py::test_dear': 999.0}})
@@ -229,7 +238,7 @@ def test_a_part_no_host_budget_fits_is_named_with_its_test_its_cost_and_every_bu
     costs = {'t::long': 3580.9, 't::short': 1.0}
     why = testcost.fits_nowhere(costs, {'this host': 600.0, 'ada/v1': 3000.0}, part='base')
     assert why.startswith(testcost.NO_BUDGET_FITS), why
-    for named in ('t::long', '3580.9 s', 'this host 600 s', 'ada/v1 3000 s', '[test_budget] test_s'):
+    for named in ('t::long', '3580.9 s', 'this host 600 s', 'ada/v1 3000 s', '[test_budget] test'):
         assert named in why, (named, why)
     assert testcost.fits_nowhere(costs, {'this host': 600.0, 'ada/v1': 7200.0}, part='base') == ''
     assert testcost.fits_nowhere(costs, {'this host': 600.0, 'box2': 0.0}, part='base') == '', 'none declared: runs all'
@@ -239,7 +248,7 @@ def test_a_part_no_host_budget_fits_is_named_with_its_test_its_cost_and_every_bu
 def _starving(others: dict[str, float] | None) -> SimpleNamespace:
     return SimpleNamespace(
         repo='origin', part_costs=lambda _repo, _part: {'t::long': 900.0},
-        test_budget=Budget(test_s=600.0, cores=4, memory_gb=8.0), budgets=lambda _needs: others, starved={},
+        test_budget=Budget(test=600.0), budgets=lambda _needs: others, starved={},
     )  # fmt: skip
 
 

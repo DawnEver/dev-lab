@@ -123,7 +123,8 @@ class ClaimPass:
     test_budget: Budget | None = None
     #: A part's measured seconds per test id (:func:`dev_lab.dev.testcost.part_costs`), injectable for a control.
     part_costs: Callable[[str, str], Mapping[str, float]] = part_costs
-    #: Every OTHER live host's ``[test_budget] test_s`` that would claim a need-set (``0``: none declared; ``None``:
+    #: Every OTHER live host's ``[test_budget] test`` (seconds; its card carries it as ``test_s``) that would claim a
+    #: need-set (``0``: none declared; ``None``:
     #: the hosts are unknown) -- what tells a part over this budget whether any host fits it at all.
     budgets: Callable[[frozenset[str]], Mapping[str, float] | None] = lambda _needs: None
     #: Parts NO live host's test budget fits, by candidate key, with that answer: the tick refuses them.
@@ -303,7 +304,7 @@ class ClaimPass:
         if not why or self.test_budget is None:
             return why
         others = self.budgets(needs_of_row(wanted.platform))
-        everyone = None if others is None else {'this host': self.test_budget.test_s, **others}
+        everyone = None if others is None else {'this host': self.test_budget.test, **others}
         if nowhere := fits_nowhere(costs, everyone, part=wanted.platform):
             self.starved[wanted.key] = (wanted, nowhere)
             return nowhere

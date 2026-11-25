@@ -608,7 +608,7 @@ def test_a_part_no_live_hosts_test_budget_fits_is_refused_on_its_commit_naming_t
     PLANTED CONTROL: a live host whose test budget fits it is on the cards -- it waits for that host, refused nowhere.
     """
     machine = tmp_path / 'machine.toml'
-    machine.write_text('[test_budget]\ntest_s = 600\ncores = 4\nmemory_gb = 8\n', encoding='utf-8')
+    machine.write_text('[test_budget]\ntest = "10 min"\n', encoding='utf-8')
     monkeypatch.setenv('LAB_COMMONS_CONFIG', str(machine))
     monkeypatch.setattr(learned, 'part_files', lambda _repo, _needs: ('tests/test_a.py',))
     monkeypatch.setattr(learned, 'learned', lambda _repo: {'durations': {'tests/test_a.py::test_long': 3580.9}})

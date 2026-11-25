@@ -10,11 +10,14 @@ HOST's, declared once in the family instance -- the machine file's ``[test_budge
 layer (:func:`lab_commons.config.section`) merges under it -- and dev-lab and the repos declare none::
 
     [test_budget]
-    test_s = 600       # the longest one test may run on this host, seconds
-    cores = 8          # what a test run may take of this host
-    memory_gb = 24
+    test = "10 min"    # the longest one test may run on this host
 
-:func:`plan` splits a selection: a test measured AT OR OVER ``test_s`` is HANDED (it does not fit this host;
+``test`` is a duration read once by :func:`lab_commons.quantity.parse` (`CONFIG-VALUES-CARRY-UNITS`). It is the
+table's ONE key (user ruling 2026-11-25): the cores and memory a run may take are the box's, sized from
+``[dev.resources]`` (:mod:`dev_lab.dev.verifybox`), never restated here; ``test_s``, ``cores`` and ``memory_gb`` are
+refused by name with their remedy.
+
+:func:`plan` splits a selection: a test measured AT OR OVER ``test`` is HANDED (it does not fit this host;
 the forge places it by its need markers and a host whose budget holds it), the rest run here. Each local test
 carries a DEADLINE: a measured one :data:`DEADLINE_FACTOR` times its reading, never under
 :data:`DEADLINE_FLOOR_S` nor over the budget; a NEVER-MEASURED one runs once with the budget as its deadline,
@@ -23,7 +26,7 @@ and that run is its measurement. A kill at the deadline is filed in the ledger a
 next plan hands it as over budget.
 
 LIMITS, STATED: the ledger holds seconds only, so a test's memory and cores are not per-test facts here; the
-box admits the run as a whole against ``cores``/``memory_gb`` (:mod:`dev_lab.dev.verifybox`). A host with no
+box admits the run as a whole against the machine's resources (:mod:`dev_lab.dev.verifybox`). A host with no
 ``[test_budget]`` plans nothing (every test runs here, under the repo's ``timeout``) and says so in one line.
 """
 
@@ -36,6 +39,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import pytest
+from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
 __all__ = [
     'BUDGET_KEYS',
@@ -64,8 +68,15 @@ __all__ = [
 
 #: The machine-file table (family layer merged under it) declaring this host's test budget.
 BUDGET_TABLE: Final = 'test_budget'
-#: Every key ``[test_budget]`` declares: its kind and its unit -- each a positive number, none optional.
-BUDGET_KEYS: Final = {'test_s': (float, 'seconds'), 'cores': (int, 'cores'), 'memory_gb': (float, 'GB')}
+#: Every key ``[test_budget]`` declares: ``test``, the longest one test may run here (a duration).
+BUDGET_KEYS: Final = ('test',)
+#: The unit-suffixed spelling, refused with its new line (FORMATS-MIGRATE-ONCE, user ruling 2026-11-25).
+_RENAMED: Final = {'test_s': Renamed('test', 's')}
+#: Keys the 2026-11-25 ruling dropped: no reader, and the box's resources are ``[dev.resources]``'s.
+_DROPPED: Final = {
+    'cores': 'delete it: a run takes the cores the box admits from [dev.resources] (user ruling 2026-11-25)',
+    'memory_gb': 'delete it: a run takes the memory the box admits from [dev.resources] (user ruling 2026-11-25)',
+}
 #: A measured test's deadline is this many times its newest reading (dimensionless): a box under load runs
 #: slower than the box that measured it, and three times is the margin before a hang is called a hang.
 DEADLINE_FACTOR: Final = 3.0
@@ -83,19 +94,17 @@ RETIRED_MARKERS: Final = ('slow', 'heavy', 'big_memory')
 
 @dataclass(frozen=True)
 class Budget:
-    """What one host gives one test (*test_s*, seconds) and a test run (*cores*, *memory_gb*)."""
+    """What one host gives one test: *test*, the longest it may run, in seconds."""
 
-    test_s: float
-    cores: int
-    memory_gb: float
+    test: float
 
 
-def _defect(table: Mapping[str, Any], key: str) -> str:
-    """Why *key* of *table* is no positive number of its kind (:data:`BUDGET_KEYS`); ``''`` when it is one."""
-    kind, unit = BUDGET_KEYS[key]
-    value = table.get(key)
-    if isinstance(value, bool) or not isinstance(value, kind | int) or value <= 0:
-        return f'[{BUDGET_TABLE}] {key} = {value!r}: a positive {kind.__name__}, in {unit} (dev_lab.dev.testcost)'
+def _defect(table: Mapping[str, Any]) -> str:
+    """Why ``test`` of *table* is no positive duration; ``''`` when it is one."""
+    try:
+        parse(f'[{BUDGET_TABLE}] test', table.get('test'), 'duration', positive=True)
+    except QuantityRefused as bad:
+        return f'{bad} (dev_lab.dev.testcost)'
     return ''
 
 
@@ -108,13 +117,17 @@ def budget_defects(table: object) -> list[str]:
         return [f'[{BUDGET_TABLE}] must be a table of {", ".join(BUDGET_KEYS)} (dev_lab.dev.testcost)']
     if not table:
         return []
-    declared = ', '.join(BUDGET_KEYS)
-    found = [
-        f'[{BUDGET_TABLE}] {key} is not a declared key: the table declares {declared} (dev_lab.dev.testcost)'
+    try:
+        refuse_renamed(f'[{BUDGET_TABLE}]', table, _RENAMED)
+    except QuantityRefused as retired:
+        return [str(retired)]
+    found = [f'[{BUDGET_TABLE}] {key} is retired: {why}' for key, why in _DROPPED.items() if key in table]
+    found += [
+        f'[{BUDGET_TABLE}] {key} is not a declared key: the table declares only test (dev_lab.dev.testcost)'
         for key in table
-        if key not in BUDGET_KEYS
+        if key not in BUDGET_KEYS and key not in _DROPPED
     ]
-    return found + [why for key in BUDGET_KEYS if (why := _defect(table, key))]
+    return found + ([why] if (why := _defect(table)) else [])
 
 
 def budget_of(table: Mapping[str, Any]) -> Budget | None:
@@ -123,7 +136,7 @@ def budget_of(table: Mapping[str, Any]) -> Budget | None:
         raise ValueError('; '.join(found))
     if not table:
         return None
-    return Budget(test_s=float(table['test_s']), cores=int(table['cores']), memory_gb=float(table['memory_gb']))
+    return Budget(test=parse(f'[{BUDGET_TABLE}] test', table['test'], 'duration', positive=True))
 
 
 def read_budget(section: Callable[[str], Mapping[str, Any]] | None = None) -> Budget | None:
@@ -157,12 +170,12 @@ def plan(nodeids: Iterable[str], seconds: Mapping[str, float], budget: Budget) -
         if cost is None:
             local.append(nodeid)
             unmeasured.append(nodeid)
-            deadlines[nodeid] = budget.test_s
-        elif cost >= budget.test_s:
+            deadlines[nodeid] = budget.test
+        elif cost >= budget.test:
             handed.append(nodeid)
         else:
             local.append(nodeid)
-            deadlines[nodeid] = min(budget.test_s, max(DEADLINE_FLOOR_S, DEADLINE_FACTOR * cost))
+            deadlines[nodeid] = min(budget.test, max(DEADLINE_FLOOR_S, DEADLINE_FACTOR * cost))
     return Plan(tuple(local), tuple(handed), deadlines, tuple(unmeasured))
 
 
@@ -235,7 +248,7 @@ def schedule(config: pytest.Config, items: list[pytest.Item], *, budget: Budget 
         if reporter is not None:
             reporter.write_line(
                 f'testcost: {len(handed)} test(s) measured over this host budget '
-                f'({budget.test_s:g} s) are handed to the forge: {", ".join(sorted(handed))}'
+                f'({budget.test:g} s) are handed to the forge: {", ".join(sorted(handed))}'
             )
     recorder = config.pluginmanager.get_plugin('lab-commons-durations')
     for item in items:
@@ -250,25 +263,25 @@ def beyond_budget(part_ids_seconds: Mapping[str, float], budget: Budget | None, 
     """FORGE PLACEMENT (H1): why THIS host must not claim *part*, ``''`` when its budget holds every measured test.
 
     *part_ids_seconds* is the part's measured cost per test id (the learned table,
-    :func:`lab_commons.compute.learned.learned`). A part holding a test measured at or over this host's ``test_s``
+    :func:`lab_commons.compute.learned.learned`). A part holding a test measured at or over this host's ``test``
     would run here incomplete (:func:`schedule` hands that test), so it is left for a host whose budget fits it.
     No declared budget places nothing here by cost.
     """
     if budget is None or not part_ids_seconds:
         return ''
     dear, seconds = max(part_ids_seconds.items(), key=lambda row: row[1])
-    if seconds < budget.test_s:
+    if seconds < budget.test:
         return ''
     return (
-        f'over this host test budget: {part} holds {dear}, measured {seconds:g} s >= [{BUDGET_TABLE}] test_s '
-        f'{budget.test_s:g} s -- a host whose budget fits it claims it'
+        f'over this host test budget: {part} holds {dear}, measured {seconds:g} s >= [{BUDGET_TABLE}] test '
+        f'{budget.test:g} s -- a host whose budget fits it claims it'
     )
 
 
 def fits_nowhere(part_ids_seconds: Mapping[str, float], budgets: Mapping[str, float] | None, *, part: str) -> str:
     """THE STARVATION GUARD: why NO host fits *part*'s dearest measured test, ``''`` when one may claim it.
 
-    *budgets* is every live host that would claim the part -- this one included -- by its ``[test_budget] test_s``
+    *budgets* is every live host that would claim the part -- this one included -- by its ``[test_budget] test``
     in seconds, ``0`` where it declares none (it plans nothing: every test runs there); ``None`` when the hosts are
     unknown (no card was read), and any doubt waits. A part over every budget is handed by each host and claimed
     by none (:func:`beyond_budget`, :func:`schedule`): without this answer it would wait forever, silently.
@@ -281,7 +294,7 @@ def fits_nowhere(part_ids_seconds: Mapping[str, float], budgets: Mapping[str, fl
     named = ', '.join(f'{host} {test_s:g} s' for host, test_s in sorted(budgets.items()))
     return (
         f'{NO_BUDGET_FITS} {part}: it holds {dear}, measured {seconds:g} s, and no live host that claims it has a '
-        f'[{BUDGET_TABLE}] test_s over that ({named}) -- remedy: raise test_s on a tests host in its config-source '
+        f'[{BUDGET_TABLE}] test over that ({named}) -- remedy: raise test on a tests host in its config-source '
         'host file, or split the test'
     )
 

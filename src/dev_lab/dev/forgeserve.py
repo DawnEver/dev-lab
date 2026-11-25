@@ -261,7 +261,7 @@ def serve(
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,
             'say': say, 'alarms': raised, 'tools': tools, 'priority': priority.row(),
             'serves': serves.parts, 'withholds': sorted(serves.withholds), 'verify': verify, 'role': role,
-            'test_s': budget.test_s if (budget := read_budget()) else 0.0,
+            'test_s': budget.test if (budget := read_budget()) else 0.0,
         },
         produce=functools.partial(
             produce, root, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,
