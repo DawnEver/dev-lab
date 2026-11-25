@@ -54,8 +54,8 @@ def test_a_valid_selection_runs_the_declared_door_over_exactly_its_files(repo: t
     declared = declared_request(root, sha, TESTS, ('tests/test_a.py',))
     assert declared.argv == ('-m', 'dev_lab.dev.verify', '--', 'tests/test_a.py')
     assert declared.cpu > 0
-    assert declared.mem_gb > 0
-    assert declared.wall_h > 0
+    assert declared.mem > 0
+    assert declared.wall > 0
 
 
 @pytest.mark.parametrize(

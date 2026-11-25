@@ -895,7 +895,7 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
     assert report.artifacts == problem, 'the host card states why'
     if not claims:
         assert not any(r['method'] == 'POST' for r in Recorder.received), 'no claim is posted'
-        assert any('threshold_mb' in reason and _MISSING in reason for reason in report.refused)
+        assert any('threshold' in reason and _MISSING in reason for reason in report.refused)
         assert any(_MISSING in item.blocked for item in report.queue)
 
 

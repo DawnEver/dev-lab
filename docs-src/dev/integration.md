@@ -231,7 +231,7 @@ slice, not whether a head is read at all:
   ignores, hooks and workflows) and the repo's `derived` globs (goldens, rendered blocks). Their generator is
   reviewed, not its output. A head of only generated files is `success`, nothing to review.
 - *In slices, one lens each.* The reviewable files are packed, a directory kept whole when it fits, into slices
-  of at most `max_diff_bytes`; each runs the command once with `{paths}` and `{lens}` -- `strict` for the
+  of at most `max_diff`; each runs the command once with `{paths}` and `{lens}` -- `strict` for the
   `strict` globs (hooks, rules, `tests/architecture`, contracts), `light` for the `light` ones (docs, memory,
   Markdown), `standard` for the rest. The outputs merge into one document (a finding once per id); a declared
   `synthesis` command then reads it (`{findings}`) over the whole range for what crosses slices.
@@ -239,7 +239,7 @@ slice, not whether a head is read at all:
 **It is not a part**: `integrate promote` and push admission never wait on `tests/review`. A head is NEVER
 held for its size, and NEVER reviewed without a diff (D123, user rulings 2026-10-31 and 2026-11-06): every slice
 names its paths, so every call is a diff review -- the one call mode the forge's headless run allows. Past
-`max_total_bytes`, slices are taken strictest lens first and the code left out is LISTED in the review comment
+`max_total`, slices are taken strictest lens first and the code left out is LISTED in the review comment
 (`Scope.unread`). `forge review plan <sha>` prints the slices and what is left out. A HOST that cannot run the
 review (a capability undeclared, the command absent or its module missing) posts `error` `not reviewed: cannot run
 on host <host>: <why>` once and leaves the head claimable by a capable host, or by itself once fixed.
@@ -261,8 +261,8 @@ naming `[runtimes.ai_lab]` refused until `workstation deploy` drops it (`dev_lab
 # command = [...]          # only a genuinely different method; placeholders {range} {paths} {lens} {model} {rules}
 model = "<id>"             # the default is forgereview_declared.FAMILY_MODEL
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
-max_diff_bytes = 400000    # one slice
-max_total_bytes = 800000   # one review: slices past it are listed, not read
+max_diff = "400 kB"        # one slice
+max_total = "800 kB"       # one review: slices past it are listed, not read
 derived = []               # generated-file globs beyond famfiles.GENERATED
 strict = ["**/hooks/**", "**/rules/**", "tests/architecture/**", "**/contracts/**"]  # the default
 light = ["docs-src/**", "**/.claude/memory/**", "**/*.md"]                          # the default

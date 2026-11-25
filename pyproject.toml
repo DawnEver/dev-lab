@@ -187,11 +187,11 @@ always_run = true
 trunk = 'main'
 sessions = ['integrate/main']
 # User ruling 2026-10-13 ("origin should not carry this junk"): every serving host (idempotently) deletes
-# merged undeclared origin branches idle >= max_idle_hours (dev_lab.dev.branchprune).
+# merged undeclared origin branches idle >= max_idle (dev_lab.dev.branchprune).
 prune_merged = true
 # Branch limits (user ruling 2026-11-20): land or retire a head past them (dev_lab.dev.branchpolicy).
 max_ahead = 10
-max_idle_hours = 12
+max_idle = "12 h"
 ephemeral = ['pr/*']
 
 [tool.dev_lab.doors]

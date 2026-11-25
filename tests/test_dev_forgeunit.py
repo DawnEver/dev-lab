@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 from _box_fake import quiet
 from lab_commons import box as lab_box
-from lab_commons.box import Capacity
+from lab_commons.box import GB, Capacity
 from lab_commons.compute.execute import OFFERED, LocalExecutor, Where
 from lab_commons.compute.graph import Graph
 from lab_commons.compute.model import Demand
@@ -89,7 +89,7 @@ def test_a_job_spells_its_unit_bundle_size_and_needs_as_paths() -> None:
     assert UnitJob.of(job.paths()) == job
     declared = unit_request(job.paths())
     assert declared.argv == ('-m', 'dev_lab.dev.forgeunit', *job.paths())
-    assert (declared.needs, declared.cpu, declared.mem_gb, declared.wall_h) == ({'femm', 'windows'}, 2.0, 6.0, 2.0)
+    assert (declared.needs, declared.cpu, declared.mem, declared.wall) == ({'femm', 'windows'}, 2.0, 6.0 * GB, 7200.0)
     assert declared_request(Path(), 'c' * 40, UNIT, job.paths()) == declared  # the built-in producer
     with pytest.raises(UndeclaredRequest, match='no unit hash'):
         UnitJob.of(('unit=xyz', *job.paths()[1:]))

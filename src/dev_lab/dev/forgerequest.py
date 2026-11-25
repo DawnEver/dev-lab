@@ -21,8 +21,8 @@ anything its repository did not commit (an undeclared name is refused, never run
     argv = ["-m", "solver", "golden", "regenerate", "--reference", "femm"]   # after the tree's python
     needs = ["femm", "windows"]   # its NEED-SET: resource names, an OS among them, like a part's
     cpu = 2                       # its SIZE: what the box admits it at until a run of it is measured
-    mem_gb = 6.0                  # (learned per producer NAME); an unsized row is refused, never the whole host
-    wall_h = 48                   # past it the box kills the run: a long solve declares its own
+    mem = "6 GiB"                 # (learned per producer NAME); an unsized row is refused, never the whole host
+    wall = "48 h"                 # past it the box kills the run: a long solve declares its own
 
 THE ONE PRODUCER THAT TAKES ARGUMENTS IS THE REPOSITORY'S OWN TEST PRODUCER (D5, ruling 2026-10-17), named
 :data:`TESTS`: a box that cannot admit a selection offers it to a host that can. Its body adds
@@ -55,13 +55,14 @@ import re
 import tomllib
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.box import GB, Capacity
 from lab_commons.box.machine import RESOURCE_NAME
 from lab_commons.compute.model import Resources
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name, read_vocabulary
+from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
 from dev_lab.dev._forgesource import (
     LOCK_FILE,
@@ -120,6 +121,10 @@ class UndeclaredRequest(ValueError):
     """A request names a producer its sha does not declare (or declares malformed); the message names the key."""
 
 
+#: Unit-suffixed keys retired by the 2026-11-25 ruling (a value carries its unit), refused with their new line.
+_UNIT_RENAMED: Final = {'mem_gb': Renamed('mem', 'GiB'), 'wall_h': Renamed('wall', 'h')}
+
+
 @dataclass(frozen=True)
 class Declared:
     """One declared request producer, as its sha declares it."""
@@ -128,8 +133,8 @@ class Declared:
     argv: tuple[str, ...]
     needs: frozenset[str]
     cpu: float
-    mem_gb: float
-    wall_h: float
+    mem: float  # bytes
+    wall: float  # seconds
 
     @property
     def part(self) -> str:
@@ -244,7 +249,7 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
         wall_s = wall_of(declared_table(tomllib.loads(text), 'verify', {}), f'pyproject.toml at {sha[:12]}')
     except ValueError as why:
         raise UndeclaredRequest(str(why)) from why
-    return Declared(TESTS, (*door, '--', *paths), needs, float(workers), mem_gb, wall_s / 3600)
+    return Declared(TESTS, (*door, '--', *paths), needs, float(workers), mem_gb * GB, float(wall_s))
 
 
 def _unit_request(_root: Path, _sha: str, paths: Sequence[str]) -> Declared:
@@ -293,11 +298,28 @@ def declared_request(root: Path, sha: str, name: str, paths: Sequence[str] = ())
     if not isinstance(needs, list) or not all(isinstance(one, str) and RESOURCE_NAME.match(one) for one in needs):
         msg = f'{table} needs must be an array of resource names'
         raise UndeclaredRequest(msg)
-    unsized = [key for key in ('cpu', 'mem_gb', 'wall_h') if not _positive(row.get(key))]
-    if unsized:
-        msg = f'{table} is unsized: declare {" and ".join(unsized)} positive (never the whole host)'
+    mem, wall = _size(row, table, sha)
+    return Declared(name, tuple(argv), frozenset(needs), float(row['cpu']), mem, wall)
+
+
+def _size(row: dict[str, Any], table: str, sha: str) -> tuple[float, float]:
+    """The row's ``mem`` (bytes) and ``wall`` (seconds), its ``cpu`` checked; unsized or unit-suffixed is refused."""
+    try:
+        refuse_renamed(f'{table} at {sha[:12]}:', row, _UNIT_RENAMED)
+    except QuantityRefused as retired:
+        raise UndeclaredRequest(str(retired)) from retired
+    unsized = [key for key in ('cpu', 'mem', 'wall') if key not in row]
+    if unsized or not _positive(row['cpu']):
+        msg = f'{table} is unsized: declare {" and ".join(unsized or ["cpu"])} positive (never the whole host)'
         raise UndeclaredRequest(msg)
-    return Declared(name, tuple(argv), frozenset(needs), float(row['cpu']), float(row['mem_gb']), float(row['wall_h']))
+    try:
+        return (
+            parse(f'{table} mem', row['mem'], 'size', positive=True),
+            parse(f'{table} wall', row['wall'], 'duration', positive=True),
+        )
+    except QuantityRefused as unsized_by:
+        msg = f'{table} is unsized: {unsized_by} (never the whole host)'
+        raise UndeclaredRequest(msg) from unsized_by
 
 
 def _positive(value: object) -> bool:

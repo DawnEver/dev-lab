@@ -35,6 +35,7 @@ from lab_commons.compute import learned
 from lab_commons.compute.model import Demand, Resources
 from lab_commons.file_io import read_toml
 from lab_commons.log import emit
+from lab_commons.quantity import Renamed, parse, refuse_renamed
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgedemand import refresh_checkout
@@ -76,7 +77,9 @@ WAIT_S: Final = 1800.0
 UNENFORCED_PLATFORMS: Final = frozenset({'darwin'})
 
 #: The wall a selection declares, in seconds: killed past it.
-SELECTION_WALL_S: Final = 3600  # the default; a repo declares its own as [tool.dev_lab.verify] wall_s (declared_wall_s)
+SELECTION_WALL_S: Final = 3600  # the default; a repo declares its own as [tool.dev_lab.verify] wall (declared_wall_s)
+#: Unit-suffixed keys retired by the 2026-11-25 ruling (a value carries its unit), refused with their new line.
+_UNIT_RENAMED: Final = {'wall_s': Renamed('wall', 's'), 'worker_mem_gb': Renamed('worker_mem', 'GiB')}
 
 
 #: The spellings of an explicit pytest-xdist width, and the ones that mean "as many as the box".
@@ -170,13 +173,13 @@ def selection_mem_gb(repo: str, files: Sequence[str], workers: int, *, declared_
 
 
 def declared_wall_s(root: Path) -> int:
-    """``[tool.dev_lab.verify] wall_s``: the repo's selection wall in seconds; :data:`SELECTION_WALL_S` when undeclared.
+    """``[tool.dev_lab.verify] wall``: the repo's selection wall in seconds; :data:`SELECTION_WALL_S` when undeclared.
 
     One hard-coded wall killed a repo whose full selection outgrew it every night (learn-lab, 2026-11-18); the
     repository is the one place both a CI run and a forge host read, so it declares its own.
 
     Raises:
-        ValueError: the key is present and is not a positive number of seconds.
+        ValueError: the key is present and is not a positive duration (``wall = "2 h"``).
 
     """
     manifest = root / 'pyproject.toml'
@@ -185,16 +188,15 @@ def declared_wall_s(root: Path) -> int:
 
 
 def wall_of(table: Mapping[str, object], where: object) -> int:
-    """The ``wall_s`` of one parsed ``[tool.dev_lab.verify]`` *table* (read at *where*), else the default."""
-    value = table.get('wall_s', SELECTION_WALL_S)
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        msg = f'[tool.dev_lab.verify] wall_s in {where} is {value!r}: declare the selection wall in whole seconds (> 0)'
-        raise ValueError(msg)
-    return value
+    """The ``wall`` of one ``[tool.dev_lab.verify]`` *table* (read at *where*) in whole seconds, else the default."""
+    refuse_renamed(f'[tool.dev_lab.verify] in {where}:', table, _UNIT_RENAMED)
+    if 'wall' not in table:
+        return SELECTION_WALL_S
+    return math.ceil(parse(f'[tool.dev_lab.verify] in {where}: wall', table['wall'], 'duration', positive=True))
 
 
 def declared_worker_gb(root: Path) -> float:
-    """``[tool.dev_lab.verify] worker_mem_gb``: one worker's MEASURED peak in GB, ``0.0`` when undeclared.
+    """``[tool.dev_lab.verify] worker_mem``: one worker's MEASURED peak (a size), in GiB, ``0.0`` when undeclared.
 
     D101: a hosted runner holds no learned table (it lives beside the machine config, never in a checkout,
     and no CI step carries it), so every worker there was priced at :class:`~lab_commons.hpc.config.Cost`'s
@@ -203,18 +205,15 @@ def declared_worker_gb(root: Path) -> float:
     so it declares the peak its last run measured, and :func:`selection_mem_gb` prices each worker at it.
 
     Raises:
-        ValueError: the key is present and is not a positive number.
+        ValueError: the key is present and is not a size (``worker_mem = "4 GiB"``).
 
     """
     manifest = root / 'pyproject.toml'
     table = declared_table(read_toml(manifest), 'verify', {}) if manifest.is_file() else {}
-    value = table.get('worker_mem_gb', 0.0)
-    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
-        msg = (
-            f'[tool.dev_lab.verify] worker_mem_gb in {manifest} is {value!r}: declare one worker`s measured peak in GB'
-        )
-        raise ValueError(msg)
-    return float(value)
+    refuse_renamed(f'[tool.dev_lab.verify] in {manifest}:', table, _UNIT_RENAMED)
+    if 'worker_mem' not in table:
+        return 0.0
+    return parse(f'[tool.dev_lab.verify] in {manifest}: worker_mem', table['worker_mem'], 'size') / GB
 
 
 def selection_producer(files: Sequence[str]) -> str:

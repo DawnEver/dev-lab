@@ -746,7 +746,7 @@ def test_the_alarms_a_tick_raises_ride_on_its_host_card(monkeypatch, tmp_path: P
 def test_an_account_idle_with_work_pending_alarms(monkeypatch, tmp_path: Path) -> None:
     """PLANTED CONTROL: the same pending request, claimed, raises nothing."""
     pending = Work('integrate/main', SHA, 'windows', OPEN)
-    why = 'tests/windows: not claimed -- its declared outputs could exceed threshold_mb'
+    why = 'tests/windows: not claimed -- its declared outputs could exceed threshold'
     idle = TickReport((pending,), (), ('tick',), (why,), pending=(pending,))
     _report, _said, alarms = _serve(monkeypatch, tmp_path, idle)
     assert [a.kind for a in alarms] == [IDLE]

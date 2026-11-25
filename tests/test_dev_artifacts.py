@@ -33,7 +33,7 @@ from dev_lab.dev.artifacts import (
     RcloneStore,
     Ref,
 )
-from dev_lab.dev.artifactstores import RECORD_ARCHIVES, RECORD_INDEXES, manifest_of
+from dev_lab.dev.artifactstores import MB, RECORD_ARCHIVES, RECORD_INDEXES, manifest_of
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import GITEA, Client
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
@@ -191,9 +191,33 @@ def _pyproject(root: Path, table: str) -> Path:
 def test_the_config_table_is_read_with_its_defaults(tmp_path: Path) -> None:
     root = _pyproject(
         tmp_path / 'r',
-        '[tool.lab_commons.artefacts]\nbackend = "rclone"\nremote = "onedrive-uon:Sync/hpc-results"\ncap_gb = 20\n',
+        '[tool.lab_commons.artefacts]\nbackend = "rclone"\nremote = "onedrive-uon:Sync/hpc-results"\ncap = "20 GiB"\n',
     )
-    assert artifacts.load_config(root) == Config('rclone', 'onedrive-uon:Sync/hpc-results', 100, 3, 20.0)
+    assert artifacts.load_config(root) == Config(
+        'rclone', 'onedrive-uon:Sync/hpc-results', 100 * MB, 3 * 86400.0, 20 * 1024 * MB
+    )
+
+
+@pytest.mark.parametrize(
+    ('old', 'new'),
+    [
+        ('threshold_mb = 100', 'threshold = "100 MiB"'),
+        ('retain_days = 3', 'retain = "3 d"'),
+        ('cap_gb = 20', 'cap = "20 GiB"'),
+        ('member_index_max_bytes = 4096', 'member_index_max = "4096 B"'),
+    ],
+)
+def test_a_unit_suffixed_key_is_refused_with_its_new_line(tmp_path: Path, old: str, new: str) -> None:
+    """FORMATS-MIGRATE-ONCE (user ruling 2026-11-25): an old key is never read; its refusal is the line to write."""
+    root = _pyproject(tmp_path / 'r', f'[tool.lab_commons.artefacts]\n{old}\n')
+    with pytest.raises(ArtifactRefused, match=f'is retired.*write {new}'):
+        artifacts.load_config(root)
+
+
+def test_a_bare_threshold_is_refused_naming_the_key(tmp_path: Path) -> None:
+    root = _pyproject(tmp_path / 'r', '[tool.lab_commons.artefacts]\nthreshold = 100\n')
+    with pytest.raises(ArtifactRefused, match='threshold = 100 is a bare number'):
+        artifacts.load_config(root)
 
 
 def test_no_table_means_forge_only(tmp_path: Path) -> None:
@@ -205,7 +229,7 @@ def test_no_table_means_forge_only(tmp_path: Path) -> None:
     [
         'backend = "s3"',
         'backend = "rclone"',  # no remote
-        'backend = "forge"\nthreshold_mb = 200',  # above the attachment limit
+        'backend = "forge"\nthreshold = "200 MiB"',  # above the attachment limit
         'color = "red"',
     ],
 )
@@ -225,7 +249,7 @@ def test_the_reader_folder_comes_from_machine_config(tmp_path: Path, monkeypatch
     assert store.root == tmp_path / 'mirror'
 
 
-@pytest.mark.parametrize('name', ['expanded_output_max_entries', 'expanded_output_max_bytes'])
+@pytest.mark.parametrize('name', ['expanded_output_max_entries', 'expanded_output_max'])
 @pytest.mark.parametrize('value', ['true', 'false', '-1', '1.0'])
 def test_expanded_output_config_budget_refuses_invalid_values(tmp_path: Path, name: str, value: str) -> None:
     root = _pyproject(tmp_path / 'r', f'[tool.lab_commons.artefacts]\n{name} = {value}\n')
@@ -236,21 +260,21 @@ def test_expanded_output_config_budget_refuses_invalid_values(tmp_path: Path, na
 def test_expanded_output_config_budget_accepts_zero_and_positive(tmp_path: Path) -> None:
     root = _pyproject(
         tmp_path / 'r',
-        '[tool.lab_commons.artefacts]\nexpanded_output_max_entries = 0\nexpanded_output_max_bytes = 42\n',
+        '[tool.lab_commons.artefacts]\nexpanded_output_max_entries = 0\nexpanded_output_max = "42 B"\n',
     )
     config = artifacts.load_config(root)
     assert config.expanded_output_max_entries == 0
-    assert config.expanded_output_max_bytes == 42
+    assert config.expanded_output_max == 42
 
 
 @pytest.mark.parametrize(
     'name',
     [
         'member_index_max_members',
-        'member_index_max_bytes',
-        'member_index_max_path_bytes',
-        'record_max_compressed_bytes',
-        'record_max_decompressed_bytes',
+        'member_index_max',
+        'member_index_max_path',
+        'record_max_compressed',
+        'record_max_decompressed',
     ],
 )
 @pytest.mark.parametrize('value', ['true', 'false', '0', '-1', '1.0'])
@@ -264,17 +288,17 @@ def test_index_and_record_config_requires_explicit_positive_integers(tmp_path: P
 
 
 _QUERY_POLICY = {
-    'record_max_compressed_bytes': 65536,
-    'record_max_decompressed_bytes': 262144,
+    'record_max_compressed': '"65536 B"',
+    'record_max_decompressed': '"262144 B"',
     'member_index_max_members': 100,
-    'member_index_max_bytes': 65536,
-    'member_index_max_path_bytes': 4096,
+    'member_index_max': '"65536 B"',
+    'member_index_max_path': '"4096 B"',
     'expanded_output_max_entries': 3,
-    'expanded_output_max_bytes': 0,
+    'expanded_output_max': '"0 B"',
 }
 
 
-def _policy_repo(root: Path, policy: dict[str, int]) -> Path:
+def _policy_repo(root: Path, policy: dict[str, object]) -> Path:
     return _pyproject(root, '[tool.lab_commons.artefacts]\n' + '\n'.join(f'{k} = {v}' for k, v in policy.items()))
 
 
@@ -561,7 +585,7 @@ def test_a_pull_read_refused_for_another_reason_still_raises(status: int) -> Non
 
 
 def test_small_goes_to_the_forge_large_to_the_configured_backend(tmp_path: Path) -> None:
-    config = Config('folder', str(tmp_path / 'big'), threshold_mb=1)
+    config = Config('folder', str(tmp_path / 'big'), threshold=1 * MB)
     forge = _Forge()
     small = artifacts.store_for(config, cast('Client', forge), 'lab', size=1024)
     large = artifacts.store_for(config, cast('Client', forge), 'lab', size=2 * 1024 * 1024)

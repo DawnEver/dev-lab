@@ -531,8 +531,8 @@ def _shipping(home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, 
     monkeypatch.setattr(forgeship, 'forge_from_remote', lambda _root: SimpleNamespace(repo='r'))
     big, root = home / 'big', home / 'repo'
     root.mkdir()
-    table = f'[tool.lab_commons.artefacts]\nbackend = "folder"\nremote = "{big.as_posix()}"\nthreshold_mb = 1\n'
-    table += 'member_index_max_members = 100\nmember_index_max_bytes = 65536\nmember_index_max_path_bytes = 4096\n'
+    table = f'[tool.lab_commons.artefacts]\nbackend = "folder"\nremote = "{big.as_posix()}"\nthreshold = "1 MiB"\n'
+    table += 'member_index_max_members = 100\nmember_index_max = "65536 B"\nmember_index_max_path = "4096 B"\n'
     (root / 'pyproject.toml').write_text(table, encoding='utf-8')
     record = records.write_record({'sha': SHA, 'platform': 'linux', 'req': 'r1', 'cells': {}}, home / 'gathered')
     tree = record.parent / 'tree'
@@ -589,7 +589,7 @@ def test_shipping_budget_refuses_before_archive_store_or_post(
     home: Path, monkeypatch: pytest.MonkeyPatch, entries: int, payload: int
 ) -> None:
     root, big, slurm = _shipping(home, monkeypatch)
-    _policy(root, f'expanded_output_max_entries = {entries}\nexpanded_output_max_bytes = {payload}\n')
+    _policy(root, f'expanded_output_max_entries = {entries}\nexpanded_output_max = "{payload} B"\n')
     posted = _posting(monkeypatch)
     store = _Store()
     run = _start(home, store, outputs=('fields/*.h5',))
@@ -607,7 +607,7 @@ def test_shipping_budget_refuses_before_archive_store_or_post(
 def test_shipping_exact_expanded_budget_keeps_reference_contract(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED CONTROL for the budget refusal above: the exact footprint ships, its Ref unchanged."""
     root, big, slurm = _shipping(home, monkeypatch)
-    _policy(root, f'expanded_output_max_entries = 3\nexpanded_output_max_bytes = {2 << 20}\n')
+    _policy(root, f'expanded_output_max_entries = 3\nexpanded_output_max = "{2 << 20} B"\n')
     posted = _posting(monkeypatch)
     store = _Store()
     _start(home, store, outputs=('fields/*.h5',))
@@ -650,7 +650,7 @@ def test_member_index_budget_matches_actual_record_value_bytes(
     policy = root / 'pyproject.toml'
     policy.write_text(
         '\n'.join(
-            f'member_index_max_bytes = {exact + delta}' if line.startswith('member_index_max_bytes') else line
+            f'member_index_max = "{exact + delta} B"' if line.startswith('member_index_max =') else line
             for line in policy.read_text(encoding='utf-8').splitlines()
         ),
         encoding='utf-8',
@@ -687,8 +687,8 @@ def test_real_shipment_record_catalogue_and_selection_need_no_archive(
     (big / ref.ref).unlink()  # a catalogue is an index declaration, never an archive verification
     _policy(
         root,
-        'record_max_compressed_bytes = 65536\nrecord_max_decompressed_bytes = 262144\n'
-        f'expanded_output_max_entries = 3\nexpanded_output_max_bytes = {2 << 20}\n',
+        'record_max_compressed = "65536 B"\nrecord_max_decompressed = "262144 B"\n'
+        f'expanded_output_max_entries = 3\nexpanded_output_max = "{2 << 20} B"\n',
     )
     b = _b_member(slurm)
     fact = MemberFact('fields/b.h5', cast('int', b['logical_bytes']), cast('str', b['sha256']))
@@ -712,8 +712,8 @@ def _ship_for_recovery(home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Pat
     (tree / 'fields' / 'zero.h5').write_bytes(b'')
     _policy(
         root,
-        'record_max_compressed_bytes = 65536\nrecord_max_decompressed_bytes = 262144\n'
-        'expanded_output_max_entries = 6\nexpanded_output_max_bytes = 3145728\n',
+        'record_max_compressed = "65536 B"\nrecord_max_decompressed = "262144 B"\n'
+        'expanded_output_max_entries = 6\nexpanded_output_max = "3145728 B"\n',
     )
     posted = _posting(monkeypatch)
     status = _Store()  # forge status transport only; archive I/O is the real FolderStore
@@ -733,16 +733,16 @@ def test_real_shipment_record_query_fetch_and_selective_materialization(
     config = artifacts.load_config(root)
     record = records.read_record(
         record_path,
-        max_compressed_bytes=config.record_max_compressed_bytes,
-        max_decompressed_bytes=config.record_max_decompressed_bytes,
+        max_compressed_bytes=config.record_max_compressed,
+        max_decompressed_bytes=config.record_max_decompressed,
         expected_sha256=record_sha,
     )
     (declaration,) = record[RECORD_ARCHIVES]
     ref = artifacts.ref_of_entry(declaration)
     limits = {
         'max_members': cast('int', config.member_index_max_members),
-        'max_index_bytes': cast('int', config.member_index_max_bytes),
-        'max_path_bytes': cast('int', config.member_index_max_path_bytes),
+        'max_index_bytes': cast('int', config.member_index_max),
+        'max_path_bytes': cast('int', config.member_index_max_path),
     }
     complete = artifactindex.catalogue(record, ref, **limits)
     selected = artifacts.query_members(
@@ -772,7 +772,7 @@ def test_real_shipment_record_query_fetch_and_selective_materialization(
             max_metadata_bytes=4096,
             max_uncompressed_bytes=4 << 20,
             max_entries=cast('int', config.expanded_output_max_entries),
-            max_bytes=cast('int', config.expanded_output_max_bytes),
+            max_bytes=cast('int', config.expanded_output_max),
         )
         if corrupt:
             with pytest.raises(artifacts.ArtifactRefused, match='authentication'):
@@ -851,15 +851,13 @@ def test_shipment_source_identity_change_is_terminal_integrity(home: Path, monke
     assert not big.exists()
 
 
-@pytest.mark.parametrize(
-    'missing', ['all', 'member_index_max_members', 'member_index_max_bytes', 'member_index_max_path_bytes']
-)
+@pytest.mark.parametrize('missing', ['all', 'member_index_max_members', 'member_index_max', 'member_index_max_path'])
 def test_shipping_requires_explicit_member_index_policy(
     home: Path, monkeypatch: pytest.MonkeyPatch, missing: str
 ) -> None:
     root, big, slurm = _shipping(home, monkeypatch)
     policy = root / 'pyproject.toml'
-    prefix = 'member_index_' if missing == 'all' else missing
+    prefix = 'member_index_' if missing == 'all' else f'{missing} ='
     kept = [line for line in policy.read_text(encoding='utf-8').splitlines() if not line.startswith(prefix)]
     policy.write_text('\n'.join(kept), encoding='utf-8')
     posted = _posting(monkeypatch)

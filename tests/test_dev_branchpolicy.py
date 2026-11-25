@@ -27,9 +27,9 @@ from tests.test_dev_branchprune import NOW, BareForge, _commit, _git, _on_origin
 
 
 def test_the_declaration_names_both_bounds(tmp_path: Path) -> None:
-    root, _ = _planted(tmp_path, extra='max_ahead = 10\nmax_idle_hours = 12\n')
+    root, _ = _planted(tmp_path, extra='max_ahead = 10\nmax_idle = "12 h"\n')
     declared = declared_branchset(root)
-    assert (declared.max_ahead, declared.max_idle_hours) == (10, 12.0)
+    assert (declared.max_ahead, declared.max_idle) == (10, 12 * 3600.0)
 
 
 def test_an_absent_max_ahead_judges_nothing(tmp_path: Path) -> None:
@@ -46,7 +46,21 @@ def test_a_malformed_max_ahead_is_refused_by_name(tmp_path: Path, extra: str) ->
 
 def test_the_retired_grace_hours_is_refused_naming_its_replacement(tmp_path: Path) -> None:
     root, _ = _planted(tmp_path, extra='grace_hours = 24\n')
-    with pytest.raises(BranchSetKeyRetired, match='grace_hours is retired: renamed max_idle_hours'):
+    with pytest.raises(BranchSetKeyRetired, match='grace_hours is retired: renamed max_idle '):
+        declared_branchset(root)
+
+
+def test_the_retired_max_idle_hours_is_refused_with_its_new_line(tmp_path: Path) -> None:
+    """FORMATS-MIGRATE-ONCE (user ruling 2026-11-25): the unit-suffixed key is never read; its refusal is its line."""
+    root, _ = _planted(tmp_path, extra='max_idle_hours = 12\n')
+    with pytest.raises(BranchSetKeyRetired, match=r'max_idle_hours = 12 is retired.*write max_idle = "12 h"'):
+        declared_branchset(root)
+
+
+@pytest.mark.parametrize(('value', 'why'), [('12', 'bare number'), ('"12"', 'bare number'), ('"12 GiB"', 'size')])
+def test_a_max_idle_without_a_duration_is_refused_naming_the_key(tmp_path: Path, value: str, why: str) -> None:
+    root, _ = _planted(tmp_path, extra=f'max_idle = {value}\n')
+    with pytest.raises(BranchSetNotDeclared, match=f'max_idle = .*{why}'):
         declared_branchset(root)
 
 
@@ -64,7 +78,7 @@ def _heavy(root: Path, commits: int) -> None:
 
 def test_rows_name_the_unmerged_stale_and_the_over_ahead_lane_and_acquit_the_rest(tmp_path: Path) -> None:
     """lane/unmerged holds 3 unlanded commits and is idle 72 h; merged, declared and young lanes are never rows."""
-    root, _ = _planted(tmp_path, extra='max_ahead = 2\nmax_idle_hours = 12\n')
+    root, _ = _planted(tmp_path, extra='max_ahead = 2\nmax_idle = "12 h"\n')
     _heavy(root, 2)
     rows = derive(root, declared_branchset(root), load_policy(root), now=NOW)
     assert {(row.kind, row.branch) for row in rows} == {(OVER_AHEAD, 'lane/unmerged'), (STALE, 'lane/unmerged')}
@@ -74,14 +88,14 @@ def test_rows_name_the_unmerged_stale_and_the_over_ahead_lane_and_acquit_the_res
 
 def test_a_lane_at_its_bound_is_not_over_ahead(tmp_path: Path) -> None:
     """PLANTED: exactly max_ahead unlanded commits is inside the bound."""
-    root, _ = _planted(tmp_path, extra='max_ahead = 3\nmax_idle_hours = 1000\n')
+    root, _ = _planted(tmp_path, extra='max_ahead = 3\nmax_idle = "1000 h"\n')
     _heavy(root, 2)
     assert derive(root, declared_branchset(root), load_policy(root), now=NOW) == ()
 
 
 def test_an_over_ahead_row_says_land_it_now_and_record_why_and_never_split(tmp_path: Path) -> None:
     """User correction 2026-11-19: the doors are landing and recording the cause; no door splits the work."""
-    root, _ = _planted(tmp_path, extra='max_ahead = 0\nmax_idle_hours = 1000\n')
+    root, _ = _planted(tmp_path, extra='max_ahead = 0\nmax_idle = "1000 h"\n')
     branchset, policy = declared_branchset(root), load_policy(root)
     (row,) = derive(root, branchset, policy, now=NOW)
     body = wanted((row,), branchset, policy.integration)[row.title]
@@ -93,7 +107,7 @@ def test_an_over_ahead_row_says_land_it_now_and_record_why_and_never_split(tmp_p
 
 
 def test_a_lane_inside_both_bounds_is_no_row(tmp_path: Path) -> None:
-    root, _ = _planted(tmp_path, extra='max_ahead = 100\nmax_idle_hours = 1000\n')
+    root, _ = _planted(tmp_path, extra='max_ahead = 100\nmax_idle = "1000 h"\n')
     assert derive(root, declared_branchset(root), load_policy(root), now=NOW) == ()
 
 
@@ -102,7 +116,7 @@ def test_a_lane_inside_both_bounds_is_no_row(tmp_path: Path) -> None:
 
 def test_observe_raises_one_alarm_per_row_and_none_once_the_row_clears(tmp_path: Path) -> None:
     """A row is an alarm, never an issue (2026-11-19); a cleared row raises nothing -- nothing is stored."""
-    root, _ = _planted(tmp_path, extra='max_idle_hours = 12\n')
+    root, _ = _planted(tmp_path, extra='max_idle = "12 h"\n')
     first = observe(root, 'o/r', now=NOW)
     assert [(a.kind, a.about, a.subject) for a in first] == [
         (INTEGRATION, f'{STALE} lane/unmerged', f'{PREFIX}{STALE} lane/unmerged')
@@ -115,7 +129,7 @@ def test_observe_raises_one_alarm_per_row_and_none_once_the_row_clears(tmp_path:
 
 
 def test_the_alarm_key_carries_no_sha_so_a_moved_branch_repeats_as_one(tmp_path: Path) -> None:
-    root, _ = _planted(tmp_path, extra='max_idle_hours = 12\n')
+    root, _ = _planted(tmp_path, extra='max_idle = "12 h"\n')
     before = observe(root, 'o/r', now=NOW)
     _git(root, 'checkout', '-q', 'lane/unmerged')
     _commit(root, 'more')

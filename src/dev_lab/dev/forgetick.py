@@ -18,7 +18,7 @@ and give each claimed part what produces it: the ONE producer the claimed commit
 that commit) or a cluster part (:func:`dev_lab.dev.platformparts.cluster_part`). A part
 whose producer the repo does not declare is not claimed; its refusal names the pyproject key to add. A
 cluster host whose rclone remote is unusable (:func:`dev_lab.dev.artifacts.remote_problem`) claims
-no part with declared outputs -- they could exceed ``threshold_mb`` -- and says why; a part with none is
+no part with declared outputs -- they could exceed ``threshold`` -- and says why; a part with none is
 still claimed. It runs nothing itself.
 
 ADMISSION, NOT ONE CLAIM A TICK. Each candidate is a :class:`~lab_commons.compute.model.Job` whose
@@ -65,7 +65,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from lab_commons.box import Capacity
+from lab_commons.box import GB, Capacity
 from lab_commons.box.providers import box_engine
 from lab_commons.compute.learned import box_demand, learned, request_demand
 from lab_commons.compute.model import (
@@ -373,7 +373,7 @@ def _demand_of(
     def sized(wanted: Candidate, needed: frozenset[str]) -> Mapping[str, float]:
         if wanted.kind == REQUEST:
             row = declared_request(root, wanted.sha, wanted.producer, wanted.paths)
-            return request_demand(repo_url, row.name, needed, cpu=row.cpu, mem_gb=row.mem_gb)
+            return request_demand(repo_url, row.name, needed, cpu=row.cpu, mem_gb=row.mem / GB)
         ids = handed(history(wanted.sha), wanted.platform)
         return box_demand(repo_url, needed, cpu=free['cpu'], mem_gb=free['mem_gb'], ids=ids)
 

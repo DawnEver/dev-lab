@@ -28,7 +28,7 @@ is refused by name with its migration (FORMATS-MIGRATE-ONCE)::
     pruned_paths = ['.claude/worktrees']    # other checkouts inside this one, judged by their own run
     stray_roots = []                        # where an untracked file may sit, beyond scratch
     scratch = 'scratch/'                    # the one-off sink; the family's home when omitted
-    max_age_days = 3.0                      # when the SessionStart notice starts naming a one-off
+    max_age = "3 d"                         # when the SessionStart notice starts naming a one-off
     scratch_anchor = true                   # false: no tracked README, nothing under scratch is tracked
     retired = []                            # files a tool this repo uses retired (dev_lab.dev.retiredfiles)
 
@@ -52,9 +52,10 @@ import tomllib
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from types import ModuleType
-from typing import TextIO
+from typing import Final, TextIO
 
 from lab_commons.log import emit
+from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
 from dev_lab.dev import gitdirs
 from dev_lab.dev.consentguard import refuse_write as refuse_consent_write
@@ -76,7 +77,7 @@ __all__ = [
     'FAMILY_HOMES',
     'FAMILY_STRAY_ROOTS',
     'PRUNED_NAMES',
-    'SCRATCH_MAX_AGE_DAYS',
+    'SCRATCH_MAX_AGE',
     'Placement',
     'PlacementNotDeclared',
     'admits',
@@ -129,8 +130,10 @@ FAMILY_CODE_ROOTS: tuple[str, ...] = tuple(
 #: Where an untracked file may sit in every repo: the family's scratch home, nothing else.
 FAMILY_STRAY_ROOTS: tuple[str, ...] = (FAMILY_HOMES['one-off experiment, probe or verification'],)
 
-#: The family default for ``max_age_days`` (:mod:`dev_lab.dev.scratch` reads it off the placement).
-SCRATCH_MAX_AGE_DAYS = 3.0
+#: The family default for ``max_age``, in seconds (:mod:`dev_lab.dev.scratch` reads it off the placement): 3 days.
+SCRATCH_MAX_AGE = 3 * 86400.0
+#: Unit-suffixed keys retired by the 2026-11-25 ruling (a value carries its unit), refused with their new line.
+_UNIT_RENAMED: Final = {'max_age_days': Renamed('max_age', 'd')}
 
 #: The directory under a day's memory that held archived one-offs until that exit was retired
 #: (2026-10-22); what is already there stays archived history.
@@ -227,7 +230,7 @@ class Placement:
     pruned_paths: tuple[str, ...] = ()
     stray_roots: tuple[str, ...] = FAMILY_STRAY_ROOTS
     scratch: str = FAMILY_STRAY_ROOTS[0]
-    max_age_days: float = SCRATCH_MAX_AGE_DAYS
+    max_age: float = SCRATCH_MAX_AGE  # seconds
     retired: tuple[RetiredFile, ...] = ()
     scratch_anchor: bool = True
 
@@ -255,13 +258,15 @@ def declared_placement(root: Path) -> Placement:
         raise PlacementNotDeclared(msg)
     extra = _strings(table, 'code_roots', manifest)
     scratch = table.get('scratch', FAMILY_STRAY_ROOTS[0])
-    age = table.get('max_age_days', SCRATCH_MAX_AGE_DAYS)
     if not isinstance(scratch, str) or not scratch.strip('/'):
         msg = f'scratch in {manifest} is {scratch!r}; it must be one repo-relative POSIX directory'
         raise PlacementNotDeclared(msg)
-    if isinstance(age, bool) or not isinstance(age, int | float) or age <= 0:
-        msg = f'max_age_days in {manifest} is {age!r}; it must be a positive number of days'
-        raise PlacementNotDeclared(msg)
+    try:
+        refuse_renamed(f'{manifest}:', table, _UNIT_RENAMED)
+        age = parse(f'{manifest}: max_age', table['max_age'], 'duration', positive=True) if 'max_age' in table else None
+    except QuantityRefused as bad:
+        raise PlacementNotDeclared(str(bad)) from bad
+    age = SCRATCH_MAX_AGE if age is None else age
     anchor = table.get('scratch_anchor', True)
     if not isinstance(anchor, bool):
         msg = f'scratch_anchor in {manifest} is {anchor!r}; it must be true (a tracked README) or false'

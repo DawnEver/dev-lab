@@ -67,14 +67,23 @@ def test_the_readme_anchor_is_never_pending_and_the_rest_is_oldest_first(tmp_pat
 
 def test_a_repo_declares_its_scratch_and_its_age_and_both_have_the_family_default(tmp_path) -> None:
     _declare(tmp_path, '')
-    assert (declared_placement(tmp_path).scratch, declared_placement(tmp_path).max_age_days) == ('scratch/', 3.0)
-    _declare(tmp_path, "scratch = 'tmp/one-offs'\nmax_age_days = 1.5\n")
+    assert (declared_placement(tmp_path).scratch, declared_placement(tmp_path).max_age) == ('scratch/', 3 * 86400.0)
+    _declare(tmp_path, "scratch = 'tmp/one-offs'\nmax_age = '36 h'\n")
     placement = declared_placement(tmp_path)
-    assert (placement.scratch, placement.max_age_days) == ('tmp/one-offs/', 1.5)
+    assert (placement.scratch, placement.max_age) == ('tmp/one-offs/', 1.5 * 86400)
     assert placement.stray_roots[0] == 'tmp/one-offs/'
 
 
-@pytest.mark.parametrize('body', ["scratch = ['scratch']\n", "max_age_days = 'three'\n", 'max_age_days = 0\n'])
+@pytest.mark.parametrize(
+    'body',
+    [
+        "scratch = ['scratch']\n",
+        "max_age = 'three'\n",
+        "max_age = '0 d'\n",
+        'max_age = 3\n',
+        'max_age_days = 3.0\n',
+    ],
+)
 def test_a_malformed_scratch_declaration_is_REFUSED(tmp_path, body) -> None:
     _declare(tmp_path, body)
     with pytest.raises(PlacementNotDeclared):
@@ -225,3 +234,10 @@ def test_a_non_bool_scratch_anchor_is_REFUSED_by_name(tmp_path, value) -> None:
 def test_an_unanchored_scratch_refuses_a_staged_readme_too() -> None:
     staged = ('scratch/README.md', 'scratch/probe.py')
     assert staged_scratch(staged, scratch='scratch/', anchor=False) == ['scratch/README.md', 'scratch/probe.py']
+
+
+def test_the_retired_max_age_days_is_refused_with_its_new_line(tmp_path) -> None:
+    """FORMATS-MIGRATE-ONCE (user ruling 2026-11-25): ``max_age_days`` is never read; its refusal is its line."""
+    _declare(tmp_path, 'max_age_days = 3.0\n')
+    with pytest.raises(PlacementNotDeclared, match=r'max_age_days = 3.0 is retired.*write max_age = "3 d"'):
+        declared_placement(tmp_path)

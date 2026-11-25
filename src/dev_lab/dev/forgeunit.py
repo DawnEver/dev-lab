@@ -48,7 +48,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box.demand import CPU, MEM_GB, cores, seats
+from lab_commons.box.demand import CPU, GB, MEM_GB, cores, seats
 from lab_commons.compute.execute import CACHED, RAN, LocalExecutor, Offer, presence_check
 from lab_commons.compute.graph import Graph
 from lab_commons.compute.model import Demand
@@ -305,8 +305,8 @@ def unit_request(paths: Sequence[str]) -> Declared:
         ('-m', __name__, *paths),
         frozenset(job.needs),
         float(cores(job.demand)),
-        job.demand[MEM_GB],
-        job.wall_s / 3600,
+        job.demand[MEM_GB] * GB,
+        float(job.wall_s),
     )
 
 

@@ -209,8 +209,8 @@ Upgrading lab-commons brings two changes to every repo that opts into the base h
 [tool.dev_lab.branchset]
 trunk = 'main'
 sessions = ['integrate/main']  # every long-lived branch: exactly what the pre-push hook allows
-prune_merged = true            # every serving host deletes (idempotently) merged branches idle >= max_idle_hours
-max_idle_hours = 24
+prune_merged = true            # every serving host deletes (idempotently) merged branches idle >= max_idle
+max_idle = "24 h"
 
 [tool.dev_lab.integrator]
 merges_only_since = '<the integration tip sha when you adopt>'
