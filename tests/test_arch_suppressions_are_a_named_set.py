@@ -682,29 +682,24 @@ ALLOWED: Final[dict[Site, str]] = {
         'def _run(args: argparse.Namespace, cwd: Path) -> str:',
     ): 'same dispatch: one branch per verb',
     (
-        'src/dev_lab/dev/task.py',
+        'src/dev_lab/dev/_task_io.py',
         'PLC0415',
         'from dev_lab.dev.forgeclient import client_for',
     ): 'the network client loads only for open/close, never for a read verb',
     (
-        'src/dev_lab/dev/task.py',
+        'src/dev_lab/dev/_task_io.py',
         'PLC0415',
         'from dev_lab.dev.issuekind import create',
     ): 'same: the issue client loads only when an issue is opened',
     (
-        'src/dev_lab/dev/task.py',
+        'src/dev_lab/dev/_task_io.py',
         'PLC0415',
         'from dev_lab.dev.servelock import held',
     ): 'the serve lock is read only on the verb that needs it',
     (
         'src/dev_lab/dev/task.py',
-        'PLC0415',
-        'from dev_lab.dev.taskmigrate import migrate',
-    ): 'taskmigrate imports task at its use: a top-level import here is a cycle',
-    (
-        'src/dev_lab/dev/task.py',
         'arg-type',
-        'return _status(taskjournal.record(folder))',
+        'return status(taskjournal.record(folder))',
     ): 'record() returns Record | None and the branch above already proved the folder holds one',
     (
         'src/dev_lab/dev/taskauthority.py',
@@ -726,16 +721,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLC0415',
         'from dev_lab.dev import task as door',
     ): 'task imports taskgate: the door loads only when a PR or issue opened, and a top-level import is a cycle',
-    (
-        'src/dev_lab/dev/taskmigrate.py',
-        'PLC0415',
-        'from dev_lab.dev.task import TaskRefused',
-    ): 'task imports this module lazily; a top-level import back is a cycle',
-    (
-        'src/dev_lab/dev/taskmigrate.py',
-        'PLC0415',
-        'from dev_lab.dev.task import _commit',
-    ): 'same cycle with task',
     (
         'src/dev_lab/dev/writeroots.py',
         'S108',
@@ -775,12 +760,12 @@ ALLOWED: Final[dict[Site, str]] = {
         'from dev_lab.dev.branchdelete import DOOR, TASK_HEAD_DOORS',
     ): 'branchdelete pulls the forge client; only a close that names its head doors pays for it',
     (
-        'src/dev_lab/dev/task.py',
+        'src/dev_lab/dev/_task_io.py',
         'PLC0415',
         'from dev_lab.dev.branchdelete import TaskBranches',
     ): 'the branch prune and its network client load only on close',
     (
-        'src/dev_lab/dev/task.py',
+        'src/dev_lab/dev/_task_io.py',
         'PLC0415',
         'from dev_lab.dev.forge import fetch_origin',
     ): 'the forge CLI module is heavy; only close fetches origin',

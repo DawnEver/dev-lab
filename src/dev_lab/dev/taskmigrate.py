@@ -26,6 +26,7 @@ from typing import Final
 from lab_commons.home import part
 
 from dev_lab.dev import taskauthority
+from dev_lab.dev._task_io import TaskRefused, commit
 from dev_lab.dev.taskledger import RETIRED_STORE, ledger
 
 __all__ = ['RETIRED_AUTHORITY', 'migrate', 'units']
@@ -111,20 +112,16 @@ class _Plan:
 
 def _write(root: Path, planned: dict[str, str], message: str) -> None:
     """Write each planned file that differs from the ledger's, and commit them there."""
-    from dev_lab.dev.task import _commit  # noqa: PLC0415 -- task imports this module lazily
-
     written = sorted(rel for rel, text in planned.items() if _read(root / rel) != text)
     for rel in written:
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_bytes(planned[rel].encode('utf-8'))
     if written:
-        _commit(root, message, *written)
+        commit(root, message, *written)
 
 
 def migrate(*checkouts: Path, dry_run: bool = False, user_home: Path | None = None) -> str:
     """Move each of *checkouts*' retired stores into the ledger, once; the report (also the dry run's plan)."""
-    from dev_lab.dev.task import TaskRefused  # noqa: PLC0415 -- task imports this module lazily
-
     root, rel_store = ledger(), '/'.join(RETIRED_STORE)
     resolved = [Path(c).resolve() for c in checkouts]
     plan = _Plan(root, dry_run=dry_run)

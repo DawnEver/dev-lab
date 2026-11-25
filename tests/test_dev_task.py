@@ -20,6 +20,8 @@ from lab_commons.home import part
 
 from dev_lab.dev import ledgerguard, task, taskauthority, taskjournal, taskledger
 from dev_lab.dev._deny_ledger_row import LEDGER_WRITES_THROUGH_ITS_DOOR as ROW
+from dev_lab.dev._task_io import TaskRefused
+from dev_lab.dev._task_record import current, read
 from dev_lab.dev.taskmigrate import RETIRED_AUTHORITY, migrate
 
 _DAY = '2026-11-23'
@@ -91,7 +93,7 @@ def test_open_needs_the_users_grant_and_spends_it_once(ledger: Path) -> None:
     assert not (ledger / 'toolchain').exists()
     forge = _open(ledger)
     head = (ledger / 'toolchain' / 'TASK.md').read_text(encoding='utf-8')
-    found = task.read('toolchain')
+    found = read('toolchain')
     assert found is not None
     assert found.authority in head
     assert forge.opened == ['toolchain']
@@ -99,7 +101,7 @@ def test_open_needs_the_users_grant_and_spends_it_once(ledger: Path) -> None:
     assert _log(ledger) == ['chore(tasks): open toolchain']
     assert taskauthority.problem(ledger, 'toolchain', found.authority) is None
     assert taskauthority.problem(ledger, 'toolchain', 'forged')[0] == 'error'
-    with pytest.raises(task.TaskRefused, match='exists'):
+    with pytest.raises(TaskRefused, match='exists'):
         task.open_task('toolchain', 'again', forge=_Forge())
 
 
@@ -131,16 +133,16 @@ def test_appends_mint_the_next_id_and_commit(ledger: Path, tmp_path: Path) -> No
     assert task.append('toolchain', 'decide', 'use B', date=_DAY) == f'- {_DAY} D2: use B'
     assert task.append('toolchain', 'open-item', 'port', date=_DAY) == f'- {_DAY} O1 open: port'
     assert task.append('toolchain', 'close-item', 'done', item=1, date=_DAY) == f'- {_DAY} O1 closed: done'
-    with pytest.raises(task.TaskRefused, match='not an open item'):
+    with pytest.raises(TaskRefused, match='not an open item'):
         task.append('toolchain', 'close-item', 'again', item=1)
     for bad in ('two\nlines', '\u4e2d\u6587'):
-        with pytest.raises(task.TaskRefused):
+        with pytest.raises(TaskRefused):
             task.append('toolchain', 'log', bad)
     assert len(_log(ledger)) == 5
     work = on_branch(tmp_path / 'work', 'pr/toolchain/door')
-    assert task.current(work) == 'toolchain'
+    assert current(work) == 'toolchain'
     assert task.main(['log', 'from the branch'], cwd=work) == 0
-    assert task.current(on_branch(tmp_path / 'off', 'main')) is None
+    assert current(on_branch(tmp_path / 'off', 'main')) is None
 
 
 _UNION = (
@@ -160,19 +162,19 @@ def test_a_union_merged_journal_is_refused_naming_the_renumbering_amend(ledger: 
     assert journal.repeats == (('D1', 4), ('O1', 5))
     assert journal.items[0].text == 'mine'
     with pytest.raises(taskjournal.RepeatedId) as refused:
-        task.read('toolchain')
+        read('toolchain')
     assert 'D1 again at line 4' in str(refused.value)
     assert 'Door: python -m dev_lab.dev.task amend --line 4' in str(refused.value)
     assert 'D2' in str(refused.value)
     work = on_branch(tmp_path / 'work', 'pr/toolchain/x')
-    assert task.current(work) == 'toolchain', 'the tolerant read resolves, so the remedy can run'
-    with pytest.raises(task.TaskRefused, match='next free id'):
+    assert current(work) == 'toolchain', 'the tolerant read resolves, so the remedy can run'
+    with pytest.raises(TaskRefused, match='next free id'):
         task.amend('toolchain', 4, f'- {_DAY} D7: theirs', reason='dup')  # planted: not the next free id
-    with pytest.raises(task.TaskRefused):
+    with pytest.raises(TaskRefused):
         task.amend('toolchain', 2, f'- {_DAY} D2: mine', reason='dup')  # planted: line 2 is no repeat
     task.amend('toolchain', 4, f'- {_DAY} D2: theirs', reason='duplicate D1 after a union merge')
     task.amend('toolchain', 5, f'- {_DAY} O2 open: theirs', reason='duplicate O1 after a union merge')
-    found = task.read('toolchain')
+    found = read('toolchain')
     assert found is not None
     assert [d[0] for d in found.journal.decisions] == [1, 2]
 
@@ -183,10 +185,10 @@ def test_close_validates_everything_before_the_first_write(ledger: Path, tmp_pat
     task.append('toolchain', 'open-item', 'port')
     checkout = on_branch(tmp_path / 'repo', 'main')
     before = (ledger / 'toolchain' / 'JOURNAL.md').read_text(encoding='utf-8')
-    with pytest.raises(task.TaskRefused, match='O1 still open'):
+    with pytest.raises(TaskRefused, match='O1 still open'):
         task.close('toolchain', cwd=checkout, forge=forge, branches=_NoBranches())
     task.append('toolchain', 'close-item', 'done', item=1)
-    with pytest.raises(task.TaskRefused, match='D1 not distilled'):
+    with pytest.raises(TaskRefused, match='D1 not distilled'):
         task.close('toolchain', cwd=checkout, forge=forge, branches=_NoBranches())
     with pytest.raises(taskauthority.AuthorityRefused):
         task.close('toolchain', cwd=checkout, journal_only=[1], forge=forge, branches=_NoBranches())
@@ -201,14 +203,14 @@ def test_close_validates_everything_before_the_first_write(ledger: Path, tmp_pat
     assert 'status: closed' in (dest / 'TASK.md').read_text(encoding='utf-8')
     assert forge.closed
     assert _log(ledger)[0] == 'chore(tasks): close toolchain'
-    assert task.read('toolchain') is None
+    assert read('toolchain') is None
     assert task.main(['list'], cwd=checkout) == 0
     assert task.main(['show', 'toolchain'], cwd=checkout) == 0
 
 
 def test_archive_is_a_reserved_slug(ledger: Path) -> None:
     del ledger
-    with pytest.raises(task.TaskRefused, match='never "archive"'):
+    with pytest.raises(TaskRefused, match='never "archive"'):
         task.open_task('archive', 'x', forge=_Forge())
 
 
@@ -253,7 +255,7 @@ def test_migrate_moves_a_retired_store_once(ledger: Path, tmp_path: Path) -> Non
     (old / 'a' / 'TASK.md').write_text('---\nstatus: closed\n---\n', encoding='utf-8')
     (old / 'c').mkdir()
     (old / 'c' / 'TASK.md').write_text('---\n---\n', encoding='utf-8')
-    with pytest.raises(task.TaskRefused, match=r'a/TASK\.md \(from .*already in the ledger'):
+    with pytest.raises(TaskRefused, match=r'a/TASK\.md \(from .*already in the ledger'):
         migrate(checkout, user_home=home)
     assert not (ledger / 'c').exists(), 'a differing non-journal file refuses the WHOLE run before any write'
 
