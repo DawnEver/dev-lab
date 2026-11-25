@@ -38,6 +38,8 @@ __all__ = ['BRANCH', 'reap_orphans', 'salvage', 'salvaged', 'snapshot']
 BRANCH: Final = 'salvage/{name}'
 
 _GIT: Final = 'git'
+#: The ref an orphan's salvage commit is parented on.
+INTEGRATION: Final = 'refs/remotes/origin/integrate/main'
 _TIMEOUT_S: Final = 600
 
 
@@ -168,19 +170,28 @@ def _unheld_files(main: Path, directory: Path, reachable: frozenset[str]) -> lis
 
 
 def _salvaged_orphan(main: Path, directory: Path, unheld: list[tuple[str, str]]) -> str:
-    """Record *unheld* as one parentless commit on ``salvage/<dir name>``; its sha, or ``''`` when git failed."""
+    """Record *unheld* on ``salvage/<dir name>``; its sha, or ``''`` when git failed.
+
+    The commit's parent is ``origin/integrate/main`` and its tree that tip's tree with *unheld* overlaid at their
+    paths, so its diff against integration is exactly the salvaged files and it merges like any lane (a
+    parentless record could not: the merge hooks refuse unrelated histories). No integration ref: parentless.
+    """
     paths = '\n'.join(path for path, _ in unheld) + '\n'
     where = _where(main, directory)
     if _git(directory, *where, 'hash-object', '-w', '--stdin-paths', stdin=paths) is None:
         return ''
+    base = _rev(main, f'{INTEGRATION}^{{commit}}')
     with tempfile.TemporaryDirectory() as scratch:
         index = Path(scratch) / 'index'
+        if base and _git(main, 'read-tree', base, index=index) is None:
+            return ''
         rows = ''.join(f'100644 {blob}\t{path}\0' for path, blob in unheld)  # NUL: text mode turns \n into \r\n
         if _git(main, 'update-index', '-z', '--index-info', stdin=rows, index=index) is None:
             return ''
         made = (_git(main, 'write-tree', index=index) or '').strip()
     message = f'chore(salvage): orphan {directory.name} unreachable files\n'
-    sha = (_git(main, 'commit-tree', made, stdin=message) or '').strip() if made else ''
+    parent = ['-p', base] if base else []
+    sha = (_git(main, 'commit-tree', made, *parent, stdin=message) or '').strip() if made else ''
     ref = f'refs/heads/{BRANCH.format(name=directory.name)}'
     return sha if sha and _git(main, 'update-ref', ref, sha) is not None else ''
 

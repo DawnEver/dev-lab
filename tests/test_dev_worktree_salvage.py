@@ -197,6 +197,21 @@ def test_salvage_then_reap_records_every_unreachable_file_and_removes_the_orphan
     assert _git(work, 'show', 'salvage/lane.reclaiming:sub/b.txt') == 'only b'
 
 
+def test_an_orphan_salvage_is_parented_on_integration_and_diffs_to_exactly_its_files(work: Path) -> None:
+    """Wall 2026-11-25: a parentless salvage could not be folded -- the merge hooks refuse unrelated histories.
+
+    PLANTED CONTROL: integration's own files are in the tree but not in the diff.
+    """
+    tip = _git(work, 'rev-parse', 'HEAD')
+    _git(work, 'update-ref', 'refs/remotes/origin/integrate/main', tip)
+    aside = _orphan(work)
+    (aside / 'a.txt').write_text('only a', encoding='utf-8')
+    assert any(line.startswith('removed') for line in reap_orphans(work, census=_idle, salvage=True))
+    assert _git(work, 'rev-parse', 'salvage/lane.reclaiming^') == tip
+    assert _git(work, 'diff', '--name-only', tip, 'salvage/lane.reclaiming') == 'a.txt'
+    assert '.gitignore' in _git(work, 'ls-tree', '--name-only', 'salvage/lane.reclaiming').splitlines()
+
+
 def test_salvage_never_reaps_a_live_orphan(work: Path) -> None:
     """PLANTED CONTROL: a live orphan is neither salvaged nor removed."""
     aside = _orphan(work)
