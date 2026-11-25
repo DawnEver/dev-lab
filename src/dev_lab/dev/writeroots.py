@@ -6,7 +6,8 @@ outside a checkout nothing scans, ignores or cleans it.
 
 THE ALLOWLIST (ruling R8, 2026-11-24): the writable roots are a per-machine allowlist, declared in the config source
 (``hosts/<machine>.toml`` ``[writeroots] allow``, rendered into the machine file), and EVERY other path is refused --
-drive roots, ``~/src``, ``/tmp``, ``%TEMP%``, ``$CLAUDE_JOB_DIR/tmp``, OneDrive and a checkout's siblings above all.
+drive roots, ``<home>/src``, ``/tmp``, ``%TEMP%``, ``$CLAUDE_JOB_DIR/tmp``, OneDrive and a checkout's siblings
+above all.
 An entry is an absolute path or a token (:data:`ALLOW_TOKENS`: ``{repos}`` -- every family checkout the machine
 file's ``[repos]`` maps, its ``.claude/worktrees`` inside it; ``{lab_root}`` -- an HPC account's declared root).
 UNDECLARED, the allowlist is ``{repos}`` alone, and the refusal says so. An entry no machine may allow (a drive root,
