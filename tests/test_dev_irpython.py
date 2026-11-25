@@ -79,7 +79,8 @@ def test_every_generated_file_carries_its_fingerprint_and_is_ignored(repo: Path)
     ir = load(repo)
     written = irpython.write(ir)
     names = {p.name for p in written}
-    assert names == {'_ir_runtime.py', '_ir_codec.py', '_ir_ids.py', '_ir_widgets.py', '_ir_samples.py', '.gitignore'}
+    templates = {'_ir_runtime.py', '_ir_surface.py', '_ir_codec.py'}
+    assert names == {*templates, '_ir_ids.py', '_ir_widgets.py', '_ir_samples.py', '.gitignore'}
     first = (repo / 'src' / 'sample_pkg' / '_ir_widgets.py').read_text(encoding='utf-8').splitlines()[0]
     assert first == irpython.FINGERPRINT_PREFIX + irpython.fingerprint(ir, 'widgets')
     assert '_ir_*.py' in (repo / 'src' / 'sample_pkg' / '.gitignore').read_text(encoding='utf-8')

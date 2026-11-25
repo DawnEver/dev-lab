@@ -6,12 +6,12 @@ and drives the verbs; this one decides which leaves of a layered render belong t
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from lab_commons import config as machineconfig
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from pathlib import Path
 
 __all__ = ['family_facts_stay_home']
