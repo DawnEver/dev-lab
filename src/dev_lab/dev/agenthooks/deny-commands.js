@@ -533,6 +533,15 @@ function carriesDevLab(python) {
   return sites.some((site) => listDir(path.join(site, 'site-packages')).some((name) => /^dev_lab-.*\.dist-info$/.test(name)));
 }
 
+/** The interpreter a declared `door` of `target` would run when it exists but lacks dev_lab, else null
+ * (2026-11-25: a refusal named `<target>/.venv/.../python -m dev_lab.dev.netverb` because the door checked only
+ * that the interpreter exists -- a venv without dev_lab, so a door that cannot run). */
+function barePython(door, target) {
+  if (!/\{python\}|<venv python>/.test(String(door))) return null;
+  const python = checkoutPython(target);
+  return python && !carriesDevLab(python) ? python : null;
+}
+
 /** The exit of a per-repo-door rule when `target` declares none (2026-11-17: a pytest in one repo was sent to the
  * session repo's `scripts/gate/runner.py`, absent there): the family verify door when the target's OWN
  * interpreter carries dev_lab, else the declaration to add -- never another repo's path. A need whose family door
@@ -592,6 +601,15 @@ function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
   const details = reason.split('\n').filter((line) => line.startsWith('details: '));
   if (door) {
     const said = rule.severity === 'hint' ? 'advised' : 'refused';
+    const bare = barePython(doorsOf(target)[rule.name], target);
+    if (bare) {
+      return [
+        `${rule.name}: ${said}; ${shown} declares its own door for it, but ${bare} does not carry dev_lab; ` +
+          `bootstrap that checkout first: cd ${shown} && ${doorPython(target)} -m dev_lab.dev.dep --bootstrap ${shown}`,
+        `then: ${door}`,
+        ...details,
+      ].join('\n');
+    }
     return [`${rule.name}: ${said}; ${shown} declares its own door for it:`, door, ...details].join('\n');
   }
   if (rule.needs) return [reason.split('\n')[0], undeclaredDoor(rule, target, shown), ...details].join('\n');
