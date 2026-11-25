@@ -66,7 +66,8 @@ _DOORS: Final = {
 class IRSchemaError(ValueError):
     """A refused IR declaration: ``<code>: <where>: <what> -- <door>``."""
 
-    def __init__(self, code: str, where: str, what: str) -> None:  # noqa: D107 -- the class states it
+    def __init__(self, code: str, where: str, what: str) -> None:
+        """Refuse *what* at *where* under *code*, naming the code's door."""
         super().__init__(f'{code}: {where}: {what} -- {_DOORS[code]}')
         self.code = code
 

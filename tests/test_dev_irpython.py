@@ -8,6 +8,7 @@ import importlib
 import json
 import shutil
 import sys
+import tomllib
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import SimpleNamespace
@@ -185,7 +186,6 @@ def test_a_reader_refuses_an_older_major_and_an_unknown_field_by_name(ir: Simple
 
 
 def test_the_codec_converts_once_at_the_boundary_and_back(ir: SimpleNamespace) -> None:
-    import tomllib  # noqa: PLC0415 -- stdlib, read for this one fixture
 
     mapping = tomllib.loads((ir.root / 'input_widget.toml').read_text(encoding='utf-8'))
     widget = ir.codec.from_boundary(ir.w.Widget, mapping)

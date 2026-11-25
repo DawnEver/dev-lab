@@ -804,6 +804,66 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLC0415',
         'from dev_lab.dev.lanepolicy import policy_at',
     ): 'only a pushing repo reads its lane policy, in the pre-push row',
+    (
+        'src/dev_lab/dev/_ir_codec.py',
+        'PLR0911',
+        'def _value_out(spec: object, value: object, units: Mapping[str, str], prefix: str) -> object:',
+    ): 'one return per IR field kind: a dispatch, split further it only scatters the table',
+    (
+        'src/dev_lab/dev/_ir_codec.py',
+        'SLF001',
+        'fields = type(record)._ir_fields',
+    ): "the generated record's field table is the codec's input; the runtime and codec own that private slot",
+    (
+        'src/dev_lab/dev/_ir_codec.py',
+        'SLF001',
+        'values = dict(zip((spec.name for spec in fields), record._ir_values(), strict=True))',
+    ): "the generated record's value slot, read by the codec that owns the protocol",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        '_merge(dims, value._ir_dims, path, type(value).__name__)',
+    ): "the runtime owns the generated records' dims slot it merges",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        'for spec, value in zip(cls._ir_fields, record._ir_values(), strict=True):',
+    ): "the runtime validates through the generated records' private protocol it defines",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        'for spec, value in zip(type(record)._ir_fields, record._ir_values(), strict=True)',
+    ): "the runtime walks the generated records' private protocol it defines",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        'record._ir_set(tuple(values.values()), dims)',
+    ): "the runtime sets the generated record's slots after validation; frozen records have no public setter",
+    (
+        'src/dev_lab/dev/ircheck.py',
+        'BLE001',
+        'except Exception:',
+    ): 'pint\'s unit refusals share no base class; any of them means "not a unit", the answer wanted',
+    (
+        'src/dev_lab/dev/irhatch.py',
+        'ARG002',
+        'def initialize(self, version: str, build_data: dict) -> None:',
+    ): "hatchling's build-hook signature; the hook uses neither argument",
+    (
+        'src/dev_lab/dev/irmodel.py',
+        'BLE001',
+        'except Exception:',
+    ): 'pint\'s refusals share no base class; every one means "not coherent SI"',
+    (
+        'src/dev_lab/dev/irrust.py',
+        'PLR0911',
+        'def _check(ir: IR, f: Field, ref: TypeRef, var: str, path: str) -> list[str]:',
+    ): 'one return per IR field kind: the Rust check emitter is a dispatch',
+    (
+        'src/dev_lab/dev/irrustpy.py',
+        'PLR0911',
+        'def _read(f: Field, ref: TypeRef, var: str, path: Path) -> str:',
+    ): 'one return per IR field kind: the pyo3 reader emitter is a dispatch',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')
