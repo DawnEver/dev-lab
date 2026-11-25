@@ -129,7 +129,10 @@ def test_the_claim_pass_asks_the_budget_for_a_part_and_never_for_a_request() -> 
         asked.append((repo, part))
         return {'t::long': 900.0}
 
-    host = SimpleNamespace(repo='origin', part_costs=costs, test_budget=Budget(test_s=600.0, cores=4, memory_gb=8.0))
+    host = SimpleNamespace(
+        repo='origin', part_costs=costs, test_budget=Budget(test_s=600.0, cores=4, memory_gb=8.0),
+        budgets=lambda _needs: None, starved={},
+    )  # fmt: skip
     part = SimpleNamespace(kind='part', platform='base')
     assert 'over this host test budget' in ClaimPass._beyond_test_budget(host, part)  # type: ignore[arg-type]
     request = SimpleNamespace(kind=REQUEST, platform='base')
@@ -219,3 +222,34 @@ def test_verify_hands_a_test_only_the_forge_measured(
     result = pytester.runpytest('-p', 'no:cacheprovider')
     result.assert_outcomes(passed=1, deselected=1)
     result.stdout.fnmatch_lines(['*handed to the forge: test_forge.py::test_dear*'])
+
+
+def test_a_part_no_host_budget_fits_is_named_with_its_test_its_cost_and_every_budget() -> None:
+    """THE STARVATION GUARD, both sides: no host fits -- named; one host fits, or declares none -- ''."""
+    costs = {'t::long': 3580.9, 't::short': 1.0}
+    why = testcost.fits_nowhere(costs, {'this host': 600.0, 'ada/v1': 3000.0}, part='base')
+    assert why.startswith(testcost.NO_BUDGET_FITS), why
+    for named in ('t::long', '3580.9 s', 'this host 600 s', 'ada/v1 3000 s', '[test_budget] test_s'):
+        assert named in why, (named, why)
+    assert testcost.fits_nowhere(costs, {'this host': 600.0, 'ada/v1': 7200.0}, part='base') == ''
+    assert testcost.fits_nowhere(costs, {'this host': 600.0, 'box2': 0.0}, part='base') == '', 'none declared: runs all'
+    assert testcost.fits_nowhere(costs, None, part='base') == '', 'the hosts are unknown: any doubt waits'
+
+
+def _starving(others: dict[str, float] | None) -> SimpleNamespace:
+    return SimpleNamespace(
+        repo='origin', part_costs=lambda _repo, _part: {'t::long': 900.0},
+        test_budget=Budget(test_s=600.0, cores=4, memory_gb=8.0), budgets=lambda _needs: others, starved={},
+    )  # fmt: skip
+
+
+def test_the_claim_pass_keeps_a_part_no_host_budget_fits_for_the_tick_to_answer() -> None:
+    """PLANTED CONTROL: a live host whose budget fits it -- the part only waits for that host."""
+    part = SimpleNamespace(kind='part', platform='base', key='k')
+    host = _starving({'ada/v1': 700.0})
+    why = ClaimPass._beyond_test_budget(host, part)  # type: ignore[arg-type]
+    assert why.startswith(testcost.NO_BUDGET_FITS), why
+    assert host.starved == {'k': (part, why)}
+    fits = _starving({'ada/v1': 7200.0})
+    assert 'over this host test budget' in ClaimPass._beyond_test_budget(fits, part)  # type: ignore[arg-type]
+    assert fits.starved == {}

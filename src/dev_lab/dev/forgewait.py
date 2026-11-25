@@ -162,6 +162,23 @@ def nowhere(asked: Mapping[str, float], seen: Outlook, cards: Sequence[HostCard]
     return f'{seen.text(now.timestamp())}; {others or "no other live host serves it"} -- {remedy}'
 
 
+def card_budgets(
+    cards: Sequence[HostCard], needs: frozenset[str], *, me: str, now: datetime
+) -> dict[str, float] | None:
+    """Every OTHER live host that would claim a part needing *needs*, by its card's ``test_s`` (``0``: none declared).
+
+    ``None`` when no card was read at all: the hosts are unknown, and the starvation guard
+    (:func:`dev_lab.dev.testcost.fits_nowhere`) then waits rather than refuses.
+    """
+    if not cards:
+        return None
+    return {
+        card.host: float(card.test_s)
+        for card in cards
+        if card.host != me and not card.stale(now) and needs <= {*card.supply, *card.tools_present(), card.platform}
+    }
+
+
 def _last(history: Sequence[CommitStatus], context: str) -> CommitStatus | None:
     mine = [one for one in history if one.context == context]
     return max(mine, key=lambda one: one.id) if mine else None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -16,7 +17,7 @@ from dev_lab.dev.forgeclaim import MINE, Work
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeschedule import NOT_ADMITTED
 from dev_lab.dev.forgestatus import CommitStatus
-from dev_lab.dev.forgewait import NEVER_FITS, Box, nowhere, tell, wait_context
+from dev_lab.dev.forgewait import NEVER_FITS, Box, card_budgets, nowhere, tell, wait_context
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import part_context
 
@@ -177,3 +178,14 @@ def test_aging_brings_an_old_waiter_to_the_front_of_its_tier_within_a_computed_b
     assert front(NOW) == 'feat/old'
     if bound_h > 0.05:
         assert front(NOW - timedelta(hours=0.05)) == 'feat/new', 'PLANTED CONTROL: before the bound the rival leads'
+
+
+def test_the_test_budgets_are_every_other_live_host_that_would_claim_the_part() -> None:
+    """A card states its ``[test_budget] test_s`` (0: none declared); a stale one, or this host's own, is not read."""
+    ada = dataclasses.replace(_card('ada/v1', size={}, platform='linux'), test_s=7200.0)
+    box1 = dataclasses.replace(_card('box1', size={}), test_s=600.0)
+    stale = dataclasses.replace(_card('old', size={}, ticked=NOW - timedelta(days=1)), test_s=9e9)
+    cards = [ada, box1, _card('box2', size={}), stale, dataclasses.replace(_card('G', size={}), test_s=1.0)]
+    assert card_budgets(cards, frozenset(), me='G', now=NOW) == {'ada/v1': 7200.0, 'box1': 600.0, 'box2': 0.0}
+    assert card_budgets(cards, frozenset({'linux'}), me='G', now=NOW) == {'ada/v1': 7200.0}
+    assert card_budgets([], frozenset(), me='G', now=NOW) is None, 'no card read: the hosts are unknown'

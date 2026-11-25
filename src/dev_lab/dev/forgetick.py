@@ -105,7 +105,7 @@ from dev_lab.dev.forgeclaim import (
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgehosts import HostCard
+from dev_lab.dev.forgehosts import HostCard, card_host
 from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from dev_lab.dev.forgerequest import declared_request
@@ -116,7 +116,7 @@ from dev_lab.dev.forgesettled import SettledHistories
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetake import ClaimPass
 from dev_lab.dev.forgeunit import ForgeResults, pending_dir
-from dev_lab.dev.forgewait import Box, nowhere, tell
+from dev_lab.dev.forgewait import Box, card_budgets, nowhere, tell
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.layout import scan_refusal
@@ -278,6 +278,7 @@ def tick(
         store_why=probe(root) if serve.hpc else '', history=history,
         serves=serves or Serves.of(section(SERVE_TABLE)), reserve=reserve, box=box,
         test_budget=read_budget(section),
+        budgets=lambda needs: card_budgets(cards, needs, me=card_host(machine, seat), now=now),
     )  # fmt: skip
     favoured = (priority or Priority.of(section(PRIORITY_TABLE))).matches
     mine = (declared(config_path(), origin_url(root)) if verify is None else tuple(verify)) if serve.hpc else ()
@@ -294,9 +295,12 @@ def tick(
     for item in ranked:
         taken.consider(item)
     answered = set()
-    for key, (one, asked, seen) in taken.unfit.items():
-        why = nowhere(asked, seen, cards, me=machine, now=now)
-        if why and not dry_run:
+    answers = [
+        (key, one, nowhere(asked, seen, cards, me=machine, now=now)) for key, (one, asked, seen) in taken.unfit.items()
+    ]
+    answers += [(key, one, why) for key, (one, why) in taken.starving.items()]  # no host's test budget fits it
+    for key, one, why in answers:
+        if why and not dry_run and key not in answered:
             done = refuse(built, one, why)
             answered.add(key)
             taken.work = [done if item is one else item for item in taken.work]

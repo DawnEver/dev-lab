@@ -43,12 +43,14 @@ __all__ = [
     'DEADLINE_FACTOR',
     'DEADLINE_FLOOR_S',
     'KILL_GRACE_S',
+    'NO_BUDGET_FITS',
     'RETIRED_MARKERS',
     'Budget',
     'Plan',
     'beyond_budget',
     'budget_defects',
     'budget_of',
+    'fits_nowhere',
     'forge_seconds',
     'killed_at',
     'measured_seconds',
@@ -73,6 +75,8 @@ DEADLINE_FLOOR_S: Final = 10.0
 #: (:meth:`dev_lab.dev.durations.Recorder.pytest_runtest_logstart`) writes "cost >= deadline" first, since on
 #: Windows without workers the timeout ends the whole process and nothing after it runs.
 KILL_GRACE_S: Final = 5.0
+#: How a part NO host's test budget fits is refused (:func:`fits_nowhere`): it would never be claimed anywhere.
+NO_BUDGET_FITS: Final = 'no host test budget fits'
 #: RETIRED-NAMES-REGISTERED: the hand-kept cost markers (T3, 2026-11-24), refused at collection by name.
 RETIRED_MARKERS: Final = ('slow', 'heavy', 'big_memory')
 
@@ -258,6 +262,27 @@ def beyond_budget(part_ids_seconds: Mapping[str, float], budget: Budget | None, 
     return (
         f'over this host test budget: {part} holds {dear}, measured {seconds:g} s >= [{BUDGET_TABLE}] test_s '
         f'{budget.test_s:g} s -- a host whose budget fits it claims it'
+    )
+
+
+def fits_nowhere(part_ids_seconds: Mapping[str, float], budgets: Mapping[str, float] | None, *, part: str) -> str:
+    """THE STARVATION GUARD: why NO host fits *part*'s dearest measured test, ``''`` when one may claim it.
+
+    *budgets* is every live host that would claim the part -- this one included -- by its ``[test_budget] test_s``
+    in seconds, ``0`` where it declares none (it plans nothing: every test runs there); ``None`` when the hosts are
+    unknown (no card was read), and any doubt waits. A part over every budget is handed by each host and claimed
+    by none (:func:`beyond_budget`, :func:`schedule`): without this answer it would wait forever, silently.
+    """
+    if budgets is None or not part_ids_seconds:
+        return ''
+    dear, seconds = max(part_ids_seconds.items(), key=lambda row: row[1])
+    if any(not test_s or seconds < test_s for test_s in budgets.values()):
+        return ''
+    named = ', '.join(f'{host} {test_s:g} s' for host, test_s in sorted(budgets.items()))
+    return (
+        f'{NO_BUDGET_FITS} {part}: it holds {dear}, measured {seconds:g} s, and no live host that claims it has a '
+        f'[{BUDGET_TABLE}] test_s over that ({named}) -- remedy: raise test_s on a tests host in its config-source '
+        'host file, or split the test'
     )
 
 

@@ -136,6 +136,17 @@ def test_a_card_shows_its_accounts_role_and_reads_back() -> None:
     assert 'role:' not in HostCard('box', 'a', 'windows', NOW.isoformat()).text()
 
 
+def test_a_card_states_its_hosts_test_budget_and_reads_back() -> None:
+    """The starvation guard reads every live host's ``[test_budget] test_s`` off its card. PLANTED CONTROL: none."""
+    card = HostCard('ada/alice', 'a', 'linux', NOW.isoformat(), test_s=7200.0)
+    forge = StateForge()
+    publish(forge, card)
+    assert read_cards(forge) == (card,)
+    assert 'test budget: 7200 s per test' in next(iter(forge.comments.values()))[0]['body']
+    assert card.redacted().test_s == 7200.0, 'scheduling reads it, so a public card keeps it'
+    assert 'test budget:' not in HostCard('box', 'a', 'windows', NOW.isoformat()).text()
+
+
 def test_a_card_written_before_a_field_was_renamed_reads_without_it() -> None:
     """A field a version no longer declares is not read: a fleet mid-upgrade never crashes its readers.
 

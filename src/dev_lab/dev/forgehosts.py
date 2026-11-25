@@ -144,6 +144,7 @@ class HostCard:
     size: Mapping[str, float] = field(default_factory=dict)  # a box's cpu and mem_gb after its reserve; {}: unstated
     role: str = ''  # a cluster account's [deploy] role (dev_lab.dev.hpcaccount.spec); '' on a box
     held: Mapping[str, Any] = field(default_factory=dict)  # a cron tick found its lock held: the holder (mark_held)
+    test_s: float = 0.0  # [test_budget] test_s, seconds (dev_lab.dev.testcost); 0: none declared, every test runs
 
     def favours(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
@@ -190,6 +191,7 @@ class HostCard:
         head += f'\n\nserves: {rule.text()}' if self.serves != EVERY or self.withholds else ''
         head += f'\n\nverify first: {", ".join(self.verify)}' if self.verify else ''
         head += f'\n\nrole: {self.role}' if self.role else ''
+        head += f'\n\ntest budget: {self.test_s:g} s per test' if self.test_s else ''
         held = self.held
         head += f'\n\ntick held: pid {held["pid"]} since {held["since"]} in {held["phase"]}' if held else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
@@ -398,6 +400,7 @@ def publish_card(
     size: Mapping[str, float] | None = None,
     verify: Sequence[str] = (),
     role: str = '',
+    test_s: float = 0.0,
 ) -> None:
     """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
 
@@ -406,7 +409,8 @@ def publish_card(
     standing's), *running* what else runs here, *priority* the subjects this host orders first, *serves* its
     ``[serve] parts`` rule, *size* a box's size (what a part larger than any live host is refused against),
     *verify* the contexts this account produces first (:mod:`dev_lab.dev.forgeaffinity`), *role* a cluster
-    account's ``[deploy] role`` (:mod:`dev_lab.dev.hpcaccount.spec`).
+    account's ``[deploy] role`` (:mod:`dev_lab.dev.hpcaccount.spec`), *test_s* its ``[test_budget] test_s``
+    (:func:`dev_lab.dev.testcost.read_budget`; ``0`` for none), read by every host's starvation guard.
     """
     progress = progress or {}
     built = client(root)
@@ -436,6 +440,7 @@ def publish_card(
             size=dict(size or {}),
             verify=tuple(verify),
             role=role,
+            test_s=test_s,
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:

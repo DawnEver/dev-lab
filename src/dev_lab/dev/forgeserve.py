@@ -166,6 +166,7 @@ from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
+from dev_lab.dev.testcost import read_budget
 from dev_lab.dev.tickholder import phase
 from dev_lab.dev.worktreeplace import work_root
 from dev_lab.supervise.notice import Context
@@ -258,6 +259,7 @@ def serve(
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,
             'say': say, 'alarms': raised, 'tools': tools, 'priority': priority.row(),
             'serves': serves.parts, 'withholds': sorted(serves.withholds), 'verify': verify, 'role': role,
+            'test_s': budget.test_s if (budget := read_budget()) else 0.0,
         },
         produce=functools.partial(
             produce, root, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,
