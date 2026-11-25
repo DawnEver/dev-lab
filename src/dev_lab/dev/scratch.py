@@ -41,7 +41,7 @@ named a live agent's entry as the stopping session's own, and ``clear`` deleted 
 writes under scratch, and after a shell command that spells ``<scratch>/<name>`` of a freshly born entry. So:
 
 * ``stop`` blocks on the entries THIS session made and does not keep -- never on another session's; the integrator
-  (:mod:`dev_lab.dev.hpcaccount.session`) is also shown the entries no live session owns, once quiet;
+  is told of the entries no live session owns, once quiet, by a detached row (:mod:`dev_lab.dev.scratchorphans`);
 * ``clear`` refuses, by name and naming the owner, an entry another LIVE session owns, or one not this session's
   touched within the last half hour; the user's approval (``--approved "<the user's words>"``) is the door past it;
 * ``clear --keep NAME`` marks an entry left on purpose (adopting a gone session's), so no stop names it again.

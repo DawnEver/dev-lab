@@ -37,7 +37,6 @@ from dev_lab.dev._scratch_owners import (
     touched,
 )
 from dev_lab.dev.codeplace import PlacementNotDeclared, checkout_root, declared_placement
-from dev_lab.dev.hpcaccount.session import INTEGRATOR, held
 from dev_lab.dev.native_session import session_of, valid
 
 if TYPE_CHECKING:
@@ -50,7 +49,7 @@ RULE: Final = 'SCRATCH-IS-NEVER-COMMITTED'
 _SHOWN = 20
 #: The ONE tracked file under scratch: it anchors the directory and states the two exits.
 SCRATCH_README = 'README.md'
-_DOOR: Final = 'python -m dev_lab.dev.scratch clear'
+DOOR: Final = 'python -m dev_lab.dev.scratch clear'
 
 
 class ScratchEscape(ValueError):
@@ -126,7 +125,7 @@ def _name(entry: str) -> str:
     return entry.strip('/\\').replace('\\', '/').split('/')[-1]
 
 
-def _minutes(seconds: float) -> str:
+def minutes(seconds: float) -> str:
     return f'{seconds / 60:.0f} min'
 
 
@@ -141,11 +140,11 @@ def in_use(root: Path, rel: str, session: str, records: Mapping[str, Owner], *, 
         return None
     if owner is not None and live(owner.session, now=now):
         return (
-            f'{rel} belongs to live session {owner.session} (heard {_minutes(now - (heard(owner.session) or now))} ago)'
+            f'{rel} belongs to live session {owner.session} (heard {minutes(now - (heard(owner.session) or now))} ago)'
         )
     quiet = now - touched(root / rel)
     if quiet < RECENT_S:
-        return f'{rel} was touched {_minutes(quiet)} ago, so it is in use (quiet {_minutes(RECENT_S)} frees it)'
+        return f'{rel} was touched {minutes(quiet)} ago, so it is in use (quiet {minutes(RECENT_S)} frees it)'
     return None
 
 
@@ -176,7 +175,7 @@ def clear_scratch(
     ):
         msg = (
             f'{RULE}: nothing cleared -- {"; ".join(busy)}. Leave it to its owner (its own Stop names it), or wait '
-            f'until it has been quiet {_minutes(RECENT_S)}; if the user approves removing it, re-run naming it with '
+            f'until it has been quiet {minutes(RECENT_S)}; if the user approves removing it, re-run naming it with '
             f'--approved "<the user\'s words>"'
         )
         raise ScratchInUse(msg)
@@ -199,7 +198,7 @@ def clear_scratch(
     return [rel for rel, _ in doomed]
 
 
-def _by_owner(root: Path, session: str, *, now: float) -> tuple[list[str], list[tuple[str, Owner | None]]]:
+def by_owner(root: Path, session: str, *, now: float) -> tuple[list[str], list[tuple[str, Owner | None]]]:
     """*root*'s untracked entries *session* made and does not keep, and those no live session owns or keeps."""
     records = owners(root)
     mine: list[str] = []
@@ -215,40 +214,20 @@ def _by_owner(root: Path, session: str, *, now: float) -> tuple[list[str], list[
 
 def own_entries(root: Path, session: str) -> list[str]:
     """The untracked entries of *root*'s scratch *session* made and does not keep, oldest first."""
-    return _by_owner(root, session, now=time.time())[0]
+    return by_owner(root, session, now=time.time())[0]
 
 
-def _shown(rels: list[str]) -> str:
+def shown(rels: list[str]) -> str:
+    """*rels* joined, eliding past the first :data:`_SHOWN`."""
     return ', '.join(rels[:_SHOWN]) + (' ...' if len(rels) > _SHOWN else '')
 
 
-def _plural(rels: list) -> str:
+def plural(rels: list) -> str:
+    """``N untracked scratch entr(y|ies)``."""
     return f'{len(rels)} untracked scratch entr{"y" if len(rels) == 1 else "ies"}'
 
 
-def _stop_hint(mine: list[str], orphans: list[tuple[str, Owner | None]]) -> str:
-    """The ``Stop`` block naming this session's entries, and the integrator's ownerless ones, with their doors."""
-    lines = []
-    if mine:
-        lines.append(
-            f'{RULE}: this session left {_plural(mine)}: {_shown(mine)}.\nPromote what is useful into src/ with tests '
-            f'(a finding into memory), then {_DOOR} [--keep NAME ...] --yes'
-        )
-    if orphans:
-        whose = [f'{rel} ({f"gone session {o.session}" if o else "no recorded owner"})' for rel, o in orphans]
-        lines.append(
-            f'{RULE}: as the integrator: {_plural(whose)} of no live session, quiet {_minutes(RECENT_S)}: '
-            f'{_shown(whose)}.\nPromote what is useful, then {_DOOR} NAME ... --yes, or --keep NAME to leave it'
-        )
-    return '\n'.join(lines)
-
-
-def integrator(session: str) -> bool:
-    """Whether *session* holds the integrator role (:mod:`dev_lab.dev.hpcaccount.session`)."""
-    return INTEGRATOR in held(session=session)
-
-
-def _root_of(path: Path) -> tuple[Path, str] | None:
+def root_of(path: Path) -> tuple[Path, str] | None:
     """The checkout holding *path* and its declared scratch; ``None`` outside one or with no placement."""
     root = path if (path / '.git').exists() else checkout_root(path)
     if root is None:
@@ -264,7 +243,7 @@ def _claim(kind: str, payload: dict, session: str) -> None:
     tool = payload.get('tool_input') or {}
     now = time.time()
     if kind == 'shell':
-        found = _root_of(Path(payload.get('cwd') or Path.cwd()).resolve())
+        found = root_of(Path(payload.get('cwd') or Path.cwd()).resolve())
         if found is None:
             return
         root, rel = found
@@ -274,7 +253,7 @@ def _claim(kind: str, payload: dict, session: str) -> None:
         if not raw:
             return
         target = Path(raw) if Path(raw).is_absolute() else Path(payload.get('cwd') or Path.cwd()) / raw
-        found = _root_of(target.resolve().parent)
+        found = root_of(target.resolve().parent)
         if found is None:
             return
         root, rel = found
@@ -286,11 +265,12 @@ def _claim(kind: str, payload: dict, session: str) -> None:
         if not (path.exists() or path.is_symlink()):
             if kind == 'write':  # before the write: it is about to make the entry
                 claim(root, name, session, now=now)
-        elif now - born(path) <= CLAIM_WINDOW_S:
-            claim(root, name, session, now=now)
+        elif now - (made := born(path)) <= CLAIM_WINDOW_S:
+            claim(root, name, session, born_at=made, now=now)
 
 
-def _payload(stdin: TextIO | None) -> dict | None:
+def hook_payload(stdin: TextIO | None) -> dict | None:
+    """The hook payload on *stdin*; ``None`` when it is no object or names no valid session."""
     try:
         payload = json.load(stdin or sys.stdin)
     except ValueError:
@@ -301,8 +281,8 @@ def _payload(stdin: TextIO | None) -> dict | None:
 
 
 def _hook(mode: str, rest: list[str], stdin: TextIO | None) -> int:
-    """``claim write|shell`` records who made an entry; ``stop`` blocks on what this session (or no live one) left."""
-    payload = _payload(stdin)
+    """``claim write|shell`` records who made an entry; ``stop`` blocks on what this session made."""
+    payload = hook_payload(stdin)
     if payload is None:
         return 0
     session = str(payload['session_id'])
@@ -312,17 +292,15 @@ def _hook(mode: str, rest: list[str], stdin: TextIO | None) -> int:
         with contextlib.suppress(OSError, ValueError):
             _claim(rest[0] if rest else '', payload, session)
         return 0
-    found = None if payload.get('stop_hook_active') else _root_of(Path(payload.get('cwd') or Path.cwd()).resolve())
+    found = None if payload.get('stop_hook_active') else root_of(Path(payload.get('cwd') or Path.cwd()).resolve())
     if found is None:
         return 0
-    root, now = found[0], time.time()
-    mine, loose = _by_owner(root, session, now=now)
-    # the role check reads credentials and the walk reads whole trees: both only when something is loose
-    orphans = (
-        [(rel, o) for rel, o in loose if now - touched(root / rel) >= RECENT_S] if loose and integrator(session) else []
-    )
-    if mine or orphans:
-        hint = _stop_hint(mine, orphans)
+    root = found[0]
+    if mine := own_entries(root, session):
+        hint = (
+            f'{RULE}: this session left {plural(mine)}: {shown(mine)}.\nPromote what is useful into src/ with tests '
+            f'(a finding into memory), then {DOOR} [--keep NAME ...] --yes'
+        )
         walls.refused_text(root, hint, reason='stop', rule=RULE, session=session)
         emit(json.dumps({'decision': 'block', 'reason': hint}))
     return 0
@@ -362,7 +340,7 @@ def _kept_or_refused(args: argparse.Namespace, root: Path, session: str) -> str 
 
 def _clear(rest: list[str], root: Path) -> int:
     """``clear [NAME ...] [--keep NAME ...] [--approved WORDS] [--yes]``: the names, else this session's entries."""
-    parser = argparse.ArgumentParser(prog=_DOOR, exit_on_error=False)
+    parser = argparse.ArgumentParser(prog=DOOR, exit_on_error=False)
     parser.add_argument('names', nargs='*', metavar='NAME')
     parser.add_argument('--keep', nargs='+', action='extend', default=[], metavar='NAME')
     parser.add_argument('--approved', default=None, metavar='WORDS', help="the user's words approving the removal")

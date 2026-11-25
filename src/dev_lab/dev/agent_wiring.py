@@ -220,7 +220,9 @@ _STOPS: Final = ('Stop', 'SubagentStop')
 #: and, INLINE, the user's task grant: a prompt that IS ``/task open|close <slug>`` or ``approve <code>`` is recorded
 #: before the agent can spend it (:mod:`taskauthority`).
 #: Every stop, the main session's and each subagent's: the hand-back check and the wall ledger's stop; the main
-#: session's adds the stray census, the scratch census, the unfilled install home and the shell reaper -- Stop is the
+#: session's adds the stray census, the scratch census (this session's entries inline; the integrator's report of
+#: the entries no live session owns detached: proving the role imports the consent client), the unfilled install
+#: home and the shell reaper -- Stop is the
 #: one event that recurs inside a session, so it is the reaper's clock, and a session's first stop sweeps what an ended
 #: one left (measured 2026-11-16: 37 sweeps and both over-bound stops of the day fell in an 11-hour window with no
 #: session start). Session start: the ONE reclaim, the machine-file notice (once: drift cannot change within a turn),
@@ -244,6 +246,7 @@ WIRING: Final = (
     Wire(('Stop',), 'dev_lab.dev.strays', ('hook',), may_block=True),
     Wire(_STOPS, 'dev_lab.dev.handback', may_block=True),
     Wire(('Stop',), 'dev_lab.dev.scratch', ('stop',), may_block=True),
+    Wire(('Stop',), 'dev_lab.dev.scratchorphans', detached=True),
     Wire(_STOPS, 'dev_lab.dev.walls', ('stop',), may_block=True),
     Wire(('Stop',), 'dev_lab.dev.shellreaper', ('--hook',), detached=True),
     Wire(('SessionStart',), 'dev_lab.dev.reclaimrun', ('--session-start',), once=True, detached=True),

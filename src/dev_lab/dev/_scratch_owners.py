@@ -122,17 +122,27 @@ def _write(path: Path, owner: Owner, mode: str) -> None:
         out.write(json.dumps({'session': owner.session, 'at': owner.at, 'kept': owner.kept}))
 
 
-def claim(root: Path, name: str, session: str, *, now: float | None = None) -> bool:
-    """Make *session* the owner of entry *name* unless a session already is; whether *session* owns it now."""
+def claim(root: Path, name: str, session: str, *, born_at: float | None = None, now: float | None = None) -> bool:
+    """Make *session* the owner of entry *name* unless a session already is; whether *session* owns it now.
+
+    *born_at* is when the entry was born, ``None`` while it is still absent. A record claimed more than
+    :data:`CLAIM_WINDOW_S` before that (before now, for an absent entry) was a former entry's of the same name --
+    deleted, or a write that never landed -- so it is replaced rather than inherited.
+    """
     if not valid(session):
         return False
+    stamp = time.time() if now is None else now
     folder = _records(root)
     folder.mkdir(parents=True, exist_ok=True)
     try:
-        _write(folder / f'{name}.json', Owner(session, time.time() if now is None else now), 'x')
+        _write(folder / f'{name}.json', Owner(session, stamp), 'x')
     except FileExistsError:
-        mine = owners(root).get(name)
-        return mine is not None and mine.session == session
+        held = owners(root).get(name)
+        if held is None or held.session == session:
+            return held is not None
+        if held.at >= (stamp if born_at is None else born_at) - CLAIM_WINDOW_S:
+            return False
+        record(root, name, Owner(session, stamp))
     return True
 
 

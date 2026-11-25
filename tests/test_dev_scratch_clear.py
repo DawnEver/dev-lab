@@ -15,7 +15,7 @@ import time
 import pytest
 from lab_commons import home, launch
 
-from dev_lab.dev import _scratch_clear, walls
+from dev_lab.dev import _scratch_clear, scratchorphans, walls
 from dev_lab.dev._scratch_owners import CLAIM_WINDOW_S, LIVE_S, RECENT_S, beat, claim, named, owners
 from dev_lab.dev.hpcaccount.session import INTEGRATOR
 from dev_lab.dev.scratch import SCRATCH_README, ScratchEscape, ScratchInUse, clear_scratch, main, untracked_scratch
@@ -29,7 +29,7 @@ def machine_home(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv(home.HOME_ENV, str(tmp_path / 'home'))
     monkeypatch.setenv(SESSION_ENV, 'this-session')
     monkeypatch.setattr(
-        _scratch_clear,
+        scratchorphans,
         'held',
         lambda session: frozenset({INTEGRATOR}) if session == 'integrator-session' else frozenset(),
     )
@@ -41,6 +41,11 @@ def _run(argv: list[str], payload: dict) -> int:
 
 def _stop(root, session: str = 'this-session') -> int:
     return _run(['stop'], {'session_id': session, 'cwd': str(root)})
+
+
+def _report(root, session: str) -> int:
+    """The detached ``Stop`` row reporting entries of no live session to the integrator."""
+    return scratchorphans.main([], stdin=io.StringIO(json.dumps({'session_id': session, 'cwd': str(root)})))
 
 
 def _shell(root, command: str, session: str = 'this-session') -> int:
@@ -99,6 +104,11 @@ def _nested_repo(root) -> None:
 def _reason(capsys) -> str:
     out = capsys.readouterr().out
     return json.loads(out)['reason'] if out else ''
+
+
+def _message(capsys) -> str:
+    out = capsys.readouterr().out
+    return json.loads(out)['systemMessage'] if out else ''
 
 
 def test_list_names_only_untracked_top_level_entries_with_sizes(tmp_path) -> None:
@@ -161,6 +171,21 @@ def test_the_first_claim_wins_and_a_named_old_entry_is_never_adopted(tmp_path, m
     assert owners(tmp_path)['new.txt'].session == 'this-session'
 
 
+def test_the_record_of_a_former_entry_never_captures_a_new_one_of_the_same_name(tmp_path) -> None:
+    """A deleted entry's record (or a write that never landed) is replaced; a fresh one is never stolen."""
+    _repo(tmp_path)
+    long_ago = time.time() - 2 * CLAIM_WINDOW_S
+    assert claim(tmp_path, 'probe.py', 'gone-session', now=long_ago)
+    _plant(tmp_path, 'scratch/probe.py')
+    _shell(tmp_path, 'python scratch/probe.py')
+    assert owners(tmp_path)['probe.py'].session == 'this-session'
+    _write(tmp_path, 'scratch/probe.py', session='other-session')  # PLANTED CONTROL: a live claim is never replaced
+    assert owners(tmp_path)['probe.py'].session == 'this-session'
+    assert claim(tmp_path, 'never.txt', 'gone-session', now=long_ago)
+    _write(tmp_path, 'scratch/never.txt')
+    assert owners(tmp_path)['never.txt'].session == 'this-session'
+
+
 def test_clear_with_no_names_takes_only_this_sessions_entries(tmp_path, monkeypatch, capsys) -> None:
     _repo(tmp_path)
     _write(tmp_path, 'scratch/probe.py')
@@ -220,7 +245,7 @@ def test_clear_REFUSES_a_freshly_touched_entry_of_no_live_session_until_it_is_qu
 
 
 def test_a_gone_sessions_entry_is_reported_to_the_integrator_only(tmp_path, capsys) -> None:
-    """PLANTED CONTROL: the same tree stops the integrator and no other session; a live owner's entry never does."""
+    """PLANTED CONTROL: the same tree is reported to the integrator and no other session; a live owner's never is."""
     _repo(tmp_path)
     _write(tmp_path, 'scratch/left/x.txt', session='gone-session')
     _write(tmp_path, 'scratch/working.txt', session='other-session')
@@ -230,9 +255,12 @@ def test_a_gone_sessions_entry_is_reported_to_the_integrator_only(tmp_path, caps
         _age(tmp_path / 'scratch' / rel, 2 * RECENT_S)
     _gone('gone-session')
     assert _stop(tmp_path) == 0
+    assert _report(tmp_path, 'this-session') == 0
     assert capsys.readouterr().out == ''
     assert _stop(tmp_path, session='integrator-session') == 0
-    reason = _reason(capsys)
+    assert capsys.readouterr().out == ''  # never a block: the integrator's inline stop names only its own
+    assert _report(tmp_path, 'integrator-session') == 0
+    reason = _message(capsys)
     assert 'scratch/left (gone session gone-session)' in reason
     assert 'scratch/unnamed.txt (no recorded owner)' in reason
     assert 'working.txt' not in reason
@@ -257,9 +285,12 @@ def test_keep_acks_an_entry_so_no_stop_names_it_and_refuses_another_live_session
     assert capsys.readouterr().out == ''
     assert (tmp_path / 'scratch/evidence.txt').exists()
     monkeypatch.setenv(SESSION_ENV, 'integrator-session')
+    assert _report(tmp_path, 'integrator-session') == 0
+    assert 'scratch/left.txt' in _message(capsys)
     assert main(['clear', '--keep', 'left.txt']) == 0
     capsys.readouterr()
     assert _stop(tmp_path, session='integrator-session') == 0
+    assert _report(tmp_path, 'integrator-session') == 0
     assert capsys.readouterr().out == ''
     assert _stop(tmp_path, session='other-session') == 0
     assert 'scratch/theirs.txt' in _reason(capsys)
