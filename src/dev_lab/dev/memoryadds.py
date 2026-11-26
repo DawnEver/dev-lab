@@ -3,12 +3,15 @@
 THE RULE (user rulings 2026-10-31, the four-layer plan). A memory entry is immutable once written: a
 correction is a NEW entry naming the old one in ``corrects:``, and a consolidation is a NEW entry naming
 its sources in ``merged_from:``. So a change touching ``**/.claude/memory/**`` may only ADD a file.
-Three shapes are not narrative edits (nothing is ever renamed INTO memory: a closed task is archived in the
+These shapes are not narrative edits (nothing is ever renamed INTO memory: a closed task is archived in the
 global tasks repo by the task door, :func:`dev_lab.dev.taskledger.ledger`, user ruling 2026-11-23):
 
 * the one-shot four-layer migration, which removes only the volatile frontmatter fields
   (:data:`dev_lab.dev.memoryentry.VOLATILE_FIELDS`) a reader used to rewrite on every read. A change
   whose ONLY difference is those lines is that migration and nothing else;
+* a date completion (DATE-COMPLETION, user ruling 2026-11-26): a published entry gains only the missing
+  ``created:`` line, and its value is the entry's own ``<yyyy>/<mm>/<dd>/`` directory, so it repeats what the
+  path said (:func:`dev_lab.dev.memoryentry.only_dated`). Any other date, key or line stays an edit;
 * an approved redacting rename (REDACTING-RENAME, user ruling 2026-11-14) -- the one move WITHIN memory: an
   account-like token leaves a published entry's file name, in the same directory, one run of the name's
   ``-`` tokens replaced by ``user`` or dropped, and the entry gains an amendment note whose reason says
@@ -64,6 +67,7 @@ from dev_lab.dev.memoryentry import (
     merged_entry_problems,
     move_approved,
     only_amended,
+    only_dated,
     only_redacted,
     only_renamed_redacting,
     only_volatile_stripped,
@@ -212,13 +216,17 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
         elif status == 'M' and is_memory(old):
             before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')
             if not (
-                only_volatile_stripped(before, after) or only_redacted(before, after) or only_amended(before, after)
+                only_volatile_stripped(before, after)
+                or only_redacted(before, after)
+                or only_amended(before, after)
+                or only_dated(old, before, after)
             ):
                 remedy = (
                     'a memory entry is immutable -- write a new entry with `corrects:` instead; a line that is WRONG '
                     'is corrected in place only with the user-approved note `> '
                     + AMENDMENT_NOTE.format(day='<yyyy-mm-dd>', reason='<why>', approved="<the user's words>")
-                    + '` and lines replaced one-for-one, or only the missing name/description frontmatter added'
+                    + '` and lines replaced one-for-one, or only the missing name/description frontmatter added; '
+                    'a missing `created:` is added alone, and only as the date of the directory holding the entry'
                 )
                 out.append(f'{old}: {remedy}')
         elif status in 'DRT' and is_memory(old) and not (status == 'D' and is_attachment(old)):

@@ -659,6 +659,73 @@ def test_planted_a_frontmatter_completion_admits_nothing_else(repo: Path, note: 
     assert len(memoryadds.problems_between(repo, base, 'HEAD')) == 1
 
 
+# --- DATE-COMPLETION: a published entry gains only the `created:` its directory already states -------------
+
+_UNDATED = '.claude/memory/2026/11/19/undated.md'
+_UNDATED_HEAD = '---\nname: undated\ndescription: d\n---\n\nBody.\n'
+
+
+def _published_undated(repo: Path, text: str) -> str:
+    _write(repo, _UNDATED, text)
+    _commit(repo, 'undated', _UNDATED)
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    return _lane(repo)
+
+
+@pytest.mark.parametrize(
+    ('before', 'after'),
+    [
+        (_UNDATED_HEAD, '---\ncreated: 2026-11-19\nname: undated\ndescription: d\n---\n\nBody.\n'),  # first key
+        (_UNDATED_HEAD, '---\nname: undated\ndescription: d\ncreated: 2026-11-19\n---\n\nBody.\n'),  # last key
+        ('# Title\n\nBody.\n', '---\ncreated: 2026-11-19\n---\n\n# Title\n\nBody.\n'),  # no frontmatter before
+        ('# Title\n\nBody.\n', '---\ncreated: 2026-11-19\n---\n# Title\n\nBody.\n'),  # ... and no blank line after
+    ],
+)
+def test_a_published_entry_may_gain_the_created_its_directory_states(repo: Path, before: str, after: str) -> None:
+    """2026-11-26: the dated-memory test reads ``created:``; an entry its path alone dated may gain that line.
+
+    The date is no new claim: it is the entry's own directory, so the change states what the path already said
+    and needs no approved note (unlike the required-key completion above). A consumer repo dated 18 published
+    entries this way to satisfy that test, and the push then refused every one as an edit.
+    """
+    base = _published_undated(repo, before)
+    _write(repo, _UNDATED, after)
+    _commit(repo, 'date', _UNDATED)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+@pytest.mark.parametrize(
+    ('before', 'after'),
+    [
+        # a date the directory does not state
+        (_UNDATED_HEAD, '---\ncreated: 2026-11-20\nname: undated\ndescription: d\n---\n\nBody.\n'),
+        # an existing `created:` rewritten, even to the directory date
+        (
+            '---\ncreated: 2026-11-18\nname: undated\ndescription: d\n---\n\nBody.\n',
+            '---\ncreated: 2026-11-19\nname: undated\ndescription: d\n---\n\nBody.\n',
+        ),
+        # the date AND a body line
+        (_UNDATED_HEAD, '---\ncreated: 2026-11-19\nname: undated\ndescription: d\n---\n\nBody.\nA new claim.\n'),
+        # the date AND another key
+        (_UNDATED_HEAD, '---\ncreated: 2026-11-19\nowner: me\nname: undated\ndescription: d\n---\n\nBody.\n'),
+        # the date twice
+        (_UNDATED_HEAD, '---\ncreated: 2026-11-19\ncreated: 2026-11-19\nname: undated\ndescription: d\n---\n\nBody.\n'),
+        # no frontmatter before, and a wrong date in the new one
+        ('# Title\n\nBody.\n', '---\ncreated: 2026-11-20\n---\n\n# Title\n\nBody.\n'),
+        # no frontmatter before, and the new one carries more than the date
+        ('# Title\n\nBody.\n', '---\ncreated: 2026-11-19\nname: x\n---\n\n# Title\n\nBody.\n'),
+    ],
+)
+def test_planted_a_date_completion_admits_only_the_directory_date(repo: Path, before: str, after: str) -> None:
+    """PLANTED CONTROL: only a missing ``created:`` equal to the directory date is admitted; the rest is an edit."""
+    base = _published_undated(repo, before)
+    _write(repo, _UNDATED, after)
+    _commit(repo, 'date badly', _UNDATED)
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    assert len(found) == 1, found
+    assert _UNDATED in found[0], found
+
+
 # --- an approved redacting rename: an account-like token leaves a published entry's FILE NAME -----------------
 
 _ACCOUNT = '.claude/memory/2026/10/01/what-jdoe7-measured.md'
