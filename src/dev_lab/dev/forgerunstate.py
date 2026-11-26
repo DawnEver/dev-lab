@@ -10,15 +10,21 @@ THE FILE IS SCHEMA-VERSIONED (:data:`SCHEMA`). A file of any other schema is ref
 remedy (:class:`ForeignSchema`) -- finish the run with the tool that started it, or delete the file once its
 jobs are gone -- and a tick hears that refusal for the one file and reads the rest (Ada, 2026-10-17: one
 refused file stopped every tick of four accounts). No older schema is read: FORMATS-MIGRATE-ONCE.
+
+A KEY A RENAME RETIRED (:data:`RETIRED_KEYS`) is refused the same way, naming the file, the key and the one-time
+door that rewrites it (:data:`MIGRATE`, :func:`migrate`); a key no schema declares is refused, never a crash
+(Ada, 2026-11-25: one record still keyed by the British spelling stopped every serve tick of the family).
 """
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import hashlib
 import json
 import os
 import re
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -36,7 +42,9 @@ from dev_lab.dev.forgeclaim import Claim
 __all__ = [
     'CLAIMED_PHASE',
     'GATHERED',
+    'MIGRATE',
     'PUBLISHED',
+    'RETIRED_KEYS',
     'SCHEMA',
     'SUBMITTED',
     'SUBMITTING',
@@ -44,6 +52,7 @@ __all__ = [
     'Draining',
     'ForeignSchema',
     'Killed',
+    'RetiredKeys',
     'Run',
     'Stalled',
     'Standing',
@@ -54,6 +63,8 @@ __all__ = [
     'held',
     'held_names',
     'live',
+    'main',
+    'migrate',
     'name_of',
     'save',
     'submit_lock',
@@ -62,6 +73,10 @@ __all__ = [
 #: The state file's schema. Bump it whenever a field changes meaning; a live run of another is refused.
 #: 2: the ``submitting`` phase (intent before sbatch); jobs named ``run-<sha12>-<part>`` (were ``run-<sha12>``).
 SCHEMA: Final = 2
+#: Run-record keys a rename retired -> their successor (US spelling, user ruling 2026-11-24). Refused, never read.
+RETIRED_KEYS: Final = {'artefact': 'artifact'}  # spelling-ignore-line
+#: The one-time door that rewrites every retired key here (:func:`migrate`); without ``--apply`` it only lists.
+MIGRATE: Final = 'python -m dev_lab.dev.forgerunstate migrate --apply'
 
 #: The phases a run passes through, in order; released is the file's removal.
 CLAIMED_PHASE: Final = 'claimed'
@@ -73,6 +88,10 @@ PUBLISHED: Final = 'published'
 
 class ForeignSchema(RuntimeError):
     """A live run file of another schema; the message names it and the remedy."""
+
+
+class RetiredKeys(ForeignSchema):
+    """A live run file still carrying a retired key; the message names the file, the key and :data:`MIGRATE`."""
 
 
 class Unrecorded(RuntimeError):
@@ -314,6 +333,16 @@ def _read(path: Path) -> Run:
             'its jobs -- delete the file; the next tick claims the commit afresh'
         )
         raise ForeignSchema(msg)
+    if retired := sorted(set(raw) & set(RETIRED_KEYS)):
+        keys = ', '.join(f'{key!r} (now {RETIRED_KEYS[key]!r})' for key in retired)
+        msg = f'{path} carries retired key(s) {keys}; migrate the run files once: {MIGRATE}'
+        raise RetiredKeys(msg)
+    if unknown := sorted(set(raw) - {field.name for field in dataclasses.fields(Run)}):
+        msg = (
+            f'{path} carries key(s) {unknown} schema {SCHEMA} does not declare. Finish it with the tool version '
+            'that wrote it, or -- once `squeue --me` shows none of its jobs -- delete the file'
+        )
+        raise ForeignSchema(msg)
     return Run(**{
         **raw,
         'job_ids': tuple(raw['job_ids']),
@@ -341,3 +370,52 @@ def live(repo_url: str, *, refused: Callable[[str], None] | None = None) -> tupl
         if run.repo_url == repo_url:
             found.append(run)
     return tuple(found)
+
+
+def migrate(*, apply: bool) -> tuple[str, ...]:
+    """Each run file here carrying a :data:`RETIRED_KEYS` key, named; with *apply*, rewritten to its successor.
+
+    The one-time migration FORMATS-MIGRATE-ONCE owes the rename. A rewrite keeps the file's mtime, so the run
+    keeps its place in :func:`live`'s order. A file carrying both a retired key and its successor is named and
+    left as it is: which value is the run's is not this door's to guess.
+    """
+    lines = []
+    paths = sorted(directory().glob('*.json')) if directory().is_dir() else ()
+    for path in paths:
+        raw = json.loads(path.read_text(encoding='utf-8'))
+        retired = sorted(set(raw) & set(RETIRED_KEYS))
+        if not retired:
+            continue
+        renames = ', '.join(f'{key} -> {RETIRED_KEYS[key]}' for key in retired)
+        if clash := [key for key in retired if RETIRED_KEYS[key] in raw]:
+            lines.append(f'{path}: carries both {clash} and their successors; settle it by hand, nothing written')
+            continue
+        if not apply:
+            lines.append(f'{path}: would rename {renames} (add --apply)')
+            continue
+        stamp = path.stat().st_mtime_ns
+        durable_write(path, json.dumps({RETIRED_KEYS.get(key, key): value for key, value in raw.items()}, indent=2)
+                      .encode('utf-8'))  # fmt: skip
+        os.utime(path, ns=(stamp, stamp))
+        lines.append(f'{path}: renamed {renames}')
+    return tuple(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``migrate [--apply]``: list (or rewrite) the run files here still carrying a retired key."""
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.forgerunstate', description=__doc__.splitlines()[0])
+    verbs = parser.add_subparsers(dest='verb', required=True)
+    once = verbs.add_parser(
+        'migrate', help='rename every retired key in the run files here (a dry run without --apply)'
+    )
+    once.add_argument('--apply', action='store_true', help='rewrite the files; without it nothing is written')
+    args = parser.parse_args(argv)
+    lines = migrate(apply=args.apply)
+    for line in lines:
+        sys.stdout.write(f'{line}\n')
+    sys.stdout.write(f'{len(lines)} run file(s) with a retired key under {directory()}\n')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
