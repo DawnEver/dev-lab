@@ -46,18 +46,22 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   to `<file>.lab-deploy.bak` first, so the login shell runs what the tick runs; builds each `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native` build on a
   uv-managed CPython (skipped while its inputs are unchanged) -- exactly what the repo's committed `uv.lock`
   pins, with nothing installed over it, so a repo's producers import the lab-commons its commit was tested
-  with (PIN + FRESHNESS, user ruling 2026-10-17); replaces its own marked crontab lines; runs one tick of each repo and prints it.
+  with (PIN + FRESHNESS, user ruling 2026-10-17); where the machine file declares `[capabilities.femm]`, builds the
+  family's one FEMM 5 release from its pinned source (`dev_lab.dev.toolrelease.FEMM_QT`) on the login node and
+  installs it, with its `version.env`, into `<tools>/femm/<version>/bin` (`dev_lab.dev.hpcaccount.femm`: a current
+  install is skipped; a failed build is refused naming its log and keeps the install in place); replaces its own
+  marked crontab lines; runs one tick of each repo and prints it.
 - A grant's compute-node `setup` (e.g. `module load git`) is a cluster fact the deploy cannot read: add it to
   the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
-- **The crontab line**, per served repo and the kit, every `[schedule] tick_minutes` (a divisor of 60,
-  default 5; the host card is judged stale against the same number) at a minute offset derived from the
+- **The crontab line**, per served repo and the kit, every `[schedule] tick` (whole minutes dividing an
+  hour, default `"5 min"`; the host card is judged stale against the same number) at a minute offset derived from the
   account's home, so accounts never tick in lockstep. Each tick refreshes its repo and serves its queue only
   where the family binds a role of the repo to the account's grant (`[roles.<forge>]`, `dev_lab.dev.roles`, D73;
   ruling 2026-11-16); a repo with no role bound there is checked out, installed and never served. The line:
   `<offset>-59/<minutes> * * * * PATH=...; cd <root>/repos/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount tick <repo> --lock <root>/serve/<repo>.lock --wall-minutes <wall> >> <root>/serve/<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
   The tick takes its own lock and writes who holds it beside it (`<lock>.holder`: pid, start, phase); it runs
-  within `[schedule] tick_wall_minutes` (default 40) and past it ends its serve, releases the lock and prints
+  within `[schedule] tick_wall` (whole minutes, default `"40 min"`) and past it ends its serve, releases the lock and prints
   `tick: ended at its wall after <s> s doing <phase>` -- the next tick resumes every run from its saved step
   (`dev_lab.dev.hpcaccount.tickwall`).
   A tick that finds the lock held names its holder (pid, start, age, phase) and marks the host card, so
@@ -95,7 +99,14 @@ while it drifts, naming each item; `--discard-drift` accepts the loss (`dev_lab.
 
 **Cleaning an account completely** (user ruling 2026-11-25) goes per directory: read it
 (`look --account <user> inventory <path>`); a directory of caches, or of checkouts all proven pushed, goes through
-`python -m lab_commons.hpc clean`; anything holding results of record is first archived,
+`python -m lab_commons.hpc clean`. A checkout NOT PUSHED is first brought home,
+`python -m dev_lab.dev.hpcaccount salvage --account <user> <path|.> [--apply]`: per checkout a bundle of the
+commits on no remote, `git diff HEAD --binary` and a tar of the untracked files up to 1 MiB (larger ones listed),
+carried over the Runner's stdout (nothing written on the account) into the invoking checkout's
+`output/logs/<yy>/<mm>/<dd>/salvage/<user>/` with a sha256 `manifest.json`; `hpcaccount salvage-fetch <salvaged
+checkout> --into <repo> [--apply]` then fetches a bundle into the repo whose remote has its origin's repository name,
+as `salvage/<user>/<checkout>/<ref>` branches (`dev_lab.dev.hpcaccount.salvage`). Anything holding results of record
+is first archived,
 `python -m dev_lab.dev.hpcaccount archive --account <user> <path> [--as <name>] [--apply]`: tar parts of at most
 4 GiB piped from the account to `<[storage] runs>/archive/<user>/<path>/part-NNNNN.tar`, each read back from the
 store (`rclone hashsum sha256 --download`) and compared with the sha256 taken on the way up, then
@@ -129,9 +140,9 @@ setup = ["module load git/2.42.0"]   # optional, prepended to every array task
 
 [hpc.paging]                         # optional; every key required when declared
 page_cpus = 8                        # one page -- a SMALL task fits it
-page_mem_gb = 20
+page_mem = "20 GiB"
 large_pages = 4                      # more pages than this is LARGE; between is MEDIUM
-movable_minutes = 30                 # rerun-safe AND this short = movable
+movable = "30 min"                   # rerun-safe AND this short = movable
 ```
 
 - A missing table, a duplicate account or an empty `hosts` is refused with the key named; a `cpus` share is retired
@@ -157,10 +168,10 @@ movable_minutes = 30                 # rerun-safe AND this short = movable
 - **Usage is read, never stored.** Account headroom is the quota minus what the account's jobs hold, read from
   `squeue --me`; a grant with room (group memory included, `AssocGrpMemLimit`) is chosen over one without.
 - **Paged placement** (user design 2026-10-17, OS memory management over the pool), only with `[hpc.paging]`:
-  - *Paging.* A task's size is its pages, the larger of `cpus/page_cpus` and `mem_gb/page_mem_gb`: small (one),
+  - *Paging.* A task's size is its pages, the larger of `cpus/page_cpus` and `mem/page_mem`: small (one),
     medium, large (more than `large_pages`). Page-sized tasks keep free memory from shattering into holes.
   - *Movable.* Rerun-safe (declared: `[job] rerun_safe`, forge test parts always) AND a wall within
-    `movable_minutes`. Declared, never guessed.
+    `movable`. Declared, never guessed.
   - *Region.* The emptiest account (most group memory free) is the large-job region; it belongs to no session
     and rotates (`hpc.region.region`). A pending large task (`@@@ pending` in the probe) pins it where it waits.
   - *Placement.* A large job goes only to the region, and never spreads. Small and medium tasks best-fit onto
@@ -214,7 +225,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
 
 - **Preparation is keyed by its inputs, never by commit** (`lab_commons.hpc.builds`), declared once:
   `[tool.lab_commons.hpc] dependency_inputs`, `source_roots`, `install`, `needs`, `collect`, `outputs`,
-  `timeout_s = {incremental = ..., full = ...}` and `native = { inputs = [...], build = "..." }`. A fresh sha
+  `timeout = {incremental = "<duration>", full = "<duration>"}` and `native = { inputs = [...], build = "..." }`. A fresh sha
   with unchanged inputs builds nothing. The committed `uv.lock` is an input, so its hash keys the venv.
 - Everything lives under the account's declared root (`$LAB_ROOT`; `lab_commons.hpc.layout.account_paths`):
   `repos/<repo>`, `envs/<key>`, `native/<key>`, `jobs/<sha>`, `cache/{git,uv,packs,collect,cargo}` (one bare
@@ -230,7 +241,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   them back (`lab_commons.compute.learned`), packs whole files into shards inside the `[policy]` window, and sets the
   wall limit and memory from the slowest shard and worst peak times `policy.safety`.
 - The array asks for every declared partition that admits its shard (`--partition=shortq,defq`). A task pending
-  past `stall_minutes` while a declared partition has a free slot is reported as a STALL with its remedy.
+  past `stall` while a declared partition has a free slot is reported as a STALL with its remedy.
 - **Test cells are streamed**, one JSON line per test phase keyed by pytest's `nodeid` -- a plain
   `lab_commons.outcomes.Cell` (status, reason) plus the test's `Expectation` when it declares one -- so a killed
   shard keeps what it reported. Its unfinished ids are re-submitted in halves for up to two more rounds, with
@@ -299,7 +310,7 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
   headroom, free slots, QOS limits and its home's free inodes (`df -i`, the file-count quota is a resource: a plan
   writing more files than are free is refused) -- and its throughput is the batch's padded seconds over that
   makespan. The items are cut into consecutive slices in proportion, so the slices end about together. The spread
-  is kept only when every slice holds at least one `shard_minutes_min` shard and its slowest slice beats the best
+  is kept only when every slice holds at least one `shortest_shard` shard and its slowest slice beats the best
   single grant (`plan.allocate`); otherwise one grant takes it all. Nothing is reserved anywhere.
 - **The artifact is ensured per grant.** `[job] sha` + `repo_url` run the batch from that commit's artifact (no
   `workdir` beside them): before submitting, each chosen grant gets `run build`'s artifact in its own home, reused
@@ -318,7 +329,7 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
 - **One record.** `<job>.submission.json` holds `placements` -- per grant its targets, item range, run directory,
   job ids, shards and plan -- and `moved`. `status` prints a line per grant, `gather` merges every slice back into
   batch order and names any grant that did not answer. A record without `placements` is refused: submit again.
-  `gather -c job.toml -o out.json --wait` polls as `status` does every `[policy] poll_seconds`, prints the status
+  `gather -c job.toml -o out.json --wait` polls as `status` does every `[policy] poll`, prints the status
   line only when it changes (`pending: <why>` while a grant does not answer), and gathers once no shard is queued
   or running. `--wait` belongs to `gather` and `run gather` only.
 - **A dead grant's slice moves.** `retry` re-submits each shard with no results file that is not active, on its own

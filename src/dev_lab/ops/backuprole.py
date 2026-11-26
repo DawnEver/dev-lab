@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from dev_lab.dev.tablequantity import quantity
 from dev_lab.ops.mirrors import mirror_host, mirror_name
 from dev_lab.ops.placement import Placement
 
@@ -17,7 +18,8 @@ class Offsite:
     """The off-site copy of each backup: an S3-compatible bucket, written by single PUTs only.
 
     ``label`` is the first segment of every object key; ``profile`` / ``config_file`` / ``credentials_file`` name the
-    AWS CLI profile and files holding the store's key; ``max_put_bytes`` is the single-PUT limit (5 GB on S3).
+    AWS CLI profile and files holding the store's key; ``max_put`` is the single-PUT limit (``"5 GB"`` on S3, held in
+    bytes).
     """
 
     endpoint: str
@@ -27,7 +29,7 @@ class Offsite:
     profile: str = ''
     config_file: str = ''
     credentials_file: str = ''
-    max_put_bytes: int = 5_000_000_000
+    max_put: float = quantity('size', 5e9, retired=('max_put_bytes', 'B'))
     aws: str = 'aws'
 
 
@@ -37,8 +39,8 @@ class Backup(Placement):
 
     Export (``dumpers`` non-empty): the ``account`` whose forced command is ``ops backup export``, the ``keys`` of the
     pullers, the dumpers' own settings. Pull (``source`` non-empty): ``<account>@<host>`` with a dedicated
-    ``identity`` key, the ``dest`` directory, the ``user`` and ``schedule`` of the timer, ``retention_days``, and an
-    optional ``offsite`` table (:class:`Offsite`).
+    ``identity`` key, the ``dest`` directory, the ``user`` and ``schedule`` of the timer, ``retention`` (a duration,
+    ``"14 d"``), and an optional ``offsite`` table (:class:`Offsite`).
 
     The ``git_mirror`` dumper reads ``mirrors`` (clone URLs on any forge), keeps a ``git clone --mirror`` of each
     under ``mirror_cache`` (persistent, so each export only fetches what is new) and bundles each into the export.
@@ -62,7 +64,7 @@ class Backup(Placement):
     dest: str = ''
     user: str = 'backup'
     schedule: str = ''
-    retention_days: int = 14
+    retention: float = quantity('duration', 14 * 86400.0, retired=('retention_days', 'd'))
     offsite: Offsite | None = None
     mirrors: tuple[str, ...] = ()
     mirror_cache: str = ''

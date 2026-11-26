@@ -7,10 +7,13 @@ read, ONE fixed shell line (:func:`command`) whose only input is a home-relative
 
 * per entry of ``~/<path>`` (dot entries included): its files (every inode a file quota counts), bytes and newest
   modification -- one ``find -xdev`` walk each;
-* per git checkout found up to :data:`DEPTH` levels below ``~/<path>`` (a ``.git`` directory or a worktree's
-  ``.git`` file): its fetch remotes, ``status --porcelain --ignored`` (``--no-optional-locks``: the index is never
-  refreshed), the count and the first :data:`SHOWN` commits of ``git log --branches HEAD --not --remotes``, and its
-  stash entries.
+* per git checkout (:data:`FOUND`: a ``.git`` directory or a worktree's ``.git`` file up to :data:`DEPTH` levels
+  below ``~/<path>``, and every worktree a found checkout lists under it, however deep): its fetch remotes,
+  ``status --porcelain --ignored`` (``--no-optional-locks``: the index is never refreshed), the count and the first
+  :data:`SHOWN` commits of :data:`UNPUSHED`, and its stash entries.
+
+:data:`UNPUSHED` and :data:`FOUND` are the ONE definition of "a commit on no remote" and "a checkout under a path":
+``hpcaccount salvage`` (:mod:`~dev_lab.dev.hpcaccount.salvageread`) bundles exactly what this read counts.
 
 :func:`parse` reads the tagged lines; :class:`Checkout.reasons` is the verdict. A checkout is ``pushed`` only when it
 has a remote, nothing changed or untracked, no commit on no remote, no stash, and git answered every question; any
@@ -25,17 +28,38 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Final
 
-__all__ = ['DEPTH', 'SHOWN', 'Checkout', 'Entry', 'Inventory', 'command', 'parse', 'rows']
+__all__ = [
+    'DEPTH', 'FOUND', 'SHOWN', 'UNPUSHED', 'Checkout', 'Entry', 'Inventory', 'command', 'opened', 'parse', 'rows',
+    'sized',
+]  # fmt: skip
 
 #: How many levels below the inventoried path a git checkout is looked for (``src/<repo>`` is two).
 DEPTH: Final = 4
 #: How many changed paths, unpushed commits and ignored paths of one checkout are shown.
 SHOWN: Final = 20
+#: The commits on no remote, as ``rev-list`` arguments: reachable from ANY local ref -- a branch, a tag, the stash,
+#: a namespace of the account's own (measured 2026-11-25: ``refs/r2/solid``), a detached HEAD, another worktree's
+#: HEAD -- and from no remote-tracking ref.
+UNPUSHED: Final = '--all --not --remotes'
+#: The shell lines printing, sorted, every checkout's ``.git`` under ``"$p"``: what ``find`` meets up to
+#: :data:`DEPTH` levels down, and every worktree one of those lists (``git worktree list``) under ``"$p"``, however
+#: deep -- an agent's ``.claude/worktrees/<name>`` sits four levels below its checkout. Paths are physical
+#: (``pwd -P``), so one checkout reached by two spellings is listed once. What lies INSIDE a git directory is git's
+#: or a tool's, never a checkout, as ``find -prune`` already holds: measured 2026-11-25, two worktrees a killed
+#: ``relock`` left under ``.git/relock/`` read as 17,451 changed paths (an interrupted checkout); their HEADs ride
+#: their repository's :data:`UNPUSHED` anyway (``--all`` holds every worktree's HEAD).
+FOUND: Final = (
+    f'{{ f=$(find "$p" -xdev -maxdepth {DEPTH} -name .git -prune -print 2>/dev/null); printf "%s\\n" "$f"; '
+    'printf "%s\\n" "$f" | while IFS= read -r g; do [ -n "$g" ] && git -C "${g%/.git}" worktree list --porcelain '
+    '2>/dev/null; done | sed -n "s/^worktree //p" | while IFS= read -r w; do w=$(cd "$w" 2>/dev/null && pwd -P) '
+    '|| continue; case "$w" in */.git/*) ;; "$p"/*) [ -e "$w/.git" ] && printf "%s/.git\\n" "$w";; esac; done; } '
+    '| grep . | sort -u'
+)
 #: An ``E`` row's fields: files, bytes, newest change and the entry's path.
 _E_FIELDS: Final = 4
 #: An ``R`` row's fields: the remote's name and its url.
 _R_FIELDS: Final = 2
-#: One binary unit step of :func:`_size`.
+#: One binary unit step of :func:`sized`.
 _KIB: Final = 1024
 
 _GIT_STEPS: Final = (
@@ -45,11 +69,23 @@ _GIT_STEPS: Final = (
     "printf 'S\\t%s\\n' \"$(printf '%s\\n' \"$s\" | grep -v '^!! ' | grep -c .)\"; "
     f"printf '%s\\n' \"$s\" | grep -v '^!! ' | grep . | head -n {SHOWN} | awk '{{ print \"s\\t\" $0 }}'; "
     f"printf '%s\\n' \"$s\" | grep '^!! ' | head -n {SHOWN} | awk '{{ print \"I\\t\" substr($0, 4) }}'; "
-    'printf "U\\t%s\\n" "$(git -C "$d" rev-list --count --branches HEAD --not --remotes 2>&1 | head -n 1)"; '
-    f'git -C "$d" log --branches HEAD --not --remotes --format=\'%h %D %s\' 2>/dev/null | head -n {SHOWN} '
+    f'printf "U\\t%s\\n" "$(git -C "$d" rev-list --count {UNPUSHED} 2>&1 | head -n 1)"; '
+    f'git -C "$d" log {UNPUSHED} --format=\'%h %D %s\' 2>/dev/null | head -n {SHOWN} '
     '| awk \'{ print "u\\t" $0 }\'; '
     'printf "T\\t%s\\n" "$(git -C "$d" stash list 2>/dev/null | wc -l | tr -d " ")"'
 )
+
+
+def opened(path: str) -> str:
+    """The shell lines that open ``~/<path>`` (``.``: the home; else names the caller judged).
+
+    ``A`` and exit when it is absent, else ``$h`` (the home) and ``$p`` (the path) set physical and ``P`` printed.
+    """
+    where = '"$HOME"' if path == '.' else f'"$HOME"/{shlex.quote(path)}'
+    return (
+        f'[ -d {where} ] || {{ printf "A\\t%s\\n" {where}; exit 0; }}; '
+        f'h=$(cd "$HOME" && pwd -P); p=$(cd {where} && pwd -P); printf "P\\t%s\\n" "$p"; '
+    )
 
 
 def command(path: str) -> str:
@@ -60,12 +96,10 @@ def command(path: str) -> str:
         'END { printf "E\\t%.0f\\t%.0f\\t%.0f\\t%s\\n", n, b, m, e }\''
     )
     return (
-        f'p="$HOME"/{shlex.quote(path)}; [ -d "$p" ] || {{ printf "A\\t%s\\n" "$p"; exit 0; }}; '
-        'printf "P\\t%s\\n" "$p"; '
+        f'{opened(path)}'
         'for e in "$p"/* "$p"/.[!.]* "$p"/..?*; do { [ -e "$e" ] || [ -L "$e" ]; } || continue; '
         f'{walk}; done; '
-        f'find "$p" -xdev -maxdepth {DEPTH} -name .git -prune -print 2>/dev/null | sort | '
-        f'while IFS= read -r g; do {_GIT_STEPS}; done'
+        f'{FOUND} | while IFS= read -r g; do {_GIT_STEPS}; done'
     )
 
 
@@ -159,7 +193,8 @@ def parse(text: str) -> Inventory:
     return found
 
 
-def _size(count: int) -> str:
+def sized(count: int) -> str:
+    """*count* bytes as a person reads them: ``512B``, ``2.0K``, ``1.5M``."""
     value = float(count)
     for unit in ('B', 'K', 'M', 'G'):
         if value < _KIB:
@@ -180,9 +215,9 @@ def rows(text: str) -> list[str]:
     entries = sorted(found.entries, key=lambda e: (-e.files, e.path))
     total_files, total_bytes = sum(e.files for e in entries), sum(e.bytes for e in entries)
     out = [
-        f'inventory: {found.path} -- {len(entries)} entr(y/ies), {total_files} files, {_size(total_bytes)}',
+        f'inventory: {found.path} -- {len(entries)} entr(y/ies), {total_files} files, {sized(total_bytes)}',
         f'  {"files":>9}  {"size":>8}  {"newest (UTC)":<16}  entry',
-        *(f'  {e.files:>9}  {_size(e.bytes):>8}  {_when(e.newest):<16}  {e.path}' for e in entries),
+        *(f'  {e.files:>9}  {sized(e.bytes):>8}  {_when(e.newest):<16}  {e.path}' for e in entries),
         f'checkouts ({len(found.checkouts)}, searched {DEPTH} levels deep):',
     ]
     for checkout in found.checkouts:

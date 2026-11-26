@@ -7,11 +7,12 @@ write account (``forges = {}``), no HPC roles (``hpc = []``), no vendor seats, h
 
 ``[dev] bridge.hpc`` (user ruling 2026-11-16: on EVERY development machine, so the family declares it) renders as
 the machine file's ``[bridge.hpc]``: the HPC usage read door the session bridge runs for the agents dashboard
-(``command``, an argv) and its cadence (``cadence_hours``). The command's interpreter is DERIVED, never declared or
-invented (#782, D96): the ``.venv`` pointer of the machine's dev-lab checkout (``[repos] dev-lab``, the local fact
-``devhost local set repos.dev-lab`` sets), spelled by the declared ``[dev] os``, else this platform
-(:func:`bridge_python`). That pointer is the checkout's single current environment, outside every worktree and
-kept on the lock by the venv follow, so the path never moves and two renders from different envs agree byte for byte.
+(``command``, an argv) and its cadence (``cadence``, a duration such as ``"6 h"``). The command's interpreter is
+DERIVED, never declared or invented (#782, D96): the ``.venv`` pointer of the machine's dev-lab checkout
+(``[repos] dev-lab``, the local fact ``devhost local set repos.dev-lab`` sets), spelled by the declared
+``[dev] os``, else this platform (:func:`bridge_python`). That pointer is the checkout's single current
+environment, outside every worktree and kept on the lock by the venv follow, so the path never moves and two renders
+from different envs agree byte for byte.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
+from dev_lab.dev.devschema import CADENCE_DEFAULT
 from dev_lab.dev.venvpath import current_os_name, running_interpreter, venv_interpreter
 
 __all__ = [
@@ -134,4 +136,4 @@ def bridge_tables(dev: Mapping[str, Any], live: Mapping[str, Any]) -> dict[str, 
     if not isinstance(hpc, Mapping):
         return {}
     command = [bridge_python(live, str(dev.get('os', ''))), *HPC_READ_DOOR]
-    return {'bridge': {'hpc': {'command': command, 'cadence_hours': hpc.get('cadence_hours', 6)}}}
+    return {'bridge': {'hpc': {'command': command, 'cadence': hpc.get('cadence', CADENCE_DEFAULT)}}}

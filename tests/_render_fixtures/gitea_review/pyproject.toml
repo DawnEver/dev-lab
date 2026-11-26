@@ -1,5 +1,0 @@
-# A Gitea repo whose family binds every role to CI: it renders the trusted review and the merge.
-[project]
-name = "gitea"
-
-[tool.dev_lab.ci."review.yml"]

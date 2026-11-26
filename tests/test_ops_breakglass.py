@@ -174,7 +174,7 @@ class Host:
 
 @pytest.fixture
 def host(tmp_path: Path) -> Host:
-    return Host(config(tmp_path, [], extra='wave_hours_max = 4.0'))
+    return Host(config(tmp_path, [], extra='wave_ceiling = "4 h"'))
 
 
 def test_a_wave_merges_without_a_code_and_summarizes_on_close(host: Host) -> None:
@@ -271,7 +271,7 @@ def test_a_merge_after_expiry_is_refused_and_the_expiry_closes_the_wave(host: Ho
 
 @pytest.fixture
 def roomy(tmp_path: Path) -> Host:
-    bounds = 'wave_hours_max = 24.0\nmax_merges_max = 10'
+    bounds = 'wave_ceiling = "24 h"\nmax_merges_max = 10'
     return Host(config(tmp_path, [], extra=bounds))
 
 
@@ -284,7 +284,7 @@ def test_a_request_may_ask_up_to_the_ceiling(roomy: Host) -> None:
 
 
 @pytest.mark.parametrize(
-    ('fields', 'ceiling'), [({'hours': 24.5}, 'wave_hours_max = 24 h'), ({'max_merges': 11}, 'max_merges_max = 10')]
+    ('fields', 'ceiling'), [({'hours': 24.5}, 'wave_ceiling = 24 h'), ({'max_merges': 11}, 'max_merges_max = 10')]
 )
 def test_a_request_above_a_ceiling_is_refused_naming_it(roomy: Host, fields: dict[str, float], ceiling: str) -> None:
     with pytest.raises(BreakglassRefused, match=ceiling):
@@ -498,8 +498,8 @@ def test_break_glass_serves_its_own_repos_not_the_promoted_ones(tmp_path: Path) 
         ({'tokens': {'gitea.example': 't', 'gitlab.example': 'l'}}, 'gitlab.example'),  # unused
         ({'repos': (*GLASS, 'https://gitea.example/owner/alpha')}, 'twice'),  # the exact same identity again
         ({'repos': ()}, 'serves no repo'),
-        ({'wave_hours_max': 0.0}, 'must be positive'),
-        ({'wave_hours_max': float('nan')}, 'must be positive'),
+        ({'wave_ceiling': 0.0}, 'must be positive'),
+        ({'wave_ceiling': float('nan')}, 'must be positive'),
         ({'max_merges_max': -1}, 'must not be negative'),
     ],
 )
@@ -965,3 +965,16 @@ def test_fast_forward_pushes_an_integration_commit_and_refuses_one_off_it_or_not
     later = advance(work, 'integrate/main', 'i2.txt', 'i2\n')
     with pytest.raises(NotFastForward, match='cannot fast-forward'):
         fast_forward(url, '', 'main', 'integrate/main', later)
+
+
+@pytest.mark.parametrize(
+    ('extra', 'why'),
+    [
+        ('wave_hours_max = 4.0', r'wave_hours_max = 4.0 is retired.*write wave_ceiling = "4 h"'),
+        ('wave_ceiling = 4', r'wave_ceiling = 4 is a bare number'),
+    ],
+)
+def test_the_wave_ceiling_carries_its_unit(tmp_path: Path, extra: str, why: str) -> None:
+    """User ruling 2026-11-25: a duration is declared with its unit; the unit-suffixed key is refused with its line."""
+    with pytest.raises(ValueError, match=why):
+        config(tmp_path, [], extra=extra)

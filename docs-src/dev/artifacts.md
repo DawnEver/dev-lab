@@ -42,17 +42,18 @@ outputs = ["output/fields/*.h5"]       # globs or files, relative to the run's w
 
   ```toml
   expanded_output_max_entries = 1000  # example only; omitted = no selected-footprint budget
-  expanded_output_max_bytes = 10485760  # logical selected-file bytes
+  expanded_output_max = "10 MiB"  # logical selected-file bytes
   member_index_max_members = 1000  # REQUIRED for declared outputs; no default
-  member_index_max_bytes = 262144  # the record's whole {archive_sha: index} value, serialized
-  member_index_max_path_bytes = 4096  # one member's relative POSIX path, UTF-8 bytes
+  member_index_max = "256 KiB"  # the record's whole {archive_sha: index} value, serialized
+  member_index_max_path = "4 KiB"  # one member's relative POSIX path, UTF-8 bytes
   ```
 
-  `expanded_output_*` are nonnegative integers; `member_index_*` (and the two `record_max_*` below) positive
-  integers; a boolean is never an integer budget. Entries count the unique selected regular files and their
+  The counts (`expanded_output_max_entries`, `member_index_max_members`) are integers, the rest sizes with their
+  unit (`lab_commons.quantity`); `expanded_output_*` are nonnegative, `member_index_*` (and the two `record_max_*`
+  below) positive; a boolean is never a budget. Entries count the unique selected regular files and their
   unique parent directories through the work-tree root (no files: zero); a zero-byte file still costs an entry.
   The budget is checked before any archive or Ref exists. It is a stat snapshot of the selected footprint --
-  not live peak usage, compressed bytes, a quota reservation or a runtime limit; `cap_gb` and `threshold_mb`
+  not live peak usage, compressed bytes, a quota reservation or a runtime limit; `cap` and `threshold`
   keep their own meanings.
 - An over-budget or missing `member_index_*` policy ends the run with an error and a named alarm
   (`OutputBudgetRefused`) and is never retried unchanged; a store or network failure is not reclassified and
@@ -78,9 +79,9 @@ outputs = ["output/fields/*.h5"]       # globs or files, relative to the run's w
 [tool.lab_commons.artefacts]
 backend = "rclone"         # the large store: rclone or folder; absent = forge only
 remote = "hpc-data:<repo folder>"
-threshold_mb = 100         # at or under: a forge attachment; above: the large store
-retain_days = 3            # per writer
-cap_gb = 0                 # per writer; 0 = no cap
+threshold = "100 MiB"      # at or under: a forge attachment; above: the large store
+retain = "3 d"             # per writer
+cap = "0 GiB"              # per writer; 0 = no cap
 ```
 
 - One interface, three backends (`ArtifactStore`): `forge` (a records-home attachment, up to the forge's
@@ -118,8 +119,8 @@ cap_gb = 0                 # per writer; 0 = no cap
 <summary>Retention: each writer cleans its own</summary>
 
 - Every `forge serve` tick on a cluster cleans (`clean`) only the runs carrying its own account, in the forge
-  and in the large store: runs in day folders older than `retain_days` go unless a `keep` label on an issue or
-  PR pins their sha; then that account's oldest first until its own share is under `cap_gb`; emptied folders
+  and in the large store: runs in day folders older than `retain` go unless a `keep` label on an issue or
+  PR pins their sha; then that account's oldest first until its own share is under `cap`; emptied folders
   are removed. Another account's runs are never touched.
 
 </details>
@@ -129,7 +130,7 @@ cap_gb = 0                 # per writer; 0 = no cap
 
 - Each tick a cluster host probes its remote read-only (`rclone lsd <remote>: --max-depth 1`,
   `remote_problem`). When it is missing or unusable, the host claims no part with declared `outputs` (they could
-  exceed `threshold_mb`) and its host card states why; parts with no declared outputs are still claimed.
+  exceed `threshold`) and its host card states why; parts with no declared outputs are still claimed.
 - `python -m dev_lab.dev.hpcaccount deploy` runs the same probe for every served repo that declares an rclone store
   and WARNS with this recipe when it fails; it is never a refusal, since most parts declare no large outputs.
 
@@ -147,7 +148,7 @@ cap_gb = 0                 # per writer; 0 = no cap
 
 - `query_members(root, record_path, ref, paths, case_sensitive=...)` (`dev_lab.dev.artifacts`) reads the
   policy once from the trusted repo root BEFORE opening the record and needs all seven budgets:
-  `record_max_compressed_bytes`, `record_max_decompressed_bytes`, the three `member_index_max_*` and both
+  `record_max_compressed`, `record_max_decompressed`, the three `member_index_max*` and both
   `expanded_output_max_*`. An omission is `OutputBudgetRefused`, never a default. It reads the record with
   `lab_commons.hpc.records.read_record` (strict JSON, those byte budgets, an optional `expected_sha256` over
   the same compressed buffer; a malformed record stays `RecordRefused`), then `catalogue` and `select_members`.

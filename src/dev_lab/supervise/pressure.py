@@ -17,7 +17,12 @@ RAM read ~80% -- so a host-level percentage is not the measurement. What is:
   is noise, which is why CPU was off. Where PSI is absent the PSI reading is UNMEASURABLE (``None``), never 0.
 
 Every threshold is a named constant, overridable by the same name in the machine file's ``[pressure]`` table
-(:func:`thresholds`). This module MEASURES AND REPORTS; it never deletes (:mod:`dev_lab.supervise.components.
+(:func:`thresholds`). A size, a duration or a percentage is declared WITH its unit (``disk_free_floor =
+"10 GiB"``, ``psutil_window = "5 s"``, ``disk_ceiling = "90 %"``) and read once by
+:func:`lab_commons.quantity.parse`; a key that spells its unit (``disk_free_floor_gb``, ``disk_percent_ceiling``) is
+refused with the line that replaces it (user ruling 2026-11-25). PSI lines (``psi_*_avg60``) stay plain percent
+numbers: ``avg60`` is the kernel's field name, not a unit.
+This module MEASURES AND REPORTS; it never deletes (:mod:`dev_lab.supervise.components.
 resources` rules that) -- the remedy it carries is the biggest consumers (:mod:`dev_lab.supervise.consumers`)
 and the family's cleanup doors.
 """
@@ -31,6 +36,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Final
+
+from lab_commons.quantity import Renamed, parse, refuse_renamed
 
 from dev_lab.supervise.cgroup import cgroups, control_group
 from dev_lab.supervise.consumers import Consumer, consumers
@@ -50,26 +57,30 @@ __all__ = [
 #: Where the box's RAM counts as full -- supervision's ``ProcessMonitor`` ceiling and a workstation's, one source.
 RAM_CRITICAL: Final = 95
 
+_GIB: Final = 1024**3
+_DAY: Final = 86400.0
+
 #: The defaults, each overridable by its own name in ``[pressure]``. Percent values are PSI ``avg60`` (the
-#: share of the last minute some/all tasks stalled) or psutil's percent; bytes are GB for a human to set.
+#: share of the last minute some/all tasks stalled) or psutil's percent; a size is held in bytes and a duration in
+#: seconds (:data:`QUANTITIES` names which), each declared with its unit.
 THRESHOLDS: Final[Mapping[str, float]] = {
-    'disk_free_floor_gb': 10.0,  # below this many free GB on a declared path: critical
-    'disk_percent_ceiling': 90.0,  # past this percent used: warning
-    'days_to_full_floor': 3.0,  # filling so fast it is full within this many days: warning
+    'disk_free_floor': 10.0 * _GIB,  # below this much free on a declared path: critical
+    'disk_ceiling': 0.90,  # past this fraction used: warning
+    'full_horizon': 3 * _DAY,  # filling so fast it is full within this long: warning
     'psi_memory_some_avg60': 10.0,  # some task stalled on memory this share of the last minute
     'psi_memory_full_avg60': 5.0,  # EVERY task stalled on memory: critical
     'psi_cpu_some_avg60': 50.0,  # runnable work waited for a CPU half the last minute
-    'cpu_percent_ceiling': 90.0,  # a workstation's CPU, averaged over the window
-    'memory_percent_ceiling': float(RAM_CRITICAL),  # a workstation's RAM: supervision's own ceiling, one source
-    'psutil_window_s': 5.0,  # the averaging window on a workstation; never a 50 ms sample
-    # THE CADENCE AND THE SLOPE, ONE SOURCE: a writer reads every `interval_s` (a writer passes its own: the
-    # forge tick's `[schedule] tick_minutes`, supervision's `cycle.interval`); a days-to-full slope is believed
-    # only over at least `slope_span_s`, and the disk history is kept BY AGE -- `slope_span_s + interval_s` --
+    'cpu_ceiling': 0.90,  # a workstation's CPU, averaged over the window
+    'memory_ceiling': RAM_CRITICAL / 100,  # a workstation's RAM: supervision's own ceiling, one source
+    'psutil_window': 5.0,  # the averaging window on a workstation; never a 50 ms sample
+    # THE CADENCE AND THE SLOPE, ONE SOURCE: a writer reads every `interval` (a writer passes its own: the
+    # forge tick's `[schedule]` tick, supervision's `cycle.interval`); a days-to-full slope is believed
+    # only over at least `slope_span`, and the disk history is kept BY AGE -- `slope_span + interval` --
     # so at any cadence the window holds a reading old enough to meet the floor.
-    'interval_s': 300.0,
-    'slope_span_s': 3600.0,
+    'interval': 300.0,
+    'slope_span': 3600.0,
     # A SLOPE PROJECTS AT MOST THIS MANY TIMES THE SPAN IT WAS MEASURED OVER: one hour of a 1.4 GB export read
-    # 'full in 2.5 days' on forge-a1 (2026-11-08). History is kept long enough to meet `days_to_full_floor`.
+    # 'full in 2.5 days' on forge-a1 (2026-11-08). History is kept long enough to meet `full_horizon`.
     'slope_extrapolation_max': 24.0,
     # A CGROUP'S REAL PRESSURE. `high` alone is routine cache reclaim at memory.high: it alarms only past an
     # opt-in rise (default never); anon refaults and the cgroup's own memory PSI (avg10) are the throttle.
@@ -77,6 +88,29 @@ THRESHOLDS: Final[Mapping[str, float]] = {
     'cgroup_refault_anon_rise': 0.0,  # warning when memory.stat workingset_refault_anon rose by more than this
     'cgroup_psi_memory_some_avg10': 10.0,  # the cgroup's memory.pressure `some avg10`: warning
     'cgroup_psi_memory_full_avg10': 5.0,  # the cgroup's memory.pressure `full avg10`: critical
+}
+
+#: The thresholds declared WITH a unit, and their dimension (:mod:`lab_commons.quantity`); every other is a number.
+QUANTITIES: Final[Mapping[str, str]] = {
+    'disk_free_floor': 'size',
+    'full_horizon': 'duration',
+    'disk_ceiling': 'fraction',
+    'cpu_ceiling': 'fraction',
+    'memory_ceiling': 'fraction',
+    'psutil_window': 'duration',
+    'interval': 'duration',
+    'slope_span': 'duration',
+}
+#: Unit-suffixed keys retired by the 2026-11-25 ruling, refused with the line that replaces them; never read.
+RENAMED: Final[Mapping[str, Renamed]] = {
+    'disk_free_floor_gb': Renamed('disk_free_floor', 'GiB'),
+    'days_to_full_floor': Renamed('full_horizon', 'd'),
+    'disk_percent_ceiling': Renamed('disk_ceiling', '%'),
+    'cpu_percent_ceiling': Renamed('cpu_ceiling', '%'),
+    'memory_percent_ceiling': Renamed('memory_ceiling', '%'),
+    'psutil_window_s': Renamed('psutil_window', 's'),
+    'interval_s': Renamed('interval', 's'),
+    'slope_span_s': Renamed('slope_span', 's'),
 }
 
 #: The PSI files, by resource.
@@ -99,8 +133,22 @@ SERVER_DOORS: Final = (
 
 
 def thresholds(table: Mapping[str, Any]) -> dict[str, float]:
-    """:data:`THRESHOLDS`, each overridden by the same key in *table* (the machine file's ``[pressure]``)."""
-    return {name: float(table.get(name, default)) for name, default in THRESHOLDS.items()}
+    """:data:`THRESHOLDS`, each overridden by the same key in *table* (the machine file's ``[pressure]``).
+
+    Raises:
+        lab_commons.quantity.QuantityRefused: a retired unit-suffixed key, or a size/duration without its unit.
+
+    """
+    refuse_renamed('[pressure]', table, RENAMED)
+    found = {}
+    for name, default in THRESHOLDS.items():
+        if name not in table:
+            found[name] = default
+        elif name in QUANTITIES:
+            found[name] = parse(f'[pressure] {name}', table[name], QUANTITIES[name], positive=True)
+        else:
+            found[name] = float(table[name])
+    return found
 
 
 @dataclass(frozen=True)
@@ -112,10 +160,16 @@ class Declared:
     limits: Mapping[str, float] = field(default_factory=lambda: dict(THRESHOLDS))
 
     @classmethod
-    def of(cls, table: Mapping[str, Any]) -> Declared:
-        """From ``[pressure]``: ``paths``, ``services`` and any threshold by name."""
+    def of(cls, table: Mapping[str, Any], *, interval: float | None = None) -> Declared:
+        """From ``[pressure]``: ``paths``, ``services`` and any threshold by name.
+
+        *interval* is the writer's own cadence in seconds, the default a declared ``interval`` overrides.
+        """
         paths = tuple(Path(str(p)) for p in table.get('paths', ()))
-        return cls(paths, tuple(str(s) for s in table.get('services', ())), thresholds(table))
+        limits = thresholds(table)
+        if interval is not None and 'interval' not in table:
+            limits['interval'] = float(interval)
+        return cls(paths, tuple(str(s) for s in table.get('services', ())), limits)
 
 
 @dataclass
@@ -125,7 +179,7 @@ class Measured:
     findings: list[Finding] = field(default_factory=list)
     readings: dict[str, float | None] = field(default_factory=dict)
     memo: dict[str, Any] = field(default_factory=dict)
-    interval_s: float = THRESHOLDS['interval_s']
+    interval_s: float = THRESHOLDS['interval']
 
 
 def _read(path: Path) -> str | None:
@@ -146,33 +200,35 @@ def _disk(
     if not disk.total:  # no size is unanswerable, never 0% full
         return [], {f'disk:{name}:percent': None}, history
     percent, free_gb = disk.used / disk.total * 100, disk.free / 1024**3
-    horizon = limits['days_to_full_floor'] * 86400 / limits['slope_extrapolation_max']
-    oldest = now - max(limits['slope_span_s'], horizon) - limits['interval_s']
+    horizon = limits['full_horizon'] / limits['slope_extrapolation_max']
+    oldest = now - max(limits['slope_span'], horizon) - limits['interval']
     kept = [one for one in history if one[0] >= oldest] + [[now, float(disk.used)]]
-    days = _days_to_full(kept, disk.free, limits['slope_span_s'], limits['slope_extrapolation_max'])
+    days = _days_to_full(kept, disk.free, limits['slope_span'], limits['slope_extrapolation_max'])
     readings = {f'disk:{name}:percent': round(percent, 1), f'disk:{name}:free_gb': round(free_gb, 2),
                 f'disk:{name}:days_to_full': None if days is None else round(days, 1)}  # fmt: skip
     said = f'{name} {percent:.1f}% used, {free_gb:.1f} GB free' + (f', full in {days:.1f} days' if days else '')
-    if free_gb < limits['disk_free_floor_gb']:
+    floor_gib, full_days = limits['disk_free_floor'] / _GIB, limits['full_horizon'] / _DAY
+    ceiling = 100 * limits['disk_ceiling']
+    if disk.free < limits['disk_free_floor']:
         return (
             [
                 Finding(
                     f'disk:{name}',
                     'critical',
-                    f'{said} (floor {limits["disk_free_floor_gb"]} GB)',
+                    f'{said} (floor {floor_gib:g} GiB)',
                     metric=f'disk {name}',
                     value=f'{free_gb:.1f} GB free',
-                    threshold=f'{limits["disk_free_floor_gb"]:g} GB',
+                    threshold=f'{floor_gib:g} GiB',
                 )
             ],
             readings,
             kept,
         )
-    if percent > limits['disk_percent_ceiling'] or (days is not None and days < limits['days_to_full_floor']):
-        if percent > limits['disk_percent_ceiling']:
-            value, bar = f'{percent:.0f}%', f'{limits["disk_percent_ceiling"]:g}%'
+    if percent > ceiling or (days is not None and days < full_days):
+        if percent > ceiling:
+            value, bar = f'{percent:.0f}%', f'{ceiling:g}%'
         else:
-            value, bar = f'full in {days:.1f} days', f'{limits["days_to_full_floor"]:g} days'
+            value, bar = f'full in {days:.1f} days', f'{full_days:g} days'
         found = Finding(f'disk:{name}', 'warning', said, metric=f'disk {name}', value=value, threshold=bar)
         return [found], readings, kept
     return [], readings, kept
@@ -219,19 +275,19 @@ def _psi(
 def _windowed(psutil: ModuleType | None, limits: Mapping[str, float]) -> tuple[list[Finding], dict[str, float | None]]:
     if psutil is None:
         return [], {'cpu:percent': None, 'memory:percent': None}
-    cpu = float(psutil.cpu_percent(interval=limits['psutil_window_s']))  # averaged over the window
+    cpu = float(psutil.cpu_percent(interval=limits['psutil_window']))  # averaged over the window
     memory = float(psutil.virtual_memory().percent)
     findings = [
         Finding(
             f'{name}:percent',
             'warning',
-            f'{name} {value:.0f}% averaged over {limits["psutil_window_s"]:.0f}s',
+            f'{name} {value:.0f}% averaged over {limits["psutil_window"]:.0f}s',
             metric=name,
             value=f'{value:.0f}%',
-            threshold=f'{limits[f"{name}_percent_ceiling"]:g}%',
+            threshold=f'{100 * limits[f"{name}_ceiling"]:g}%',
         )
         for name, value in (('cpu', cpu), ('memory', memory))
-        if value > limits[f'{name}_percent_ceiling']
+        if value > 100 * limits[f'{name}_ceiling']
     ]
     return findings, {'cpu:percent': round(cpu, 1), 'memory:percent': round(memory, 1)}
 
@@ -255,7 +311,7 @@ def measure(
     *linux* whether PSI and cgroups are asked, *sizes* the consumers of a disk alarm, *locate* a
     declared unit's cgroup (systemd's ``ControlGroup``).
     """
-    done = Measured(interval_s=declared.limits['interval_s'])
+    done = Measured(interval_s=declared.limits['interval'])
     histories = previous.get('disk', {})
     for path in declared.paths:
         found, readings, kept = _disk(path, declared.limits, histories.get(path.as_posix(), []), now, usage)

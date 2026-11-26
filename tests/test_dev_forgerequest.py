@@ -49,8 +49,8 @@ GOLDENS = (
     + 'argv = ["-m", "solver", "golden", "regenerate", "--reference", "femm"]\n'
     + 'needs = ["femm", "windows"]\n'
     + 'cpu = 2\n'
-    + 'mem_gb = 3.5\n'
-    + 'wall_h = 72\n'
+    + 'mem = "3.5 GiB"\n'
+    + 'wall = "72 h"\n'
 )
 FEMM_HOST = Supply(
     'G', Resources(cpu=4.0, mem_gb=16.0, femm=1.0, windows=1.0), frozenset({'cpu', 'mem_gb', 'femm', 'windows'})
@@ -158,7 +158,7 @@ def test_an_undeclared_producer_name_is_refused_not_run(server, tmp_path: Path) 
 def test_a_request_is_admitted_at_the_size_its_row_declares_never_the_whole_host(server, tmp_path: Path) -> None:
     """S1 (live 2026-10-16): three requests each asked a host's WHOLE card and admitted nowhere busy.
 
-    No demand is injected: the tick sizes the request from its own row (``cpu``, ``mem_gb``).
+    No demand is injected: the tick sizes the request from its own row (``cpu``, ``mem``).
     """
     repo, tips = _origin(tmp_path)
     sha = _request(repo, tips, 'femm_goldens')
@@ -178,12 +178,23 @@ def test_an_unsized_request_row_is_refused_by_name(tmp_path: Path) -> None:
     unsized = _declare(repo, tips, GOLDENS.replace('cpu = 2\n', ''))
     with pytest.raises(UndeclaredRequest, match=r'unsized.*cpu'):
         declared_request(repo, unsized, 'femm_goldens')
-    zero = _declare(repo, tips, GOLDENS.replace('mem_gb = 3.5', 'mem_gb = 0'))
-    with pytest.raises(UndeclaredRequest, match=r'unsized.*mem_gb'):
+    zero = _declare(repo, tips, GOLDENS.replace('mem = "3.5 GiB"', 'mem = "0 GiB"'))
+    with pytest.raises(UndeclaredRequest, match=r'unsized.*mem'):
         declared_request(repo, zero, 'femm_goldens')
-    unbounded = _declare(repo, tips, GOLDENS.replace('wall_h = 72', ''))
-    with pytest.raises(UndeclaredRequest, match=r'unsized.*wall_h'):
+    bare = _declare(repo, tips, GOLDENS.replace('mem = "3.5 GiB"', 'mem = 3.5'))
+    with pytest.raises(UndeclaredRequest, match=r'unsized.*mem = 3.5 is a bare number'):
+        declared_request(repo, bare, 'femm_goldens')
+    unbounded = _declare(repo, tips, GOLDENS.replace('wall = "72 h"', ''))
+    with pytest.raises(UndeclaredRequest, match=r'unsized.*wall'):
         declared_request(repo, unbounded, 'femm_goldens')
+
+
+def test_a_unit_suffixed_request_row_is_refused_with_its_new_line(tmp_path: Path) -> None:
+    """FORMATS-MIGRATE-ONCE (user ruling 2026-11-25): ``mem_gb``/``wall_h`` are never read; the refusal is the line."""
+    repo, tips = _origin(tmp_path)
+    old = _declare(repo, tips, GOLDENS.replace('mem = "3.5 GiB"', 'mem_gb = 3.5'))
+    with pytest.raises(UndeclaredRequest, match=r'mem_gb = 3.5 is retired.*write mem = "3.5 GiB"'):
+        declared_request(repo, old, 'femm_goldens')
 
 
 def test_a_declaration_is_read_at_the_sha_and_refuses_a_malformed_row(tmp_path: Path) -> None:

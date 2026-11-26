@@ -8,7 +8,7 @@ deletion is pinned to the judged sha, so two hosts racing delete once and the se
 
 AN ORIGIN BRANCH IS A ROW of :func:`survey` when it is NOT declared (the branch set, the integration branch,
 the trunk) and it has sat idle -- since its last push or PR activity (:mod:`dev_lab.dev.branchactivity`), never its
-committer date -- for at least ``max_idle_hours``; a branch with no activity on record is listed UNKNOWN
+committer date -- for at least ``max_idle``; a branch with no activity on record is listed UNKNOWN
 (:data:`UNKNOWN_IDLE`) and nothing is done to it. MERGED means LANDED: an ancestor whose landing merge kept its
 content (:func:`~dev_lab.dev.deletejudge.landed`), so a branch an ``-s ours`` merge only made an ancestor is UNMERGED
 (dev-lab #611). Then:
@@ -162,13 +162,13 @@ def survey(
     holders = _holders(root, policy)
     rows: list[Row] = []
     for line in listed.splitlines():
-        ref, sha, stamp = line.split('	')
+        ref, sha, stamp = line.split('\t')
         name = ref.removeprefix(ORIGIN)
         if name in keep:
             continue
         committed = datetime.fromtimestamp(int(stamp), tz=UTC)
-        idle_h = idle_hours(name, committed, now=now, bound=branchset.max_idle_hours, activity=activity)
-        if idle_h is not None and idle_h < branchset.max_idle_hours:
+        idle_h = idle_hours(name, committed, now=now, bound=branchset.max_idle / _HOUR_S, activity=activity)
+        if idle_h is not None and idle_h * _HOUR_S < branchset.max_idle:
             continue
         if branchset.is_ephemeral(name) and name in heads:
             continue  # its open PR owns it

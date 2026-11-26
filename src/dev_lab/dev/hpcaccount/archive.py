@@ -36,6 +36,7 @@ from lab_commons.hpc import clean as _clean
 from lab_commons.hpc.cluster import Runner, Unreachable
 from lab_commons.hpc.grants import Grant, Machine
 from lab_commons.log import emit
+from lab_commons.objects import RCLONE_CONFIG
 
 from dev_lab.dev.artifactstores import ArtifactRefused, check_key
 from dev_lab.dev.devhost import RENDER_DOOR
@@ -46,7 +47,6 @@ from dev_lab.dev.hpcaccount.look import REPO_NAME, home_path
 from dev_lab.dev.hpcaccount.storage import UNREACHABLE, Pin, on_host
 from dev_lab.dev.hpcaccount.storagecheck import check_in_kit
 from dev_lab.dev.hpcaccount.transport import grant_runner
-from dev_lab.dev.storage import DEFAULT_RCLONE
 
 __all__ = ['ARCHIVE_PREFIX', 'STREAM_SOURCE', 'TIMEOUT', 'Refused', 'archive', 'archive_clean', 'destination', 'main']
 
@@ -129,7 +129,7 @@ def _spec(mode: str, path: str, name: str, declared: _storage.Storage | None, ac
         msg = "the account's kit named no rclone"
         raise Refused(msg)
     return {
-        'mode': mode, 'path': path, 'dest': dest, 'rclone': rclone, 'config': DEFAULT_RCLONE.as_posix(),
+        'mode': mode, 'path': path, 'dest': dest, 'rclone': rclone, 'config': RCLONE_CONFIG.as_posix(),
         'part_bytes': archivestream.PART_BYTES, 'tar': ['tar'],
     }  # fmt: skip
 

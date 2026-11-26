@@ -110,7 +110,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'slurmkilled',
     'artifacts',
     'artifactstores',
-    'largeobjects',
     # ORIGINAL: the artifact member index, split out of `artifacts` inside the kit; no consumer held them.
     'artifactpack',  # writes the member-indexed archive
     'artifactindex',  # the member-index facts and their manifest record
@@ -388,8 +387,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'escapes',  # the tick's census of writes that escaped every allowed root, new here
     'consentguard',  # CONSENT-CODE-FROM-THE-USER: the consent state dir and the planted-credential refusal, new here
     'frozen',  # USER-FROZEN-FILES: the user's frozen files and closed tracked inventory (2026-11-24), new here
-    'corechange',  # ZERO-CORE-CHANGE: application work leaves the core, else a recorded decision (2026-11-24), new here
-    'nativefirst',  # NATIVE-FIRST: Python orchestrates, the native stage computes (2026-11-25), new here
     'machineguard',  # MACHINE-FILE-IS-RENDERED: the machine file is written by its doors alone, new here
     'familyrepos',  # FAMILY-REPO-IS-CHECKED-OUT: [repos] against the family's repos, listed and enforced, new here
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
@@ -438,7 +435,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'fitting',  # ORIGINAL: 2026-11-23, the interpreter a bootstrap door names imports dev_lab and fits requires-python
     'layout',  # ORIGINAL: 2026-11-23, DECLARED-LAYOUT and NO-BACKUP-COPIES, a checkout's tree as an allow-list
     'changeselect',  # ORIGINAL: 2026-11-24, the tests a change reaches, run by verify --changed
-    'importedges',  # ORIGINAL: 2026-11-24, the family's one static import-edge reader for architecture tests
     'stallwatch',  # ORIGINAL: 2026-11-24, a test run ends when it is dead, not when the wall says so
     'worktreeseeds',  # ORIGINAL: 2026-11-24, the gitignored files a worktree is gated with, as data
     'cratefresh',  # ORIGINAL: 2026-11-24, the Rust side of dependency freshness
@@ -454,4 +450,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'spelling',  # ORIGINAL: 2026-11-24, US-SPELLING-IS-CHECKED, typos in locale en-us
     'salvage',  # ORIGINAL: 2026-11-24, worktrees --salvage and --reap-orphans record a tree's work first
     'branchlocal',  # ORIGINAL: 2026-11-25, branchdelete --local deletes local branches their content landed
+    'envreads',  # ORIGINAL: 2026-11-25, ENV-IS-READ-ONCE, the environment is read in a declared entry only
+    'harness',  # ORIGINAL: 2026-11-25, dev-lab's ENV-IS-READ-ONCE entry, the harness context as a typed record
+    'complexity',  # ORIGINAL: 2026-11-25, the per-owner complexity report (fan-out, call path, surface), not a gate
 )

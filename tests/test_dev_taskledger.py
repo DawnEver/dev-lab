@@ -15,7 +15,8 @@ import pytest
 from _arch_corpus import module_names
 from _task_ledger import on_branch, open_task, plant_ledger
 from lab_commons.config import CONFIG_ENV
-from lab_commons.home import HOME_ENV, part
+from lab_commons.home import part
+from lab_commons.hostenv import HOME_ENV
 
 from dev_lab.dev import agent_wiring, forgetask, taskledger
 from dev_lab.dev.branchset import FAMILY_EPHEMERAL, BranchSet

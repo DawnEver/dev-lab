@@ -30,7 +30,7 @@ _HOLDER = f'{ORIGIN}integrate/main'
 
 def _merged(tmp_path: Path, *strategy: str) -> tuple[Path, Path, str]:
     """The planted repo with lane/unmerged merged into integration by *strategy*; its root, origin and tip."""
-    root, origin = _planted(tmp_path, extra='max_idle_hours = 12\n')
+    root, origin = _planted(tmp_path, extra='max_idle = "12 h"\n')
     tip = _git(root, 'rev-parse', 'lane/unmerged')
     _git(root, 'checkout', '-q', 'integrate/main')
     _git(root, 'merge', '-q', '--no-ff', *strategy, '-m', 'retire stale lane/unmerged', 'lane/unmerged')
@@ -98,7 +98,7 @@ def test_the_policy_raises_the_stale_row_listing_what_a_discard_drops(ours: tupl
     (row,) = [row for row in rows if row.branch == 'lane/unmerged']
     assert row.kind == POLICY_STALE
     assert f'1 commit(s) ({tip[:12]}) with content in: unmerged' == row.discards
-    body = row.body('integrate/main', 'max_idle_hours = 12')
+    body = row.body('integrate/main', 'max_idle = "12 h"')
     assert 'branchprune discard lane/unmerged --approved' in body
     assert 'merge -s ours` PR' not in body
 
@@ -139,7 +139,7 @@ def test_the_integrator_reads_a_really_merged_lane_as_absorbed(real: tuple[Path,
 
 def test_an_unknown_activity_is_listed_and_never_deleted_or_retired(tmp_path: Path) -> None:
     """IDLE-IS-ACTIVITY: with no push or PR on record the age is UNKNOWN -- no delete, no stale alarm, no retire row."""
-    root, origin = _planted(tmp_path, extra='max_idle_hours = 12\nprune_merged = true\n')
+    root, origin = _planted(tmp_path, extra='max_idle = "12 h"\nprune_merged = true\n')
     branchset, policy = declared_branchset(root), load_policy(root)
     rows = survey(root, branchset, policy, open_heads=frozenset(), now=NOW, activity=lambda _b: None)
     unknown = {row.ref: row for row in rows if row.action == UNKNOWN_IDLE}

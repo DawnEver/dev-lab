@@ -56,7 +56,7 @@ class Fleet(Host):
 
 def _host(tmp_path, pulls: list[Pull], by_head: dict[str, tuple[CommitStatus, ...]] | None = None,
           *, glass: tuple[str, ...] = GLASS) -> Fleet:  # fmt: skip
-    return Fleet(config(tmp_path, [], extra='wave_hours_max = 4.0', glass=glass),
+    return Fleet(config(tmp_path, [], extra='wave_ceiling = "4 h"', glass=glass),
                  forge=ListingForge(pulls=pulls, by_head=by_head or {}))  # fmt: skip
 
 
@@ -138,7 +138,7 @@ class RefusingForge(ListingForge):
 
 def test_a_refused_merge_is_skipped_and_the_next_pr_still_merges(tmp_path) -> None:  # PLANTED CONTROL
     pulls = [Pull(7, 'integrate/main', HEAD, draft=False), Pull(8, 'integrate/main', 'b' * 40, draft=False)]
-    host = Fleet(config(tmp_path, [], extra='wave_hours_max = 4.0', glass=GLASS),
+    host = Fleet(config(tmp_path, [], extra='wave_ceiling = "4 h"', glass=GLASS),
                  forge=RefusingForge(pulls=pulls, refuses=7))  # fmt: skip
     host.open(max_merges=5)
     host.server.tick()
@@ -169,7 +169,7 @@ def test_a_green_pr_that_is_not_current_still_lands(tmp_path) -> None:
 
 def _consent_host(tmp_path, **forge: object) -> Fleet:
     pulls = [Pull(7, 'integrate/main', HEAD, draft=False), Pull(8, 'integrate/main', 'b' * 40, draft=False)]
-    return Fleet(config(tmp_path, [], extra='wave_hours_max = 4.0', glass=GLASS),
+    return Fleet(config(tmp_path, [], extra='wave_ceiling = "4 h"', glass=GLASS),
                  forge=ListingForge(pulls=pulls, **forge))  # fmt: skip
 
 

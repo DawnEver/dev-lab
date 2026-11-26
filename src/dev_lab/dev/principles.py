@@ -110,6 +110,17 @@ PRINCIPLES: Final = (
         'references (analytic, the vendor ladder, the previous implementation during a migration), never against a '
         'Python twin.',
     ),
+    Principle(
+        'everything-in-its-place',
+        'Everything in its place',
+        'Each thing lives in the one owner responsible for it; a misplaced thing moves, never leaving a pointer or a '
+        'copy.',
+    ),
+    Principle(
+        'no-detour',
+        'No detour',
+        'Every hop must add something; a rule that forces a detour is the defect. Complexity is measured, not guessed.',
+    ),
 )
 
 
