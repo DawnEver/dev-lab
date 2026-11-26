@@ -271,7 +271,8 @@ def _expand(name: str, raw: dict[str, tuple[str, ...]], me: str, seen: set[str])
                 out |= _expand(inner, raw, me, seen)
         else:
             out.add(dist)
-            out |= _kit_extras(dist, _spec_extras(spec), set())
+            if wanted := _spec_extras(spec):
+                out |= _kit_extras(dist, wanted, set())
     return out
 
 
@@ -279,20 +280,30 @@ _EXTRA_MARKER: Final = re.compile(r"""\bextra\s*==\s*['"](?P<extra>[^'"]+)['"]""
 
 
 def _kit_extras(dist: str, wanted: tuple[str, ...], seen: set[tuple[str, str]]) -> set[str]:
-    """What *dist*'s extras *wanted* install, transitively, from its ``Requires-Dist`` metadata."""
+    """What *dist* installs when reached through its extras *wanted*, transitively, from ``Requires-Dist``.
+
+    Its UNMARKED lines install with any extra, so they are followed too (#947: a kit whose runner is a
+    base requirement); a line marked for another extra or for a platform is not. The base requirements
+    of every distribution reached are expanded the same way; ``''`` keys the base in *seen*.
+    """
     try:
         requires = metadata.requires(dist) or []
     except metadata.PackageNotFoundError:
         return set()
     out: set[str] = set()
-    for extra in wanted:
+    for extra in ('', *wanted):
         if (dist, extra) in seen:
             continue
         seen.add((dist, extra))
         for req in requires:
             spec, _, marker = req.partition(';')
             match = _EXTRA_MARKER.search(marker)
-            if not match or canon(match['extra']) != extra or not (inner := _spec_name(spec)):
+            if extra:
+                if not match or canon(match['extra']) != extra:
+                    continue
+            elif marker.strip():
+                continue
+            if not (inner := _spec_name(spec)):
                 continue
             out.add(inner)
             out |= _kit_extras(inner, _spec_extras(spec), seen)
