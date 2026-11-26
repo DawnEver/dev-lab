@@ -150,3 +150,44 @@ def test_delete_refuses_an_entry_and_an_empty_approval(tmp_path: Path) -> None:
     with pytest.raises(MemoryRefused, match='approv'):
         memory.delete(tmp_path, 'gone', [path.relative_to(tmp_path).as_posix()], reason='r', approved='', day=DAY)
     assert path.exists()
+
+
+#: A Chinese approval, written as escapes so this source stays ASCII (NO-CJK-IN-TRACKED-SOURCE).
+_CHINESE = '\u540c\u610f\u4fee\u6539'
+
+
+def test_a_non_ascii_approval_is_refused_before_any_write_and_names_its_door(tmp_path: Path) -> None:
+    """The door wrote ``--approved`` verbatim and the note then redded NO-CJK-IN-TRACKED-SOURCE after the write.
+
+    PLANTED CONTROLS: a Chinese approval is refused by amend, rename and delete with the file unchanged; the same
+    approval rendered in English and marked ``(user, translated)`` writes.
+    """
+    rel = _entry(tmp_path)
+    before = (tmp_path / rel).read_text(encoding='utf-8')
+    with pytest.raises(MemoryRefused, match=r'\(user, translated\)'):
+        memory.amend(tmp_path, rel, 6, 'The seam costs 3 s.', reason='misstated figure', approved=_CHINESE)
+    assert (tmp_path / rel).read_text(encoding='utf-8') == before
+    named = _entry(tmp_path, name='login-jdoe-fixed')
+    with pytest.raises(MemoryRefused, match='English'):
+        memory.rename(tmp_path, named, 'login-user-fixed.md', approved=_CHINESE)
+    assert (tmp_path / named).exists()
+    path = _attach(tmp_path, '2026/08/30/.archive/a.md')
+    with pytest.raises(MemoryRefused, match='English'):
+        memory.delete(tmp_path, 'gone', [path.relative_to(tmp_path).as_posix()], reason='r', approved=_CHINESE, day=DAY)
+    assert path.exists()
+    memory.amend(
+        tmp_path, rel, 6, 'The seam costs 3 s.', reason='misstated figure', approved='agree (user, translated)'
+    )
+    assert '(user, translated)' in (tmp_path / rel).read_text(encoding='utf-8')
+
+
+def test_amending_a_note_line_is_refused_with_the_redact_door(tmp_path: Path) -> None:
+    """A note line is not amended; the refusal names the door that does change it, a redaction with a token."""
+    rel = _entry(tmp_path)
+    memory.amend(tmp_path, rel, 6, 'The seam costs 3 s.', reason='misstated figure', approved='yes fix it')
+    lines = (tmp_path / rel).read_text(encoding='utf-8').splitlines()
+    note = next(n for n, line in enumerate(lines, 1) if line.startswith('> Amended'))
+    before = (tmp_path / rel).read_text(encoding='utf-8')
+    with pytest.raises(MemoryRefused, match=r'redact .*<kebab-token>'):
+        memory.amend(tmp_path, rel, note, '> Amended differently', reason='r', approved='yes')
+    assert (tmp_path / rel).read_text(encoding='utf-8') == before
