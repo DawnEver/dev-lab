@@ -213,12 +213,19 @@ def is_memory(path: str) -> bool:
     return MEMORY_DIR in f'/{path}'
 
 
+#: An entry's place inside memory: a ``.md`` file directly in its dated directory (``<yyyy>/<mm>/<dd>/``).
+_ENTRY_INSIDE: Final = re.compile(r'\d{4}/\d{2}/\d{2}/[^/]+\.md')
+
+
 def is_attachment(path: str) -> bool:
-    """*path* is a memory file that is not an entry: any non-``.md`` file, or anything under an ``attachments/``."""
+    """*path* is a memory file that is not an entry: anything but a ``.md`` directly in a dated directory.
+
+    So a non-``.md`` file, anything under ``attachments/``, and a stray subtree such as ``.archive/``.
+    """
     if not is_memory(path):
         return False
     inside = f'/{path}'.split(f'/{MEMORY_DIR}', 1)[1]
-    return not inside.endswith('.md') or '/attachments/' in f'/{inside}'
+    return not _ENTRY_INSIDE.fullmatch(inside)
 
 
 _DELETED = re.compile(r'\bdeleted\b', re.IGNORECASE)
