@@ -12,4 +12,5 @@ __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'evidencerefs',  # no consumer judged a recorded value's provenance in the output tree (dev-lab#843)
+    'guardcollection',  # no guard judged whether a rule's test mechanism collects and runs (dev-lab#599)
 )
