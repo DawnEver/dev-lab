@@ -39,6 +39,7 @@ from lab_commons.quantity import Renamed, parse, refuse_renamed
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgedemand import refresh_checkout
+from dev_lab.dev.gitdirs import run_owner
 from dev_lab.dev.platformparts import origin_url
 
 __all__ = [
@@ -277,7 +278,7 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
         declared_wall_s(root),
         queue_s,
         key=f'verify:{root}',
-        what=f'verify:{root.name}',
+        what=f'verify:{run_owner(root)}',
         outcome=outcome,
         capacity=size,
     ), outcome
