@@ -65,24 +65,21 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from lab_commons.box import GB, Capacity
-from lab_commons.box.providers import box_engine
-from lab_commons.compute.learned import box_demand, learned, request_demand
+from lab_commons.compute.learned import learned
 from lab_commons.compute.model import (
-    REQUEST,
     Candidate,
     Ranked,
     Supply,
     expected_cost,
     rank,
 )
-from lab_commons.compute.presence import cached
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import config_path, section
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
+from dev_lab.dev._tick_demand import box_now, demand_of
 from dev_lab.dev.artifacts import remote_problem
 from dev_lab.dev.forge import (
     NoCredential,
@@ -103,17 +100,14 @@ from dev_lab.dev.forgeclaim import (
     this_seat,
 )
 from dev_lab.dev.forgeclient import client_for
-from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard, card_host
 from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from dev_lab.dev.forgerequest import declared_request
 from dev_lab.dev.forgerequesthost import remind, request_authors
 from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgeschedule import candidates, load_schedule, repo_name
 from dev_lab.dev.forgesettled import SettledHistories
-from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetake import ClaimPass
 from dev_lab.dev.forgeunit import ForgeResults, pending_dir
 from dev_lab.dev.forgewait import Box, card_budgets, nowhere, tell
@@ -121,7 +115,7 @@ from dev_lab.dev.forgework import Client
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.layout import scan_refusal
 from dev_lab.dev.partrows import this_platform
-from dev_lab.dev.platformparts import derived, origin_url, parts_of
+from dev_lab.dev.platformparts import derived, origin_url
 from dev_lab.dev.testcost import read_budget
 from dev_lab.dev.unproduced import unproduced_waived
 
@@ -269,7 +263,7 @@ def tick(
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
     room = supply or _whole(machine or 'this host', cluster=bool(serve.hpc))
-    sized = demand or _demand_of(root, cluster=bool(serve.hpc), history=history, room=room)
+    sized = demand or demand_of(root, cluster=bool(serve.hpc), history=history, room=room)
     taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
         size=sized,
@@ -343,47 +337,7 @@ def _whole(scope: str, *, cluster: bool) -> Supply:
     if cluster:
         msg = f"{scope}: a cluster tick needs the account's measured supply (forgeslurm standing); none was given"
         raise ValueError(msg)
-    return dataclasses.replace(_box_now(), scope=scope)
-
-
-def _box_now() -> Supply:
-    """What lies outside this box ledger's claims now (:func:`lab_commons.box.providers.box_engine`)."""
-    return box_engine(capacity=Capacity.read(), presence=cached()).available('box')
-
-
-def handed(statuses: Sequence[CommitStatus], part: str) -> int | None:
-    """How many ids the commit's posted parts hand to *part* -- its selection's size; ``None`` when none says."""
-    counts = [one.hands[part] for one in parts_of(statuses)[0].values() if part in one.hands]
-    return sum(counts) if counts else None
-
-
-def _demand_of(
-    root: Path,
-    *,
-    cluster: bool,
-    history: Callable[[str], Sequence[CommitStatus]] = lambda _sha: (),
-    room: Supply | None = None,
-) -> Callable[[Candidate, frozenset[str]], Mapping[str, float]]:
-    """A candidate's demand: a cluster part's measured ask, else what it will declare to this box.
-
-    A box REQUEST is sized by its own row (:func:`~lab_commons.compute.learned.request_demand`), a box part
-    by :func:`~lab_commons.compute.learned.box_demand` at the ids its commit's parts hand it (:func:`handed`),
-    narrowed to the box's FREE *room* (this tick's supply; measured now when not given).
-    """
-    repo_url = origin_url(root)
-    if cluster:
-        asked = part_demand(repo_url, ceiling_gb=None)
-        return lambda _wanted, needed: asked(needed)
-    free = (room or _box_now()).resources
-
-    def sized(wanted: Candidate, needed: frozenset[str]) -> Mapping[str, float]:
-        if wanted.kind == REQUEST:
-            row = declared_request(root, wanted.sha, wanted.producer, wanted.paths)
-            return request_demand(repo_url, row.name, needed, cpu=row.cpu, mem_gb=row.mem / GB)
-        ids = handed(history(wanted.sha), wanted.platform)
-        return box_demand(repo_url, needed, cpu=free['cpu'], mem_gb=free['mem_gb'], ids=ids)
-
-    return sized
+    return dataclasses.replace(box_now(), scope=scope)
 
 
 def _parser() -> argparse.ArgumentParser:

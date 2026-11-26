@@ -104,7 +104,7 @@ complete part or the forge's acceptance gates.
   deselected from that step and runs after it in a second boxed step at `-n 0`, alone; the two halves of the log
   are read separately and judged as one pytest report (`reports.read_stages`).
 - A heavy part is offered only for the refs `[tool.dev_lab.parts.refs.<resource>] <scope>` admits, for every
-  resource its need-set holds (`partrefs.part_refs`), and every producer runs below normal OS priority (`forgeproduce.below_normal`).
+  resource its need-set holds (`partrefs.part_refs`), and every producer runs below normal OS priority (`producerpriority.below_normal`).
 
 ## The verdict itself
 

@@ -30,7 +30,6 @@ license, its architecture, its release history) is owned, and the row says which
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import re
 import sys
 import tomllib
@@ -44,6 +43,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import ciworkflowshape
 from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, ForkedDelta, artifact_base, inspect_file, render
+from dev_lab.dev.repodeltas import load_deltas
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
 if TYPE_CHECKING:
@@ -65,7 +65,6 @@ __all__ = [
     'delta_base',
     'due_renderers',
     'is_member',
-    'load_deltas',
     'main',
     'managed_sections',
     'plan',
@@ -361,18 +360,6 @@ def render_repo(
 
 def _run(argv: list[str], root: Path) -> int:
     return _door.run(argv, cwd=root, check=False).returncode
-
-
-def load_deltas(path: Path) -> Mapping[str, Delta]:
-    """The ``DELTAS`` mapping a repo declares, read from the module file at *path* (its own convention)."""
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    if spec is None or spec.loader is None:
-        msg = f'cannot load a module from {path}'
-        raise ImportError(msg)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules.setdefault(path.stem, module)
-    spec.loader.exec_module(module)
-    return module.DELTAS
 
 
 def delta_base(artifact: str) -> Base:
