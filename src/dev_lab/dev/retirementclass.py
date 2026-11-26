@@ -18,6 +18,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Final
 
+__all__ = ['CLASSES', 'DOOR', 'refusals']
+
 CLASSES: Final = ('renamed', 'baggage', 'capability-dropped')
 
 #: A decision that may drop a capability cites the user's ruling or a numbered user decision.

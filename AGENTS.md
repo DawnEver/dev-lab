@@ -42,10 +42,9 @@ Cites, from the shared registry: `LATEST-DEPENDENCIES`, `PUBLIC-SURFACE-DECLARED
 
 ## A rule is shared; the thing that refuses one is not
 
-This repo AUTHORS the family's development rules (`dev_lab.dev.rules`). These are the
-constraints that come with owning that file. Universal rules are not restated here — they are
-cited by ID, and `tests/test_the_adoption_accounts_for_every_rule.py` is what makes the citation
-a check.
+This repo AUTHORS the family's development rules (`dev_lab.dev.rules`). These are the constraints that come with
+owning that file. Universal rules are not restated here — they are cited by ID, and
+`tests/test_the_adoption_accounts_for_every_rule.py` is what makes the citation a check.
 
 - **A STATEMENT is universal; a MECHANISM is a path in ONE tree. Never conflate them.** A row in
   `_rule_rows.py` carries the statement plus the EXISTENCE PROOF that the rule is enforceable at
