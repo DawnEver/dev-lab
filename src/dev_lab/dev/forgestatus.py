@@ -49,10 +49,12 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import GITHUB, Client
+from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'CARRIED_FROM',
     'CITED_FROM',
+    'CI_LOGS_DOOR',
     'DESCRIPTION_LIMIT',
     'DOCS_ONLY',
     'SAME_TREE',
@@ -89,6 +91,9 @@ DESCRIPTION_LIMIT: Final = 140
 
 #: A commit named in full, used as given; anything else is resolved through git.
 _FULL_SHA: Final = re.compile(r'[0-9a-f]{40}')
+
+#: The door a red part a CI job produced names for its job log (:mod:`dev_lab.dev.forgeci`, which reads this module).
+CI_LOGS_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.forge ci logs {{sha}} --failed'
 
 #: How many failing node ids ``status show`` prints before it says how many it left out.
 FAILING_LIMIT: Final = 20
@@ -325,6 +330,8 @@ def status_show(client: Client, sha: str, *, part: str = '', against: str = '') 
         lines.append(f'{status.context}  {status.state}  {status.description}')
         if status.state != 'success':
             lines += list(_red_lines(status, client, known))
+        if status.state in {'failure', 'error'} and '/actions/' in urlsplit(status.url).path:
+            lines.append(f'  its job log (a CI job produced it): {CI_LOGS_DOOR.format(sha=sha)}')
     return tuple(lines if len(lines) > bool(against) else (f'{sha[:12]} carries no {part or "tests/<part>"} status',))
 
 

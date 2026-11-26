@@ -13,6 +13,7 @@ from _forge_state import StateForge
 
 from dev_lab.dev import forgemergewaits, hostedjobs, hostedparts, jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
+from dev_lab.dev.forgeci import FAILED_JOB
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
@@ -569,7 +570,7 @@ def test_a_producer_that_posted_its_part_is_left_as_it_posted(tmp_path: Path, mo
     assert [s.state for s in status_list(forge, SHA)] == [verdict]
 
 
-@pytest.mark.parametrize('conclusion', sorted(jobparts.FAILED_JOB))
+@pytest.mark.parametrize('conclusion', sorted(FAILED_JOB))
 def test_a_row_whose_job_concluded_failed_with_no_record_is_error_naming_the_job_not_absent(conclusion: str) -> None:
     """A job that crashed before posting anything FAILED; reading it absent (pending) is what hid #6's red."""
     forge = StateForge()

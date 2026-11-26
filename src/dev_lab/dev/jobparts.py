@@ -81,6 +81,7 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.commandtests import declared_command
 from dev_lab.dev.famtests.alwayson import assert_required_collected, resource_nodes
+from dev_lab.dev.forgeci import FAILED_JOB
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import deliver_unit
@@ -98,7 +99,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     'ABSENT',
-    'FAILED_JOB',
     'HOSTED_RUNNERS',
     'NO_MATRIX',
     'Job',
@@ -141,9 +141,6 @@ _NO_TESTS_COLLECTED: Final = 5
 
 #: The states a part a job settled reads back as: a verdict, or the job's own ``error`` (:func:`produce`).
 _SETTLED: Final = frozenset({'success', 'failure', 'error'})
-
-#: The conclusions of a job that ended without producing (:func:`absent`): it failed, it is not absent.
-FAILED_JOB: Final = frozenset({'failure', 'cancelled', 'timed_out', 'startup_failure'})
 
 
 @dataclass(frozen=True)
@@ -318,8 +315,9 @@ def absent(
     """Post each part of *expected* (a :func:`matrix`) no job settled ``pending`` saying :data:`ABSENT`; the lines.
 
     Settled is a latest ``success``, ``failure`` or ``error``: a ``pending`` claim left behind is a job that died.
-    A row whose job in *jobs* (:func:`run_jobs`) concluded :data:`FAILED_JOB` is posted ``error`` naming the job:
-    it FAILED, it is not absent. Any other row already absent is left as it is, keeping when it went absent.
+    A row whose job in *jobs* (:func:`run_jobs`) concluded :data:`~dev_lab.dev.forgeci.FAILED_JOB` is posted
+    ``error`` naming the job: it FAILED, it is not absent. Any other row already absent is left as it is, keeping
+    when it went absent.
     """
     stamp = (now or datetime.now(UTC)).strftime(_STAMP)
     latest = {status.context: status for status in status_list(client, sha)}
