@@ -125,6 +125,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'diskusage',
     # ORIGINAL: no door removed a whole redundant clone; RECURSIVE-DELETE refused it with no exit (2026-11-19).
     'cloneremove',
+    # ORIGINAL: no door purged the pre-generation unit results a records home still held (2026-11-17).
+    'forgerecordpurge',
     'issueref',
     # ORIGINAL: the merge queue is derived from origin refs and gate statuses; no consumer held one.
     'integrator',
