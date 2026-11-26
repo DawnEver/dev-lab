@@ -186,7 +186,10 @@ def declared_layout(root: Path) -> Layout:
     if missing:
         raise _refuse(manifest, f'the family home(s) {missing} are not declared')
     for key, allows in rows.items():
-        if key.split('/', 1)[0] == 'output' and (bad := sorted(allows & {*CODE_SUFFIXES, ANY})):
+        # A family kind's suffixes are data dev-lab owns (FAMILY_KINDS: salvage keeps .bundle/.diff); a repo row
+        # naming a family kind is refused above, so only the repo's own output rows are judged here.
+        own = key not in FAMILY_ROWS
+        if own and key.split('/', 1)[0] == 'output' and (bad := sorted(allows & {*CODE_SUFFIXES, ANY})):
             raise _refuse(manifest, f'{key} allows {bad}, which output/ never holds')
         if key.split('/', 1)[0] not in _FORGE_DIRS and (bad := sorted(allows & OTHER_CONFIG_SUFFIXES)):
             raise _refuse(
