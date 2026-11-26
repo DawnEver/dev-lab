@@ -13,6 +13,7 @@ from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 
 from dev_lab.dev._branch_tags import CONTAINED_TAG_DOOR, TAG_EVENT, delete_contained_tags
+from dev_lab.dev.branchprune import retired
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 
@@ -54,3 +55,34 @@ def test_a_missing_tag_is_named(tmp_path: Path) -> None:
 
 def test_the_raw_delete_refusal_names_the_tag_door() -> None:
     assert CONTAINED_TAG_DOOR.removeprefix('python ') in rules_by_id(DENY_RULES)['PUSH-REMOTE-DELETE'].remedy
+
+
+def test_an_unlanded_tag_goes_only_on_the_users_words_and_its_record_lists_what_it_drops(tmp_path: Path) -> None:
+    """Every non-version tag is cleaned (user ruling 2026-11-26): an unlanded one on the user's words, recorded.
+
+    PLANTED CONTROL: unapproved, the tag stays and the refusal names the approved door; approved, it goes and the
+    record carries the tag's sha and every unlanded commit it drops, so each can be recreated.
+    """
+    _, work = clone_pair(tmp_path)
+    advance(work, 'integrate/main', 'i.txt', 'i\n')
+    first = advance(work, 'lane/x', 'x.txt', 'x\n')
+    second = advance(work, 'lane/x', 'y.txt', 'y\n')
+    _tag(work, 'stray', second)
+    run_git(work, 'push', '-q', '--no-verify', 'origin', '--delete', 'lane/x')
+    said: list[str] = []
+    assert delete_contained_tags(work, ['stray'], fetch=fetch_origin, say=said.append) == 1
+    assert _on_origin(work, 'stray')
+    assert any('--approved' in line for line in said), said
+    said.clear()
+    code = delete_contained_tags(work, ['stray'], fetch=fetch_origin, say=said.append, approved='clean every tag')
+    assert code == 0, said
+    assert not _on_origin(work, 'stray')
+    record = next(line for line in said if TAG_EVENT in line)
+    assert second in record
+    assert first in record
+    assert 'clean every tag' in record
+
+
+def test_the_cli_admits_approved_words_on_a_tag() -> None:
+    assert retired(['tag', 'stray', '--approved', 'clean it']) == ''
+    assert retired(['delete', 'lane/x', '--approved', 'clean it']), 'PLANTED CONTROL: still retired on delete'

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from _forge_fake import run_git
 from dev_lab.dev import privatemarkers, walls
 from dev_lab.dev.forgecli import issue_and_pr
 from dev_lab.dev.forgehosts import public_siblings
+from dev_lab.dev.privatemarkers import main
 
 _MARKERS = (re.compile('zorblaxhost', re.IGNORECASE),)
 
@@ -29,7 +31,8 @@ def test_the_refusal_leads_with_its_rule_and_puts_its_door_on_a_line_of_its_own(
     lines = text.splitlines()
     assert lines[0].startswith('PRIVATE-MARKERS: '), text
     assert lines[1].startswith('Door: '), text
-    assert 'zorblaxhost' not in text.lower()
+    assert "'zorblaxhost'" in text, 'the refusal names the token that tripped it'
+    assert '/zorblaxhost/' in text, 'and the declared entry it matched'
     assert walls.rule_of(text) == 'PRIVATE-MARKERS'
     assert walls.has_remedy(text)
     assert not walls.has_remedy(' '.join(lines[:2])), 'PLANTED CONTROL: folded onto one line, no door'
@@ -94,3 +97,66 @@ def test_the_public_siblings_are_the_owners_repos_the_forge_says_are_public() ->
     assert public_siblings(client) == ('zorblax-lab', 'flimflam-lab')
     assert client.paths
     assert client.paths[0].startswith('/users/someone/repos')
+
+
+# The walls of 2026-11-26: a commit message naming a PUBLIC family repo was refused (the message scans masked no
+# public name), the refusal named neither the token nor its set, and a one-letter host trailer passed unseen.
+# Fixture names are invented; the denylist entries mirror the real kinds (a host, a product, a public sibling).
+_DENYLIST = 'quuxhost\nzorblax-lab\nsecret-lab\n'
+_PUBLIC = ('zorblax-lab', 'flimflam-lab')
+
+
+@pytest.fixture
+def judged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> Callable[[str], tuple[int, str]]:
+    """Judge a commit message with the commit-msg row; ``(exit code, stderr)``. The forge says: public, two siblings."""
+    denylist = tmp_path / 'private-markers'
+    denylist.write_text(_DENYLIST, encoding='utf-8')
+    monkeypatch.setattr(privatemarkers, 'repo_is_private', lambda *_, **__: (False, ''))
+    monkeypatch.setattr(privatemarkers, 'public_names', lambda *_, **__: _PUBLIC)
+
+    def judge(message: str) -> tuple[int, str]:
+        msg = tmp_path / 'COMMIT_EDITMSG'
+        msg.write_text(message, encoding='utf-8')
+        code = main(['--root', str(tmp_path), '--markers', str(denylist), '--commit-msg-file', str(msg)])
+        return code, capsys.readouterr().err
+
+    return judge
+
+
+def test_a_commit_message_naming_a_public_sibling_is_not_refused(judged: Callable[[str], tuple[int, str]]) -> None:
+    assert judged('fix(dep): relock zorblax-lab and flimflam-lab\n') == (0, '')
+
+
+@pytest.mark.parametrize(
+    ('message', 'token', 'declared'),
+    [
+        ('ran on quuxhost\n', "'quuxhost'", '/quuxhost/'),
+        ('port secret-lab next\n', "'secret-lab'", r'/secret\-lab/'),
+        ('see C:' + r'\Users\someone\repo' + '\n', 'someone', 'windows home path'),
+        ('fix: x\n\nForge-Host: G\n', 'Forge-Host: G', 'one-letter host trailer'),
+    ],
+)
+def test_a_commit_message_naming_a_private_value_is_refused_and_names_it(
+    judged: Callable[[str], tuple[int, str]], message: str, token: str, declared: str
+) -> None:
+    """PLANTED CONTROLS: a host, a private product, a private path and a one-letter host trailer each refuse.
+
+    The refusal names the token and the declared set (a denylist entry or a generic kind) it matched.
+    """
+    code, err = judged(message)
+    assert code == 1, err
+    assert token in err, err
+    assert declared in err, err
+
+
+def test_a_public_name_beside_a_private_one_still_refuses(judged: Callable[[str], tuple[int, str]]) -> None:
+    code, err = judged('relock zorblax-lab on quuxhost\n')
+    assert code == 1
+    assert 'quuxhost' in err
+    assert 'zorblax-lab' not in err
+
+
+def test_a_hashed_host_trailer_passes(judged: Callable[[str], tuple[int, str]]) -> None:
+    assert judged('fix: x\n\nForge-Host: host-0123456789ab\n') == (0, '')
