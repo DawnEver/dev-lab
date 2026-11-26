@@ -28,7 +28,6 @@ names the need and the probe's reading (:meth:`Host.missing`).
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 import tomllib
@@ -43,6 +42,8 @@ from typing import Final
 import pytest
 from lab_commons.compute.probe import OS_NAMES
 from lab_commons.compute.toolchecks import CHECKS
+
+from dev_lab.dev.harness import child_env
 
 __all__ = [
     'KINDS',
@@ -197,7 +198,7 @@ class Host:
     @classmethod
     def this(cls) -> Host:
         """The running host: its OS, the tool probe (cached per process), installed distributions, environment."""
-        return cls(OS_NAMES.get(sys.platform, sys.platform), cache(_tool_present), _installed, os.environ)
+        return cls(OS_NAMES.get(sys.platform, sys.platform), cache(_tool_present), _installed, child_env())
 
     def missing(self, need: Need, *, root: Path) -> str | None:
         """``None`` when *need* is present here, else why it is missing -- the reading, named."""
