@@ -26,9 +26,10 @@ import dataclasses
 import json
 import os
 import sys
+import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
@@ -82,8 +83,9 @@ from dev_lab.dev import (
 )
 from dev_lab.dev.forge import Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
-from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgelabels import relabel
+from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed, within
+from dev_lab.dev.forgefeedstatus import unheard_notice
+from dev_lab.dev.forgelabels import LabelMissing, relabel
 from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest
 from dev_lab.dev.issuekind import KINDS
 from dev_lab.dev.labsession import ENV
@@ -254,6 +256,20 @@ def _relabeled(client: Client, args: argparse.Namespace) -> Issue:
     return client.issue_view(args.number)
 
 
+def _show(args: argparse.Namespace, result: Issue | PullRequest | Comment | tuple[Issue, ...], root: Path) -> None:
+    """Print *result* (JSON with ``--json``); an issue verb that subscribed a task nobody hears says so."""
+    items = result if isinstance(result, tuple) else (result,)
+    if args.json:
+        data = [dataclasses.asdict(item) for item in items]
+        emit(json.dumps(data if isinstance(result, tuple) else data[0], indent=2))
+    else:
+        for item in items:
+            emit(_render(item))
+    labels = getattr(args, 'add', None) or getattr(args, 'label', ())
+    if args.noun == 'issue' and (said := unheard_notice(root, labels)):
+        emit(f'[forge] {said}', err=True)  # TASK-HEARS-ITS-FORGE-EVENTS: a subscription nobody hears is said
+
+
 def _declared_body(args: argparse.Namespace) -> str:
     """*args*' PR body, with :data:`~dev_lab.dev.forgedraft.READY_WHEN` as its last line when the author declared it."""
     if not args.ready_when_current:
@@ -306,17 +322,33 @@ _PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, Callable[[argparse.Namespace],
 }
 
 
+#: The whole time an issue verb (or ``pr view``) may wait on the forge: one full 30 s attempt and a cut second.
+#: v1 #2: reads hung 90-120 s without a word -- three 30 s socket timeouts and two backoffs, the retry loop's whole
+#: bound, while the forge did not answer. Past the budget the verb ends, naming what each attempt measured.
+READ_BUDGET_S: Final = 45.0
+
+
+def _budgeted(noun: str, verb: str) -> bool:
+    return noun == 'issue' or (noun, verb) == ('pr', 'view')
+
+
 def issue_and_pr(
     argv: Sequence[str] | None = None,
     *,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
     transport: Transport = forge_transport,
+    budget_s: float = READ_BUDGET_S,
 ) -> int:
-    """``python -m dev_lab.dev.forge issue|pr <verb> ...`` (:mod:`forgework`); exit 1 with netverb's remedy."""
+    """``python -m dev_lab.dev.forge issue|pr <verb> ...`` (:mod:`forgework`); exit 1 with netverb's remedy.
+
+    An issue verb and ``pr view`` end within *budget_s* (:data:`READ_BUDGET_S`), naming the cause.
+    """
     parser = _parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
+    if _budgeted(args.noun, args.verb):
+        transport = within(transport, time.monotonic() + budget_s, f'forge {args.noun} {args.verb}', budget_s)
     if (refused := _refused(parser, args, root, env, transport)) is not None:
         emit(refused, err=True)
         walls.refused_text(root, refused, reason=f'forge {args.noun} {args.verb}')
@@ -339,14 +371,11 @@ def issue_and_pr(
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
+    except (BudgetSpent, LabelMissing) as stopped:
+        emit(f'[forge] {stopped}', err=True)
+        return 1
     forgetask.record(args, result, root)
-    items = result if isinstance(result, tuple) else (result,)
-    if args.json:
-        data = [dataclasses.asdict(item) for item in items]
-        emit(json.dumps(data if isinstance(result, tuple) else data[0], indent=2))
-    else:
-        for item in items:
-            emit(_render(item))
+    _show(args, result, root)
     if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
         emit(forgedraft.opened_line(result))  # the exact next step for a draft, on stdout (D53)
     if (args.noun, args.verb) == ('pr', 'create') and (

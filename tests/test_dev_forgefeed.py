@@ -17,7 +17,7 @@ import pytest
 from _forge_state import FORGE, StateForge
 from _task_ledger import on_branch, open_task, plant_ledger
 
-from dev_lab.dev import forgefeed, forgethreads, sessionprs
+from dev_lab.dev import forgefeed, forgefeedstatus, forgethreads, sessionprs
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgestatus import status_post
 
@@ -64,7 +64,7 @@ def test_the_beat_hears_a_session_only_while_fresh_live_and_covering(monkeypatch
         assert not forgefeed.heard('s1', now=1001.0), 'PLANTED CONTROL: a PR the last poll did not cover'
         forgefeed.poll_once(clients=lambda _f: forge, now=1002.0)
         assert forgefeed.heard('s1', now=1003.0)
-    monkeypatch.setattr(forgefeed, 'still_the_same_process', lambda _pid, _created: False)
+    monkeypatch.setattr(forgefeedstatus, 'still_the_same_process', lambda _pid, _created: False)
     assert not forgefeed.heard('s1', now=1003.0), 'PLANTED CONTROL: a dead watcher does not hear'
 
 
@@ -77,14 +77,15 @@ def test_the_watcher_is_a_singleton_and_a_dead_holders_lock_is_taken_over(monkey
     assert not forgefeed.running()
     with forgefeed.held() as first:
         assert first
-        monkeypatch.setattr(forgefeed, 'still_the_same_process', lambda _pid, _created: False)
+        monkeypatch.setattr(forgefeedstatus, 'still_the_same_process', lambda _pid, _created: False)
         with forgefeed.held() as taken:
             assert taken, 'a dead holder (crashed watcher) is taken over'
 
 
 def test_start_detaches_only_when_no_watcher_runs(monkeypatch: pytest.MonkeyPatch, tmp_path: os.PathLike) -> None:
     started: list[list[str]] = []
-    monkeypatch.setattr(forgefeed, 'detach_argv', lambda _root, args: started.append(args))
+    monkeypatch.setattr(forgefeed, 'stable_python', lambda root: (Path(root), Path(root) / 'python'))
+    monkeypatch.setattr(forgefeed, 'detach_argv', lambda _root, args, **_k: started.append(args))
     assert forgefeed.ensure(tmp_path)
     assert started == [['-m', 'dev_lab.dev.forgefeed', 'run']]
     with forgefeed.held():

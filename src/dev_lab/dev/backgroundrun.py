@@ -84,13 +84,13 @@ def held(
     yield False
 
 
-def detach_argv(root: Path, args: list[str]) -> None:
-    """Start this interpreter with *args* in *root*, outliving this process and opening no window.
+def detach_argv(root: Path, args: list[str], *, python: Path | None = None) -> None:
+    """Start *python* (default: this interpreter) with *args* in *root*, outliving this process and opening no window.
 
     This interpreter as its checkout's CURRENT environment has it (:func:`dev_lab.dev.venvpointer.current_interpreter`):
     a run detached by a process from a legacy ``.venv`` or an older ``.venvs/<name>`` never holds that one again.
     """
-    argv = [current_interpreter(), *args]
+    argv = [current_interpreter() if python is None else str(python), *args]
     quiet = {'stdin': subprocess.DEVNULL, 'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL}
     if sys.platform != 'win32':
         _door.popen(argv, cwd=root, start_new_session=True, **quiet)
