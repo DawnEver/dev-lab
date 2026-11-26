@@ -82,6 +82,9 @@ FAMILY_KINDS: Final[dict[str, dict[str, frozenset[str]]]] = {
     'prune': {'.': frozenset({'.log'})},  # branchprune --log
     'reclaim': {'.': frozenset({'.log'})},  # reclaimrun
     'reaper': {'.': frozenset({'.log'})},  # shellreaper
+    'complexity': {'.': frozenset({'.jsonl'})},  # complexity: one owners.jsonl record per run
+    'oraclegc': {'.': frozenset({'.md'})},  # oraclegc report: one report per run
+    'deploy-femm': {'.': frozenset({'.log'})},  # hpcaccount.femm: the FEMM build log
 }
 
 
