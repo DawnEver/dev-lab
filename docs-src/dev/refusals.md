@@ -106,6 +106,13 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 - **Why it is refused.** A bundle (like an `archive/*` tag or a copy under `output/`) parks unlanded work where nobody reads it again; origin's tags are versions only (`ONLY-VERSION-TAGS`, `dev_lab.dev.milestonebase`, user ruling 2026-11-23).
 - **The exit.** Unlanded work is merged or discarded (`MERGE-OR-DELETE`): merge it through a PR, or show the user what dropping it discards and, only on their words, `branchprune discard <branch> --approved "<their words>"`; else leave it -- never `git merge -s ours`, which keeps the commits as ancestors and loses their content (#611) (a tag: `branchprune tag <tag>`).
 
+## NO-LOCAL-HEAVY
+
+- **Why it is refused.** A repo's core optimization programs (a campaign driver, a connection search, a product enumeration, a rank or merge pipeline) take every core and the memory of the box they start on; one started on a workstation froze the whole system (user ruling 2026-11-26). They run only where heavy compute is declared: the forge, an HPC executor, or a host whose machine file declares `[capabilities.heavy_compute]`.
+- **What is refused.** The repo declares its heavy entries in `[tool.dev_lab.heavy]` (`modules`, `scripts` -- a trailing `/` is every script under it -- and `bins`); `dev_lab.dev.heavyguard.heavy_rules` renders them, plus a pytest or `verify --part` selection of the `heavy_compute` marker, into one row of that repo's `deny-rules.json` (its adoption module's `LOCAL_RULES`). The pattern is a prefilter; `dev_lab.dev.heavyguard --admit` asks the host (`lab_commons.box.heavy.refusal`), so a compute host is admitted. Light commands (`cargo test -p <crate> --lib`) never match.
+- **The real guard is the entry's own.** Each declared entry calls `lab_commons.box.heavy.require` first in its `main` and exits 2 before any work on a declared workstation (outside Python: `python -m lab_commons.box.heavy check <entry>`). A test marked `heavy_compute` is a never-run xfail naming the host wherever the capability is absent (the family pytest plugin).
+- **The exit.** Request it on the forge from the main session, submit it to an HPC executor (`python -m lab_commons.hpc submit -c <job.toml>`), or run it on a declared compute host. Only the user overrides one run: their own words in `LAB_COMMONS_HEAVY_APPROVED="<words>"` on the command line.
+
 ## GIT-STASH
 
 - **Why it is refused.** `refs/stash` is REPO-WIDE. It is one ref per repository, not per worktree, so a stash taken in one checkout is popped by whoever pops next -- in a family whose premise is a shared, possibly concurrent checkout, that is another agent losing work it never knew existed.
