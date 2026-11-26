@@ -195,6 +195,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'datedmemory': ('supersedes', 'tests/architecture/test_memory_lives_under_a_date.py'),
     'hookinstall': ('supersedes', 'tests/architecture/test_the_declared_hooks_are_installed.py'),
     'noreflection': ('supersedes', 'tests/architecture/ratchets/test_no_reflection_in_production.py'),
+    'publicsurface': ('supersedes', 'tests/architecture/declarations/test_every_module_declares_its_public_surface.py'),
     # TWO consumer copies under ONE filename, 91.5% identical in CODE, and a byte diff says the 8.5%
     # is a docstring plus one noun -- the repo's own name, four times. `dev_lab.dev.dep` already
     # published the MECHANISM (`Port`, `mutate`, the two gap sentences, the refusal, the retirement);

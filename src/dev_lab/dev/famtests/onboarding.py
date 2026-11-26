@@ -105,6 +105,12 @@ def onboarding_gaps(text: str, has: Callable[[str], bool], where: str) -> list[s
         ),
     ]
     missing += retired_placement(text, origin)
+    if declared_table(data, 'components') is not None:
+        missing.append(
+            f'{origin}: [tool.dev_lab.components] is retired (D125): an engine is a locked dependency -- uv.lock is '
+            'the pin, `python -m dev_lab.dev.relock` moves it, `dep --local NAME` overlays a checkout; delete the '
+            'table and its components/ submodules'
+        )
     missing += [
         f'[tool.dev_lab.render] {key} = "<the path {renderer} reads>" -- declare it as a sibling does, or a relock '
         'leaves the family files it renders stale'

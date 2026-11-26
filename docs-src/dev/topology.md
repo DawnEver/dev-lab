@@ -26,7 +26,7 @@ host configuration (private): data only, consumed by the dev kit's ops door on e
 | leaf | the shared runtime every member imports (`lab_commons`) | nothing in the family |
 | dev kit | `dev_lab.dev` (forge, integrator, hooks, refusals), `dev_lab.ops` (host roles), `dev_lab.supervise` | the leaf |
 | engine / library | a solver engine, an optimizer, an AI layer, a document or learning toolkit | the leaf; the dev kit as a `test` extra |
-| product | an application that mounts engines (as git dependencies or submodules, [components](components.md)) | engines, libraries, leaf, dev kit |
+| product | an application that mounts engines (as locked git dependencies: `uv.lock` is the pin, `dev_lab.dev.relock` moves it) | engines, libraries, leaf, dev kit |
 | data library | a data-only repo pinned by its product as a data dependency; its PRs run the product's consumer tests (`dev_lab.dev.dataconsumers`) | -- |
 | host configuration | `hosts/<server>.toml` (each host's `supervise.toml`) and `family.toml` (the shared `[family]` layer) | read by `dev_lab.ops` |
 

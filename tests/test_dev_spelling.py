@@ -133,3 +133,21 @@ def test_a_checked_path_beside_the_excluded_still_reds(tmp_path: Path) -> None:
 def test_a_cited_author_is_a_word() -> None:
     config = tomllib.loads(spelling.CONFIG.read_text(encoding='utf-8'))
     assert config['default']['extend-words']['Mak'] == 'Mak'
+
+
+@pytest.mark.parametrize(
+    'line',
+    [
+        'MOR: model order reduction keeps the slow modes',
+        'commutated drives switch the phase current at each sector',
+        'the rotor passes two criticals before the rated speed',
+    ],
+)
+def test_a_domain_term_is_a_word(tmp_path: Path, line: str) -> None:
+    """2026-11-26: typos read MOR as MORE, commutated as commuted, criticals as critical; each is a domain term.
+
+    PLANTED CONTROL: the same note with a real misspelling still reds, so the pass is the word list, not a blind step.
+    """
+    assert _check(_repo(tmp_path / 'r', {'notes.md': f'{line}\n'})) == spelling.CLEAN
+    misspelled = f'{line} and teh rest\n'  # spelling-ignore-line
+    assert _check(_repo(tmp_path / 'n', {'notes.md': misspelled})) == spelling.FOUND

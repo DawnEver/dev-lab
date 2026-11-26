@@ -26,12 +26,29 @@ from dev_lab.dev.retirementclass import refusals
 #: dev-lab's own tables, moved from ``[tool.lab_commons]`` to ``[tool.dev_lab]`` (plan A3); ``schedule``,
 #: ``tools``, ``hpc``, ``tests`` and ``artifacts`` stay, because lab-commons code reads them.
 MOVED_TABLES: Final = (
-    'areas', 'automode', 'branchset', 'carry', 'ci', 'components', 'dep', 'doors', 'ephemeral_refs', 'forge',
+    'areas', 'automode', 'branchset', 'carry', 'ci', 'dep', 'doors', 'ephemeral_refs', 'forge',
     'hooks', 'integrator', 'parts', 'placement', 'requests', 'review', 'stoprun', 'verify', 'worktrees',
 )  # fmt: skip
 
 #: Retired spelling -> (its replacement, the decision that retired it, its class -- dev_lab.dev.retirementclass).
 RETIRED_SPELLINGS: Final = {
+    **dict.fromkeys(
+        (
+            'dev_lab.dev.components',
+            'componentbump',
+            '_dep_components',
+            'components_of',
+            'pr/components-bump',
+        ),
+        (
+            (
+                'an engine is a locked dependency of the product (uv.lock is the pin, dev_lab.dev.relock moves it, '
+                'dep --local NAME overlays a checkout); its table is refused by name in famtests.onboarding'
+            ),
+            'user ruling D125 2026-11-26: products do not mount engines as submodules under components/<name>',
+            'capability-dropped',
+        ),
+    ),
     **dict.fromkeys(
         (
             f'durations.{name}'

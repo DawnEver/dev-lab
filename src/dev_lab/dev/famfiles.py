@@ -33,7 +33,7 @@ import argparse
 import re
 import sys
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -103,6 +103,18 @@ class Renderer:
     required: frozenset[str] = frozenset()
     present_only: bool = False  # set: due only where a file it writes is present, member or not
     needs: str = ''  # set: in a family repo with no file it writes, due only where the renderer named here is
+    table: str = ''  # set: a declared [tool.dev_lab.<table>] stands in for *required* (the inputs as data)
+
+    def missing(self, text: str) -> list[str]:
+        """The *required* keys manifest *text* leaves undeclared, ``[]`` where its data table stands in."""
+        stands_in = self.table and self.table in tomllib.loads(text or '').get('tool', {}).get('dev_lab', {})
+        return [] if stands_in else sorted(self.required - set(_render_table(text)))
+
+    def why_missing(self, missing: Sequence[str]) -> str:
+        """The skip reason for *missing* inputs, naming the data table that would stand in for them."""
+        return f'[{RENDER_TABLE}] {", ".join(missing)} is not declared' + (
+            f', nor [tool.dev_lab.{self.table}]' if self.table else ''
+        )
 
 
 #: Optional ``deltas``: a repo with no deltas module (cc-market) has no per-file overrides and adopts no base.
@@ -111,7 +123,7 @@ FAMFILES: Final = Renderer('famfiles', ('dev_lab.dev.famfiles', '--files'), inpu
 AGENT_GUARD: Final = Renderer('agent_guard', ('dev_lab.dev.agent_guard', '--install'), needs='hook_adoption')
 HOOK_ADOPTION: Final = Renderer(
     'hook_adoption', ('dev_lab.dev.hook_adoption',), inputs=(('adoption', '--adoption'),),
-    required=frozenset({'adoption'}),
+    required=frozenset({'adoption'}), table='hook_adoption',
 )  # fmt: skip
 CIWORKFLOWS: Final = Renderer('ciworkflows', ('dev_lab.dev.ciworkflows', 'render'), repo_flag='--root')
 #: The editor's managed keys; every other key of the file stays the user's (dev_lab.dev.vscodesettings).
@@ -247,7 +259,6 @@ def plan(root: Path) -> tuple[tuple[Renderer, str | None], ...]:
     declared.
     """
     text = _manifest(root)
-    declared = _render_table(text)
     member = is_member(text)
     present = set(_due(lambda path: (root / path).is_file()))
 
@@ -258,8 +269,8 @@ def plan(root: Path) -> tuple[tuple[Renderer, str | None], ...]:
             return 'no file it writes is present (a repo committing Rust carries rust-toolchain.toml: lockcheck)'
         if not member:
             return 'not a family repo (no dev-lab dependency, no [tool.dev_lab.*] table) and no file it writes exists'
-        if missing := sorted(renderer.required - set(declared)):
-            return f'[{RENDER_TABLE}] {", ".join(missing)} is not declared'
+        if missing := renderer.missing(text):
+            return renderer.why_missing(missing)
         if renderer.needs and (reason := why(_NAMED[renderer.needs])) is not None:
             return f'it needs {renderer.needs}, skipped: {reason}'
         return None
@@ -311,8 +322,7 @@ def undeclared_inputs(text: str, has: Callable[[str], bool]) -> list[str]:
     A renderer is DUE where a file it writes is present (``has(path)``); without its input a relock cannot
     re-render that tree's family files, and they go stale.
     """
-    declared = _render_table(text)
-    return [f'{r.name} {key}' for r in _due(has) for key in sorted(r.required - set(declared))]
+    return [f'{r.name} {key}' for r in _due(has) for key in r.missing(text)]
 
 
 def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
@@ -320,11 +330,11 @@ def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
 
     RAISES :class:`ValueError` naming the key when a required input is not declared.
     """
-    declared = _render_table(_manifest(root))
-    if missing := sorted(renderer.required - set(declared)):
+    declared = _render_table(text := _manifest(root))
+    if missing := renderer.missing(text):
         msg = (
-            f'{renderer.name} renders files {root} holds, but [{RENDER_TABLE}] {", ".join(missing)} is not '
-            'declared in its pyproject.toml: declare the path it reads'
+            f'{renderer.name} renders files {root} holds, but {renderer.why_missing(missing)} in its '
+            'pyproject.toml: declare what it reads'
         )
         raise ValueError(msg)
     argv = [python, '-m', *renderer.command, renderer.repo_flag, str(root)]

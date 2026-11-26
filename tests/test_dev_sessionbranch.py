@@ -18,7 +18,6 @@ from _task_ledger import open_task, plant_ledger
 
 from dev_lab.dev.branchset import branchset_from
 from dev_lab.dev.breakglass import notices
-from dev_lab.dev.componentbump import LANE
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.metrics import BYPASS, HAND_ACTION, read
 from dev_lab.dev.native_session import harness_keys
@@ -560,9 +559,9 @@ def test_the_declared_branches_land(repo: Path) -> None:
     assert done.returncode == 0, done.stderr
 
 
-@pytest.mark.parametrize('branch', [LANE, RELOCK_BRANCH, 'integrate/main', 'main'])
+@pytest.mark.parametrize('branch', [RELOCK_BRANCH, 'integrate/main', 'main'])
 def test_every_machine_pusher_targets_a_branch_the_family_default_admits(branch: str) -> None:
-    """The forge's own pushers (component bump, relock; autosync pushes only pr/ heads) and the declared pair."""
+    """The forge's own pushers (relock; autosync pushes only pr/ heads) and the declared pair."""
     declared = branchset_from("[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n", 'p')
     assert declared.admits(branch)
 

@@ -159,6 +159,48 @@ def test_the_leak_scan_sees_a_planted_fleet_fact() -> None:
     assert 'login1.cluster.example.ac.uk' in leaks(['on login1.cluster.example.ac.uk'])
 
 
+_MACHINE = """\
+[workstation]
+registry = "{registry}"
+
+[hpc]
+reach = ["research"]
+
+[hpc.clusters.c]
+hosts = ["login.cluster.example"]
+
+[hpc.clusters.c.slurm_accounts.acct]
+billed = true
+budget = {{ {budget} = {value}, since = 2026-01-01, until = 2028-01-01 }}
+
+[[hpc.grant]]
+user = "me"
+cluster = "c"
+slurm_account = "acct"
+role = "research"
+"""
+
+
+def test_the_fleet_reads_a_budget_spelled_with_its_unit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """2026-11-26: the automode and ciworkflows renders died on ``Budget(core_time=...)`` (TypeError, no door).
+
+    A lab-commons below dev-lab's declared floor was installed; this pins the floor's reader of the budget
+    ``core_time = "<n> h"``. PLANTED CONTROL: the retired ``core_hours`` spelling is refused naming its successor.
+    """
+    registry = tmp_path / 'registry.json'
+    registry.write_text('{"hosts": []}', encoding='utf-8')
+    machine = tmp_path / 'config.toml'
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(machine))
+    spelled = {'registry': registry.as_posix(), 'budget': 'core_time', 'value': '"20000 h"'}
+    machine.write_text(_MACHINE.format(**spelled), encoding='utf-8')
+    (grant,) = read_fleet().grants
+    assert grant.budget is not None
+    assert grant.budget.core_hours == pytest.approx(20000, abs=1e-9)
+    machine.write_text(_MACHINE.format(**{**spelled, 'budget': 'core_hours', 'value': '20000.0'}), encoding='utf-8')
+    with pytest.raises(SourcesUnavailable, match='core_time'):
+        read_fleet()
+
+
 def test_an_unreadable_source_writes_nothing_and_says_why(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED CONTROL: a machine file with no registry -- a cluster login node -- is inconclusive, by name."""
     work = _repo(tmp_path)

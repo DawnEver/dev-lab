@@ -566,3 +566,21 @@ def test_a_repo_glob_row_cannot_widen_a_family_kind(tmp_path) -> None:
         'output/logs/26/11/25/verify/figs/',
         'output/logs/26/11/25/verify/plot.png',
     ], found
+
+
+def test_a_family_kinds_declared_data_is_not_refused_as_output_code(tmp_path: Path) -> None:
+    """2026-11-26: every layout was refused because the family ``salvage`` kind admits ``.bundle``/``.diff``.
+
+    The output-code refusal judges what a REPO declares; a family kind's suffixes are data dev-lab owns
+    (``datedlog.FAMILY_KINDS``). PLANTED CONTROLS: a repo row allowing ``.py`` under output/ is still refused, and
+    a ``.py`` planted in the salvage tree is still a violation.
+    """
+    root = _checkout(tmp_path)
+    assert '.bundle' in declared_layout(root).rows['output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/salvage/*/*/*']
+    _plant(root, 'output/logs/26/11/26/salvage/u/r/c/work.bundle')
+    assert layout_violations(root)[1] == []
+    _plant(root, 'output/logs/26/11/26/salvage/u/r/c/work.py')
+    assert any('work.py' in one for one in layout_violations(root)[1])
+    coded = _TABLE.replace("'output/logs' = []", "'output/logs' = ['.py']")
+    with pytest.raises(LayoutNotDeclared, match='never holds'):
+        declared_layout(_checkout(tmp_path / 'coded', coded))

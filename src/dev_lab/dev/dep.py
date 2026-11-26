@@ -79,7 +79,6 @@ with importing(entry=__name__ == '__main__'):
 
     from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, toolchain, venvcurrent, worktreeseeds
     from dev_lab.dev._dep_aftersync import after_sync, retire_anchors
-    from dev_lab.dev._dep_components import changed
     from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
     from dev_lab.dev._dep_pip import Mode, Version, pip_argv
     from dev_lab.dev._dep_publish import publish_built
@@ -382,7 +381,6 @@ def _run(
             syncing=syncing,
             upgrade_packages=args.upgrade_package,
             frozen=args.bootstrap is not None or locking,
-            reinstall_packages=changed(root, live) if syncing else (),
         )
         overlay = _dep_local.step(
             root, args.local, syncing=syncing, uv=command[0], python=python, prefix=prefix, run=run, env=environment

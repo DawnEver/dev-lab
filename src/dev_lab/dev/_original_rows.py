@@ -97,8 +97,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'integrate',
     'trialmerge',
     'labsession',
-    'components',
-    'componentbump',
     'shatree',
     'branchprune',
     'branchpolicy',  # ORIGINAL: the branch policy observed and the prune role's one duty (D46, 2026-11-19)

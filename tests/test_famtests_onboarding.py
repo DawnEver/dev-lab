@@ -137,3 +137,20 @@ def test_a_rendered_family_file_without_its_render_input_declared_is_a_gap() -> 
     only_gitignore = {'AGENTS.md', 'uv.lock', '.gitignore'}
     left = ' '.join(onboarding_gaps(_COMPLETE, only_gitignore.__contains__, 'origin/x'))
     assert onboarding_gaps(_COMPLETE, only_gitignore.__contains__, 'origin/x') == [], left
+
+
+def test_a_retired_engine_mount_table_is_a_named_gap() -> None:
+    """D125 (user, 2026-11-26): products do not mount engines under ``components/<name>``; the table is refused.
+
+    PLANTED CONTROL: the onboarded manifest above has no gap until the table is declared.
+    """
+    text = (
+        "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
+        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\npr_merges_since = 'abc'\n"
+        "[tool.dev_lab.hooks]\n[tool.lab_commons.tests]\nproduce = ['-m', 'dev_lab.dev.verify', '--part', '{part}']\n"
+    )
+    assert onboarding_gaps(text, {'AGENTS.md', 'uv.lock'}.__contains__, 'origin/x') == []
+    mounted = text + "[tool.dev_lab.components.engine]\nurl = 'https://f/o/engine.git'\n"
+    (gap,) = onboarding_gaps(mounted, {'AGENTS.md', 'uv.lock'}.__contains__, 'origin/x')
+    assert 'retired' in gap
+    assert 'uv.lock' in gap
