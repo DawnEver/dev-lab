@@ -1925,3 +1925,63 @@ def test_an_oom_ask_grows_from_the_measured_peak_not_the_limit(home: Path, monke
     record.write_bytes(gzip.compress(json.dumps({'peaks_mb': {}}).encode()))
     cluster.killed(run, record)
     assert asks == [pytest.approx(4199 / 1024 * measured.MEASURED_GROWTH, rel=1e-12, abs=0.0)]
+
+
+def _retire(path: Path) -> dict[str, Any]:
+    """*path* rewritten the way a run file was stored before the US-spelling rename (2026-11-24)."""
+    raw = json.loads(path.read_text(encoding='utf-8'))
+    old = {('artefact' if key == 'artifact' else key): value for key, value in raw.items()}  # spelling-ignore-line
+    path.write_text(json.dumps(old, indent=2), encoding='utf-8')
+    return old
+
+
+def test_an_old_spelling_record_beside_a_current_one_is_named_and_the_current_one_read(home: Path) -> None:
+    """Ada 2026-11-25: one retired-key record crashed every serve tick; refused BY NAME, the rest advance."""
+    run = _start(home, _Store())
+    old = forgerunstate.save(dataclasses.replace(run, sha='d' * 40))
+    _retire(old)
+    heard: list[str] = []
+    assert forgerunstate.live(run.repo_url, refused=heard.append) == (run,)
+    assert len(heard) == 1
+    assert heard[0].split(maxsplit=1)[0] == str(old), 'the refusal names the file first: the alarm is about it'
+    assert "'artefact' (now 'artifact')" in heard[0]  # spelling-ignore-line
+    assert forgerunstate.MIGRATE in heard[0]
+    with pytest.raises(forgerunstate.RetiredKeys):
+        forgerunstate.live(run.repo_url)
+
+
+def test_a_key_no_schema_declares_is_refused_not_a_crash(home: Path) -> None:
+    """PLANTED CONTROL for the general case: an undeclared key is a named refusal, never a TypeError."""
+    run = _start(home, _Store())
+    (path,) = forgerunstate.directory().glob('*.json')
+    path.write_text(json.dumps({**json.loads(path.read_text(encoding='utf-8')), 'stray': 1}), encoding='utf-8')
+    with pytest.raises(forgerunstate.ForeignSchema, match=r"\['stray'\].*squeue --me"):
+        forgerunstate.live(run.repo_url)
+
+
+def test_migrate_dry_run_writes_nothing_and_apply_makes_both_records_read(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run = _start(home, _Store())
+    old_run = dataclasses.replace(run, sha='d' * 40, artifact='a-run-id')
+    old = forgerunstate.save(old_run)
+    before = _retire(old)
+    stamp = old.stat().st_mtime_ns
+    assert forgerunstate.main(['migrate']) == 0
+    assert 'would rename artefact -> artifact' in capsys.readouterr().out  # spelling-ignore-line
+    assert json.loads(old.read_text(encoding='utf-8')) == before, 'the dry run wrote nothing'
+    assert forgerunstate.main(['migrate', '--apply']) == 0
+    assert 'renamed artefact -> artifact' in capsys.readouterr().out  # spelling-ignore-line
+    assert old.stat().st_mtime_ns == stamp, 'the run keeps its place in the live order'
+    assert set(forgerunstate.live(run.repo_url)) == {run, old_run}
+    assert forgerunstate.migrate(apply=True) == (), 'migrated once: nothing left to migrate'
+
+
+def test_migrate_leaves_a_record_carrying_both_spellings_as_it_is(home: Path) -> None:
+    _start(home, _Store())
+    (path,) = forgerunstate.directory().glob('*.json')
+    raw = {**json.loads(path.read_text(encoding='utf-8')), 'artefact': 'x'}  # spelling-ignore-line
+    path.write_text(json.dumps(raw), encoding='utf-8')
+    (line,) = forgerunstate.migrate(apply=True)
+    assert 'nothing written' in line
+    assert json.loads(path.read_text(encoding='utf-8')) == raw
