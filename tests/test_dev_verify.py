@@ -1786,7 +1786,7 @@ def test_a_selection_declares_the_memory_its_files_measured_never_a_fixed_figure
     files = verifybox.selection_files(tmp_path, ['py', '-m', 'pytest', 'tests/u', '-q'])
     assert files == ('tests/u/test_a.py', 'tests/u/test_b.py', 'tests/u/test_new.py')
     assert verifybox.selection_files(tmp_path, ['tests/u/test_a.py::t']) == ('tests/u/test_a.py',)
-    learned.learn_peaks('https://g/v.git', {'tests/u/test_a.py': 1024.0, 'tests/u/test_b.py': 2048.0})
+    learned.learn_peaks('https://g/v.git', {'tests/u/test_a.py': 1024.0, 'tests/u/test_b.py': 2048.0}, learned.EXITED)
     assert verifybox.selection_mem_gb('https://g/v.git', ['tests/u/test_a.py'], 2) == 2 * 1.0 * learned.BOX_HEADROOM
     assert verifybox.selection_mem_gb('https://g/v.git', ['tests/u/test_new.py'], 1) == 1.5 * learned.BOX_HEADROOM
     assert verifybox.selection_mem_gb('https://g/none.git', ['tests/x.py'], 4) == 4.0, 'the 1 GB floor per worker'
@@ -1805,7 +1805,7 @@ def test_a_declared_worker_peak_prices_a_worker_where_nothing_was_learned(tmp_pa
     assert verifybox.selection_mem_gb('https://g/hosted.git', ['tests/x.py'], 2) == 2.0
     priced = verifybox.selection_mem_gb('https://g/hosted.git', ['tests/x.py'], 2, declared_gb=declared)
     assert priced == 2 * 4.0 * learned.BOX_HEADROOM
-    learned.learn_peaks('https://g/big.git', {'tests/x.py': 8 * 1024.0})
+    learned.learn_peaks('https://g/big.git', {'tests/x.py': 8 * 1024.0}, learned.EXITED)
     assert (
         verifybox.selection_mem_gb('https://g/big.git', ['tests/x.py'], 1, declared_gb=1.0) == 8 * learned.BOX_HEADROOM
     )
