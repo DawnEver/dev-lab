@@ -17,7 +17,7 @@ by this command.
 THEN THE LOCK (user ruling 2026-11-07). A clean sync then relocks every floated sibling (dev-lab, lab-commons, ...)
 to its line's current head through the dependency door (:func:`relock_floating`) and commits
 the lock in the same sync (:func:`relock`) together with every generated file the new pin renders -- each
-renderer the repo's files call for (:data:`dev_lab.dev.famfiles.RENDERERS`), run with the tree's re-synced
+renderer the repo's files call for (:data:`dev_lab.dev._famfiles_registry.RENDERERS`), run with the tree's re-synced
 environment (:func:`dev_lab.dev.relock.rerender`) -- so ONE push of the result is current for the ``pr-current``
 judgment (:mod:`dev_lab.dev.prcurrent`), which names a ``pr/*`` head that lacks integration's tip or lags a sibling.
 

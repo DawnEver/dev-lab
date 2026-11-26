@@ -19,7 +19,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
     max_diff = "400 kB"        # one slice: what one reviewer reads
     max_total = "800 kB"       # one review: slices past it are listed, not read (strictest lens first)
-    derived = []               # globs of generated files beyond the family's (famfiles.GENERATED)
+    derived = []               # globs of generated files beyond the family's (_famfiles_registry.GENERATED)
     strict = [...]             # globs read under the strict lens; light = [...] under the light one
     code = [...]               # globs of what executes (reviewcode.CODE): nothing else is read or capped
     not_code = [...]           # globs never code whatever their extension (reviewcode.NOT_CODE)

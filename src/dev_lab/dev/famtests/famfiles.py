@@ -3,7 +3,7 @@
 Two questions, and a repo answers both with one test file:
 
 * :func:`assert_every_project_file_is_accounted_for` -- every tracked project-level file is in the
-  family list (:data:`dev_lab.dev.famfiles.PROJECT_FILES`) or in the repo's own *owned_here* with
+  family list (:data:`dev_lab.dev._famfiles_registry.PROJECT_FILES`) or in the repo's own *owned_here* with
   a reason. A file in neither is drifting with nobody saying so.
 * :func:`assert_every_managed_file_is_rendered` -- every famconfig base is declared, no delta restates
   a base line, and every artifact on disk is what base plus delta render. It COMPOSES the
@@ -18,8 +18,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dev_lab.dev._famfiles_disk import project_files_on_disk, unaccounted, unplaced_workflows
+from dev_lab.dev._famfiles_registry import PROJECT_FILES, RETIRED_PROJECT_FILES
 from dev_lab.dev.famconfig import BASES
-from dev_lab.dev.famfiles import PROJECT_FILES, RETIRED_PROJECT_FILES
 from dev_lab.dev.famtests.configrender import (
     assert_artifact_is_rendered,
     assert_delta_is_not_a_fork,
@@ -54,7 +54,8 @@ def assert_every_project_file_is_accounted_for(*, root: Path, owned_here: Mappin
         f'{path}: owned here AND a family row -- delete the local entry' for path in owned_here if path in PROJECT_FILES
     ]
     problems += [
-        f'{path}: RETIRED -- {RETIRED_PROJECT_FILES[path]}; git rm it (dev_lab.dev.famfiles.RETIRED_PROJECT_FILES)'
+        f'{path}: RETIRED -- {RETIRED_PROJECT_FILES[path]}; git rm it '
+        '(dev_lab.dev._famfiles_registry.RETIRED_PROJECT_FILES)'
         for path in on_disk
         if path in RETIRED_PROJECT_FILES
     ]
@@ -65,7 +66,7 @@ def assert_every_project_file_is_accounted_for(*, root: Path, owned_here: Mappin
     problems += [f'{path}: owned here with no reason' for path, why in owned_here.items() if not why.strip()]
     problems += [f'{path}: owned here but not tracked in this repo' for path in owned_here if path not in on_disk]
     problems += [
-        f'{path}: tracked, and neither in dev_lab.dev.famfiles.PROJECT_FILES nor owned here -- add it to '
+        f'{path}: tracked, and neither in dev_lab.dev._famfiles_registry.PROJECT_FILES nor owned here -- add it to '
         f'one of them (the family row if its content is the family`s toolchain, owned_here with the reason if not)'
         for path in unaccounted(root, owned_here)
     ]

@@ -17,7 +17,7 @@ mode refuses, so every reviewer reported ``unsupported`` and the head was never 
   then the LAST LANDED HEAD, when it is newer, so the continuation's review reads only the increment pushed after
   its predecessor merged, whatever the merge method (a squash leaves the landed head off integration). A change
   that touches previously reviewed code is in scope: scope is what the diff touches.
-* GENERATED files are not read: the family's whole-file renders (:data:`dev_lab.dev.famfiles.GENERATED`) and
+* GENERATED files are not read: the family's whole-file renders (:data:`dev_lab.dev._famfiles_registry.GENERATED`) and
   the globs the repo declares (``derived``). Their generator is reviewed, not its output.
 * CODE ONLY (user ruling 2026-10-29): a review reads what executes -- source, tests, scripts, and the build and
   workflow config that runs -- never prose or data. :func:`dev_lab.dev.reviewcode.is_code` is that one classification
@@ -41,8 +41,8 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.temp import TEMP_PREFIX
 
+from dev_lab.dev._famfiles_registry import GENERATED
 from dev_lab.dev.blobfetch import fetch_blobs, git, is_partial
-from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgereview_command import ReviewPending
 from dev_lab.dev.forgereview_findings import merge_outputs
 from dev_lab.dev.principles import payload

@@ -18,7 +18,7 @@ Now the relock lives on ONE branch, :data:`BRANCH`, with no sha in its name:
 * the open relock already carries exactly these moves on exactly this integration tip (:func:`carried`): nothing;
 * else the door rewrites the lock ON THE CURRENT TIP -- a tip that moved while the pull request was open is
   rebuilt on, never merged into -- and every renderer due in the tree is run again with the new pin
-  (:func:`rerender`, read off :data:`dev_lab.dev.famfiles.RENDERERS`); both are ONE commit on integration,
+  (:func:`rerender`, read off :data:`dev_lab.dev._famfiles_registry.RENDERERS`); both are ONE commit on integration,
   force-pushed to :data:`BRANCH` with a lease on the head it replaces (a racing writer loses the push and the
   next tick reads afresh), and the open pull request's body is rewritten, or one is opened. It merges like every
   other once its parts pass.

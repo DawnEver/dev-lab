@@ -8,7 +8,7 @@ re-render; never hand-edit a rendered file.
 
 ## The shape
 
-- **One list.** `dev_lab.dev.famfiles.PROJECT_FILES` names every project-level file the family knows, each
+- **One list.** `dev_lab.dev._famfiles_registry.PROJECT_FILES` names every project-level file the family knows, each
   MANAGED (the row names its mechanism) or REPO-OWNED (the row names its reason). A repo adds its own files to
   an `owned_here` mapping, each with a reason. A tracked file in neither is refused.
 - **One engine.** `dev_lab.dev.famconfig` renders a whole file from a BASE plus the repo's `Delta`
@@ -55,8 +55,8 @@ re-render; never hand-edit a rendered file.
   A table's `nightly = true` schedules it at the default 02:00 UTC (`nightlycron.NIGHTLY_CRON`); a repo sets its
   own time with `nightly = "<5-field cron>"` in that table (D63), and a malformed cron is refused by name. GitHub
   starts a scheduled run ~6-8 h late (measured 2026-11-18, `.claude/memory/2026/11/18/`).
-- **A relock re-renders.** Every generated row of `famfiles.PROJECT_FILES` names its renderer, and
-  `famfiles.RENDERERS` is read off those rows. After a relock moves the lock, `forge sync` and the forge relock
+- **A relock re-renders.** Every generated row of `_famfiles_registry.PROJECT_FILES` names its renderer, and
+  `_famfiles_registry.RENDERERS` is read off those rows. After a relock moves the lock, `forge sync` and the forge relock
   run each renderer whose file the tree holds, with the tree's re-synced `.venv`, and commit the output with the
   lock (`relock.rerender`); a failing renderer restores the tree and refuses. What a renderer reads from the repo
   is declared under `[tool.dev_lab.render]`: `deltas` (the famfiles delta module), `adoption` (the module

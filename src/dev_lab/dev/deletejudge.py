@@ -33,8 +33,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from dev_lab.dev._famfiles_registry import GENERATED
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.lanepolicy import Policy
 
 __all__ = ['LOSSY', 'ORIGIN', 'PROTECTED', 'Verdict', 'grant', 'granted', 'judge', 'unlanded']
@@ -136,7 +136,8 @@ def unlanded(
     The commits on *sha* alone name the files they wrote: a plain commit every file it changes, a merge only the
     files it resolved (``--cc``: differing from every parent), so a sync merge of integration names none. Of those,
     the *exempt* ones are set aside: LOSSLESS-DELETE passes the family's generated files
-    (:data:`~dev_lab.dev.famfiles.GENERATED`), regenerated rather than lost; the landed sweep passes none. Any other
+    (:data:`~dev_lab.dev._famfiles_registry.GENERATED`), regenerated rather than lost; the landed sweep passes
+    none. Any other
     whose ``(mode, blob)`` at the tip differs from integration's -- added (even empty), changed, re-moded or deleted
     -- is unlanded. A file integration changed after the branch landed it is refused too: a branch-side edit and
     integration moving ahead are not told apart, because a false refusal is safe and a false delete is not. Paths

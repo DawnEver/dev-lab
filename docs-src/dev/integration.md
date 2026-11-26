@@ -227,7 +227,7 @@ slice, not whether a head is read at all:
 
 - *The branch's own change.* The range starts at the merge base with `integrate/main`, which a merge of
   `integrate/main` moves with it -- so merged-in upstream work is never re-read.
-- *Minus generated files.* The family's whole-file renders (`famfiles.GENERATED`: `uv.lock`, the rendered
+- *Minus generated files.* The family's whole-file renders (`_famfiles_registry.GENERATED`: `uv.lock`, the rendered
   ignores, hooks and workflows) and the repo's `derived` globs (goldens, rendered blocks). Their generator is
   reviewed, not its output. A head of only generated files is `success`, nothing to review.
 - *In slices, one lens each.* The reviewable files are packed, a directory kept whole when it fits, into slices
@@ -263,7 +263,7 @@ model = "<id>"             # the default is forgereview_declared.FAMILY_MODEL
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
 max_diff = "400 kB"        # one slice
 max_total = "800 kB"       # one review: slices past it are listed, not read
-derived = []               # generated-file globs beyond famfiles.GENERATED
+derived = []               # generated-file globs beyond _famfiles_registry.GENERATED
 strict = ["**/hooks/**", "**/rules/**", "tests/architecture/**", "**/contracts/**"]  # the default
 light = ["docs-src/**", "**/.claude/memory/**", "**/*.md"]                          # the default
 claim_stale = "1 h"        # the default
