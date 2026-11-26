@@ -149,5 +149,5 @@ def test_a_domain_term_is_a_word(tmp_path: Path, line: str) -> None:
     PLANTED CONTROL: the same note with a real misspelling still reds, so the pass is the word list, not a blind step.
     """
     assert _check(_repo(tmp_path / 'r', {'notes.md': f'{line}\n'})) == spelling.CLEAN
-    misspelled = f'{line} and teh rest\n'
+    misspelled = f'{line} and teh rest\n'  # spelling-ignore-line
     assert _check(_repo(tmp_path / 'n', {'notes.md': misspelled})) == spelling.FOUND
