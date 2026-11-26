@@ -689,3 +689,52 @@ def test_an_offline_command_is_no_network_verb(argv: list[str]) -> None:
 def test_the_same_commands_online_stay_network_verbs(argv: list[str]) -> None:
     """PLANTED CONTROL: without --offline or a local path the very same verbs still reach a remote."""
     assert is_network_verb(argv)
+
+
+#: What v1 saw retried 3x as "transient" (2026-11-26, v1 #1), and the deterministic shapes beside them.
+_CERTAIN = (
+    ("error: unexpected argument '--frozn' found\n\nUsage: uv sync [OPTIONS]", Diagnosis.USAGE_REFUSED),
+    ('usage: x [-h]\nx: error: unrecognized arguments: --extra X', Diagnosis.USAGE_REFUSED),
+    ("git: 'fetchh' is not a git command. See 'git --help'.", Diagnosis.USAGE_REFUSED),
+    (
+        '  x No solution found when resolving dependencies:\n  Because there is no version of foo==9 ...',
+        Diagnosis.RESOLUTION_FAILED,
+    ),
+    (
+        "error: Distribution `x==1` can't be installed because it doesn't have a source distribution or wheel",
+        Diagnosis.RESOLUTION_FAILED,
+    ),
+    ('x.c(3): fatal error C1083: Cannot open include file\n  x Failed to build `x==1`', Diagnosis.BUILD_FAILED),
+    ('error: could not compile `wdg` (lib) due to 2 previous errors', Diagnosis.BUILD_FAILED),
+    ("fatal: couldn't find remote ref refs/heads/nope", Diagnosis.REF_ABSENT),
+    ('error: src refspec nope does not match any', Diagnosis.REF_ABSENT),
+    ('git@forge: Permission denied (publickey).', Diagnosis.PERMISSION_REFUSED),
+)
+
+
+@pytest.mark.parametrize(('output', 'diagnosis'), _CERTAIN)
+def test_a_certain_failure_is_refused_on_the_first_attempt(output: str, diagnosis: Diagnosis) -> None:
+    """Bad arguments, a failed resolution or build, an absent ref, a refused key: no retry can change the answer."""
+    assert classify(output) is diagnosis
+    report = run_network_verb(
+        [sys.executable, '-c', f'import sys; sys.stderr.write({output!r}); sys.exit(2)'],
+        attempts=3,
+        backoff_s=0.0,
+        sleep=lambda _s: None,
+    )
+    assert report.attempt_count == 1
+    assert report.disposition is Disposition.REFUSED
+    assert 'retrying cannot change this answer' in report.remedy
+
+
+@pytest.mark.parametrize(
+    'output',
+    [
+        "fatal: unable to access 'https://forge.example/x.git/': Could not resolve host: forge.example",
+        'error: RPC failed; curl 56 Recv failure: Connection reset by peer',
+        'remote: Internal Server Error',
+    ],
+)
+def test_a_planted_transient_still_retries(output: str) -> None:
+    """PLANTED CONTROL: the new permanent rows do not swallow a network blip."""
+    assert is_retryable(classify(output))

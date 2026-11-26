@@ -120,6 +120,14 @@ class Diagnosis(StrEnum):
     LOCK_ABSENT = 'lock-absent'
     #: A git hook could not start (a module its interpreter lacks): only reinstalling the hooks changes it.
     HOOK_UNRUNNABLE = 'hook-unrunnable'
+    #: The argv was refused by the program's own parser: the same argv is refused again.
+    USAGE_REFUSED = 'usage-refused'
+    #: The resolver proved no solution (or no wheel fits): the index answered, and answers the same.
+    RESOLUTION_FAILED = 'resolution-failed'
+    #: A compile or build-backend step failed: the same sources fail the same way.
+    BUILD_FAILED = 'build-failed'
+    #: The named ref does not exist where it was asked for.
+    REF_ABSENT = 'ref-absent'
     STOPPED_BY_CALLER = 'stopped-by-caller'
 
 
