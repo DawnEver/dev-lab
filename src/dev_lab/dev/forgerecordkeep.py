@@ -24,12 +24,12 @@ if TYPE_CHECKING:
 
 __all__ = [
     'DEFAULT_KEEP_TRUNK',
-    'OLD_UNIT_RESULT',
+    'GENERATIONLESS_UNIT_RESULT',
     'RECORDS_PER_ROW',
     'UNIT_RESULT',
     'doomed_of',
+    'generationless_of',
     'kept_shas',
-    'old_format_of',
     'sha_of',
 ]
 
@@ -49,7 +49,7 @@ UNIT_RESULT: Final = re.compile(
 )
 #: A unit result named before results were keyed by generation (``unit-<unit>-<result>.tar.<ext>``): the old
 #: format, deleted once by ``records purge-old-format`` and never read (a stored format migrates once).
-OLD_UNIT_RESULT: Final = re.compile(r'^unit-[0-9a-f]{64}-[0-9a-f]{64}\.tar\.[a-z]+$')
+GENERATIONLESS_UNIT_RESULT: Final = re.compile(r'^unit-[0-9a-f]{64}-[0-9a-f]{64}\.tar\.[a-z]+$')
 _TRACKING: Final = 'refs/remotes/origin/'
 
 
@@ -112,6 +112,6 @@ def doomed_of(
     return tuple(item for item in found if item.id in stale)
 
 
-def old_format_of(found: Sequence[Attachment]) -> tuple[Attachment, ...]:
+def generationless_of(found: Sequence[Attachment]) -> tuple[Attachment, ...]:
     """The unit results of *found* named in the old, generation-less format; nothing else ever matches."""
-    return tuple(item for item in found if OLD_UNIT_RESULT.match(item.name))
+    return tuple(item for item in found if GENERATIONLESS_UNIT_RESULT.match(item.name))

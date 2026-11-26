@@ -122,10 +122,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: no rule kept a rust toolchain by its pins; 135 k files per account sat in unpinned ones.
     'retentionrust',
     'diskusage',
-    # ORIGINAL: no door removed a whole redundant clone; RECURSIVE-DELETE refused it with no exit (2026-11-19).
-    'cloneremove',
-    # ORIGINAL: no door purged the pre-generation unit results a records home still held (2026-11-17).
-    'forgerecordpurge',
     'issueref',
     # ORIGINAL: the merge queue is derived from origin refs and gate statuses; no consumer held one.
     'integrator',
@@ -392,6 +388,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'frozen',  # USER-FROZEN-FILES: the user's frozen files and closed tracked inventory (2026-11-24), new here
     'machineguard',  # MACHINE-FILE-IS-RENDERED: the machine file is written by its doors alone, new here
     'familyrepos',  # FAMILY-REPO-IS-CHECKED-OUT: [repos] against the family's repos, listed and enforced, new here
+    'familymanifest',  # a repo's manifest text or its family row's declaration (split from familyrepos)
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
     'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
     'purge',  # one door deletes one git-ignored, untracked named path (rulings 2026-11-23), new here
@@ -413,8 +410,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'doorrows',
     # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-16); no consumer held it.
     'remotedoors',
-    # ORIGINAL: the read-only secret-name list (2026-11-10); no consumer listed names.
-    'forgesecretnames',
     # ORIGINAL: the scratch-repo git environment (2026-11-10, the core.bare flip); no consumer held it.
     'gitenv',
     # ORIGINAL: pinned data dependencies (2026-11-10); no consumer pinned a data repo before.

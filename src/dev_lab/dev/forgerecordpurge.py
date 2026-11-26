@@ -3,8 +3,9 @@
 A unit result is named ``unit-<unit>-g<generation>-<result>.tar.<ext>`` (:func:`dev_lab.dev.forgeunit.result_name`).
 One posted before results were keyed by generation lacks the ``-g<n>-`` key: a stored format migrates once and is
 never read in its old shape, so those attachments are deleted once -- ``--dry-run`` names them and their sizes,
-``--apply`` deletes them. Only :data:`~dev_lab.dev.forgerecordkeep.OLD_UNIT_RESULT` matches: a keyed result, a run
-record, a tombstone or a named file is never touched.
+``--apply`` deletes them.
+Only :data:`~dev_lab.dev.forgerecordkeep.GENERATIONLESS_UNIT_RESULT` matches:
+a keyed result, a run record, a tombstone or a named file is never touched.
 """
 
 from __future__ import annotations
@@ -19,16 +20,16 @@ from lab_commons.log import emit
 from dev_lab.dev.forge import Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgerecordkeep import old_format_of
+from dev_lab.dev.forgerecordkeep import generationless_of
 from dev_lab.dev.forgerecords import Attachment, delete, listing
 from dev_lab.dev.forgework import Client
 
-__all__ = ['main', 'purge_old_format', 'report']
+__all__ = ['main', 'purge_generationless', 'report']
 
 
-def purge_old_format(client: Client, *, apply: bool) -> tuple[Attachment, ...]:
+def purge_generationless(client: Client, *, apply: bool) -> tuple[Attachment, ...]:
     """Every old-format unit result on *client*'s records home, oldest first; deleted when *apply*."""
-    doomed = old_format_of(listing(client))
+    doomed = generationless_of(listing(client))
     if apply:
         delete(client, doomed)
     return doomed
@@ -58,7 +59,7 @@ def main(
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     client = client_for(Path.cwd() if cwd is None else cwd, env=env, transport=transport)
     try:
-        return report(purge_old_format(client, apply=args.apply), apply=args.apply)
+        return report(purge_generationless(client, apply=args.apply), apply=args.apply)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)

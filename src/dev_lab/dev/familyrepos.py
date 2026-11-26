@@ -31,22 +31,22 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import tomllib
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Final, TextIO
 
 import lab_commons.launch as _door
-from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
-from dev_lab.dev.checkout import git_out
 from dev_lab.dev.disclosure import details_for
+from dev_lab.dev.familymanifest import FAMILY_TABLE
+from dev_lab.dev.familymanifest import family_rows as _family
+from dev_lab.dev.familymanifest import live_config as _live
+from dev_lab.dev.familymanifest import remote_key as _key
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'FAMILY_TABLE',
     'HAZARD',
     'LOCAL_TABLE',
     'REMEDY',
@@ -55,16 +55,12 @@ __all__ = [
     'census',
     'clone_missing',
     'clone_refusal',
-    'declaration',
     'listing',
     'main',
-    'manifest_text',
     'notice',
 ]
 
 RULE_ID: Final = 'FAMILY-REPO-IS-CHECKED-OUT'
-#: The family layer's table: name -> ``{remote, branch}``.
-FAMILY_TABLE: Final = 'family_repos'
 #: The local layer's table: name -> absolute checkout path.
 LOCAL_TABLE: Final = 'repos'
 HAZARD: Final = 'a second clone of a family repo this machine already checks out splits its work between two trees.'
@@ -78,19 +74,6 @@ _UNSET_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost local unse
 _CLONE_TIMEOUT_S: Final = 1800.0
 _BOOTSTRAP_TIMEOUT_S: Final = 3600
 _URL: Final = re.compile(r'(?:[a-z][a-z0-9+.-]*://|[\w.-]+@[\w.-]+:)[^\s"\';&|()]+', re.IGNORECASE)
-
-
-def _key(url: str) -> str:
-    """A remote url as ``host/owner/name``, lower case: scheme, user, ``.git`` and a trailing slash dropped."""
-    text = url.strip().lower()
-    text = re.sub(r'^[a-z][a-z0-9+.-]*://', '', text)
-    text = re.sub(r'^[^/@]+@', '', text).replace(':', '/', 1) if '@' in text.split('/', 1)[0] else text
-    return re.sub(r'(?:\.git)?/*$', '', text)
-
-
-def _family(live: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
-    table = live.get(FAMILY_TABLE, {})
-    return {name: row for name, row in table.items() if isinstance(row, Mapping)} if isinstance(table, Mapping) else {}
 
 
 def _local(live: Mapping[str, Any]) -> dict[str, str]:
@@ -187,47 +170,6 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
     except (OSError, ValueError):
         return None
     return '\n'.join(lines) or None
-
-
-def declaration(remote: str, live: Mapping[str, Any]) -> str:
-    """The ``[tool.dev_lab.*]`` text the family row for *remote* implies (``''`` when no row names it).
-
-    A repo with no manifest of its own (a data repo) is declared once, by its family row: its ``branch`` is both
-    its trunk and its integration branch; the branch set's other keys keep their family defaults.
-    """
-    wanted = _key(remote)
-    for row in _family(live).values():
-        branch = str(row.get('branch', '')).strip()
-        if branch and _key(str(row.get('remote', ''))) == wanted:
-            return (
-                f'[tool.dev_lab.branchset]\ntrunk = "{branch}"\nsessions = []\n\n'
-                f'[tool.dev_lab.integrator]\nintegration = "{branch}"\n'
-            )
-    return ''
-
-
-def manifest_text(root: Path) -> tuple[str, str]:
-    """*root*'s ``pyproject.toml`` text and name; with none, its family row's :func:`declaration` and its source.
-
-    No manifest and no row: ``''`` and a name pointing at both doors, so each reader refuses naming them.
-    """
-    manifest = root / 'pyproject.toml'
-    if manifest.is_file():
-        return manifest.read_text(encoding='utf-8'), str(manifest)
-
-    remote = (git_out(root, 'remote', 'get-url', 'origin') or '').strip()
-    try:
-        text = declaration(remote, _live(None)) if remote else ''
-    except (OSError, ValueError):
-        text = ''
-    if text:
-        return text, f'[{FAMILY_TABLE}] row for {remote} in {machineconfig.config_path()}'
-    return '', f'{manifest} (or a [{FAMILY_TABLE}] row for this repo in the config source)'
-
-
-def _live(machine: Path | None) -> dict[str, Any]:
-    path = machine or machineconfig.config_path()
-    return tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:

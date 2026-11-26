@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from _forge_fake import run_git
 from lab_commons.config import config_path
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 
 from dev_lab.dev.branchset import declared_branchset
 from dev_lab.dev.lanepolicy import IntegrationNotDeclared, load_policy

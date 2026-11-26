@@ -51,7 +51,7 @@ from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 from dev_lab.dev.branchfate import discard, settle
 from dev_lab.dev.checkout import authority_for, git_out, origin_branches
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.familyrepos import manifest_text
+from dev_lab.dev.familymanifest import manifest_text
 from dev_lab.dev.reclaim import QUIET_S, reclaim
 from dev_lab.dev.venvpath import running_interpreter
 

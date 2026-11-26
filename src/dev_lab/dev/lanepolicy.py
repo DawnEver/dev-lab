@@ -22,7 +22,7 @@ from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.familyrepos import manifest_text
+from dev_lab.dev.familymanifest import manifest_text
 
 __all__ = [
     'FAMILY_INTEGRATION',

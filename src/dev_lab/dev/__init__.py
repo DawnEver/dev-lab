@@ -407,6 +407,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`dev_lab.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
 * :mod:`dev_lab.dev.forgerecordkeep` -- what a records prune keeps: record names, live shas, the selection.
+* :mod:`dev_lab.dev.forgerecordpurge` -- generation-less unit results deleted once: ``--dry-run`` or ``--apply``.
 * :mod:`dev_lab.dev.forgeunit` -- compute units on the forge: shared results (first wins), a unit offered as a Job.
 * :mod:`dev_lab.dev.toolrelease` -- a pinned tool release (rclone): sha256-checked, installed user-space.
 * :mod:`dev_lab.dev.familyroot` -- the MAIN checkout and the family root, from git alone (no lab-commons subpackage).
@@ -723,6 +724,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   its doors.
 * :mod:`dev_lab.dev.familyrepos` -- FAMILY-REPO-IS-CHECKED-OUT: ``[repos]`` against the family's ``[family_repos]``:
   listed at SessionStart, census in ``devhost drift``, a clone of a checked-out family repo refused.
+* :mod:`dev_lab.dev.familymanifest` -- a repo's manifest text: its ``pyproject.toml``, or its family row's declaration.
 * :mod:`dev_lab.dev.devprofile` -- the default an undeclared machine renders, its enrollment door, ``[bridge]``.
 * :mod:`dev_lab.dev.devschema` -- the ``[dev]`` host-file table's keys and checks, and what they derive.
 * :mod:`dev_lab.dev.devdeclared` -- the effective ``[dev]`` of a host: the family's table under the host file's.

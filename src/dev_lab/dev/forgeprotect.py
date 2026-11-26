@@ -58,7 +58,7 @@ from dev_lab.dev._protect_steps import Step
 from dev_lab.dev.ciworkflows import placed
 from dev_lab.dev.ciworkflowshape import WORKFLOW_DIRS
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.familyrepos import FAMILY_TABLE
+from dev_lab.dev.familymanifest import FAMILY_TABLE
 from dev_lab.dev.forge import Forge, forge_of_url
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT
