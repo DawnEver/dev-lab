@@ -7,7 +7,7 @@ pruned_paths = ['.claude/worktrees']
 tool_caches = ['pytest', 'ruff', 'coverage', 'hypothesis', 'pyright']
 # SCRATCH-IS-NEVER-COMMITTED: the one-off sink, and when the SessionStart notice starts naming a one-off.
 scratch = 'scratch/'
-max_age_days = 3.0
+max_age = "3 d"
 # STRAY-FILE-REFUSED: files a tool this repo uses retired; a stray copy is named with its door, never `git add`.
 retired = [
   { path = '.claude/rules/MEMORY.md', what = "rem's generated memory index; nothing rebuilds it", door = "delete them through rem's migration -- the /migrate skill, or node <rem plugin>/migrations/migrate.mjs <checkout> -- which removes every copy outside attic/" },

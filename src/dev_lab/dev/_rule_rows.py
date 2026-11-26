@@ -387,6 +387,21 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
     ),
     (
+        'CONFIG-VALUES-CARRY-UNITS',
+        (
+            # Why: user ruling 2026-11-25 -- `memory_gb = 32` puts the unit in the key and leaves the number bare,
+            # so nothing checks it; machine memory is written in GiB.
+            'A config key never spells a size, duration or percentage unit (`memory_gb`, `max_idle_hours`, '
+            '`wall_s`): its VALUE is a quantity string (`memory = "32 GiB"`, `max_idle = "12 h"`) that every '
+            'reader parses ONCE through `lab_commons.quantity.parse`, which refuses a bare number, another '
+            'dimension or an unknown unit by key. A retired unit-suffixed key is never read: its reader refuses it '
+            'by name with the replacement line written from its own value (`refuse_renamed`). The architecture '
+            'suite scans every tracked TOML file, every documented `toml` block and every declared schema '
+            '(`dev_lab.dev.configkeys`).'
+        ),
+        ('tests/test_dev_configkeys.py', 'tests/test_config_keys_carry_no_unit.py'),
+    ),
+    (
         'NO-CJK-IN-TRACKED-SOURCE',
         (
             'No tracked CJK except under `attic/`, root `archived/`, and `<stem>.zh.md|toml|json` beside its English '

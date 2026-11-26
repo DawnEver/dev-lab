@@ -1,4 +1,4 @@
-"""THE CODE LOCKOUT: after ``lockout_after`` consecutive wrong codes, refuse every code for ``lockout_minutes``.
+"""THE CODE LOCKOUT: after ``lockout_after`` consecutive wrong codes, refuse every code for ``lockout``.
 
 User ruling 2026-11-03: 5 and 15 by default, both configured. Persisted in the role's state directory
 (``lockout.json``), so a restart does not reset it; a correct code resets the count; while locked even a correct

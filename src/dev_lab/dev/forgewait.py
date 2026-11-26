@@ -13,7 +13,7 @@ ONE admission and ordering path (:func:`lab_commons.compute.admission.admit`, :m
   delays no earlier start (:meth:`Box.delays`, the ledger's own backfill rule) -- and says it with the holders
   that must end first. A start of ``inf`` means the room is used OUTSIDE the ledger (the host's own work):
   no claim can be named, and that is said.
-- SEEN: a part blocked ``not admitted`` past the schedule's ``request_unadmitted_hours`` gets a pending
+- SEEN: a part blocked ``not admitted`` past the schedule's ``request_unadmitted`` gets a pending
   ``waits/<part>`` status on its commit (:func:`tell`) naming the short dimension, the holders and the
   earliest start -- at most once per waited hour per host -- settled ``success`` once the part is claimed. It
   is no part context (``tests/``), so it is never a claim, a verdict or a merge gate.

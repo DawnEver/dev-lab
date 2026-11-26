@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any, Final
 
 from dev_lab.dev.forge import forge_of_url
+from dev_lab.dev.tablequantity import quantity
+from dev_lab.dev.tablequantity import values as quantities
 from dev_lab.dev.taskkeys import require_bundle
 from dev_lab.ops import clientkeys
 from dev_lab.ops.backuprole import Backup, Offsite
@@ -141,8 +143,9 @@ class Breakglass(Placement, HttpsDoor):
 
     ``state`` is a directory (the waves and their reports). A wave's window and merge cap are the params of the
     ``breakglass.wave`` consent credential that opens it (:mod:`dev_lab.ops.consent`); the role declares only their
-    CEILINGS (user ruling 2026-11-06): ``wave_hours_max`` the longest window, ``max_merges_max`` the largest cap
-    (``0`` = no ceiling). A non-positive or NaN window ceiling and a negative cap ceiling are refused at load.
+    CEILINGS (user ruling 2026-11-06): ``wave_ceiling`` the longest window (a duration, ``"24 h"``), ``max_merges_max``
+    the largest cap (``0`` = no ceiling). A non-positive or NaN window ceiling and a negative cap ceiling are refused at
+    load.
     ``tick`` is when the timer ends expired waves and resends a wave summary no alert channel delivered (a systemd
     ``OnCalendar``). ``family`` is the break-glass processes' lab-commons family layer, ``{source, file, max_age}``:
     a wave reads who produces each repo's tests from the family's roles binding (:mod:`dev_lab.dev.roles`, D73), so
@@ -159,7 +162,7 @@ class Breakglass(Placement, HttpsDoor):
     apps: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     keys: tuple[str, ...] = ()
     min_reason: int = 10
-    wave_hours_max: float = 24.0
+    wave_ceiling: float = quantity('duration', 24 * 3600.0, retired=('wave_hours_max', 'h'))  # seconds
     max_merges_max: int = 0
     tick: str = 'hourly'
     family: Mapping[str, Any] = field(default_factory=dict)
@@ -171,8 +174,8 @@ class Breakglass(Placement, HttpsDoor):
         if self.family and not self.family.get('source'):
             msg = '[ops.breakglass.family] names no source (the family file on this host)'
             raise ValueError(msg)
-        if not self.wave_hours_max > 0:  # NaN fails too
-            msg = f'[ops.breakglass] wave_hours_max ({self.wave_hours_max}) must be positive'
+        if not self.wave_ceiling > 0:  # NaN fails too
+            msg = f'[ops.breakglass] wave_ceiling ({self.wave_ceiling} s) must be positive'
             raise ValueError(msg)
         if self.max_merges_max < 0:
             msg = f'[ops.breakglass] max_merges_max ({self.max_merges_max}) must not be negative'
@@ -294,12 +297,13 @@ def _role[
     if not isinstance(table, dict):
         msg = f'{where} must be a table'
         raise TypeError(msg)
+    declared = quantities(cls, table, where)
     known = {field.name for field in fields(cls)}
-    if unknown := sorted(set(table) - known - {'enabled'}):
+    if unknown := sorted(set(declared) - known - {'enabled'}):
         msg = f'{where} has unknown keys {unknown}; known: {sorted(known)}'
         raise ValueError(msg)
     values = {
-        key: tuple(value) if isinstance(value, list) else value for key, value in table.items() if key != 'enabled'
+        key: tuple(value) if isinstance(value, list) else value for key, value in declared.items() if key != 'enabled'
     }
     try:
         return cls(**values)

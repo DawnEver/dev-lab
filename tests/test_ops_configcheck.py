@@ -113,7 +113,7 @@ def test_needs_consent_names_the_boundary_keys_a_change_touches() -> None:
 
 
 DEV_HOST = '[dev]\nhpc = []\nref = "integrate/main"\n'
-SSH_ROUTES = '[ssh.jump]\n"node.example" = "bastion.example"\n\n[ssh.hold]\nmax_hours = 8\nidle_minutes = 30\n'
+SSH_ROUTES = '[ssh.jump]\n"node.example" = "bastion.example"\n\n[ssh.hold]\nceiling = "8 h"\nidle = "30 min"\n'
 
 
 def test_a_dev_host_file_declares_its_ssh_routes(tmp_path: Path) -> None:
@@ -128,7 +128,8 @@ def test_a_dev_host_file_declares_its_ssh_routes(tmp_path: Path) -> None:
         ('[ssh.jump]\n"node.example" = 22\n', 'ssh.jump'),
         ('[ssh.jump]\n"node.example" = ""\n', 'ssh.jump'),
         ('[ssh]\njump = "bastion.example"\n', 'ssh.jump'),
-        ('[ssh.hold]\nmax_hours = "8"\n', 'ssh.hold.max_hours'),
+        ('[ssh.hold]\nceiling = "8"\n', 'ssh.hold.ceiling = "8" is a bare number'),
+        ('[ssh.hold]\nmax_hours = 8\n', 'max_hours = 8 is retired'),
     ],
 )
 def test_an_ssh_key_or_value_off_the_schema_is_refused(tmp_path: Path, extra: str, named: str) -> None:
@@ -255,14 +256,15 @@ def test_an_account_file_declares_which_storage_remote_it_reaches() -> None:
 def test_a_non_serving_account_declaring_a_schedule_is_refused() -> None:
     """SCHEDULER-ONLY-FOR-SERVING, at the declaration: ``[schedule]`` (the tick period) is serving baggage elsewhere.
 
-    Measured 2026-11-20: every Ada research account file carried ``[schedule] tick_minutes = 15``.
+    Measured 2026-11-20: every Ada research account file carried a ``[schedule]`` tick period (then
+    ``tick_minutes = 15``, now ``tick = "15 min"``).
     PLANTED CONTROL: the same table on a verification account is admitted.
     """
 
     def family(role: str) -> dict[str, object]:
         return {'hpc': {'grant': [{'cluster': 'c', 'user': 'u', 'role': role, 'slurm_account': 'a'}]}}
 
-    host = {'deploy': {'host': 'login01'}, 'schedule': {'tick_minutes': 15}}
+    host = {'deploy': {'host': 'login01'}, 'schedule': {'tick': '15 min'}}
     refused = accounthost.check(Path('c-u.toml'), host, family('research'))
     assert [line for line in refused if '[schedule]' in line and 'SCHEDULER-ONLY-FOR-SERVING' in line], refused
     admitted = accounthost.check(Path('c-u.toml'), host, family('verification'))

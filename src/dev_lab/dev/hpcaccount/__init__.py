@@ -151,12 +151,12 @@ def _tick(argv: list[str]) -> int:
     """``tick <repo>... [--lock <path> --wall-minutes <m>]``: unlocked and unbounded without ``--lock``."""
     from dev_lab.dev import tickholder  # noqa: PLC0415 -- the package imports no verb
     from dev_lab.dev.hpcaccount import tick, tickwall  # noqa: PLC0415 -- the package imports no verb
-    from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL_MINUTES  # noqa: PLC0415 -- the tick verb's default
+    from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL  # noqa: PLC0415 -- the tick verb's default
 
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount tick')
     parser.add_argument('repos', nargs='+')
     parser.add_argument('--lock', type=Path, help="this tick's lock; its holder record is written beside it")
-    parser.add_argument('--wall-minutes', type=int, default=DEFAULT_TICK_WALL_MINUTES)
+    parser.add_argument('--wall-minutes', type=int, default=DEFAULT_TICK_WALL // 60)
     args = parser.parse_args(argv)
     probed: dict[str, bool] = {}  # one probe per tool per tick, however many repos it serves
 

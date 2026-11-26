@@ -7,7 +7,7 @@ silenced the host. Three facts close that:
 * THE TICK TAKES ITS OWN LOCK (:func:`locked`, the OS lock of :func:`dev_lab.dev.servelock.held` -- the same
   ``flock`` the cron line's ``flock -n`` took, so the deploy's kit refresh, ``flock -w`` on the kit's lock, still
   excludes it) and writes its HOLDER RECORD beside it (:mod:`dev_lab.dev.tickholder`).
-* THE TICK HAS A WALL (``[schedule] tick_wall_minutes``, :data:`dev_lab.dev.hpcaccount.spec.DEFAULT_TICK_WALL_MINUTES`
+* THE TICK HAS A WALL (``[schedule] tick_wall``, :data:`dev_lab.dev.hpcaccount.spec.DEFAULT_TICK_WALL`
   states why its default): the serve runs under what is left of it (:func:`within`); past it the serve is asked to
   stop (SIGTERM, which it turns into a clean exit), given :data:`GRACE_S`, then killed, the lock is released and
   ``tick: ended at its wall after <s> s doing <phase>`` is printed to the cron log. Nothing gathered is lost: a run

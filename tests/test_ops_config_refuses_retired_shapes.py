@@ -27,7 +27,7 @@ keys = ["ssh-ed25519 AAAA agent"]
 repos = ["https://gitea.example/owner/alpha.git"]
 state = "/var/lib/forge-breakglass"
 log = "/var/log/forge-breakglass/audit.log"
-wave_hours_max = 24.0
+wave_ceiling = "24 h"
 max_merges_max = 100
 {glass}
 [ops.breakglass.tokens]

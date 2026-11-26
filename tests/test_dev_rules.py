@@ -148,6 +148,7 @@ _IDS = frozenset(
         'OWNER-DAG',
         'NO-DETOUR',
         'MACHINES-MEET-ONLY-THROUGH-THE-FORGE',
+        'CONFIG-VALUES-CARRY-UNITS',
     }
 )
 

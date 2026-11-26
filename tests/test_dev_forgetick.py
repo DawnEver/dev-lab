@@ -750,7 +750,7 @@ def test_over_budget_or_not_admitted_is_not_claimed_and_says_so(server, tmp_path
     repo, tips = _origin(tmp_path)
     head = tips['integrate/main']
     (repo / 'pyproject.toml').write_text(
-        PRODUCE + '[tool.lab_commons.schedule]\ndaily_budget_core_h = {integration = 10}\n', 'utf-8'
+        PRODUCE + '[tool.lab_commons.schedule]\ndaily_budget = {integration = "10 h"}\n', 'utf-8'
     )
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{head}', (200, []))
@@ -895,7 +895,7 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
     assert report.artifacts == problem, 'the host card states why'
     if not claims:
         assert not any(r['method'] == 'POST' for r in Recorder.received), 'no claim is posted'
-        assert any('threshold_mb' in reason and _MISSING in reason for reason in report.refused)
+        assert any('threshold' in reason and _MISSING in reason for reason in report.refused)
         assert any(_MISSING in item.blocked for item in report.queue)
 
 

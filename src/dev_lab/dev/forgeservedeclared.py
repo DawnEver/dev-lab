@@ -22,7 +22,7 @@ from lab_commons.hpc.retired import refuse_retired_keys
 
 from dev_lab.dev.forgeaffinity import declared
 from dev_lab.dev.hpcaccount.grantslice import refused_with_door
-from dev_lab.dev.hpcaccount.spec import load
+from dev_lab.dev.hpcaccount.spec import load, schedule_tick
 
 __all__ = ['DeclarationRefused', 'declaration']
 
@@ -46,6 +46,7 @@ def declaration(
     """
     try:
         table = section('schedule') if table is None else table
+        schedule_tick(table)  # its period, refused here by name rather than mid-tick
         refuse_retired_keys('serve', section('serve'))
         refuse_retired_keys('capabilities', section('capabilities'))
         capable = provided(section('capabilities'))

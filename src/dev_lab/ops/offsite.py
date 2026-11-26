@@ -5,7 +5,7 @@ What Oracle Object Storage measured, encoded as the rule for EVERY store:
 * the bucket's retention rule forbids overwrite -- so no key is ever written twice: every key is
   ``<label>/<stamp>/<name>-<sha256[:16]>.<ext>`` (:func:`key_for`), unique by content and time;
 * the credential cannot create multipart uploads -- so every file goes up as ONE ``PutObject``, and a file above the
-  single-PUT limit (``max_put_bytes``, 5 GB on S3) is refused before anything is sent;
+  single-PUT limit (``max_put``, 5 GB on S3) is refused before anything is sent;
 * path-style addressing -- the AWS CLI config file must say ``s3 = addressing_style = path``;
 * the remote size is read back after each PUT and must equal the local size.
 
@@ -61,11 +61,11 @@ def upload(site: Offsite, store: Store, stamp: str, files: Sequence[Path]) -> li
     """Put every file (each checked against the single-PUT limit first), verifying each remote size; the keys.
 
     Raises:
-        BackupRefused: a file above ``max_put_bytes`` (before any PUT), or a remote size that differs.
+        BackupRefused: a file above ``max_put`` (before any PUT), or a remote size that differs.
 
     """
-    if big := [f'{path.name} ({path.stat().st_size} B)' for path in files if path.stat().st_size > site.max_put_bytes]:
-        msg = f'above the single-PUT limit of {site.max_put_bytes} B: {big}'
+    if big := [f'{path.name} ({path.stat().st_size} B)' for path in files if path.stat().st_size > site.max_put]:
+        msg = f'above the single-PUT limit of {site.max_put:.0f} B: {big}'
         raise BackupRefused(msg)
     keys = []
     for path in files:
