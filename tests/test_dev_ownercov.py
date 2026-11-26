@@ -20,7 +20,8 @@ _GIT = shutil.which('git') or 'git'
 
 _FIXTURES = Path(__file__).resolve().parent / '_coverage_fixtures'
 
-DECLARED = '[python.owners]\nalpha = []\nbeta = ["alpha"]\n\n[rust.crates]\ncore_a = []\ncore_b = ["core_a"]\n'
+#: The Python owners are rows; the Rust owners are the crates in the tree (no crate table).
+DECLARED = '[python.owners]\nalpha = []\nbeta = ["alpha"]\n'
 TREE = {
     'src/pkg/__init__.py': '',
     'src/pkg/alpha/__init__.py': '',
@@ -94,7 +95,7 @@ def test_an_owner_below_its_floor_reds_naming_the_owner_the_measured_value_and_t
     found = ownercov.problems(root, files, **_both(rs={'core_a': FULL, 'core_b': GOOD}))
     assert found is not None
     assert len(found) == 1
-    assert found[0].startswith('[rust.crates] core_b: line coverage 97.00 % is below its floor 98.50 %')
+    assert found[0].startswith('crate core_b: line coverage 97.00 % is below its floor 98.50 %')
     assert 'record' in found[0]  # the door: floors are written only by `record`
 
 
@@ -149,8 +150,8 @@ def test_a_floor_naming_no_declared_owner_reds(tmp_path: Path) -> None:
     found = ownercov.problems(root, files, **_both())
     assert found == [
         (
-            'pyproject.toml [tool.dev_lab.coverage.floors.python] gone: a floor for an owner no [python.owners] row of '
-            'dependencies.toml declares -- move it with the owner when it was renamed, else delete it'
+            'pyproject.toml [tool.dev_lab.coverage.floors.python] gone: a floor for an owner that is no '
+            '[python.owners] row of dependencies.toml -- move it with the owner when it was renamed, else delete it'
         )
     ]
 
@@ -169,7 +170,7 @@ def test_a_declared_owner_with_no_measurement_reds(tmp_path: Path) -> None:
 def test_a_crate_with_no_measurement_reds(tmp_path: Path) -> None:
     root, files = _repo(tmp_path)
     found = ownercov.problems(root, files, python=_py({'alpha/m': FULL, 'beta/m': FULL}), rust=_rs({'core_a': FULL}))
-    assert found == ['[rust.crates] core_b: no line was measured in crates/core_b -- does `cargo llvm-cov` build it?']
+    assert found == ['crate core_b: no line was measured in crates/core_b -- does `cargo llvm-cov` build it?']
 
 
 def test_a_measurement_with_no_owner_reds(tmp_path: Path) -> None:
@@ -192,13 +193,10 @@ def test_a_file_with_no_line_needs_no_owner(tmp_path: Path) -> None:
 def test_a_declared_language_with_no_report_reds_and_a_report_with_no_owner_table_reds(tmp_path: Path) -> None:
     root, files = _repo(tmp_path)
     assert ownercov.problems(root, files, python=_py({'alpha/m': FULL, 'beta/m': FULL})) == [
-        f'[rust.crates] is declared but no {RUST_TOOL} report was given -- --rust <report>'
+        f'the tree holds a crate but no {RUST_TOOL} report was given -- --rust <report>'
     ]
-    root, files = _repo(tmp_path, declared='[python.owners]\nalpha = []\nbeta = []\n')
-    found = ownercov.problems(root, files, **_both())
-    assert found == [
-        f'a {RUST_TOOL} report was given but dependencies.toml declares no [rust.crates] row to own what it measured'
-    ]
+    found = ownercov.problems(root, [f for f in files if not f.startswith('crates/')], **_both())
+    assert found == [f'a {RUST_TOOL} report was given but the tree holds no crate to own what it measured']
 
 
 def test_a_report_that_measured_no_branch_reds(tmp_path: Path) -> None:

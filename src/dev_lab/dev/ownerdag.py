@@ -11,14 +11,20 @@ the tracked tree (nothing is imported or run) and refuses, naming the file, the 
   its path, ``[python.siblings."compile/transform"]``) unless ``[python.siblings."<package
   path>"]`` lists the edge -- default none; any importer from another owner of a path ``[python.importers]`` names
   unless it lies under one of that row's importers (a narrowing below the owner edge, never a widening);
-  ``<package>_native.<crate>`` imported by an owner that neither owns the crate (``[python.native]``) nor lists its
-  owner, a crate no row names, or the bare native module; a third-party or family name no ``[python.packages]`` row
-  names, or one used outside its row's paths; a restricted ``[python.stdlib]`` name used outside its paths (a
+  ``<package>_native.<crate>`` imported across an edge the owner graph does not permit -- the crate IS the stage
+  its path names (``rust/crates/compile/assemble`` is ``compile_assemble``, stage ``compile/assemble``;
+  :mod:`dev_lab.dev.rustdeps`), judged by the same owner and sibling edges as a Python package there -- a crate no
+  stage names, or the bare native module; a third-party or family name no ``[python.packages]`` row
+  names, or one used outside its row's paths; an import of a ``load = "deferred"`` row as the module loads, or of
+  any other row inside a function (:attr:`dev_lab.dev.pyfacts.Facts.deferred`: NO-LAZY-IMPORT's heavy-optional
+  exception, declared and checked); a restricted ``[python.stdlib]`` name used outside its paths (a
   dotted member such as ``os.system``, a builtin as ``builtins.open``, a private module such as ``_thread``). A child
   package with no row is refused, and so is every dependencies.toml path no layout.toml row declares (layout.toml is
   the one source of which directories may exist; a declared owner not created yet passes, and whether a path exists
-  is DECLARED-LAYOUT's to judge). A test file is judged like any other, ``tests`` or ``tests/unit`` naming it as a
-  path; an import of a repo-local name (``tests``, a sibling module) is not judged.
+  is DECLARED-LAYOUT's to judge). A stage implemented only by a crate (NATIVE-FIRST: ``compile/discretize`` with no
+  Python folder) is declared by its crate's layout.toml row or its crate in the tree. A test file is judged like
+  any other, ``tests`` or ``tests/unit`` naming it as a path; an import of a repo-local name (``tests``, a sibling
+  module) is not judged.
 * RUST: :mod:`dev_lab.dev.rustdeps` (Cargo dependencies and std paths).
 * THE DECLARATION ITSELF: :mod:`dev_lab.dev.depcites` -- a package, stdlib name or crate a row's reason cites and
   no row grants, before any code uses it.
@@ -40,8 +46,9 @@ from lab_commons.log import emit
 
 from dev_lab.dev import depcites, deptable, pyfacts, rustdeps
 from dev_lab.dev._layout_table import Layout, LayoutNotDeclared, declared_layout, declares
-from dev_lab.dev.deptable import ALL, Declared, DependenciesError, Grant, edge_to
+from dev_lab.dev.deptable import ALL, Declared, DependenciesError, Grant, edge_to, hop
 from dev_lab.dev.rules import tracked_files
+from dev_lab.dev.rustdeps import CRATES
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -54,8 +61,10 @@ __all__ = [
     'holds',
     'judged',
     'main',
+    'native_stage',
     'owner_of_name',
     'owner_of_path',
+    'package_path',
     'problems',
     'python_tree',
     'refusal',
@@ -83,7 +92,10 @@ class PythonTree:
 
 
 def python_tree(root: Path) -> PythonTree | None:
-    """The package ``[project].name`` names, at ``src/<name>`` or ``<name>``; ``None`` when neither exists."""
+    """The package ``[project].name`` names, at ``src/<name>`` or ``<name>``; ``None`` when neither exists.
+
+    A package layout.toml declares but the tree does not hold yet (a skeleton: rows before code) is at its row.
+    """
     try:
         name = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8')).get('project', {}).get('name')
     except (OSError, ValueError):
@@ -94,7 +106,12 @@ def python_tree(root: Path) -> PythonTree | None:
     for directory in (f'src/{package}', package):
         if (root / directory).is_dir():
             return PythonTree(package, directory, f'{package}_native')
-    return None
+    try:
+        layout = declared_layout(root)
+    except LayoutNotDeclared:
+        return None
+    directory = next((d for d in (f'src/{package}', package) if declares(d, layout)), None)
+    return None if directory is None else PythonTree(package, directory, f'{package}_native')
 
 
 def owner_of_path(tree: PythonTree, rel: str) -> str | None:
@@ -104,14 +121,33 @@ def owner_of_path(tree: PythonTree, rel: str) -> str | None:
     return parts[len(base)] if parts[: len(base)] == base and len(parts) > len(base) + 1 else None
 
 
-def owner_of_name(tree: PythonTree, decl: Declared, name: str) -> str | None:
-    """The owner the absolute name *name* belongs to: a child package, or a native crate's owner; else ``None``."""
+def package_path(tree: PythonTree, rel: str) -> tuple[str, ...] | None:
+    """The owner path of the package holding the repo-relative file *rel* (``("alpha", "one")``).
+
+    ``None`` outside every owner: a file of the package root, or outside the package.
+    """
+    return (
+        tuple(PurePosixPath(rel).parent.parts[len(PurePosixPath(tree.directory).parts) :])
+        if owner_of_path(tree, rel)
+        else None
+    )
+
+
+def native_stage(tree: PythonTree, stages: Mapping[str, tuple[str, ...]], name: str) -> tuple[str, ...] | None:
+    """The stage (owner path) of the crate ``<package>_native.<crate>`` *name* imports, else ``None``."""
+    parts = name.split('.')
+    return stages.get(parts[1]) if parts[0] == tree.native and len(parts) > 1 else None
+
+
+def owner_of_name(
+    tree: PythonTree, decl: Declared, name: str, stages: Mapping[str, tuple[str, ...]] | None = None
+) -> str | None:
+    """The owner the absolute name *name* belongs to: a child package, or a native crate's stage's; else ``None``."""
     parts = name.split('.')
     if parts[0] == tree.package and len(parts) > 1 and parts[1] in decl.owners:
         return parts[1]
-    if parts[0] == tree.native and len(parts) > 1:
-        return decl.native.get(parts[1])
-    return None
+    stage = native_stage(tree, stages or {}, name)
+    return stage[0] if stage else None
 
 
 def holds(holders: Iterable[str], rel: str) -> bool:
@@ -155,6 +191,8 @@ class _Scope:
     tree: PythonTree
     tops: frozenset[str]
     layout: Layout | None
+    #: every stage crate (in the tree or declared by layout.toml) -> its owner path
+    stages: Mapping[str, tuple[str, ...]] = field(default_factory=dict[str, tuple[str, ...]])
     local: dict[tuple[Path, str], bool] = field(default_factory=dict)
 
     def beside(self, rel: str, top: str) -> bool:
@@ -167,6 +205,13 @@ class _Scope:
     def declared(self, rel: str) -> bool:
         """Whether layout.toml declares the repo path *rel* (never the disk: a declared path may not exist yet)."""
         return self.layout is not None and declares(rel, self.layout)
+
+    def stage_declared(self, path: str) -> bool:
+        """Whether the owner path *path* is declared as a Python package, or as the stage of a crate at or below it."""
+        crate = tuple(path.split('/'))
+        return self.declared(f'{self.tree.directory}/{path}') or any(
+            s[: len(crate)] == crate for s in self.stages.values()
+        )
 
     def in_package(self, path: str) -> bool:
         """Whether *path* names a package a row declares under the package, or a module that exists there.
@@ -233,15 +278,22 @@ def _internal(scope: _Scope, rel: str, name: str) -> str | None:
 
 
 def _native(scope: _Scope, rel: str, name: str) -> str | None:
-    parts, mine = name.split('.'), owner_of_path(scope.tree, rel)
+    parts = name.split('.')
     if len(parts) == 1:
         return f'imports the bare native module {name}; import the crate module {name}.<crate>'
-    if parts[1] not in scope.decl.native:
-        return f'imports {name}, but {parts[1]} is no [python.native] row'
-    theirs = scope.decl.native[parts[1]]
-    if mine is None or mine == theirs or edge_to(scope.decl.owners[mine], theirs):
+    if (stage := native_stage(scope.tree, scope.stages, name)) is None:
+        return (
+            f'imports {name}, but {parts[1]} is no crate at {CRATES}/<owner path> (in the tree or declared by '
+            'layout.toml)'
+        )
+    mine = package_path(scope.tree, rel)
+    found = None if mine is None else hop(scope.decl, mine, stage)
+    if mine is None or found is None or found.permitted:
         return None
-    return f'owner {mine} imports {name}, whose crate {parts[1]} belongs to owner {theirs}, which it does not list'
+    where = f'{"/".join(mine)} imports {name} (stage {"/".join(stage)})'
+    if found.table == 'child':
+        return f'{where}, its own child {found.target}; a parent never imports its children'
+    return f'{where}, but [{found.table}] {found.origin} does not list {found.target}'
 
 
 def _external(scope: _Scope, rel: str, name: str) -> str | None:
@@ -256,6 +308,32 @@ def _external(scope: _Scope, rel: str, name: str) -> str | None:
     if holds(grant.holders, rel):
         return None
     return f'uses {name}, but [python.{table}] {key} allows it only in {", ".join(grant.holders) or "nowhere"}'
+
+
+def _loads(scope: _Scope, rel: str, one: pyfacts.Facts) -> list[str]:
+    """A ``load = "deferred"`` row imported as the module loads; any other row imported inside a function."""
+    out: list[str] = []
+    for name, eager in [*((n, True) for n in _maximal(one.eager)), *((n, False) for n in _maximal(one.deferred))]:
+        top = name.partition('.')[0]
+        if top in scope.tops or scope.beside(rel, top):
+            continue
+        table, rows = (
+            ('stdlib', scope.decl.stdlib) if top in sys.stdlib_module_names else ('packages', scope.decl.packages)
+        )
+        if (found := _row(rows, name)) is None:
+            continue
+        key, grant = found
+        if eager and grant.load == 'deferred':
+            out.append(
+                f'imports {name} as the module loads, but [python.{table}] {key} is load = "deferred": import it '
+                'inside the function that needs it'
+            )
+        elif not eager and grant.load != 'deferred':
+            out.append(
+                f'imports {name} inside a function, but [python.{table}] {key} is not load = "deferred": import it '
+                'at the top, or declare the row deferred with its import cost in the reason'
+            )
+    return out
 
 
 def _judge(scope: _Scope, rel: str, name: str) -> str | None:
@@ -273,7 +351,7 @@ def _local_tops(files: Iterable[str], tree: PythonTree) -> frozenset[str]:
 
 
 def _python_problems(root: Path, decl: Declared, files: list[str], layout: Layout | None) -> list[str]:
-    if not (decl.owners or decl.native or decl.packages or decl.stdlib or decl.importers):
+    if not (decl.owners or decl.packages or decl.stdlib or decl.importers):
         return []
     tree = python_tree(root)
     if tree is None:
@@ -283,12 +361,13 @@ def _python_problems(root: Path, decl: Declared, files: list[str], layout: Layou
                 f'<name> (read: {_project_name(root)!r} -> src/{_project_name(root)})'
             )
         ]
-    scope = _Scope(root, decl, tree, _local_tops(files, tree), layout)
+    scope = _Scope(root, decl, tree, _local_tops(files, tree), layout, rustdeps.stages(root, files, layout))
     out = _stale_rows(scope, files)
     for rel, one in sorted(pyfacts.facts(root, (f for f in files if f.endswith('.py'))).items()):
         if one.error is not None:
             out.append(f'{rel}: does not parse ({one.error}), so its imports cannot be judged')
         out += [f'{rel}: {why}' for name in _maximal(one.uses) if (why := _judge(scope, rel, name))]
+        out += [f'{rel}: {why}' for why in _loads(scope, rel, one)]
     return list(dict.fromkeys(out))
 
 
@@ -303,14 +382,16 @@ def _stale_rows(scope: _Scope, files: list[str]) -> list[str]:
     if scope.layout is None:
         return out
     named: list[tuple[str, str, bool]] = [
-        (f'[python.owners] {o}', f'{under}{o}', scope.declared(f'{under}{o}')) for o in decl.owners
+        (f'[python.owners] {o}', f'{under}{o}', scope.stage_declared(o)) for o in decl.owners
     ]
     for parent, rows in decl.siblings.items():
-        named.append((f'[python.siblings."{parent}"]', f'{under}{parent}', scope.declared(f'{under}{parent}')))
+        named.append((f'[python.siblings."{parent}"]', f'{under}{parent}', scope.stage_declared(parent)))
         if named[-1][2]:
             children = sorted({n for child, edges in rows.items() for n in (child, *(e.name for e in edges))} - {ALL})
-            path = f'{under}{parent}/'
-            named += [(f'[python.siblings."{parent}"]', f'{path}{c}', scope.declared(f'{path}{c}')) for c in children]
+            named += [
+                (f'[python.siblings."{parent}"]', f'{under}{parent}/{c}', scope.stage_declared(f'{parent}/{c}'))
+                for c in children
+            ]
     for key, who in decl.importers.items():
         named.append((f'[python.importers] "{key}"', f'{under}{key}', scope.in_package(key)))
         named += [(f'[python.importers] "{key}"', f'importer {w}', scope.declared(scope.importer(w))) for w in who]
@@ -349,7 +430,7 @@ def problems(root: Path, decl: Declared, files: Iterable[str]) -> list[str]:
     except LayoutNotDeclared as exc:
         layout = None
         out = [f'{_FILE} paths are layout.toml rows, but {root.name} declares no usable layout.toml ({exc})']
-    out += depcites.problems(decl)
+    out += depcites.problems(decl, rustdeps.crates(root, files).keys() | rustdeps.stages(root, files, layout).keys())
     return out + _python_problems(root, decl, files, layout) + rustdeps.problems(root, decl, files, layout=layout)
 
 

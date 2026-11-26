@@ -67,11 +67,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             # Why: user-approved 2026-11-25 (principles `everything-in-its-place`, `no-detour`; v1 D67/D68).
             'In a repo holding a root `dependencies.toml` (opt-in; undeclared is not judged), actual imports match '
             'the declared graph: `[python.owners]` and `[python.siblings."<package>"]` (explicit acyclic DAGs at '
-            'every level, default none), `[python.importers]` (the only importers of a path), `[python.native]`, '
-            '`[python.packages]`/`[python.stdlib]` (a package no row names is refused; std is restricted by row), '
-            '`[rust.crates]`/`[rust.external]`/`[rust.std]` (Cargo dependencies by kind and feature, std paths and '
-            'tokens). A cycle, an undeclared edge and a path no layout.toml row declares (rows, never the disk) are '
-            'refused by name; test files are judged too. The always-on check and every `verify` '
+            'every level, default none), `[python.importers]` (the only importers of a path), '
+            '`[python.packages]`/`[python.stdlib]` (a package no row names is refused; std is restricted by row; '
+            '`load = "deferred"` rows are imported only inside a function, and only they may be), '
+            '`[rust.external]`/`[rust.std]` (Cargo dependencies by kind and feature, std paths and tokens). The '
+            'crate graph is the SAME graph, derived from crate paths: `rust/crates/<owner path>` is that stage '
+            '(`<package>_native.<owner>_<child>` too), so a Rust-owned stage is a sibling like any other. A cycle, an '
+            'undeclared edge and a path no layout.toml row declares (rows, never the disk) are refused by name; test '
+            'files are judged too. The always-on check and every `verify` '
             '(`dev_lab.dev.ownerdag`, `dev_lab.dev.rustdeps`).'
         ),
         ('tests/test_dev_ownerdag.py', 'tests/test_dev_rustdeps.py', 'tests/test_dev_deptable.py'),

@@ -1,0 +1,329 @@
+# The closed inventory of this checkout: every directory and the file formats it allows (dev-lab DECLARED-LAYOUT).
+# No inheritance: every directory matches a row of its own; a directory no row matches is refused.
+
+read_only = ["temp", "attic"]
+scratch = "scratch/"
+max_age = "3 d"
+pruned_paths = [".claude/worktrees"]
+# Tool caches under output/cache/<tool>/: each tool's private format, unjudged. oracle = the Oracle client's cache.
+tool_caches = ["pytest", "ruff", "coverage", "hypothesis", "pyright", "oracle"]
+# Vendor job trees under output/logs/<yy>/<mm>/<dd>/vendor/<program>/<job>/: the emitted model and scripts plus the
+# program's own files, unjudged, written only by runtime/external/<program> (D95; dev-lab pr/toolchain/vendor-jobs ae88c990).
+vendor_jobs = ["jmag", "aedt", "femm", "fluent", "openfoam", "plecs", "ngspice", "matlab", "simba", "mapdl", "lsdyna", "freecad", "gmsh", "z3", "c_compiler"]   # equals the runtime/external children (architecture test)
+
+[layout]
+"." = [
+  "pyproject.toml", "uv.lock", "rust-toolchain.toml", "freeze.toml", "layout.toml", "dependencies.toml",
+  "AGENTS.md", "CLAUDE.md", "README.md", ".gitignore", ".gitattributes",
+]
+
+# --- agent and editor configuration
+".vscode" = ["settings.json"]
+".claude" = ["settings.json", "settings.local.json", "automode.json"]
+".claude/hooks" = ["deny-commands.js", "venv_resolver.js", "py.js", "deny-rules.json", "native_session.json"]
+".claude/memory" = []
+".claude/memory/[0-9][0-9][0-9][0-9]" = []
+".claude/memory/[0-9][0-9][0-9][0-9]/[0-9][0-9]" = []
+".claude/memory/[0-9][0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9]" = [".md"]
+".codex" = []
+".codex/rules" = ["family-doors.rules", "family-denies.rules"]
+
+# --- docs: one cross-owner map; owner responsibilities live in their __init__ docstrings (pdoc)
+"docs-src" = ["index.md", "architecture.md"]
+
+# --- src: Python-owned stages only (a Rust-owned stage has no Python folder)
+"src" = []
+"src/product" = [".py", "py.typed"]
+"src/product/contracts" = [".py"]
+"src/product/contracts/schema" = [".toml"]
+"src/product/contracts/generated" = [".py"]          # types generated from contracts/schema at install/build time, never committed (D38, D104)
+"src/product/contracts/quantities" = [".toml"]
+"src/product/contracts/serialization" = [".py"]     # our files <-> typed objects: schema checks, units -> SI, base variants
+"src/product/contracts/foreign_formats" = [".py"]   # foreign file syntax both ways (file <-> format tree), named by FORMAT; no physics
+"src/product/contracts/foreign_formats/c_code" = [".py"]   # C expression syntax shared by emit c_code, simba, matlab (D107 rule, D112)
+"src/product/contracts/foreign_formats/jmag" = [".py"]
+"src/product/contracts/foreign_formats/aedt" = [".py"]
+"src/product/contracts/foreign_formats/femm" = [".py"]
+"src/product/contracts/foreign_formats/fluent" = [".py"]
+"src/product/contracts/foreign_formats/openfoam" = [".py"]
+"src/product/contracts/foreign_formats/plecs" = [".py"]
+"src/product/contracts/foreign_formats/spice" = [".py"]
+"src/product/contracts/foreign_formats/matlab" = [".py"]
+"src/product/contracts/foreign_formats/simba" = [".py"]
+"src/product/contracts/foreign_formats/mapdl" = [".py"]
+"src/product/contracts/foreign_formats/lsdyna" = [".py"]
+"src/product/contracts/foreign_formats/fmi" = [".py"]
+"src/product/models" = [".py"]
+"src/product/models/governing_equations" = [".py"]
+"src/product/models/governing_equations/electromagnetism" = [".py"]
+"src/product/models/governing_equations/solid_mechanics" = [".py"]
+"src/product/models/governing_equations/fluid_mechanics" = [".py"]
+"src/product/models/governing_equations/heat_transfer" = [".py"]
+"src/product/models/governing_equations/species_transport" = [".py"]
+"src/product/models/governing_equations/entity_flow" = [".py"]
+"src/product/models/constitutive_relations" = [".py"]
+"src/product/models/constitutive_relations/electromagnetism" = [".py"]
+"src/product/models/constitutive_relations/solid_mechanics" = [".py"]
+"src/product/models/constitutive_relations/fluid_mechanics" = [".py"]
+"src/product/models/constitutive_relations/heat_transfer" = [".py"]
+"src/product/models/constitutive_relations/species_transport" = [".py"]
+"src/product/models/constitutive_relations/entity_flow" = [".py"]
+"src/product/models/constitutive_relations/coupled" = [".py"]
+"src/product/models/signal" = [".py"]
+"src/product/models/geometry" = [".py"]
+"src/product/models/geometry/assembly" = [".py"]      # declares the recursive assembly tree: templates -> subtrees, within, frames, members, count relations (D101-D103, D112)
+"src/product/models/geometry/construction" = [".py"]
+"src/product/models/geometry/reconstruction" = [".py"]
+"src/product/models/geometry/exchange" = [".py"]
+"src/product/compile" = [".py"]
+"src/product/compile/elaborate" = [".py"]
+"src/product/compile/transform" = [".py"]
+"src/product/compile/transform/asymptotic_limits" = [".py"]
+"src/product/compile/transform/formulation" = [".py"]
+"src/product/compile/transform/coordinate_change" = [".py"]
+"src/product/compile/transform/dimension_reduction" = [".py"]
+"src/product/compile/transform/symmetry_reduction" = [".py"]
+"src/product/compile/transform/frequency_domain" = [".py"]
+"src/product/compile/transform/linearization" = [".py"]
+"src/product/compile/transform/switching_averaging" = [".py"]
+"src/product/compile/transform/sensitivity" = [".py"]
+"src/product/compile/transform/model_order_reduction" = [".py"]
+"src/product/compile/transform/coupling_simplification" = [".py"]
+"src/product/compile/emit" = [".py"]
+"src/product/compile/emit/c_code" = [".py"]
+"src/product/compile/emit/fmi" = [".py"]
+"src/product/compile/emit/spice" = [".py"]
+"src/product/compile/emit/jmag" = [".py"]
+"src/product/compile/emit/aedt" = [".py"]
+"src/product/compile/emit/femm" = [".py"]
+"src/product/compile/emit/fluent" = [".py"]
+"src/product/compile/emit/openfoam" = [".py"]
+"src/product/compile/emit/plecs" = [".py"]
+"src/product/compile/emit/matlab" = [".py"]
+"src/product/compile/emit/simba" = [".py"]
+"src/product/compile/emit/mapdl" = [".py"]
+"src/product/compile/emit/lsdyna" = [".py"]
+"src/product/compile/emit/smtlib" = [".py"]          # stability certificates as SMT-LIB2 for external solvers (D83)
+"src/product/runtime" = [".py"]
+"src/product/runtime/execution" = [".py"]           # the one entry that executes any problem; passes itself to nested_problems as the inner evaluator
+"src/product/runtime/nested_problems" = [".py"]
+"src/product/runtime/external" = [".py"]
+"src/product/runtime/external/jmag" = [".py"]
+"src/product/runtime/external/aedt" = [".py"]
+"src/product/runtime/external/femm" = [".py"]
+"src/product/runtime/external/fluent" = [".py"]
+"src/product/runtime/external/openfoam" = [".py"]
+"src/product/runtime/external/plecs" = [".py"]
+"src/product/runtime/external/ngspice" = [".py"]
+"src/product/runtime/external/matlab" = [".py"]
+"src/product/runtime/external/simba" = [".py"]
+"src/product/runtime/external/mapdl" = [".py"]
+"src/product/runtime/external/lsdyna" = [".py"]
+"src/product/runtime/external/freecad" = [".py"]     # runs FreeCAD (timed STEP open); its bars live in benchmarks
+"src/product/runtime/external/gmsh" = [".py"]        # gmsh as a separate program: live reference timings (D107)
+"src/product/runtime/external/z3" = [".py"]          # SMT solver that re-checks certify certificates (D107)
+"src/product/runtime/external/c_compiler" = [".py"]  # trust gate, include confinement, compile user C (C-Script, charts); libraries cached by content (D85)
+"src/product/runtime/result_cache" = [".py"]
+"src/product/applications" = [".py"]
+"src/product/applications/electric_machine" = [".py"]
+"src/product/applications/electric_machine/winding" = [".py"]         # layout, connection, cage, parallel paths (D97, D105 R2)
+"src/product/applications/electric_machine/manufacturing" = [".py"]   # hairpin process, magnetization step (D105 R2); template fitting itself is models/geometry/reconstruction (D112 M2)
+"src/product/applications/*/schema" = [".toml"]                         # each application's design schema + layer-2 terms (D105 R1)
+"src/product/applications/magnetic_component" = [".py"]
+"src/product/applications/power_converter" = [".py"]
+"src/product/applications/drive_unit" = [".py"]
+"src/product/applications/vehicle" = [".py"]
+"src/product/applications/*/templates" = [".toml"]
+"src/product/benchmarks" = [".py"]
+"src/product/benchmarks/references" = [".py", ".toml"]
+"src/product/benchmarks/accuracy" = [".py"]
+"src/product/benchmarks/performance" = [".py"]
+"src/product/benchmarks/strategies" = [".py"]        # the AI-strategy campaign: search strategies measured at equal budget (D50, D100)
+"src/product/presentation" = [".py"]
+"src/product/presentation/views" = [".py"]     # result schema -> viz descriptions, schematics, animation frames (D112)
+"src/product/presentation/reports" = [".py"]   # report documents assembled from application report_contents (D105 R8, D112)
+"src/product/presentation/tables" = [".py"]    # csv / xlsx in display units (D95, D112)
+"src/product/ingest" = [".py"]                       # foreign inputs -> typed objects; no file writes, no vendor runs (D71)
+"src/product/ingest/jmag" = [".py"]
+"src/product/ingest/aedt" = [".py"]
+"src/product/ingest/femm" = [".py"]
+"src/product/ingest/fluent" = [".py"]
+"src/product/ingest/openfoam" = [".py"]
+"src/product/ingest/plecs" = [".py"]
+"src/product/ingest/spice" = [".py"]
+"src/product/ingest/matlab" = [".py"]
+"src/product/ingest/simba" = [".py"]
+"src/product/ingest/mapdl" = [".py"]
+"src/product/ingest/lsdyna" = [".py"]
+"src/product/agent" = [".py"]
+"src/product/cli" = [".py"]
+
+# --- rust: the crate tree MIRRORS the owner tree (D121, D123): rust/crates/<owner>/<child> is the path of the
+# Python owner it belongs to; package = the path joined by underscores; module folders are declared as each crate migrates
+"rust" = ["Cargo.toml", "Cargo.lock"]
+"rust/crates" = []
+"rust/crates/contracts" = ["Cargo.toml", "build.rs"]   # types generated from contracts/schema into OUT_DIR, incl. the co-simulation participant interface (D123)
+"rust/crates/models" = []
+"rust/crates/models/geometry" = ["Cargo.toml"]
+"rust/crates/models/constitutive_relations" = ["Cargo.toml"]
+"rust/crates/models/signal" = ["Cargo.toml"]                  # causal-block evaluation (D51)
+"rust/crates/compile" = []
+"rust/crates/compile/discretize" = ["Cargo.toml"]
+"rust/crates/compile/analyze_structure" = ["Cargo.toml"]
+"rust/crates/compile/assemble" = ["Cargo.toml"]
+"rust/crates/runtime" = []
+"rust/crates/runtime/execution" = ["Cargo.toml"]              # the per-problem half of runtime/execution (D38, D123)
+"rust/crates/runtime/external" = []
+"rust/crates/runtime/external/jmag" = ["Cargo.toml", "build.rs"]   # build.rs compiles the C++ shim (cc)
+"rust/crates/runtime/external/jmag/shim" = [".cpp", ".h"]
+"rust/crates/runtime/external/jmag/guard" = ["Cargo.toml"]     # the jbdll guard proxy DLL: its own cdylib crate (D99, D123)
+"rust/crates/runtime/external/jmag/guard/src" = [".rs"]
+"rust/crates/runtime/external/c_compiler" = ["Cargo.toml"]     # loads and calls compiled C-Script blocks (PLECS block ABI); in-process or isolated (D85, D123)
+"rust/crates/runtime/external/c_compiler/src/bin" = [".rs"]    # the isolated host process
+"rust/crates/contracts/src" = [".rs"]
+"rust/crates/contracts/tests" = [".rs"]
+"rust/crates/*/*/src" = [".rs"]
+"rust/crates/*/*/tests" = [".rs"]
+"rust/crates/runtime/external/*/src" = [".rs"]
+"rust/crates/runtime/external/*/tests" = [".rs"]
+"rust/crates/models/constitutive_relations/src/electromagnetism" = [".rs"]
+"rust/crates/models/constitutive_relations/src/solid_mechanics" = [".rs"]
+"rust/crates/models/constitutive_relations/src/fluid_mechanics" = [".rs"]
+"rust/crates/models/constitutive_relations/src/heat_transfer" = [".rs"]
+"rust/crates/models/constitutive_relations/src/species_transport" = [".rs"]
+"rust/crates/models/constitutive_relations/src/entity_flow" = [".rs"]
+"rust/crates/models/constitutive_relations/src/coupled" = [".rs"]
+"rust/crates/models/geometry/src/coordinate_systems" = [".rs"]
+"rust/crates/models/geometry/src/construction" = [".rs"]       # evaluates construction trees declared in Python (D52)
+"rust/crates/models/geometry/src/queries" = [".rs"]
+"rust/crates/models/geometry/src/assembly" = [".rs"]            # flattens the recursive assembly tree (D101-D103, D107)
+"rust/crates/models/geometry/src/reconstruction" = [".rs"]      # exact sections and fits from measured sources (D107)
+"rust/crates/compile/discretize/src/carriers" = [".rs"]
+"rust/crates/compile/discretize/src/carriers/mesh" = [".rs"]
+"rust/crates/compile/discretize/src/carriers/mesh/planar" = [".rs"]
+"rust/crates/compile/discretize/src/carriers/mesh/volume" = [".rs"]
+"rust/crates/compile/discretize/src/carriers/mesh/operators" = [".rs"]
+"rust/crates/compile/discretize/src/carriers/spline_patch" = [".rs"]
+"rust/crates/compile/discretize/src/carriers/point_cloud" = [".rs"]
+"rust/crates/compile/discretize/src/function_spaces" = [".rs"]
+"rust/crates/compile/discretize/src/function_spaces/lagrange" = [".rs"]
+"rust/crates/compile/discretize/src/function_spaces/nedelec" = [".rs"]
+"rust/crates/compile/discretize/src/function_spaces/raviart_thomas" = [".rs"]
+"rust/crates/compile/discretize/src/function_spaces/discontinuous" = [".rs"]
+"rust/crates/compile/discretize/src/function_spaces/bspline" = [".rs"]
+"rust/crates/compile/discretize/src/function_spaces/modal" = [".rs"]
+"rust/crates/compile/discretize/src/function_spaces/virtual_element" = [".rs"]
+"rust/crates/compile/discretize/src/function_spaces/neural" = [".rs"]
+"rust/crates/compile/discretize/src/quadrature" = [".rs"]
+"rust/crates/compile/discretize/src/weighted_residuals" = [".rs"]
+"rust/crates/compile/discretize/src/weighted_residuals/galerkin" = [".rs"]
+"rust/crates/compile/discretize/src/weighted_residuals/collocation" = [".rs"]
+"rust/crates/compile/discretize/src/weighted_residuals/finite_volume" = [".rs"]
+"rust/crates/compile/discretize/src/interface_conditions" = [".rs"]
+"rust/crates/compile/analyze_structure/src/equation_structure" = [".rs"]
+"rust/crates/compile/analyze_structure/src/causality" = [".rs"]
+"rust/crates/compile/analyze_structure/src/switching_modes" = [".rs"]
+"rust/crates/compile/analyze_structure/src/coupling_partition" = [".rs"]
+"rust/crates/compile/assemble/src/dof_layout" = [".rs"]
+"rust/crates/compile/assemble/src/kernels" = [".rs"]
+"rust/crates/compile/assemble/src/kernels/terms" = [".rs"]      # domain-free weak-form terms; a statement is a sum of terms (D28, D107)
+"rust/crates/compile/assemble/src/kernels/integral" = [".rs"]   # integral-statement kernels: Green's functions (Biot-Savart), BEM (D107)
+"rust/crates/compile/assemble/src/kernels/network" = [".rs"]    # 0-D graph stamping: MNA branches and ports (D107)
+"rust/crates/compile/assemble/src/output_functionals" = [".rs"]
+"rust/crates/compile/assemble/src/back_mapping" = [".rs"]
+"rust/crates/models/signal/src/graph" = [".rs"]
+"rust/crates/models/signal/src/blocks" = [".rs"]
+"rust/crates/models/signal/src/state_charts" = [".rs"]
+"rust/crates/models/signal/src/control_laws" = [".rs"]
+"rust/crates/models/signal/src/observers" = [".rs"]
+"rust/crates/models/signal/src/modulation" = [".rs"]
+"rust/crates/models/signal/src/commutation" = [".rs"]
+"rust/crates/models/signal/src/transforms" = [".rs"]
+"rust/crates/models/signal/src/foreign_blocks" = [".rs"]
+"rust/crates/runtime/execution/src/problem_kinds" = [".rs"]       # one driver per problem kind (stationary, evolution, eigen, periodic_steady_state) for any carrier x space x weighting (D107, D110)
+"rust/crates/runtime/execution/src/initialization" = [".rs"]
+"rust/crates/runtime/execution/src/time_stepping" = [".rs"]
+"rust/crates/runtime/execution/src/events" = [".rs"]
+"rust/crates/runtime/execution/src/state_history" = [".rs"]
+"rust/crates/runtime/execution/src/coupling_iteration" = [".rs"]
+"rust/crates/runtime/execution/src/structure_change" = [".rs"]
+"rust/crates/runtime/execution/src/real_time" = [".rs"]
+"rust/pybind" = []
+"rust/pybind/product_native" = ["Cargo.toml", "pyproject.toml"]
+"rust/pybind/product_native/src" = [".rs"]
+
+# --- tests: kind by directory; recorded data lives in Oracle (baselines.lock)
+"tests" = ["conftest.py", "baselines.lock"]
+"tests/unit" = { mirror = "src/product", allow = [".py"] }
+"tests/architecture" = [".py"]
+"tests/cases" = [".py"]                          # the one generic runner: every case x every applicable solver/variant
+
+# --- data (D58, D59): curated, small, text data reviewed and frozen in git; large/binary/raw lives in Oracle
+"data" = []
+"data/cases" = { mirror = "src/product/applications", allow = [], depth = 1, extra = ["verification"] }
+# one engineering object = one case (D89, D90); one row per application so verification's closed theory list holds (D108)
+"data/cases/electric_machine/*" = ["case.toml", "evidence.toml", "references.lock", "README.md"]
+"data/cases/magnetic_component/*" = ["case.toml", "evidence.toml", "references.lock", "README.md"]
+"data/cases/power_converter/*" = ["case.toml", "evidence.toml", "references.lock", "README.md"]
+"data/cases/drive_unit/*" = ["case.toml", "evidence.toml", "references.lock", "README.md"]
+"data/cases/vehicle/*" = ["case.toml", "evidence.toml", "references.lock", "README.md"]
+"data/cases/power_converter/*/code" = [".c", ".h"]        # controller source (C-Script) archived with the case, hashed into the closure (D111)
+"data/cases/drive_unit/*/code" = [".c", ".h"]             # controller source (C-Script) archived with the case (D111)
+"data/cases/verification" = { mirror = "src/product/models/governing_equations", allow = [], depth = 1, extra = ["coupled", "signal"] }   # circuits go by physics (D110); structure-acoustic coupling in coupled, pure acoustics in fluid_mechanics (D104)
+"data/cases/verification/*/*" = ["case.toml", "evidence.toml", "references.lock", "README.md"]
+"data/cases/verification/signal/*/code" = [".c", ".h"]   # control-only problems with C-Script source (D111)
+"data/standards" = []
+"data/standards/iec" = []                          # bodies are a closed list: a new body needs a receipt (D60)
+"data/standards/iso" = []
+"data/standards/unece" = []
+"data/standards/gb" = []
+"data/standards/en" = []
+"data/standards/*/*" = [".toml"]                  # <number>/<part>.toml, filed under the ORIGINATING body; adoption and edition read go in each citation
+"data/materials" = []
+"data/materials/*" = [".toml"]                    # <family>: steel, ferrite, ndfeb, smco, copper, insulation, ... (D105)
+"data/applications" = { mirror = "src/product/applications", allow = [".toml"], depth = 1 }   # data an application owns and many cases cite (e.g. electric_machine power-scaling laws, factory capability) (D105, D108)
+"data/vendor_parts" = []
+"data/vendor_parts/*" = [".toml"]                 # <part kind>: magnetic_core, conductor, power_semiconductor, ...; one file per vendor source, vendor is a field (D59, D105)
+
+# --- attic: archived code, read-only; v1 starts empty and carries none of the old attic (D118, D123)
+"attic" = ["*"]
+"attic/*" = ["*"]
+
+# --- migration: temporary, archived in one commit when the migration completes
+"migration" = ["README.md", "baselines.lock"]
+"migration/equivalence" = [".py"]
+"migration/converters" = [".py"]
+"migration/maps" = [".toml"]
+
+# --- untracked roots
+"output" = []
+# Four roles (D95): RECORDS (what happened, .jsonl only), EXPORTS (report, convert/<format>, pack), VENDOR JOBS, and
+# the ONE result store, output/store. Results are stored once; a record cites their hashes.
+# Only v1's own actions are listed: the dated levels and the family kinds (verify, coverage, durations, ...) come
+# from dev-lab and are never repeated here.
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/run" = [".jsonl"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/explore" = [".jsonl"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/optimize" = [".jsonl"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/fit" = [".jsonl"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/certify" = [".jsonl"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/judge" = [".jsonl"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/compare" = [".jsonl"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/agent" = [".jsonl"]    # the agent's decision ledger (D112)
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/config" = [".jsonl"]   # config locate proposals and confirmations (D112)
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/report" = [".jsonl"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/report/*" = [".jsonl", ".html", ".md", ".svg", ".png", ".gif"]   # one <HH-MM-SS> folder per report (lab_commons run_output_dir)
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/convert" = [".jsonl"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/convert/csv" = [".csv"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/convert/xlsx" = [".xlsx"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/convert/dxf" = [".dxf"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/convert/step" = [".step"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/convert/c_code" = [".zip"]    # generated C is code, so it leaves as one archive (no single-letter folders, D109)
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/convert/fmi" = [".fmu"]
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/convert/matlab_code" = [".zip"]   # generated MATLAB .m scripts (e.g. descriptor models) leave as one archive (D104, D107)
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/convert/smtlib" = [".smt2"]  # certificates as SMT-LIB2, re-checked by runtime/external/z3 (D107)
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/pack" = [".jsonl", ".zip"]    # manifest.toml inside the zip; client delivery is a pack option (--for client)
+"output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/vendor" = [".jsonl"]          # vendor operation records; job trees below come with the vendor_jobs exemption
+"output/cache" = []
+"output/store" = [".npz", ".onnx", ".dll", ".so", ".dylib", ".jsonl"]   # THE result store (not a cache): input hash + producer identity, per stage; compiled C-Script libraries are a stage (D61, D71, D78, D85, D107)
+"scratch" = ["*"]
+"scratch/*" = ["*"]

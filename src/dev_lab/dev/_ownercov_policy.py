@@ -28,7 +28,7 @@ BARS: Final[Mapping[str, str]] = {'line': '95 %', 'branch': '90 %'}
 #: ``[tool.dev_lab.<TABLE>]`` of pyproject.toml.
 TABLE: Final = 'coverage'
 WHERE: Final = f'pyproject.toml [tool.dev_lab.{TABLE}'
-ROWS: Final = {'python': '[python.owners]', 'rust': '[rust.crates]'}
+ROWS: Final = {'python': '[python.owners]', 'rust': 'crate'}
 _KEYS: Final = frozenset({*BARS, 'floors'})
 _PERCENT: Final = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*%\s*$')
 _NUMBER: Final = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*$')

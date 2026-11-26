@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
 from dev_lab.dev import deptable, ownerdag
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 _GIT = shutil.which('git') or 'git'
 DECLARED = """
@@ -27,9 +24,6 @@ two = ["one"]
 [python.importers]
 "alpha/formats" = ["gamma", "tests/unit"]
 beta = ["gamma", "tests"]
-
-[python.native]
-kernel = "beta"
 
 [python.packages]
 numpy = { owners = ["*"], reason = "arrays" }
@@ -55,6 +49,9 @@ LAYOUT = """
 "src/pkg/gamma" = [".py"]
 "src/pkg/delta" = [".py"]
 "src/pkg/epsilon" = [".py"]
+"rust" = []
+"rust/crates" = []
+"rust/crates/beta" = ["Cargo.toml"]
 "tests" = [".py"]
 "tests/*" = [".py"]
 "scripts" = [".py"]
@@ -78,7 +75,7 @@ BASE = {
     'tests/unit/test_s.py': 'import scipy\nfrom pkg.alpha import formats\n',  # tests/unit is listed for both
     'tests/test_beta.py': 'from pkg.beta import f\n',  # "tests" is listed as an importer of beta
     'src/pkg/alpha/common.py': 'import numpy as np\nimport os\nos.path.join("a")\n',
-    'src/pkg/beta/__init__.py': 'from pkg.alpha import common\nfrom pkg_native import kernel\n',
+    'src/pkg/beta/__init__.py': 'from pkg.alpha import common\nfrom pkg_native import beta\n',  # its own crate
     'src/pkg/gamma/__init__.py': 'from pkg.beta import f\nfrom fam.log import emit\n',
     'src/pkg/gamma/run.py': 'import subprocess\n',
     'tests/test_x.py': 'from tests import helpers\nfrom fam.log import emit\n',
@@ -124,8 +121,11 @@ def test_the_declared_tree_passes(tmp_path: Path) -> None:
             'imports pkg.alpha.formats.read, but [python.importers] "alpha/formats" allows only gamma, tests/unit',
         ),
         ({'scripts/tool.py': 'import pkg.alpha.formats\n'}, '[python.importers] "alpha/formats" allows only'),
-        ({'src/pkg/alpha/n.py': 'from pkg_native import kernel\n'}, 'pkg_native.kernel, whose crate kernel'),
-        ({'src/pkg/beta/n.py': 'from pkg_native import other\n'}, 'other is no [python.native] row'),
+        (
+            {'src/pkg/alpha/n.py': 'from pkg_native import beta\n'},
+            'alpha imports pkg_native.beta (stage beta), but [python.owners] alpha does not list beta',
+        ),
+        ({'src/pkg/beta/n.py': 'from pkg_native import other\n'}, 'other is no crate at rust/crates/<owner path>'),
         ({'src/pkg/beta/n.py': 'import pkg_native\n'}, 'the bare native module pkg_native'),
         ({'src/pkg/delta/__init__.py': ''}, 'src/pkg/delta is an owner no [python.owners] row names'),
         ({'src/pkg/alpha/s.py': 'import sympy.core\n'}, 'sympy.core, which no [python.packages] row names'),
@@ -324,3 +324,107 @@ def test_a_nested_siblings_table_is_keyed_by_child_path(tmp_path: Path) -> None:
         'dependencies.toml [python.siblings."alpha/gone"] names src/pkg/alpha/gone, which no layout.toml row declares'
         in found
     )
+
+
+#: NO-LAZY-IMPORT made declarative: sympy may be imported only inside a function, numpy only at the top.
+DEFERRED = DECLARED.replace(
+    'numpy = { owners = ["*"], reason = "arrays" }',
+    'numpy = { owners = ["*"], reason = "arrays" }\nsympy = { owners = ["src/pkg/alpha"], load = "deferred", '
+    'reason = "4.9 s import; symbolic models" }',
+)
+
+
+def test_a_deferred_row_admits_a_function_import_and_the_type_checking_block(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL for the two refusals below: deferred where declared, eager where not."""
+    source = (
+        'from typing import TYPE_CHECKING\nimport numpy\nif TYPE_CHECKING:\n    import sympy\n\n'
+        'def solve():\n    import sympy\n    return sympy.Symbol("x")\n'
+    )
+    assert _problems(tmp_path, {'src/pkg/alpha/sym.py': source}, declared=DEFERRED) == []
+
+
+@pytest.mark.parametrize(
+    ('source', 'named'),
+    [
+        (
+            'import sympy\n',
+            'imports sympy as the module loads, but [python.packages] sympy is load = "deferred"',
+        ),
+        (
+            'class Model:\n    from sympy import Symbol\n',
+            'imports sympy.Symbol as the module loads, but [python.packages] sympy is load = "deferred"',
+        ),
+        (
+            'def f():\n    import numpy\n    return numpy.zeros(1)\n',
+            'imports numpy inside a function, but [python.packages] numpy is not load = "deferred"',
+        ),
+    ],
+)
+def test_a_deferred_row_loaded_eagerly_or_an_eager_row_loaded_lazily_is_refused(
+    tmp_path: Path, source: str, named: str
+) -> None:
+    found = _problems(tmp_path, {'src/pkg/alpha/sym.py': source}, declared=DEFERRED)
+    assert len(found) == 1, found
+    assert found[0].startswith('src/pkg/alpha/sym.py: ')
+    assert named in found[0]
+
+
+#: NATIVE-FIRST: alpha's child "kernel" is implemented only by a crate (rust/crates/alpha/kernel, no Python folder).
+RUST_STAGE = DECLARED.replace('two = ["one"]', 'two = ["one", "kernel"]\none = []\nkernel = []')
+RUST_STAGE_LAYOUT = {'layout.toml': LAYOUT + '"rust/crates/alpha" = []\n"rust/crates/alpha/kernel" = ["Cargo.toml"]\n'}
+
+
+def test_a_rust_owned_child_is_a_declared_sibling_and_its_edges_are_the_sibling_edges(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL: two -> kernel is declared, so alpha/two may import the crate module."""
+    uses = {'src/pkg/alpha/two/k.py': 'from pkg_native import alpha_kernel\n'}
+    assert _problems(tmp_path, {**RUST_STAGE_LAYOUT, **uses}, declared=RUST_STAGE) == []
+
+
+def test_a_rust_owned_child_reached_across_an_undeclared_sibling_edge_is_refused(tmp_path: Path) -> None:
+    uses = {'src/pkg/alpha/one/k.py': 'from pkg_native import alpha_kernel\n'}
+    assert _problems(tmp_path, {**RUST_STAGE_LAYOUT, **uses}, declared=RUST_STAGE) == [
+        (
+            'src/pkg/alpha/one/k.py: alpha/one imports pkg_native.alpha_kernel (stage alpha/kernel), but '
+            '[python.siblings."alpha"] one does not list kernel'
+        )
+    ]
+
+
+def test_a_sibling_neither_a_package_nor_a_crate_declares_is_refused(tmp_path: Path) -> None:
+    """Without its crate row the Rust-owned child is a ghost: the same declaration is refused by name."""
+    assert _problems(tmp_path, declared=RUST_STAGE) == [
+        'dependencies.toml [python.siblings."alpha"] names src/pkg/alpha/kernel, which no layout.toml row declares'
+    ]
+
+
+_V1 = Path(__file__).resolve().parent / '_ownerdag_fixtures' / 'v1'
+
+
+def test_the_v1_draft_declaration_is_read_and_judged_before_its_code_exists(tmp_path: Path) -> None:
+    """ACCEPTANCE: a consumer's draft dependencies.toml and layout.toml (its v1 skeleton at 73772a1).
+
+    Private names are neutralized (the product and two family packages renamed); nothing else is edited.
+
+    No src/ and no crate exist yet: every path is a layout.toml row, deferred rows load, crate holders are the
+    crates layout.toml declares under rust/crates/<owner path>, and Rust-owned compile children are siblings.
+    """
+    files = {
+        'pyproject.toml': '[project]\nname = "product"\n',
+        deptable.FILE: (_V1 / 'dependencies.toml').read_text(encoding='utf-8'),
+        'layout.toml': (_V1 / 'layout.toml').read_text(encoding='utf-8'),
+    }
+    for rel, text in files.items():
+        (tmp_path / rel).write_text(text, encoding='utf-8')
+    decl = deptable.load(tmp_path)
+    assert decl is not None
+    assert decl.packages['sympy'].load == 'deferred'
+    assert ownerdag.problems(tmp_path, decl, files) == V1_VERDICT
+
+
+#: What the checker says about the v1 draft: one finding for the consumer, a reason citing a module no row grants.
+V1_VERDICT: list[str] = [
+    (
+        'dependencies.toml [python.stdlib] signal cites lab_commons.supervise in its reason, which no '
+        '[python.packages] row grants'
+    )
+]
