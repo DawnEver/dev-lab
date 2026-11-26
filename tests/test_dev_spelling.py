@@ -85,3 +85,8 @@ def test_a_missing_binary_names_its_door(tmp_path: Path, monkeypatch: pytest.Mon
     assert spelling.check(_repo(tmp_path / 'r', {'a.md': 'x\n'}), handle=handle) == spelling.ERRORED
     assert 'dev_lab.dev.dep --sync' in handle.getvalue()
     assert read_lint('typos', spelling.ERRORED).truncated, 'an errored checker is not a clean tree'
+
+
+def test_a_cited_author_is_a_word() -> None:
+    config = tomllib.loads(spelling.CONFIG.read_text(encoding='utf-8'))
+    assert config['default']['extend-words']['Mak'] == 'Mak'

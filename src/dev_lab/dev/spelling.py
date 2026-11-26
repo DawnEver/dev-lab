@@ -8,7 +8,9 @@ carries a copy, so the vocabulary moves for the whole family at one relock.
 
 WHAT IS CHECKED: every file git would track -- tracked, plus untracked and not ignored -- except dated memory
 written before the ruling (:data:`MEMORY_CUTOFF`). A memory entry is immutable history, so the ruling is not
-applied to it backwards; an entry written on or after the cutoff is checked like any other file.
+applied to it backwards; an entry written on or after the cutoff is checked like any other file. The
+config's ``[files]`` excludes hold for the explicit file list too (``--force-exclude``), so rendered machine
+data is never checked nor written.
 
 Exit codes follow :func:`dev_lab.dev.reports.read_lint`: ``0`` clean, ``1`` findings (printed), ``2`` the
 checker did not run. ``--write`` lets typos fix every unambiguous finding in place.
@@ -28,7 +30,19 @@ from typing import IO, Final
 
 import lab_commons.launch as _door
 
-__all__ = ['CLEAN', 'CONFIG', 'ERRORED', 'FOUND', 'INSTALL_DOOR', 'MEMORY_CUTOFF', 'binary', 'check', 'checked', 'main']
+__all__ = [
+    'CLEAN',
+    'CONFIG',
+    'ERRORED',
+    'FOUND',
+    'INSTALL_DOOR',
+    'MEMORY_CUTOFF',
+    'binary',
+    'check',
+    'check_files',
+    'checked',
+    'main',
+]
 
 #: The family's one typos config.
 CONFIG: Final = Path(__file__).with_name('typos.toml')
@@ -79,13 +93,18 @@ def _files(root: Path) -> tuple[str, ...]:
 
 def check(root: Path, *, handle: IO[str], write: bool = False) -> int:
     """Run typos over *root*'s checked files, its findings into *handle*; ``CLEAN``, ``FOUND`` or ``ERRORED``."""
+    return check_files(root, checked(_files(root)), handle=handle, write=write)
+
+
+def check_files(root: Path, files: Iterable[str], *, handle: IO[str], write: bool = False) -> int:
+    """Run typos over *files* (relative to *root*) under :data:`CONFIG`, its ``[files]`` excludes applied."""
     typos = binary()
     if typos is None:
         handle.write(f'typos is not installed in {sys.prefix}: {INSTALL_DOOR}\n')
         return ERRORED
-    files = checked(_files(root))
+    argv = [str(typos), '--config', str(CONFIG), '--force-exclude', '--format', 'brief', '--file-list', '-']
     done = _door.run(
-        [str(typos), '--config', str(CONFIG), '--format', 'brief', '--file-list', '-', *(('--write-changes',) * write)],
+        [*argv, *(('--write-changes',) * write)],
         cwd=root,
         input='\n'.join(files),
         capture_output=True,
