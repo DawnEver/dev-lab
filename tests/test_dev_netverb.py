@@ -640,3 +640,24 @@ def test_a_misfit_python_is_refused_naming_the_requirement_to_find() -> None:
 def test_a_planted_unrelated_missing_module_stays_unclassified() -> None:
     """PLANTED CONTROL: only the hook framework's module is the hook row; another missing module is unmeasured."""
     assert classify('No module named numpy') is Diagnosis.UNCLASSIFIED
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['uv', 'python', 'install', '3.14'],
+        ['C:/x/uv.EXE', 'python', 'install', '--reinstall', '3.13'],
+    ],
+)
+def test_uv_python_install_is_a_network_verb_and_the_door_runs_it(argv: list[str]) -> None:
+    """2026-11-26 (v1 #1): `uv python install` downloads an interpreter, yet netverb refused it as no network verb."""
+    assert is_network_verb(argv)
+    assert spelled(['--', *argv]) == argv
+
+
+@pytest.mark.parametrize('argv', [['uv', 'python', 'list'], ['uv', 'python', 'find', '3.14'], ['uv', 'python']])
+def test_a_local_uv_python_subcommand_stays_no_network_verb(argv: list[str]) -> None:
+    """The planted control: only `install` fetches; `list`/`find` read the host."""
+    assert not is_network_verb(argv)
+    with pytest.raises(NotANetworkVerb):
+        spelled(['--', *argv])

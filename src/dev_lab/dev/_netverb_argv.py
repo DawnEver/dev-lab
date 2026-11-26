@@ -28,14 +28,19 @@ __all__ = [
 GIT_NETWORK_VERBS: Final = ('push', 'fetch', 'pull', 'clone', 'ls-remote', 'submodule')
 
 #: The uv verbs that RESOLVE, reaching an index or a git dependency on the forge (2026-10-19: one `uv sync`
-#: of a git dependency failed on auth and the re-run passed). ``pip`` is one only as ``pip install|sync|compile``.
-UV_NETWORK_VERBS: Final = ('sync', 'lock', 'add', 'remove', 'pip')
+#: of a git dependency failed on auth and the re-run passed). ``pip`` is one only as ``pip install|sync|compile``,
+#: ``python`` only as ``python install`` (2026-11-26: it downloads an interpreter, and the door refused it).
+UV_NETWORK_VERBS: Final = ('sync', 'lock', 'add', 'remove', 'pip', 'python')
 
 #: Cargo dependency operations that can reach registries or Git. Admitting a build or a test run is not this door.
 CARGO_NETWORK_VERBS: Final = ('update', 'fetch', 'generate-lockfile')
 
 #: A verb that is a network verb only with one of these second words.
-_SUBVERBS: Final = {'submodule': frozenset({'update'}), 'pip': frozenset({'install', 'sync', 'compile'})}
+_SUBVERBS: Final = {
+    'submodule': frozenset({'update'}),
+    'pip': frozenset({'install', 'sync', 'compile'}),
+    'python': frozenset({'install'}),
+}
 
 #: Each program's global options that take a SEPARATE value (``git -C <path>``, ``uv --directory <path>``):
 #: the verb is the first word after them, so a program's own set is what finds it.
@@ -129,7 +134,7 @@ def spelled(command: Sequence[str]) -> list[str]:
     msg = (
         f'netverb: {first!r} is not a network verb -- spell it '
         f'`python -m dev_lab.dev.netverb -- git push ...` (or `-- {"|".join(GIT_NETWORK_VERBS)} ...`, '
-        f'`-- uv {"|".join(UV_NETWORK_VERBS)} ...`, '
+        f'`-- uv {"|".join(v for v in UV_NETWORK_VERBS if v not in _SUBVERBS)}|pip install|python install ...`, '
         f'`-- cargo {"|".join(CARGO_NETWORK_VERBS)} ...`)'
     )
     raise NotANetworkVerb(msg)

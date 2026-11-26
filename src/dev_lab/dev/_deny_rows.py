@@ -102,13 +102,13 @@ def retired_row(rule_id: str) -> str | None:
 RETIRED_ROW_KEY = 'deny row'
 
 _GIT_VERBS = '|'.join(verb for verb in GIT_NETWORK_VERBS if verb != 'submodule')
-_UV_VERBS = '|'.join(verb for verb in UV_NETWORK_VERBS if verb != 'pip')
+_UV_VERBS = '|'.join(verb for verb in UV_NETWORK_VERBS if verb not in {'pip', 'python'})
 #: The shell spelling of :func:`dev_lab.dev._netverb_argv.is_network_verb`, derived from its verb lists.
 #: A git verb whose repository operand is a local path is no remote.
 NETWORK_VERB_PATTERN = (
     rf'(?:git(?:\s+-[Cc]\s+\S+)*\s+(?:(?:{_GIT_VERBS})\b(?!(?:\s+-\S+)*\s+["\']?{LOCAL_REPOSITORY}["\']?(?:\s|$))'
     r'|submodule\s+update\b)'
-    rf'|uv\s+(?:{_UV_VERBS}|pip\s+(?:install|sync|compile))\b)'
+    rf'|uv\s+(?:{_UV_VERBS}|pip\s+(?:install|sync|compile)|python\s+install)\b)'
 )
 
 DENY_ROWS: tuple[dict[str, object], ...] = (
@@ -290,6 +290,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'uv lock --upgrade',
             'uv sync --frozen',
             'uv pip install requests',
+            'uv python install 3.14',
         ),
         'permits': (
             'git status',
@@ -303,6 +304,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'git push C:/x/repo HEAD:lane/x',
             'uv pip list',
             'uv --version',
+            'uv python find 3.14',
         ),
     },
     {
