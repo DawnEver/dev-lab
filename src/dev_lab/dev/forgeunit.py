@@ -48,7 +48,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box.demand import CPU, MEM_GB, cores, seats
+from lab_commons.box.demand import CPU, GB, MEM_GB, cores, seats
 from lab_commons.compute.execute import CACHED, RAN, LocalExecutor, Offer, presence_check
 from lab_commons.compute.graph import Graph
 from lab_commons.compute.model import Demand
@@ -72,7 +72,7 @@ from dev_lab.dev.forgerecords import attach, listing
 from dev_lab.dev.forgerequest import UNIT, Declared, UndeclaredRequest
 from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.largeobjects import StoreUnreached, run_objects
+from dev_lab.dev.storage import StoreUnreached, run_objects
 
 __all__ = [
     'GRAVE',
@@ -305,8 +305,8 @@ def unit_request(paths: Sequence[str]) -> Declared:
         ('-m', __name__, *paths),
         frozenset(job.needs),
         float(cores(job.demand)),
-        job.demand[MEM_GB],
-        job.wall_s / 3600,
+        job.demand[MEM_GB] * GB,
+        float(job.wall_s),
     )
 
 
@@ -384,7 +384,7 @@ def shared_tier(repo: Path) -> ForgeResults:
     """The shared tier a run of *repo* reads and posts to: its forge's results, a post held offline under *repo*.
 
     A downstream repo reaches it through an entry point and never builds a forge client; it pairs it with
-    :func:`dev_lab.dev.largeobjects.run_objects` (``ResultStore(root, shared_tier(repo), objects=run_objects(repo))``).
+    :func:`dev_lab.dev.storage.run_objects` (``ResultStore(root, shared_tier(repo), objects=run_objects(repo))``).
     """
     return ForgeResults(client_for(repo), pending=pending_dir(repo))
 

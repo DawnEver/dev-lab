@@ -20,7 +20,7 @@ from typing import Final
 
 import pytest
 from lab_commons.config import CONFIG_ENV
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc.shell import pack
 from test_dev_hpc_records import MACHINE, FakeRunCluster

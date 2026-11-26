@@ -22,8 +22,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons import quantity
 from lab_commons.hpc.layout import ROOT_VAR, AccountPaths, RootUndeclared, account_paths
 from lab_commons.hpc.retired import RETIRED
+from lab_commons.quantity import Renamed, refuse_renamed
 
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
 from dev_lab.dev.hpcaccount.grantslice import granted_root, machine_table
@@ -33,7 +35,8 @@ from dev_lab.dev.venvpointer import shell_interpreter
 __all__ = [
     'CLAIMS',
     'DEFAULT_PYTHON',
-    'DEFAULT_TICK_MINUTES',
+    'DEFAULT_TICK',
+    'DEFAULT_TICK_WALL',
     'KIT',
     'MARK',
     'RESEARCH',
@@ -50,6 +53,7 @@ __all__ = [
     'paths_of',
     'render',
     'role_refusal',
+    'schedule_tick',
     'served',
     'serves_here',
     'tick_command',
@@ -65,16 +69,19 @@ MARK: Final = '# lab-commons-deploy:'
 
 DEFAULT_PYTHON: Final = '3.13'
 
-#: ``[schedule] tick_minutes`` when undeclared -- the same default the host card is judged stale against.
-DEFAULT_TICK_MINUTES: Final = 5
+#: ``[schedule] tick`` when undeclared, in seconds -- the same default the host card is judged stale against.
+DEFAULT_TICK: Final = 5 * 60
 
-#: ``[schedule] tick_wall_minutes`` when undeclared: how long one tick may hold its lock before it ends itself
+#: ``[schedule] tick_wall`` when undeclared, in seconds: how long one tick may hold its lock before it ends itself
 #: (:mod:`dev_lab.dev.hpcaccount.tickwall`). WHY 40: a verification account ticks every 15 minutes and its card reads
 #: STALE after three periods (:data:`dev_lab.dev.forgehosts.STALE_TICKS`), 45 minutes -- a tick ending by 40 lets the
 #: next one publish before the queue calls the host down, and 40 minutes still holds a whole gather and post of a
 #: large run (a submit's hour-long collection runs detached, :func:`dev_lab.dev.forgesubmit.detach`). Measured
 #: 2026-11-23: unbounded, one tick in a gather's tenth retry round held the lock for hours.
-DEFAULT_TICK_WALL_MINUTES: Final = 40
+DEFAULT_TICK_WALL: Final = 40 * 60
+
+#: ``[schedule]`` keys retired by the 2026-11-25 ruling (the value carries its unit), refused with their new line.
+SCHEDULE_RENAMED: Final = {'tick_minutes': Renamed('tick', 'min'), 'tick_wall_minutes': Renamed('tick_wall', 'min')}
 
 #: The served repo every tick RUNS -- the kit, whose ``forge serve`` serves every other served repo.
 KIT: Final = 'dev-lab'
@@ -112,7 +119,7 @@ class Repo:
 
 @dataclass(frozen=True)
 class Deployment:
-    """The ``[deploy]`` table of the machine file, plus the ``[schedule] tick_minutes`` its cron lines run at.
+    """The ``[deploy]`` table of the machine file, plus the ``[schedule] tick`` its cron lines run at.
 
     ``slurm_account`` and ``partitions`` declare this account's grant; ``role`` names its role, ``''`` when
     undeclared (nothing is ticked, the deploy refuses).
@@ -125,8 +132,8 @@ class Deployment:
     slurm_account: str = ''  # needed only when sacctmgr names several
     partitions: tuple[str, ...] = ()
     role: str = ''
-    tick_minutes: int = DEFAULT_TICK_MINUTES  # from [schedule], never [deploy]: one period per host
-    tick_wall_minutes: int = DEFAULT_TICK_WALL_MINUTES  # from [schedule]: how long one tick may hold its lock
+    tick: int = DEFAULT_TICK  # seconds, from [schedule], never [deploy]: one period per host
+    tick_wall: int = DEFAULT_TICK_WALL  # seconds, from [schedule]: how long one tick may hold its lock
     env: tuple[tuple[str, str], ...] = ()  # from [env]: this account's own tool paths, exported in every tick
 
 
@@ -163,8 +170,8 @@ def parse(table: Mapping[str, Any], path: Path, *, root: str = '') -> Deployment
             slurm_account=raw.get('slurm_account', ''),
             partitions=tuple(raw.get('partitions', ())),
             role=_role(path, raw.get('role', '')),
-            tick_minutes=_tick_minutes(path, table.get('schedule', {})),
-            tick_wall_minutes=_tick_wall_minutes(path, table.get('schedule', {})),
+            tick=_tick(path, table.get('schedule', {})),
+            tick_wall=_tick_wall(path, table.get('schedule', {})),
             env=_env(path, table.get('env', {})),
         )
     except KeyError as missing:
@@ -211,22 +218,48 @@ def _env(path: Path, table: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(table.items()))
 
 
-def _tick_minutes(path: Path, schedule: Mapping[str, Any]) -> int:
-    """``[schedule] tick_minutes`` as a cron step: a whole number of minutes dividing the hour, else refused."""
-    minutes = schedule.get('tick_minutes', DEFAULT_TICK_MINUTES)
-    if type(minutes) is not int or minutes < 1 or 60 % minutes:
-        msg = f'[schedule] tick_minutes in {path} is {minutes!r}: cron needs a whole number of minutes dividing 60'
-        raise ValueError(msg)
-    return minutes
+def schedule_tick(schedule: Mapping[str, Any], where: str = '[schedule]') -> float:
+    """``[schedule] tick`` in seconds (a duration, :mod:`lab_commons.quantity`), :data:`DEFAULT_TICK` when undeclared.
+
+    The one reader of the period: the cron lines run at it, the host card is judged stale against it, and the tick's
+    own readings use it as their cadence. A retired ``tick_minutes`` is refused with its new line.
+    """
+    refuse_renamed(where, schedule, SCHEDULE_RENAMED)
+    if 'tick' not in schedule:
+        return float(DEFAULT_TICK)
+    return quantity.parse(f'{where} tick', schedule['tick'], 'duration', positive=True)
 
 
-def _tick_wall_minutes(path: Path, schedule: Mapping[str, Any]) -> int:
-    """``[schedule] tick_wall_minutes``: a positive whole number of minutes, else refused naming the key."""
-    minutes = schedule.get('tick_wall_minutes', DEFAULT_TICK_WALL_MINUTES)
-    if type(minutes) is not int or minutes < 1:
-        msg = f'[schedule] tick_wall_minutes in {path} is {minutes!r}: declare a positive whole number of minutes'
+_MINUTE: Final = 60
+
+
+def _whole_minutes(seconds: float) -> int | None:
+    return int(seconds // _MINUTE) if seconds >= _MINUTE and seconds % _MINUTE == 0 else None
+
+
+def _tick(path: Path, schedule: Mapping[str, Any]) -> int:
+    """``[schedule] tick`` in seconds, as a cron step: whole minutes dividing the hour, else refused naming the key."""
+    seconds = schedule_tick(schedule, f'{path}: [schedule]')
+    minutes = _whole_minutes(seconds)
+    if minutes is None or 60 % minutes:
+        declared = schedule.get('tick')
+        msg = f'{path}: [schedule] tick = {declared!r}: cron needs whole minutes dividing an hour, such as "15 min"'
         raise ValueError(msg)
-    return minutes
+    return int(seconds)
+
+
+def _tick_wall(path: Path, schedule: Mapping[str, Any]) -> int:
+    """``[schedule] tick_wall`` in seconds: a positive duration of whole minutes, else refused naming the key."""
+    where = f'{path}: [schedule]'
+    refuse_renamed(where, schedule, SCHEDULE_RENAMED)
+    if 'tick_wall' not in schedule:
+        return DEFAULT_TICK_WALL
+    seconds = quantity.parse(f'{where} tick_wall', schedule['tick_wall'], 'duration', positive=True)
+    if _whole_minutes(seconds) is None:
+        declared = schedule['tick_wall']
+        msg = f'{where} tick_wall = {declared!r}: declare whole minutes, such as "40 min" (the tick takes minutes)'
+        raise ValueError(msg)
+    return int(seconds)
 
 
 def _repo_rows(path: Path, rows: Sequence[Mapping[str, Any]]) -> Sequence[Mapping[str, Any]]:
@@ -295,12 +328,12 @@ def cron_lines(
     slurm: Sequence[str] = (),
     setup: Sequence[str] = (),
 ) -> list[str]:
-    """One marked line per served repo and the kit, every ``tick_minutes``, each tick under its own lock.
+    """One marked line per served repo and the kit, every ``[schedule] tick``, each tick under its own lock.
 
     The minute offset is derived from *home* (one per account), so accounts sharing a forge tick staggered
     rather than in lockstep; an unserved repo other than the kit gets no line (:class:`Repo`).
     """
-    step = spec.tick_minutes
+    step = spec.tick // 60
     minute = f'{zlib.crc32(str(home).encode()) % step}-59/{step}'
     return [
         f'{minute} * * * * {tick_command(spec, home, repo, log=True, slurm=slurm, setup=setup)} {MARK}{repo.name}'
@@ -383,7 +416,7 @@ def tick_command(
 ) -> str:
     """The shell command of one tick of *repo*: :func:`tick_environment`, then the HOST's ``hpcaccount tick``.
 
-    The tick takes its own lock, ``<serve>/<repo>.lock``, and runs within ``tick_wall_minutes``
+    The tick takes its own lock, ``<serve>/<repo>.lock``, and runs within ``[schedule] tick_wall``
     (:mod:`dev_lab.dev.hpcaccount.tickwall`): the lock names its holder, which ``flock -n`` could not.
 
     It runs from the kit (dev-lab) checkout's venv, never the repo's: the host refreshes the repo (and
@@ -398,7 +431,7 @@ def tick_command(
         f'{tick_environment(home, spec.root, slurm, setup, spec.env)}; '
         f'cd {shlex.quote(str(checkout_of(spec, lab)))} && '
         f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)} '
-        f'--lock {shlex.quote(str(serve / f"{repo.name}.lock"))} --wall-minutes {spec.tick_wall_minutes}'
+        f'--lock {shlex.quote(str(serve / f"{repo.name}.lock"))} --wall-minutes {spec.tick_wall // 60}'
     )
     command = f'bash -lc {shlex.quote(command)}' if setup else command
     return command + (f' >> {shlex.quote(str(serve / f"{repo.name}.log"))} 2>&1' if log else '')

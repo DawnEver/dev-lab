@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from dev_lab.dev import memory
+from dev_lab.dev import memory, memoryentry
 from dev_lab.dev.memory import MemoryRefused
 
 if TYPE_CHECKING:
@@ -68,6 +68,30 @@ def test_redact_swaps_a_span_for_a_placeholder(tmp_path: Path) -> None:
         memory.redact(tmp_path, rel, 'today', 'tomorrow')
 
 
+def test_a_second_redaction_of_the_same_entry_is_admitted(tmp_path: Path) -> None:
+    """An entry with two private spans takes two redactions: the first one's note is not a changed line."""
+    rel = _entry(tmp_path, body='Measured on acme-host-7 in X:/proj/acme/repo today.')
+    memory.redact(tmp_path, rel, 'X:/proj/acme/', '<projects>/')
+    memory.redact(tmp_path, rel, 'acme-host-7', '<host>')
+    text = (tmp_path / rel).read_text(encoding='utf-8')
+    assert 'Measured on <host> in <projects>/repo today.' in text
+    assert sum(line.startswith('> Redacted ') for line in text.splitlines()) == 2, text
+
+
+def test_planted_a_redaction_never_drops_an_earlier_note(tmp_path: Path) -> None:
+    """PLANTED CONTROL: setting the old notes aside must not let a redaction delete one of them."""
+    rel = _entry(tmp_path, body='Measured on acme-host-7 by jdoe in lab-9.')
+    memory.redact(tmp_path, rel, 'jdoe', '<user>')
+    memory.redact(tmp_path, rel, 'lab-9', '<room>')
+    old = (tmp_path / rel).read_text(encoding='utf-8')
+    note = next(line for line in old.splitlines() if line.startswith('> Redacted '))
+    swapped = old.replace('acme-host-7', '<host>')
+    assert memoryentry.only_redacted(old, swapped.rstrip('\n') + '\n\n' + note + '\n')
+    lines = swapped.splitlines()
+    lines.remove(note)
+    assert not memoryentry.only_redacted(old, '\n'.join(lines) + '\n'), 'one of the two earlier notes was dropped'
+
+
 def test_rename_drops_a_token_and_records_it(tmp_path: Path) -> None:
     rel = _entry(tmp_path, name='login-jdoe-fixed')
     moved = memory.rename(tmp_path, rel, 'login-user-fixed.md', approved='rename it')
@@ -96,3 +120,33 @@ def test_the_cli_refuses_by_name_and_searches(tmp_path: Path, capsys: pytest.Cap
         memory.main(['--root', str(tmp_path), 'amend', 'nowhere.md', '1', 'x', '--reason', 'r', '--approved', 'a']) == 2
     )
     assert 'MEMORY-SHAPE' in capsys.readouterr().err
+
+
+def _attach(root: Path, inside: str) -> Path:
+    path = memory.memory_dir(root) / inside
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('x\n', encoding='utf-8')
+    return path
+
+
+def test_delete_removes_attachments_and_records_their_approval_in_a_new_entry(tmp_path: Path) -> None:
+    """ATTACHMENT-DELETE: the door writes the note memoryadds admits a deletion by, then removes each file."""
+    paths = [_attach(tmp_path, '2026/08/30/.archive/a.md'), _attach(tmp_path, '2026/08/30/.archive/b.mjs')]
+    rels = [p.relative_to(tmp_path).as_posix() for p in paths]
+    note_entry = memory.delete(tmp_path, 'archive-cleared', rels, reason='stray', approved='ok to clean', day=DAY)
+    assert not any(p.exists() for p in paths)
+    assert not (memory.memory_dir(tmp_path) / '2026/08/30/.archive').exists()
+    notes = memoryentry.amendment_notes(note_entry.read_text(encoding='utf-8'))
+    assert all(memoryentry.deletion_approved(rel, notes) for rel in rels)
+
+
+def test_delete_refuses_an_entry_and_an_empty_approval(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a dated entry is never an attachment, and empty words approve nothing; nothing is removed."""
+    rel = _entry(tmp_path)
+    with pytest.raises(MemoryRefused, match='not a memory attachment'):
+        memory.delete(tmp_path, 'gone', [rel], reason='r', approved='yes', day=DAY)
+    assert (tmp_path / rel).exists()
+    path = _attach(tmp_path, '2026/08/30/.archive/a.md')
+    with pytest.raises(MemoryRefused, match='approv'):
+        memory.delete(tmp_path, 'gone', [path.relative_to(tmp_path).as_posix()], reason='r', approved='', day=DAY)
+    assert path.exists()

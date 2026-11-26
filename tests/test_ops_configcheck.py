@@ -113,7 +113,7 @@ def test_needs_consent_names_the_boundary_keys_a_change_touches() -> None:
 
 
 DEV_HOST = '[dev]\nhpc = []\nref = "integrate/main"\n'
-SSH_ROUTES = '[ssh.jump]\n"node.example" = "bastion.example"\n\n[ssh.hold]\nmax_hours = 8\nidle_minutes = 30\n'
+SSH_ROUTES = '[ssh.jump]\n"node.example" = "bastion.example"\n\n[ssh.hold]\nceiling = "8 h"\nidle = "30 min"\n'
 
 
 def test_a_dev_host_file_declares_its_ssh_routes(tmp_path: Path) -> None:
@@ -128,7 +128,8 @@ def test_a_dev_host_file_declares_its_ssh_routes(tmp_path: Path) -> None:
         ('[ssh.jump]\n"node.example" = 22\n', 'ssh.jump'),
         ('[ssh.jump]\n"node.example" = ""\n', 'ssh.jump'),
         ('[ssh]\njump = "bastion.example"\n', 'ssh.jump'),
-        ('[ssh.hold]\nmax_hours = "8"\n', 'ssh.hold.max_hours'),
+        ('[ssh.hold]\nceiling = "8"\n', 'ssh.hold.ceiling = "8" is a bare number'),
+        ('[ssh.hold]\nmax_hours = 8\n', 'max_hours = 8 is retired'),
     ],
 )
 def test_an_ssh_key_or_value_off_the_schema_is_refused(tmp_path: Path, extra: str, named: str) -> None:
@@ -255,14 +256,15 @@ def test_an_account_file_declares_which_storage_remote_it_reaches() -> None:
 def test_a_non_serving_account_declaring_a_schedule_is_refused() -> None:
     """SCHEDULER-ONLY-FOR-SERVING, at the declaration: ``[schedule]`` (the tick period) is serving baggage elsewhere.
 
-    Measured 2026-11-20: every Ada research account file carried ``[schedule] tick_minutes = 15``.
+    Measured 2026-11-20: every Ada research account file carried a ``[schedule]`` tick period (then
+    ``tick_minutes = 15``, now ``tick = "15 min"``).
     PLANTED CONTROL: the same table on a verification account is admitted.
     """
 
     def family(role: str) -> dict[str, object]:
         return {'hpc': {'grant': [{'cluster': 'c', 'user': 'u', 'role': role, 'slurm_account': 'a'}]}}
 
-    host = {'deploy': {'host': 'login01'}, 'schedule': {'tick_minutes': 15}}
+    host = {'deploy': {'host': 'login01'}, 'schedule': {'tick': '15 min'}}
     refused = accounthost.check(Path('c-u.toml'), host, family('research'))
     assert [line for line in refused if '[schedule]' in line and 'SCHEDULER-ONLY-FOR-SERVING' in line], refused
     admitted = accounthost.check(Path('c-u.toml'), host, family('verification'))
@@ -301,3 +303,61 @@ def test_an_account_file_takes_its_root_from_the_family_cluster() -> None:
     path = Path('c-u.toml')
     assert not rootless(accounthost.check(path, host, family({'root': '/fs/{user}/lab'})))
     assert rootless(accounthost.check(path, host, family({})))
+
+
+BUDGET = '[test_budget]\ntest = "10 min"\n'
+
+
+def test_a_dev_host_file_declares_its_test_budget(tmp_path: Path) -> None:
+    """``[test_budget]`` is a machine table (dev_lab.dev.testcost); PLANTED CONTROL: a malformed one is refused."""
+    assert check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + BUDGET)) == []
+    found = check_host(_write(tmp_path, 'H.toml', DEV_HOST + '\n' + BUDGET.replace('10 min', '0 min')))
+    assert [line for line in found if line.startswith('H.toml: [test_budget] test') and 'positive' in line], found
+
+
+def test_an_account_file_declares_its_test_budget() -> None:
+    """The tests executor is an account: its budget is its own fact. PLANTED CONTROL: a malformed one is refused."""
+    host = {'deploy': {'host': 'login01'}, 'test_budget': {'test': '2 h'}}
+    assert not [line for line in accounthost.check(Path('c-u.toml'), host, {}) if 'test_budget' in line]
+    host['test_budget'] = {'test': '-1 h'}
+    found = accounthost.check(Path('c-u.toml'), host, {})
+    assert [line for line in found if '[test_budget] test' in line and 'positive' in line], found
+
+
+@pytest.mark.parametrize('key', ['test_seconds', 'gpus'])
+def test_an_undeclared_test_budget_key_is_refused_naming_the_declared_ones(tmp_path: Path, key: str) -> None:
+    found = check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + BUDGET + f'{key} = 1\n'))
+    assert [line for line in found if f'[test_budget] {key}' in line and 'only test' in line], found
+
+
+def test_an_undeclared_machine_table_names_the_declared_ones_and_where_to_open_one(tmp_path: Path) -> None:
+    """EVERY WALL TEACHES: the refusal names the tables a host file may declare and the list that opens one."""
+    found = check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n[nope]\nx = 1\n'))
+    line = next(line for line in found if 'nope is not a declared key' in line)
+    assert 'test_budget' in line, line
+    assert 'devschema.MACHINE_TABLES' in line, line
+
+
+def test_an_undeclared_account_table_names_the_declared_ones_and_where_to_open_one() -> None:
+    found = accounthost.check(Path('c-u.toml'), {'deploy': {'host': 'login01'}, 'nonsense': {}}, {})
+    line = next(line for line in found if 'nonsense is not an account table' in line)
+    assert 'test_budget' in line, line
+    assert 'accounthost.TABLES' in line, line
+
+
+ORACLEGC = '[oraclegc.repos.frozen]\nroots = [{ glob = "cases/**/*.toml", key = "sha256" }]\n'
+
+
+def test_the_family_file_admits_an_oraclegc_root_declaration(tmp_path: Path) -> None:
+    """PLANTED CONTROL beside it: a malformed entry is refused by name."""
+    assert check_family(_write(tmp_path, 'family.toml', ORACLEGC)) == []
+    bad = ORACLEGC.replace(', key = "sha256"', '')
+    assert [line for line in check_family(_write(tmp_path, 'bad.toml', bad)) if '[oraclegc.repos] frozen' in line]
+    stray = '[oraclegc]\nroots = []\n'
+    assert [line for line in check_family(_write(tmp_path, 'stray.toml', stray)) if '[oraclegc]' in line]
+
+
+def test_an_oraclegc_root_declaration_is_family_only(tmp_path: Path) -> None:
+    found = check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + ORACLEGC))
+    want = 'G.toml: [oraclegc] is a family fact (the GC root set is the same on every machine); it lives in family.toml'
+    assert found == [want]

@@ -42,7 +42,6 @@ no script are both named. :func:`run_hook` refuses a fragment for the same reaso
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import sys
 from collections.abc import Sequence
@@ -55,6 +54,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.githooks import runner
 from dev_lab.dev.githooks.table import STAGES
+from dev_lab.dev.harness import child_env
 
 __all__ = [
     'FRAGMENT',
@@ -263,7 +263,7 @@ def run_hook(name: str, args: Sequence[str] = (), *, cwd: Path | None = None) ->
         [bash_executable(), str(hook_path(name)), *args],
         cwd=None if cwd is None else str(cwd),
         check=False,
-        env={**os.environ, PYTHON_ENV: sys.executable},
+        env=child_env({PYTHON_ENV: sys.executable}),
     )
     return done.returncode
 

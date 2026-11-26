@@ -158,11 +158,18 @@ def only_amended(old: str, new: str) -> bool:
 
 
 def only_redacted(old: str, new: str) -> bool:
-    """A privacy redaction: the note is added and every other changed line only swaps spans for placeholders."""
-    after_lines = lf(new).splitlines()
-    if not any(_NOTE_LINE.fullmatch(line) for line in after_lines):
+    """A privacy redaction: the note is added and every other changed line only swaps spans for placeholders.
+
+    The notes of earlier redactions are not changed lines: an entry with two private spans takes two redactions
+    (2026-11-25: the second one was refused because the first one's note counted as a removed line). Every
+    earlier note survives -- a redaction adds its note and never drops one.
+    """
+    before_lines, after_lines = lf(old).splitlines(), lf(new).splitlines()
+    old_notes = [line for line in before_lines if _NOTE_LINE.fullmatch(line)]
+    new_notes = [line for line in after_lines if _NOTE_LINE.fullmatch(line)]
+    if len(new_notes) <= len(old_notes) or any(old_notes.count(n) > new_notes.count(n) for n in old_notes):
         return False
-    before = [line for line in lf(old).splitlines() if line.strip()]
+    before = [line for line in before_lines if line.strip() and not _NOTE_LINE.fullmatch(line)]
     after = [line for line in after_lines if line.strip() and not _NOTE_LINE.fullmatch(line)]
     if len(before) != len(after):
         return False
@@ -213,12 +220,19 @@ def is_memory(path: str) -> bool:
     return MEMORY_DIR in f'/{path}'
 
 
+#: An entry's place inside memory: a ``.md`` file directly in its dated directory (``<yyyy>/<mm>/<dd>/``).
+_ENTRY_INSIDE: Final = re.compile(r'\d{4}/\d{2}/\d{2}/[^/]+\.md')
+
+
 def is_attachment(path: str) -> bool:
-    """*path* is a memory file that is not an entry: any non-``.md`` file, or anything under an ``attachments/``."""
+    """*path* is a memory file that is not an entry: anything but a ``.md`` directly in a dated directory.
+
+    So a non-``.md`` file, anything under ``attachments/``, and a stray subtree such as ``.archive/``.
+    """
     if not is_memory(path):
         return False
     inside = f'/{path}'.split(f'/{MEMORY_DIR}', 1)[1]
-    return not inside.endswith('.md') or '/attachments/' in f'/{inside}'
+    return not _ENTRY_INSIDE.fullmatch(inside)
 
 
 _DELETED = re.compile(r'\bdeleted\b', re.IGNORECASE)

@@ -84,6 +84,7 @@ from dev_lab.dev.forgepulls import (
     marker_kinds,
 )
 from dev_lab.dev.forgework import Client, Comment
+from dev_lab.dev.hpcaccount.spec import schedule_tick
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.roles import bound_accounts, machine_layer, roles_at
@@ -140,7 +141,7 @@ class HostCard:
     login: str
     platform: str
     ticked: str  # the forge's clock, ISO 8601
-    tick_minutes: float = 5.0
+    tick: float = 300.0  # seconds: the period it ticks at, [schedule] tick
     supply: Mapping[str, Any] = field(default_factory=dict)  # what the tick admitted against
     facts: Mapping[str, Any] = field(default_factory=dict)
     holds: tuple[str, ...] = ()
@@ -156,6 +157,7 @@ class HostCard:
     size: Mapping[str, float] = field(default_factory=dict)  # a box's cpu and mem_gb after its reserve; {}: unstated
     role: str = ''  # a cluster account's [deploy] role (dev_lab.dev.hpcaccount.spec); '' on a box
     held: Mapping[str, Any] = field(default_factory=dict)  # a cron tick found its lock held: the holder (mark_held)
+    test_s: float = 0.0  # [test_budget] test_s, seconds (dev_lab.dev.testcost); 0: none declared, every test runs
 
     def favors(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
@@ -167,7 +169,7 @@ class HostCard:
 
     def stale(self, now: datetime) -> bool:
         """Older than :data:`STALE_TICKS` of its own period on the forge's clock."""
-        return now - datetime.fromisoformat(self.ticked) > timedelta(minutes=STALE_TICKS * self.tick_minutes)
+        return now - datetime.fromisoformat(self.ticked) > timedelta(seconds=STALE_TICKS * self.tick)
 
     def redacted(self) -> HostCard:
         """The card as a PUBLIC repository may show it: an opaque host id and only what scheduling reads."""
@@ -202,6 +204,7 @@ class HostCard:
         head += f'\n\nserves: {rule.text()}' if self.serves != EVERY or self.withholds else ''
         head += f'\n\nverify first: {", ".join(self.verify)}' if self.verify else ''
         head += f'\n\nrole: {self.role}' if self.role else ''
+        head += f'\n\ntest budget: {self.test_s:g} s per test' if self.test_s else ''
         held = self.held
         head += f'\n\ntick held: pid {held["pid"]} since {held["since"]} in {held["phase"]}' if held else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
@@ -430,6 +433,7 @@ def publish_card(
     size: Mapping[str, float] | None = None,
     verify: Sequence[str] = (),
     role: str = '',
+    test_s: float = 0.0,
 ) -> None:
     """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
 
@@ -438,7 +442,8 @@ def publish_card(
     standing's), *running* what else runs here, *priority* the subjects this host orders first, *serves* its
     ``[serve] parts`` rule, *size* a box's size (what a part larger than any live host is refused against),
     *verify* the contexts this account produces first (:mod:`dev_lab.dev.forgeaffinity`), *role* a cluster
-    account's ``[deploy] role`` (:mod:`dev_lab.dev.hpcaccount.spec`).
+    account's ``[deploy] role`` (:mod:`dev_lab.dev.hpcaccount.spec`), *test_s* its ``[test_budget] test_s``
+    (:func:`dev_lab.dev.testcost.read_budget`; ``0`` for none), read by every host's starvation guard.
     """
     progress = progress or {}
     built = client(root)
@@ -449,7 +454,7 @@ def publish_card(
             login=built.whoami(),
             platform=serving(host or this_platform(), seat).platform,
             ticked=forge_now(built).isoformat(),
-            tick_minutes=float(table.get('tick_minutes', 5)),
+            tick=schedule_tick(table),
             supply=dict((supply or standing.supply).resources) if supply or standing else {},
             facts=standing.facts if standing else {},
             holds=runs
@@ -468,6 +473,7 @@ def publish_card(
             size=dict(size or {}),
             verify=tuple(verify),
             role=role,
+            test_s=test_s,
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:

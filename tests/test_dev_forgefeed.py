@@ -250,7 +250,10 @@ def test_a_pr_a_session_pushed_is_routed_to_the_task_its_branch_names() -> None:
 
 def test_the_tick_is_the_machine_files_setting_and_a_bad_value_is_refused_by_name() -> None:
     assert forgefeed.tick_s({}) == forgefeed.DEFAULT_TICK_S == 120
-    assert forgefeed.tick_s({'tick_s': 60}) == 60
-    for bad in (0, -5, 1.5, '60', True):
-        with pytest.raises(ValueError, match=r'\[forgefeed\] tick_s'):
-            forgefeed.tick_s({'tick_s': bad})  # PLANTED CONTROL: each non-positive-int is refused
+    assert forgefeed.tick_s({'tick': '1 min'}) == 60
+    assert forgefeed.tick_s({'tick': '90 s'}) == 90
+    for bad in ('0 s', '-5 s', 60, '60', True, '1 GiB'):
+        with pytest.raises(ValueError, match=r'\[forgefeed\] tick = '):
+            forgefeed.tick_s({'tick': bad})  # PLANTED CONTROL: each non-positive or unitless value is refused
+    with pytest.raises(ValueError, match=r'tick_s = 60 is retired.*write tick = "60 s"'):
+        forgefeed.tick_s({'tick_s': 60})

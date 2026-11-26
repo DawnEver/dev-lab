@@ -7,7 +7,7 @@ pruned_paths = ['.claude/worktrees']
 tool_caches = ['pytest', 'ruff', 'coverage', 'hypothesis', 'pyright']
 # SCRATCH-IS-NEVER-COMMITTED: the one-off sink, and when the SessionStart notice starts naming a one-off.
 scratch = 'scratch/'
-max_age_days = 3.0
+max_age = "3 d"
 # STRAY-FILE-REFUSED: files a tool this repo uses retired; a stray copy is named with its door, never `git add`.
 retired = [
   { path = '.claude/rules/MEMORY.md', what = "rem's generated memory index; nothing rebuilds it", door = "delete them through rem's migration -- the /migrate skill, or node <rem plugin>/migrations/migrate.mjs <checkout> -- which removes every copy outside attic/" },
@@ -46,17 +46,12 @@ tests = ['.py', '.json', '.jsonl', '.toml', '.txt', '.golden', '.gitattributes']
 'tests/data/ir_schema' = []
 'tests/data/ir_schema/repo' = ['.toml']
 'tests/data/ir_schema/repo/ir' = ['.toml']
+'tests/data/ir_schema/repo/src' = ['.py']
 scratch = ['*']
 output = []
 'output/forge' = []
 'output/forge/*' = ['.json', '.tmp']
 'output/cache' = []
 'output/cache/runcache' = ['.jsonl']
-'output/logs' = []
-'output/logs/[0-9][0-9]' = []
-'output/logs/[0-9][0-9]/[0-9][0-9]' = []
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]' = []
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/*' = ['.log', '.jsonl', '.json', '.gz', '.coverage', '.txt', '.csv']
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/verify/*.outcomes' = []
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/verify/*.outcomes/*' = ['.jsonl']
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/coverage' = ['.md', '.coverage']  # verify's coverage table
+# output/logs/<yy>/<mm>/<dd>/<kind>/: every kind dev-lab writes is a FAMILY kind (dev_lab.dev.datedlog.FAMILY_KINDS),
+# admitted in every repo without a row; this repo has no dated kind of its own.

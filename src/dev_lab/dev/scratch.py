@@ -13,7 +13,7 @@ sink (:func:`dev_lab.dev.strays.stray_files`), so a one-off there is never a str
 
 ONE DECLARATION, read off the repo's ``layout.toml`` by
 :func:`dev_lab.dev.codeplace.declared_placement`: ``scratch`` (the directory, the family's
-``scratch/`` when omitted), ``max_age_days`` (when the notice starts naming a one-off) and
+``scratch/`` when omitted), ``max_age`` (a duration: when the notice starts naming a one-off) and
 ``scratch_anchor`` (default true: the tracked README anchors it; false, user ruling 2026-11-17 "scratch
 should hold nothing": no README, and the tracked set under scratch is EMPTY).
 
@@ -24,7 +24,7 @@ declares it as a row of its own, naming both exits through :func:`staged_scratch
 * the forge body :func:`assert_scratch_never_committed` holds the TRACKED set to exactly the README
   (empty when unanchored),
   so a commit made with hooks off still reds on the forge;
-* the ``SessionStart`` notice (``remind``) lists one-offs older than ``max_age_days`` and prints
+* the ``SessionStart`` notice (``remind``) lists one-offs older than ``max_age`` and prints
   NOTHING when there are none -- a reminder that never blocks and costs no tokens when clean.
 
 THE CLI, so a consumer needs no ``scripts/`` adopter: ``list`` (every untracked top-level entry, its size, age
@@ -181,11 +181,11 @@ def scratch_reminder(root: Path) -> str | None:
         placement = declared_placement(root)
     except PlacementNotDeclared:
         return None
-    late = overdue_scratch(root / placement.scratch, root=root, max_age_days=placement.max_age_days)
+    late = overdue_scratch(root / placement.scratch, root=root, max_age_days=placement.max_age / 86400)
     if not late:
         return None
     return (
-        f'SCRATCH-IS-NEVER-COMMITTED: {len(late)} one-off(s) older than {placement.max_age_days:g} days: '
+        f'SCRATCH-IS-NEVER-COMMITTED: {len(late)} one-off(s) older than {placement.max_age / 86400:g} days: '
         f'{", ".join(late[:_SHOWN])}{" ..." if len(late) > _SHOWN else ""}. For each: {_EXITS}'
     )
 

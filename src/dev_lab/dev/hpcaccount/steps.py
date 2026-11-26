@@ -5,7 +5,6 @@ Every changing action goes through :class:`Step`, which under ``--dry-run`` only
 
 from __future__ import annotations
 
-import os
 import shlex
 import subprocess
 from collections.abc import Mapping, Sequence
@@ -17,6 +16,7 @@ from lab_commons.hpc.builds import Builds, cargo_target, key_of, read_builds
 from lab_commons.log import emit
 
 from dev_lab.dev import boxmigrate, venvcurrent, venvpointer
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.hpcaccount import selfclean
 from dev_lab.dev.hpcaccount.checkout import clone, converge
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
@@ -73,7 +73,7 @@ class Step:
             errors='replace',
             check=False,
             cwd=cwd,
-            env={**os.environ, **({'PATH': self.path} if self.path else {}), **(env or {})},
+            env=child_env({'PATH': self.path} if self.path else {}, env or {}),
         )
         self.output = done.stdout + done.stderr
         for line in self.output.strip().splitlines()[-20:]:

@@ -13,7 +13,7 @@ import sys
 import time
 
 import pytest
-from lab_commons import home, launch
+from lab_commons import hostenv, launch
 
 from dev_lab.dev import _scratch_clear, scratchorphans, walls
 from dev_lab.dev._scratch_owners import CLAIM_WINDOW_S, LIVE_S, RECENT_S, beat, claim, named, owners
@@ -26,7 +26,7 @@ SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 @pytest.fixture(autouse=True)
 def machine_home(tmp_path, monkeypatch) -> None:
     """Owner records live under a planted machine home; only ``integrator-session`` holds the integrator role."""
-    monkeypatch.setenv(home.HOME_ENV, str(tmp_path / 'home'))
+    monkeypatch.setenv(hostenv.HOME_ENV, str(tmp_path / 'home'))
     monkeypatch.setenv(SESSION_ENV, 'this-session')
     monkeypatch.setattr(
         scratchorphans,

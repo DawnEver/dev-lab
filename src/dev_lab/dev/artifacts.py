@@ -13,7 +13,7 @@ ONE INTERFACE, THREE BACKENDS (:class:`ArtifactStore`): ``put(run_id, path) -> R
 ``{backend, ref, bytes, sha256}`` -- and :meth:`get` refuses bytes whose sha256 differs.
 
 CONFIG IS DATA. The writer side is the repo's ``[tool.lab_commons.artefacts]`` (:class:`Config`): an
-archive at or under ``threshold_mb`` goes to the forge, a larger one to ``backend``/``remote``; the
+archive at or under ``threshold`` (a size) goes to the forge, a larger one to ``backend``/``remote``; the
 output and member-index budgets are declared there too, never defaulted. :func:`query_members` reads a
 record's index under that policy without touching an archive. The reader side maps the same store to
 a local path in the MACHINE config (``folder`` under :data:`_SECTION`, :func:`reader`) -- a synced mirror of the
@@ -28,8 +28,8 @@ key is refused; the same bytes again is the object already landed (a resumed tic
 ONE SHARED LIBRARY, MANY WRITERS (user ruling 2026-10-13). Several cluster accounts, each with its own
 rclone identity, write the same store; ``<account>`` in the run id is the cluster account that wrote it
 (the claim owner's). EACH WRITER CLEANS ONLY ITS OWN (:func:`clean`): of the runs carrying its account,
-whole runs in day folders older than ``retain_days`` go, unless a ``keep`` label on an issue or pull
-request pins their sha (:func:`pinned`); then its oldest first until its own share is under ``cap_gb``;
+whole runs in day folders older than ``retain`` (a duration) go, unless a ``keep`` label on an issue or pull
+request pins their sha (:func:`pinned`); then its oldest first until its own share is under ``cap`` (a size);
 emptied folders are removed. A writer whose remote is unusable says so (:func:`remote_problem`) and
 claims no part whose declared outputs could need it.
 
@@ -51,6 +51,7 @@ from typing import Any, Final
 from lab_commons.config import config_path, section
 from lab_commons.hpc.rclone import probe
 from lab_commons.hpc.records import read_record
+from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
 from dev_lab.dev.artifactfolder import FolderStore
 from dev_lab.dev.artifactindex import MemberFact, catalogue, select_members
@@ -121,6 +122,27 @@ _SHA_TOKEN: Final = re.compile(r'\b[0-9a-f]{12,40}\b')
 #: lab-commons migrates its spelling.
 _SECTION: Final = 'artefacts'  # spelling-ignore-line
 _TABLE: Final = f'tool.lab_commons.{_SECTION}'
+_DAY_S: Final = 86400.0
+#: The sizes the table declares (``"100 MiB"``), held in bytes; the output budgets among them are refused apart.
+_SIZES: Final = ('threshold', 'cap')
+_BUDGET_SIZES: Final = (
+    'expanded_output_max',
+    'member_index_max',
+    'member_index_max_path',
+    'record_max_compressed',
+    'record_max_decompressed',
+)
+#: Unit-suffixed keys retired by the 2026-11-25 ruling (a value carries its unit), refused with their new line.
+_UNIT_RENAMED: Final = {
+    'threshold_mb': Renamed('threshold', 'MiB'),
+    'retain_days': Renamed('retain', 'd'),
+    'cap_gb': Renamed('cap', 'GiB'),
+    'expanded_output_max_bytes': Renamed('expanded_output_max', 'B'),
+    'member_index_max_path_bytes': Renamed('member_index_max_path', 'B'),
+    'member_index_max_bytes': Renamed('member_index_max', 'B'),
+    'record_max_compressed_bytes': Renamed('record_max_compressed', 'B'),
+    'record_max_decompressed_bytes': Renamed('record_max_decompressed', 'B'),
+}
 
 
 # --- config, selection, reading -------------------------------------------------------------------
@@ -128,25 +150,24 @@ _TABLE: Final = f'tool.lab_commons.{_SECTION}'
 
 @dataclass(frozen=True)
 class Config:
-    """``[tool.lab_commons.artefacts]``: where archives above *threshold_mb* go, and how long they stay."""
+    """``[tool.lab_commons.artefacts]``: where archives above *threshold* go, and how long they stay.
+
+    Sizes are declared with their unit (``threshold = "100 MiB"``) and held in bytes; ``retain`` is a duration
+    (``"3 d"``) held in seconds (:mod:`lab_commons.quantity`, user ruling 2026-11-25).
+    """
 
     backend: str = FORGE
     remote: str = ''
-    threshold_mb: int = ATTACHMENT_LIMIT_MB
-    retain_days: int = 3
-    cap_gb: float = 0.0  # 0: no cap
+    threshold: int = ATTACHMENT_LIMIT_MB * MB
+    retain: float = 3 * _DAY_S
+    cap: int = 0  # 0: no cap
     expanded_output_max_entries: int | None = None
-    expanded_output_max_bytes: int | None = None
+    expanded_output_max: int | None = None
     member_index_max_members: int | None = None
-    member_index_max_bytes: int | None = None
-    member_index_max_path_bytes: int | None = None
-    record_max_compressed_bytes: int | None = None
-    record_max_decompressed_bytes: int | None = None
-
-    @property
-    def cap_bytes(self) -> int:
-        """The cap in bytes; 0 when uncapped."""
-        return int(self.cap_gb * 1024 * MB)
+    member_index_max: int | None = None
+    member_index_max_path: int | None = None
+    record_max_compressed: int | None = None
+    record_max_decompressed: int | None = None
 
 
 def load_config(root: Path) -> Config:
@@ -159,8 +180,16 @@ def config_from(text: str, where: str) -> Config:
     """The table of the manifest *text* (read from *where*, named in a refusal), validated; none is forge only."""
     raw = tomllib.loads(text)
     table = raw.get('tool', {}).get('lab_commons', {}).get(_SECTION, {})
+    try:
+        refuse_renamed(f'{where} [{_TABLE}]', table, _UNIT_RENAMED)
+    except QuantityRefused as retired:
+        raise ArtifactRefused(str(retired)) from retired
     known = {field.name for field in dataclasses.fields(Config)}
     problems = [f'unknown key {key!r}' for key in sorted(set(table) - known)]
+    table, budgets = _quantities(table, where)
+    if budgets:
+        msg = f'{where} [{_TABLE}]: {"; ".join(budgets)}'
+        raise OutputBudgetRefused(msg)
     try:
         config = Config(**{key: value for key, value in table.items() if key in known})
     except TypeError as bad:
@@ -170,10 +199,10 @@ def config_from(text: str, where: str) -> Config:
         problems.append(f'backend = {config.backend!r} is not one of {_BACKENDS}')
     if config.backend != FORGE and not config.remote:
         problems.append(f'backend = "{config.backend}" needs remote = "<rclone remote:path or folder>"')
-    if not 0 < config.threshold_mb <= ATTACHMENT_LIMIT_MB:
-        problems.append(f'threshold_mb must be in (0, {ATTACHMENT_LIMIT_MB}] (the forge attachment limit)')
-    if config.retain_days < 1 or config.cap_gb < 0:
-        problems.append('retain_days must be >= 1 and cap_gb >= 0')
+    if not 0 < config.threshold <= ATTACHMENT_LIMIT_MB * MB:
+        problems.append(f'threshold must be in (0, {ATTACHMENT_LIMIT_MB} MiB] (the forge attachment limit)')
+    if config.retain < _DAY_S or config.cap < 0:
+        problems.append('retain must be at least "1 d" and cap at least "0 B"')
     if problems:
         msg = f'{where} [{_TABLE}]: {"; ".join(problems)}'
         raise ArtifactRefused(msg)
@@ -184,18 +213,38 @@ def config_from(text: str, where: str) -> Config:
     return config
 
 
+def _quantities(table: dict[str, Any], where: str) -> tuple[dict[str, Any], list[str]]:
+    """*table* with its sizes in bytes and ``retain`` in seconds, and the output budgets refused on the way."""
+    parsed, budgets = dict(table), []
+    for key in (*_SIZES, *_BUDGET_SIZES, 'retain'):
+        if key not in table:
+            continue
+        dimension = 'duration' if key == 'retain' else 'size'
+        try:
+            parsed[key] = parse(f'{where} [{_TABLE}] {key}', table[key], dimension)
+        except QuantityRefused as bad:
+            if key not in _BUDGET_SIZES:
+                raise ArtifactRefused(str(bad)) from bad
+            budgets.append(str(bad))
+            del parsed[key]
+            continue
+        if dimension == 'size':
+            parsed[key] = int(parsed[key])
+    return parsed, budgets
+
+
 def _budget_problems(config: Config) -> list[str]:
     """The output budgets *config* declares wrongly: a bool is never an integer budget."""
     expanded = {
         'expanded_output_max_entries': config.expanded_output_max_entries,
-        'expanded_output_max_bytes': config.expanded_output_max_bytes,
+        'expanded_output_max': config.expanded_output_max,
     }
     bounded = {
         'member_index_max_members': config.member_index_max_members,
-        'member_index_max_bytes': config.member_index_max_bytes,
-        'member_index_max_path_bytes': config.member_index_max_path_bytes,
-        'record_max_compressed_bytes': config.record_max_compressed_bytes,
-        'record_max_decompressed_bytes': config.record_max_decompressed_bytes,
+        'member_index_max': config.member_index_max,
+        'member_index_max_path': config.member_index_max_path,
+        'record_max_compressed': config.record_max_compressed,
+        'record_max_decompressed': config.record_max_decompressed,
     }
     found = [
         f'{name} must be a nonnegative integer or omitted'
@@ -224,9 +273,9 @@ def query_members(
     archive contents.
     """
     config = load_config(root)
-    record_budget = (config.record_max_compressed_bytes, config.record_max_decompressed_bytes)
-    index = (config.member_index_max_members, config.member_index_max_bytes, config.member_index_max_path_bytes)
-    selection = (config.expanded_output_max_entries, config.expanded_output_max_bytes)
+    record_budget = (config.record_max_compressed, config.record_max_decompressed)
+    index = (config.member_index_max_members, config.member_index_max, config.member_index_max_path)
+    selection = (config.expanded_output_max_entries, config.expanded_output_max)
     compressed, expanded = record_budget
     members, index_bytes, path_bytes = index
     entries, selected_bytes = selection
@@ -285,12 +334,12 @@ def remote_problem(root: Path, *, rclone: Sequence[str] = ()) -> str:
 
 def store_for(config: Config, client: Client, repo: str, *, size: int) -> ArtifactStore:
     """The forge for an archive of *size* at or under the threshold, else the configured large backend."""
-    if size <= config.threshold_mb * MB:
+    if size <= config.threshold:
         return ForgeStore(client)
     large = large_store(config, repo)
     if large is None:
         msg = (
-            f'an archive of {size} bytes is over the forge threshold of {config.threshold_mb} MB and '
+            f'an archive of {size} bytes is over the forge threshold of {config.threshold} bytes and '
             f'[{_TABLE}] names no backend for it: set backend = "rclone" and remote = "<remote:path>"'
         )
         raise ArtifactRefused(msg)
@@ -346,7 +395,7 @@ def pinned(client: Client, *, say: Callable[[str], None]) -> frozenset[str]:
 
 
 def clean(
-    store: ArtifactStore, *, account: str, now: datetime, retain_days: int, cap_bytes: int, pinned: frozenset[str]
+    store: ArtifactStore, *, account: str, now: datetime, retain_days: float, cap_bytes: int, pinned: frozenset[str]
 ) -> tuple[Ref, ...]:
     """Delete *account*'s old runs, then its oldest until its share is under *cap_bytes*; nobody else's.
 

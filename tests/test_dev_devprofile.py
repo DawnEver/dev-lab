@@ -19,7 +19,7 @@ FAMILY = """\
 [dev]
 ref = "integrate/main"
 forges = { "forge.example" = ["dev-user"] }
-bridge = { hpc = { cadence_hours = 6 } }
+bridge = { hpc = { cadence = "6 h" } }
 
 [dev.default]
 forges = {}
@@ -76,7 +76,7 @@ def test_bridge_hpc_renders_on_every_dev_machine_from_the_family(
     for host in ('ws', 'stranger'):
         hpc = tomllib.loads(devhost.render(clone, host, LIVE))['bridge']['hpc']
         assert hpc['command'] == [BRIDGE[host], *devprofile.HPC_READ_DOOR]
-        assert hpc['cadence_hours'] == 6
+        assert hpc['cadence'] == '6 h'
 
 
 def test_the_bridge_interpreter_is_derived_from_the_dev_lab_checkout_never_the_renderers(
@@ -133,10 +133,14 @@ def test_the_family_default_and_bridge_are_checked(tmp_path: Path) -> None:
     clone = _clone(tmp_path)
     assert check_family(clone / 'family.toml') == []
     assert check_host(clone / 'hosts' / 'ws.toml', clone / 'family.toml') == []
-    bad = FAMILY.replace('hooks = "warn"', 'hooks = "off"').replace('cadence_hours = 6', 'cadence_hours = 0')
+    bad = FAMILY.replace('hooks = "warn"', 'hooks = "off"').replace('cadence = "6 h"', 'cadence = "30 min"')
     found = devschema.check_family(tomllib.loads(bad))
     assert any('default.hooks' in line for line in found), found
-    assert any('cadence_hours must be 1..168' in line for line in found), found
+    assert any('cadence = "30 min" must be 1 h..168 h' in line for line in found), found
+    bare = devschema.check_family(tomllib.loads(FAMILY.replace('cadence = "6 h"', 'cadence = 6')))
+    assert any('bridge.hpc.cadence = 6 is a bare number' in line for line in bare), bare
+    old = devschema.check_family(tomllib.loads(FAMILY.replace('cadence = "6 h"', 'cadence_hours = 6')))
+    assert any('cadence_hours = 6 is retired' in line and 'write cadence = "6 h"' in line for line in old), old
     assert devschema.check({'dev': {'default': {}}}, tomllib.loads(FAMILY)), 'a host may not declare the default'
 
 

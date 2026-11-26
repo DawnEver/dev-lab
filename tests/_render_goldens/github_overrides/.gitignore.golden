@@ -7,10 +7,11 @@
 /.venv/
 /.venvs/
 /build/
-/config/
 /dist/
 /output/
+/rust/target/
 /src/**/__version__.py
+/target/
 /temp/
 */**/.claude/
 /.claude/*

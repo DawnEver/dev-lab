@@ -30,6 +30,7 @@ __all__ = [
     'Derived',
     'IntegrationNotDeclared',
     'Policy',
+    'declares_no_test_roots',
     'load_policy',
     'policy_at',
     'policy_from',
@@ -108,6 +109,17 @@ class Policy:
 def load_policy(root: Path) -> Policy:
     """*root*'s working-tree ``[tool.dev_lab.integrator]``, a data repo's from its family row; neither is refused."""
     return policy_from(*manifest_text(root))
+
+
+def declares_no_test_roots(root: Path) -> bool:
+    """Whether *root* declares ``test_roots = []``: a repo with no Python test tree (its tests are another command's).
+
+    Reads that one key without judging the rest of the table, so a checkout whose policy is incomplete still
+    answers; an absent key is the default roots, never "none".
+    """
+    manifest = root / 'pyproject.toml'
+    text = manifest.read_text(encoding='utf-8') if manifest.is_file() else ''
+    return declared_table(tomllib.loads(text), _TABLE, {}).get('test_roots') == []
 
 
 def policy_at(root: Path, rev: str) -> Policy:

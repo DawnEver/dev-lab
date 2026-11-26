@@ -13,6 +13,11 @@ First principles, no historical baggage, Occam's razor, single source of truth, 
 behavior -- each in its place. Their statements live once in `dev_lab.dev.principles`; a repo renders them into
 the family section of its `AGENTS.md`.
 
+No detour: what a hop may add is a translation, a policy, or one point of control -- a hop adding none of them
+is the detour. A repo declaring its owner graph in a root `dependencies.toml` names what each forwarding edge
+adds, and `OWNER-DAG` ([refusals](refusals.md#owner-dag)) refuses an undeclared edge, a cycle, and a pass-through
+that names nothing.
+
 ## Two kinds of repository
 
 | kind | members | merge gate | heavy tests |
