@@ -48,6 +48,7 @@ __all__ = [
     'RetiredOutcomes',
     'outcomes_dir',
     'read_cells',
+    'recorded_diagnostics',
     'recorded_failures',
     'skipped_nodes',
 ]
@@ -66,6 +67,9 @@ DEAD_WORKER_KIND: Final = 'worker_died'
 
 #: How many node ids :func:`recorded_failures` spells out; the rest are counted and stay in the cells.
 FAILURE_NAMES: Final = 20
+
+#: The heading :func:`recorded_diagnostics` opens its section with.
+_DIAGNOSTICS_BANNER: Final = '===== recorded failure diagnostics:'
 
 #: The file stem the retired plugin wrote its words under.
 _RETIRED_STEM: Final = 'outcomes'
@@ -194,31 +198,56 @@ def _worker_died(one: TestCell) -> bool:
     return one.cell.reason is not None and one.cell.reason.kind == DEAD_WORKER_KIND
 
 
+def _recorded_red(directory: Path) -> list[tuple[str, TestCell]]:
+    """The cells in *directory* a cut run recorded failing -- a decided miss or no answer -- dead workers first."""
+    try:
+        cells, _ = read_cells(directory)
+    except (OutcomeReadError, RetiredOutcomes):
+        return []
+    skipped = skipped_nodes(cells)
+    ranked = sorted(
+        (not _worker_died(one), node)
+        for node, one in cells.items()
+        if one.red or (one.met is None and node not in skipped)
+    )
+    return [(node, cells[node]) for _, node in ranked]
+
+
 def recorded_failures(directory: Path) -> tuple[str, ...]:
     """What a run that never reached its summary had ALREADY recorded as failing, as one reason; ``()`` when nothing.
 
     The cells are written as each test ends, so a session the wall cut still names its failures: every cell that
     is a decided miss or gave no answer (a declared skip is neither) -- the tests whose worker died first, since
     those are the ones that held the box. At most :data:`FAILURE_NAMES` are spelled out; every one is in
-    *directory*. Unreadable cells say nothing here: their own refusal is already a reason.
+    *directory*, and :func:`recorded_diagnostics` prints what each said. Unreadable cells say nothing here: their
+    own refusal is already a reason.
     """
-    try:
-        cells, _ = read_cells(directory)
-    except (OutcomeReadError, RetiredOutcomes):
-        return ()
-    skipped = skipped_nodes(cells)
-    failed = sorted(
-        (not _worker_died(one), node)
-        for node, one in cells.items()
-        if one.red or (one.met is None and node not in skipped)
-    )
+    failed = _recorded_red(directory)
     if not failed:
         return ()
-    named = ', '.join(f'{node} (its worker died)' if not alive else node for alive, node in failed[:FAILURE_NAMES])
+    named = ', '.join(
+        f'{node} (its worker died)' if _worker_died(one) else node for node, one in failed[:FAILURE_NAMES]
+    )
     more = f' and {len(failed) - FAILURE_NAMES} more' if len(failed) > FAILURE_NAMES else ''
     return (
         f'{len(failed)} test(s) recorded failing before the run ended: {named}{more} -- cells: {directory.as_posix()}',
     )
+
+
+def recorded_diagnostics(directory: Path) -> str:
+    """EVERY recorded failure's own diagnostic, one section per test; ``''`` when the run recorded none.
+
+    A session the wall cut never prints pytest's failure section, so the tracebacks of the tests it DID execute
+    existed only in the cells (learn-lab #36: a 3600 s truncation left two failure dots and no cause). This is
+    that section rebuilt from the cells, unbounded -- the names in :func:`recorded_failures` are bounded, the
+    diagnostics a reader acts on are not -- for the run log and the job log alike.
+    """
+    failed = _recorded_red(directory)
+    if not failed:
+        return ''
+    sections = [f'{_DIAGNOSTICS_BANNER} {len(failed)} test(s), recorded before the run ended']
+    sections += [f'_____ {node} [{one.status.value}] _____\n{one.why.rstrip()}' for node, one in failed]
+    return '\n'.join(sections) + '\n'
 
 
 def _flat_cells(directory: Path) -> tuple[dict[str, TestCell], frozenset[str]]:
