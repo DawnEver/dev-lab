@@ -60,9 +60,9 @@ def _repo(root: Path, errors: str) -> None:
     )
 
 
-@pytest.mark.skipif(typecheck.binary() is None, reason='pyright is not installed in this environment')
 def test_the_real_checker_reads_a_planted_error(tmp_path: Path) -> None:
     """THE PLANTED CONTROL through pyright itself: one error, recorded passes; unrecorded refuses; --write records."""
+    assert typecheck.binary() is not None, 'pyright is in the `test` extra: python -m dev_lab.dev.dep --sync <tree>'
     _repo(tmp_path, '{ alpha = 1 }')
     out = io.StringIO()
     assert typecheck.check(tmp_path, handle=out) == typecheck.CLEAN, out.getvalue()

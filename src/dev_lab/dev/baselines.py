@@ -38,12 +38,16 @@ from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final, Protocol
 
+import lab_commons.launch as _door
+from lab_commons import storage
+from lab_commons.compute.store import Ref
 from lab_commons.log import emit
+
+from dev_lab.dev.reports import StepReport
+from dev_lab.dev.storage import run_objects
 
 if TYPE_CHECKING:
     from lab_commons.objects import RcloneObjects
-
-    from dev_lab.dev.reports import StepReport
 
 __all__ = [
     'CACHE',
@@ -88,7 +92,10 @@ class LockRefused(ValueError):
 class Store(Protocol):
     """A content-addressed store: :meth:`put` a file and get its sha256; :meth:`get` those bytes back."""
 
-    name: str
+    @property
+    def name(self) -> str:
+        """The store's name in a lock row."""
+        ...
 
     def put(self, path: Path) -> str:
         """Store *path*; its sha256."""
@@ -195,7 +202,7 @@ def unquoted(names: Iterable[str], message: str) -> tuple[str, ...]:
 
 def data_files(tracked: Iterable[str]) -> list[str]:
     """The tracked paths under ``tests/`` that are data, not code (:data:`CODE_SUFFIXES`, :data:`CODE_NAMES`)."""
-    found = []
+    found: list[str] = []
     for path in tracked:
         pure = PurePosixPath(path)
         if pure.parts[:1] == ('tests',) and pure.suffix not in CODE_SUFFIXES and pure.name not in CODE_NAMES:
@@ -214,17 +221,11 @@ class _RunStore:
         return self.objects.put(path).sha256
 
     def get(self, sha256: str, dest: Path) -> Path:
-        from lab_commons.compute.store import Ref  # noqa: PLC0415
-
         objects = self.objects
         return objects.get(Ref(objects.backend, objects.key(sha256), 0, sha256), dest)
 
 
 def _run_store(root: Path) -> Store:
-    from lab_commons import storage  # noqa: PLC0415 -- the network door is reached only by get and put
-
-    from dev_lab.dev.storage import run_objects  # noqa: PLC0415
-
     declared = storage.declared()
     objects = run_objects(root, declared=declared)
     if objects is None:
@@ -234,7 +235,7 @@ def _run_store(root: Path) -> Store:
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run(
+    return _door.run(
         [_GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8', check=True, timeout=120
     ).stdout
 
@@ -249,7 +250,7 @@ def _rows_at(root: Path, rev: str) -> list[Row]:
 
 def refusals(root: Path, commit: str | None = None) -> list[str]:
     """Every refusal ``verify`` names for *root* (and *commit*'s rewrites): malformed lock, tracked test data."""
-    refusals = []
+    refusals: list[str] = []
     try:
         read_lock(root / LOCK)
     except LockRefused as why:
@@ -336,13 +337,11 @@ if __name__ == '__main__':
 
 def step(root: Path) -> StepReport:
     """``baselines verify`` as a verify step of its own: red by name on any refusal (:func:`refusals`)."""
-    from dev_lab.dev.reports import StepReport as Report  # noqa: PLC0415
-
     name = 'baselines verify'
     try:
         found = refusals(root)
     except (OSError, subprocess.CalledProcessError) as cannot:
-        return Report(name=name, truncated=(f'{name}: cannot read the checkout: {cannot}',))
+        return StepReport(name=name, truncated=(f'{name}: cannot read the checkout: {cannot}',))
     for line in found:
         emit(f'baselines: refused -- {line}', err=True)
-    return Report(name=name, reported=(name,), failures=(name,) if found else ())
+    return StepReport(name=name, reported=(name,), failures=(name,) if found else ())

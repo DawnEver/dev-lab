@@ -1,17 +1,16 @@
 """WHO IS SERVING, READ FROM THE FORGE -- one host card per serving host, edited in place every tick.
 
-Many machines have no ssh to a cluster and still need to know whether anyone is serving linux right
-now. So every ``forge serve`` tick publishes this host's CARD as ONE comment on the repository's
-``forge hosts`` issue (:data:`HOSTS_TITLE`, opened by the first host that needs it), found by its hidden
-marker and edited in place (:func:`dev_lab.dev.forgepulls.comment_upsert`) -- the same shape on gitea
-and GitHub.
+Many machines have no ssh to a cluster and still need to know whether anyone is serving linux right now. So every
+``forge serve`` tick publishes this host's CARD as ONE comment on the repository's ``forge hosts`` issue
+(:data:`~dev_lab.dev.hostsissue.HOSTS_TITLE`, opened by the first host that needs it), found by its hidden marker and
+edited in place (:func:`dev_lab.dev.forgepulls.comment_upsert`) -- the same shape on gitea and GitHub.
 
-ONE ISSUE, FOUND OR REFUSED, NEVER GUESSED. The issue is the OLDEST one carrying :data:`HOSTS_MARKER`
-(or, for an issue opened before the marker, titled :data:`HOSTS_TITLE`), read off EVERY page of the
-listing in EVERY state -- a closed home is still the home. A lookup that fails raises; it is never read
-as "none exists", because that reading opened a fresh issue on every tick of every host (128 on three
-repos, 2026-10-12). Two hosts racing to open the first one re-read after the create and both write to
-the oldest; the loser is closed by ``forge tidy`` (:mod:`dev_lab.dev.forgetidy`).
+ONE ISSUE, FOUND OR REFUSED, NEVER GUESSED. The issue is the OLDEST one carrying
+:data:`~dev_lab.dev.hostsissue.HOSTS_MARKER` (or, for an issue opened before the marker, titled
+:data:`~dev_lab.dev.hostsissue.HOSTS_TITLE`), read off EVERY page of the listing in EVERY state -- a closed home is
+still the home. A lookup that fails raises; it is never read as "none exists", because that reading opened a fresh issue
+on every tick of every host (128 on three repos, 2026-10-12). Two hosts racing to open the first one re-read after the
+create and both write to the oldest; the loser is closed by ``forge tidy`` (:mod:`dev_lab.dev.forgetidy`).
 
 The card says who the host is (:func:`card_host`: ``<cluster>/<account>`` or the machine), the
 platform it serves, its TOOLS as probed -- each present or not with the evidence it rests on
@@ -79,31 +78,24 @@ from dev_lab.dev.forgepulls import (
     Marker,
     comment_list,
     comment_upsert,
-    issues,
     marker,
     marker_kinds,
 )
 from dev_lab.dev.forgework import Client, Comment
+from dev_lab.dev.hostsissue import HostsIssueLost, hosts_issue, open_hosts_issue
 from dev_lab.dev.hpcaccount.spec import schedule_tick
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.roles import bound_accounts, machine_layer, roles_at
 
 __all__ = [
-    'HOSTS_MARKER',
-    'HOSTS_ORIGIN',
-    'HOSTS_TITLE',
     'RETIRE',
     'STALE_TICKS',
     'HostCard',
-    'HostsIssueLost',
     'card_host',
     'card_of',
     'card_owners',
     'host_id',
-    'hosts_issue',
-    'hosts_issues',
-    'is_hosts',
     'is_private',
     'main',
     'publish',
@@ -114,15 +106,6 @@ __all__ = [
     'serving_cards',
     'this_host',
 ]
-
-#: The title of the issue every host card hangs on.
-HOSTS_TITLE: Final = 'forge hosts'
-
-#: The hidden line in the hosts issue's body it is found by.
-HOSTS_MARKER: Final = marker(Marker.HOSTS)
-
-#: The text every hosts issue this module opened carries, marker or not: how a machine-made one is told apart.
-HOSTS_ORIGIN: Final = '(dev_lab.dev.forgehosts)'
 
 #: The door that deletes a host's card (:func:`main`): the remedy every reader names for a card it does not count.
 RETIRE: Final = 'python -m dev_lab.dev.forge hosts retire'
@@ -219,10 +202,6 @@ class HostCard:
         return f'{head}{loud}\n\n```json\n{json.dumps(raw, indent=1)}\n```'
 
 
-class HostsIssueLost(RuntimeError):
-    """The hosts issue was just created and the listing still does not show it: refuse, never open another."""
-
-
 def host_id(host: str) -> str:
     """The opaque, stable name a PUBLIC repository's card carries for *host*: a short hash, never the name."""
     return 'host-' + hashlib.sha256(host.encode()).hexdigest()[:12]
@@ -247,56 +226,12 @@ def public_siblings(client: Client) -> tuple[str, ...]:
     return tuple(str(row['name']) for row in published if row.get('name'))
 
 
-def is_hosts(raw: Mapping[str, Any]) -> bool:
-    """Whether a listed issue is a hosts issue: it carries the marker, or the title from before the marker."""
-    return HOSTS_MARKER in (raw.get('body') or '') or raw.get('title') == HOSTS_TITLE
-
-
-def hosts_issues(client: Client) -> tuple[Mapping[str, Any], ...]:
-    """Every hosts issue in every state, oldest first; a failed or partial read raises."""
-    return tuple(sorted((raw for raw in issues(client, state='all') if is_hosts(raw)), key=lambda raw: raw['number']))
-
-
-def _seen_all_open(client: Client) -> None:
-    """Refuse a listing that shows fewer open issues than the repository counts: it is blind, not empty.
-
-    Gitea's repository carries ``open_issues_count`` (pulls excluded, counted beside as
-    ``open_pr_counter``); GitHub's counts pulls in, so the check is gitea's only. The count is read
-    BEFORE the listing, so an issue opened in between cannot make an honest listing look short.
-    """
-    repo = client.call('GET', client.repo)
-    if 'open_pr_counter' not in repo:
-        return
-    listed = sum(raw['state'] == 'open' for raw in issues(client, state='open'))
-    if listed < repo['open_issues_count']:
-        seen = f'the listing shows {listed} open issues and the repository counts {repo["open_issues_count"]}'
-        msg = f'{seen}; refusing to open a {HOSTS_TITLE!r} issue a blind lookup did not find'
-        raise HostsIssueLost(msg)
-
-
-def hosts_issue(client: Client) -> int | None:
-    """The number of the hosts issue -- the oldest -- ``None`` only when the full listing holds none."""
-    found = hosts_issues(client)
-    return found[0]['number'] if found else None
-
-
-def _open_hosts_issue(client: Client) -> int:
-    _seen_all_open(client)
-    body = f'{HOSTS_MARKER}\nOne comment per serving host, edited in place each tick {HOSTS_ORIGIN}.'
-    client.issue_create(HOSTS_TITLE, body)
-    number = hosts_issue(client)  # the oldest, so two hosts racing to open it agree on one
-    if number is None:
-        msg = f'the {HOSTS_TITLE!r} issue just created is not in the listing; refusing to open another'
-        raise HostsIssueLost(msg)
-    return number
-
-
 def publish(client: Client, card: HostCard) -> str:
     """Write *card* in place on the hosts issue: ``created``, ``updated`` or ``unchanged``.
 
     On a public repository the card is :meth:`HostCard.redacted` and a card left under the raw name is deleted.
     """
-    number = hosts_issue(client) or _open_hosts_issue(client)  # an issue number is never 0
+    number = hosts_issue(client) or open_hosts_issue(client)  # an issue number is never 0
     if not is_private(client):
         _delete_card(client, number, card.host)
         card = card.redacted()

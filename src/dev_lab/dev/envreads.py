@@ -53,7 +53,7 @@ import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, cast
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
@@ -125,10 +125,11 @@ class EnvPolicy:
 
 def _paths(table: dict[str, object], key: str) -> tuple[str, ...]:
     value = table.get(key, [])
-    if not isinstance(value, list) or not all(isinstance(p, str) and p.strip('/') for p in value):
+    paths = [p for p in cast('list[object]', value) if isinstance(p, str)] if isinstance(value, list) else None
+    if paths is None or len(paths) != len(cast('list[object]', value)) or not all(p.strip('/') for p in paths):
         msg = f'[tool.dev_lab.{_TABLE}] {key} must be a list of repo-relative paths, not {value!r}'
         raise ValueError(msg)
-    return tuple(p.strip('/') for p in value)
+    return tuple(p.strip('/') for p in paths)
 
 
 def _policy(data: dict[str, object]) -> EnvPolicy:
@@ -178,7 +179,7 @@ def _os_bindings(tree: ast.AST) -> _Os:
 
 
 def _read_lines(tree: ast.AST, bound_os: _Os) -> set[int]:
-    return {node.lineno for node in ast.walk(tree) if bound_os.member(node)}
+    return {node.lineno for node in ast.walk(tree) if isinstance(node, ast.expr) and bound_os.member(node)}
 
 
 def python_reads(source: str) -> tuple[int, ...]:
@@ -207,7 +208,7 @@ def _named_read_lines(tree: ast.AST, bound_os: _Os) -> set[int]:
             )
         else:
             hit = False
-        if hit:
+        if hit and isinstance(node, ast.expr):
             lines.add(node.lineno)
     return lines
 

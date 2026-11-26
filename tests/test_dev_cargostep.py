@@ -5,12 +5,13 @@ from __future__ import annotations
 import io
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from dev_lab.dev import cargostep, localpart, platformparts
+from dev_lab.dev import cargostep, localpart
 from dev_lab.dev.platformparts import part_context
 from dev_lab.dev.producer import PRODUCING_VAR, ProducerExit, producing
 
@@ -45,7 +46,7 @@ def test_a_failing_cargo_run_is_its_own_named_red_and_a_passing_one_its_own_gree
     """PLANTED CONTROL, both sides, through the real step with the process runner planted."""
     argv_seen: list[list[str]] = []
 
-    def run(code: int):  # noqa: ANN202 -- a planted runner
+    def run(code: int) -> Callable[..., int]:
         def tee(argv: list[str], *, cwd: Path, handle: io.StringIO) -> int:
             del cwd, handle
             argv_seen.append(argv)
@@ -78,7 +79,7 @@ def _repo(tmp_path: Path) -> Path:
 def _producing(monkeypatch: pytest.MonkeyPatch, posted: list[dict[str, Any]]) -> None:
     monkeypatch.setenv(PRODUCING_VAR, producing(part_context(cargostep.PART), 'a' * 40)[PRODUCING_VAR])
     monkeypatch.setattr(localpart, 'post_local', lambda _root, record, _dir: posted.append(record) or 'posted')
-    monkeypatch.setattr(platformparts, 'record_directory', lambda root, _sha: root)
+    monkeypatch.setattr(cargostep, 'record_directory', lambda root, _sha: root)
 
 
 @pytest.mark.parametrize(

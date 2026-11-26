@@ -37,9 +37,10 @@ from datetime import UTC, datetime
 from functools import cache
 from importlib import metadata
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 import pytest
+from lab_commons.compute.presence import declared_versions, probe
 from lab_commons.compute.probe import OS_NAMES
 from lab_commons.compute.toolchecks import CHECKS
 
@@ -105,7 +106,7 @@ def _table(manifest: Mapping[str, object], *keys: str) -> dict[str, object]:
     value: object = manifest
     for key in keys:
         value = value.get(key, {}) if isinstance(value, Mapping) else {}
-    return dict(value) if isinstance(value, Mapping) else {}
+    return dict(cast('Mapping[str, object]', value)) if isinstance(value, Mapping) else {}
 
 
 def _registered(kind: str, root: Path) -> frozenset[str]:
@@ -173,8 +174,6 @@ def of_item(item: pytest.Item, *, root: Path) -> tuple[Need, ...]:
 
 
 def _tool_present(tool: str) -> bool:
-    from lab_commons.compute.presence import declared_versions, probe  # noqa: PLC0415 -- probed only when needed
-
     return probe(tool, CHECKS[tool], declared_versions(Path.cwd()).get(tool), now=datetime.now(UTC)).present
 
 
@@ -193,7 +192,7 @@ class Host:
     system: str
     tool: Callable[[str], bool]
     installed: Callable[[str], bool]
-    environ: Mapping[str, str] = field(default_factory=dict)
+    environ: Mapping[str, str] = field(default_factory=dict[str, str])
 
     @classmethod
     def this(cls) -> Host:
@@ -209,7 +208,8 @@ class Host:
         manifest = _manifest(root)
         if need.kind == 'extra':
             rows = _table(manifest, 'project', 'optional-dependencies').get(need.name, [])
-            dists = [m.group(1) for row in (rows if isinstance(rows, list) else []) if (m := _DIST.match(str(row)))]
+            listed = cast('list[object]', rows) if isinstance(rows, list) else []
+            dists = [m.group(1) for row in listed if (m := _DIST.match(str(row)))]
             if lacking := [dist for dist in dists if not self.installed(dist)]:
                 return f'extra {need.name} lacks {lacking}: python -m dev_lab.dev.dep --sync --extra {need.name}'
             return None
@@ -230,7 +230,7 @@ def judge(item: pytest.Item, *, root: Path, host: Host) -> None:
 
 def refuse_unregistered(items: list[pytest.Item], *, root: Path) -> None:
     """Refuse the session when any collected test declares an unregistered need, naming each."""
-    refused = []
+    refused: list[str] = []
     for item in items:
         try:
             of_item(item, root=root)

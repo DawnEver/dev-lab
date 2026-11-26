@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import TYPE_CHECKING, Any, Final, NoReturn
+from typing import TYPE_CHECKING, Final, NoReturn, cast
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -88,13 +88,23 @@ def _refuse(tool: str, report: Path, why: str) -> NoReturn:
     raise ReportRefused(msg)
 
 
-def _load(tool: str, report: Path) -> Any:  # noqa: ANN401 -- JSON is untyped
+def _load(tool: str, report: Path) -> object:
     if not report.is_file():
         _refuse(tool, report, 'no report there')
     try:
         return json.loads(report.read_text(encoding='utf-8'))
     except (ValueError, UnicodeDecodeError) as exc:
         _refuse(tool, report, f'is not JSON ({exc})')
+
+
+def _table(value: object) -> dict[str, object] | None:
+    """*value* as a JSON object (string keys), else ``None``."""
+    return cast('dict[str, object]', value) if isinstance(value, dict) else None
+
+
+def _list(value: object) -> list[object]:
+    """*value* as a JSON array, else empty."""
+    return cast('list[object]', value) if isinstance(value, list) else []
 
 
 def _relative(root: Path, name: str) -> str:
@@ -129,25 +139,24 @@ def python_report(root: Path, report: Path) -> Measurement:
         ReportRefused: no report, not JSON, or not coverage.py's shape; names *report* and the command.
 
     """
-    data = _load(PYTHON_TOOL, report)
-    meta = data.get('meta') if isinstance(data, dict) else None
-    files = data.get('files') if isinstance(data, dict) else None
-    if not isinstance(meta, dict) or not isinstance(meta.get('branch_coverage'), bool) or not isinstance(files, dict):
+    data = _table(_load(PYTHON_TOOL, report)) or {}
+    meta, files = _table(data.get('meta')), _table(data.get('files'))
+    branch = None if meta is None else meta.get('branch_coverage')
+    if not isinstance(branch, bool) or files is None:
         _refuse(PYTHON_TOOL, report, 'no meta.branch_coverage and files table: not a coverage.py JSON report')
 
     def row(name: str, entry: object) -> tuple[str, Counts]:
-        summary = entry.get('summary') if isinstance(entry, dict) else None
-        if not isinstance(summary, dict):
+        summary = _table((_table(entry) or {}).get('summary'))
+        if summary is None:
             _refuse(PYTHON_TOOL, report, f'files.{name} has no summary')
-        get = summary.get
         counts = [
-            _int(PYTHON_TOOL, report, f'files.{name}.summary.{key}', get(key, 0 if 'branch' in key else None))
+            _int(PYTHON_TOOL, report, f'files.{name}.summary.{key}', summary.get(key, 0 if 'branch' in key else None))
             for key in ('num_statements', 'covered_lines', 'num_branches', 'covered_branches')
         ]
         return _relative(root, name), Counts(*counts)
 
     found = _collect(PYTHON_TOOL, report, (row(name, entry) for name, entry in files.items()))
-    return Measurement(PYTHON_TOOL, str(report), meta['branch_coverage'], found)
+    return Measurement(PYTHON_TOOL, str(report), branch, found)
 
 
 def rust_report(root: Path, report: Path) -> Measurement:
@@ -157,16 +166,16 @@ def rust_report(root: Path, report: Path) -> Measurement:
         ReportRefused: no report, not JSON, or not the ``llvm.coverage.json.export`` shape; names *report*.
 
     """
-    data = _load(RUST_TOOL, report)
-    if not isinstance(data, dict) or data.get('type') != _LLVM_TYPE or not isinstance(data.get('data'), list):
+    data = _table(_load(RUST_TOOL, report))
+    if data is None or data.get('type') != _LLVM_TYPE or not isinstance(data.get('data'), list):
         _refuse(RUST_TOOL, report, f'not an {_LLVM_TYPE} document (its "type" and "data")')
 
     def row(entry: object) -> tuple[str, Counts]:
-        name = entry.get('filename') if isinstance(entry, dict) else None
-        summary = entry.get('summary') if isinstance(entry, dict) else None
-        if not isinstance(name, str) or not isinstance(summary, dict):
+        held = _table(entry) or {}
+        name, summary = held.get('filename'), _table(held.get('summary'))
+        if not isinstance(name, str) or summary is None:
             _refuse(RUST_TOOL, report, f'a file entry has no filename and summary: {entry!r}')
-        lines, branches = summary.get('lines') or {}, summary.get('branches') or {}
+        lines, branches = _table(summary.get('lines')) or {}, _table(summary.get('branches')) or {}
         counts = [
             _int(RUST_TOOL, report, f'{name} {key}.{field}', table.get(field))
             for key, table in (('lines', lines), ('branches', branches))
@@ -174,6 +183,7 @@ def rust_report(root: Path, report: Path) -> Measurement:
         ]
         return _relative(root, name), Counts(*counts)
 
-    entries = [entry for export in data['data'] if isinstance(export, dict) for entry in export.get('files', [])]
+    exports = [export for one in _list(data.get('data')) if (export := _table(one)) is not None]
+    entries = [entry for export in exports for entry in _list(export.get('files'))]
     found = _collect(RUST_TOOL, report, (row(entry) for entry in entries))
     return Measurement(RUST_TOOL, str(report), any(c.branches for c in found.values()), found)

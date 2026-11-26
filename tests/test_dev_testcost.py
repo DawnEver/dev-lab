@@ -94,7 +94,10 @@ def test_an_unmarked_test_collects(pytester: pytest.Pytester) -> None:
 
 class _Report:
     def __init__(self, nodeid: str, longrepr: str) -> None:
-        self.nodeid, self.duration, self.failed, self.longrepr = nodeid, 0.0, True, longrepr
+        self.nodeid: str = nodeid
+        self.duration: float = 0.0
+        self.failed: bool = True
+        self.longrepr: object = longrepr
 
 
 def test_a_kill_at_a_tests_own_deadline_is_filed_at_that_deadline(tmp_path: Path) -> None:

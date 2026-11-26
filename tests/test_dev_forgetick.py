@@ -40,7 +40,7 @@ from lab_commons.hpc.config import Cost
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev import forgeproduce, forgerounds, forgetick
+from dev_lab.dev import _tick_demand, forgeproduce, forgerounds, forgetick
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeaffinity import DEFERRED, HELD
 from dev_lab.dev.forgeclaim import (
@@ -760,7 +760,7 @@ def test_a_tick_claims_the_integration_tip_ahead_of_a_boosted_pr(server, tmp_pat
 
     PLANTED CONTROL: the label moved to the other PR moves that PR ahead in the queue; the head is still claimed.
     """
-    monkeypatch.setattr(forgetick.Capacity, 'read', staticmethod(lambda: Capacity(cpu=4.0, mem_bytes=8 * GB, seats={})))
+    monkeypatch.setattr(Capacity, 'read', staticmethod(lambda: Capacity(cpu=4.0, mem_bytes=8 * GB, seats={})))
     repo, tips = _origin(tmp_path)
     head, lane, other = tips['integrate/main'], tips['topic/a'], tips['wip/b']
     lacking = f'{NOT_ADMITTED}: lacking cpu (4 asked, 0 free), mem_gb (8 asked, 0 free)'
@@ -1400,9 +1400,9 @@ def test_a_part_is_sized_at_the_ids_the_commits_parts_hand_it() -> None:
         CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=workstation:1,jmag:2', ''),
         CommitStatus('tests/jmag', 'success', 'scope=full ran=2 hands=workstation:5', ''),
     ]
-    assert forgetick.handed(statuses, 'workstation') == 6
-    assert forgetick.handed(statuses, 'jmag') == 2
-    assert forgetick.handed(statuses, 'base') is None
+    assert _tick_demand.handed(statuses, 'workstation') == 6
+    assert _tick_demand.handed(statuses, 'jmag') == 2
+    assert _tick_demand.handed(statuses, 'base') is None
 
 
 def _stacked(repo: Path, tips: dict[str, str], change: dict[str, str]) -> tuple[str, str]:

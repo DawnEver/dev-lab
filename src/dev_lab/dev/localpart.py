@@ -23,6 +23,7 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import lab_commons.launch as _door
 from lab_commons.box.machine import provided
 from lab_commons.box.providers import inventory
 from lab_commons.compute.presence import cached, declared_versions, measured, refresh
@@ -147,10 +148,8 @@ def post_cited(
 
 def tracked_files(root: Path) -> list[str]:
     """The checkout's tracked paths (``git ls-files``); none outside a work tree."""
-    import subprocess  # noqa: PLC0415
-
     git = shutil.which('git') or 'git'
-    done = subprocess.run([git, '-C', str(root), 'ls-files', '-z'], capture_output=True, text=True, check=False)
+    done = _door.run([git, '-C', str(root), 'ls-files', '-z'], capture_output=True, text=True, check=False)
     return [one for one in done.stdout.split('\0') if one] if done.returncode == 0 else []
 
 

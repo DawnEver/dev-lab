@@ -431,7 +431,7 @@ def test_a_host_with_no_room_releases_the_part_open_never_inconclusive(home: Pat
     assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] == OPEN, 'claimable by any host again'
 
 
-#: A live schema-1 run as Ada held it (2026-10-17, account sanitised): an in-code value, never a tracked data file (H2).
+#: A live schema-1 run as Ada held it (2026-10-17, account sanitized): an in-code value, never a tracked data file (H2).
 SCHEMA_1: dict[str, Any] = {
     'repo_url': 'https://forge.example/lab/consumer.git',
     'sha': 'c4b6bfd37f235761a21c79390ff1cf218c88cf98',

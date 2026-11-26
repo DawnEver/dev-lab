@@ -61,7 +61,7 @@ BUILD_JOBS: Final = 4
 
 #: The OS the deploy runs on: a cluster account is Linux, where FEMM's version is its version file.
 _PLATFORM: Final = 'linux'
-_BINARY: Final = FEMM_HEADLESS[_PLATFORM][0]
+_BINARY: Final = FEMM_HEADLESS[_PLATFORM]
 
 #: An install directory's name: a dotted version.
 _VERSION: Final = re.compile(r'\d+(\.\d+)+')
@@ -115,7 +115,7 @@ def build_script(pin: SourceRelease = FEMM_QT, jobs: int = BUILD_JOBS) -> str:
 
 def _build_tools(step: Step, environment: str) -> list[str]:
     """The :data:`BUILD_TOOLS` that do not run in *environment* and could not be installed here."""
-    missing = []
+    missing: list[str] = []
     for tool in BUILD_TOOLS:
         if runs(step.tools.sh, environment, tool):
             continue

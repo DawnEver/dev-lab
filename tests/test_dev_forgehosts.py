@@ -20,8 +20,9 @@ from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import forgeclaim, forgehosts
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_TITLE, HostCard, publish, read_cards
+from dev_lab.dev.forgehosts import HostCard, publish, read_cards
 from dev_lab.dev.forgework import is_pull
+from dev_lab.dev.hostsissue import HOSTS_MARKER, HOSTS_TITLE, HostsIssueLost
 from dev_lab.dev.roles import Unbound
 from tests._forge_state import StateForge
 
@@ -77,9 +78,9 @@ def test_planted_control_the_old_lookup_opens_a_duplicate_every_tick() -> None:
 def test_a_lookup_that_cannot_see_the_issue_it_just_created_refuses(monkeypatch) -> None:
     forge = StateForge()
     monkeypatch.setattr('dev_lab.dev.forgepulls.is_pull', _presence_only)  # the 2026-10-12 blindness
-    with pytest.raises(forgehosts.HostsIssueLost):
+    with pytest.raises(HostsIssueLost):
         publish(forge, _card('ada/alice'))
-    with pytest.raises(forgehosts.HostsIssueLost, match='repository counts 1'):
+    with pytest.raises(HostsIssueLost, match='repository counts 1'):
         publish(forge, _card('ada/alice', 5))
     assert len(forge.titled(HOSTS_TITLE)) == 1, 'blind, the second tick refuses before it creates'
 
