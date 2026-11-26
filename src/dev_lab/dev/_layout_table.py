@@ -37,6 +37,7 @@ __all__ = [
     'declared_at',
     'declared_layout',
     'declares',
+    'family_kind',
     'row_for',
 ]
 
@@ -72,7 +73,7 @@ FAMILY_ROWS: Final = {
 }
 
 
-def _family_kind(parts: list[str]) -> str | None:
+def family_kind(parts: list[str]) -> str | None:
     """The family kind a directory (or row pattern) *parts* is at or below, else ``None``.
 
     Inside a family kind only :data:`FAMILY_ROWS` judge: a repo's open row (``<day>/*``) never widens one.
@@ -86,7 +87,7 @@ def _family_kind(parts: list[str]) -> str | None:
 def _with_family_rows(manifest: Path, rows: dict[str, frozenset[str]]) -> dict[str, frozenset[str]]:
     """*rows* with the dated levels (where undeclared) and :data:`FAMILY_ROWS`; a repo row naming a family kind reds."""
     for key in rows:
-        if (kind := _family_kind(key.split('/'))) is not None:
+        if (kind := family_kind(key.split('/'))) is not None:
             shapes = {shape: sorted(suffixes) for shape, suffixes in FAMILY_KINDS[kind].items()}
             raise _refuse(
                 manifest,
@@ -123,7 +124,7 @@ class Layout:
 
     def judging(self, parts: list[str]) -> dict[str, frozenset[str]]:
         """The rows that may judge the directory *parts*: inside a family kind :data:`FAMILY_ROWS` alone, else all."""
-        return FAMILY_ROWS if _family_kind(parts) is not None else self.rows
+        return FAMILY_ROWS if family_kind(parts) is not None else self.rows
 
     def in_tool_cache(self, rel: str) -> bool:
         """Whether repo-relative POSIX *rel* is at or below a NAMED tool's cache (``tool_caches``)."""
