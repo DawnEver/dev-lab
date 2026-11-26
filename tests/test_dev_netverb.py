@@ -661,3 +661,31 @@ def test_a_local_uv_python_subcommand_stays_no_network_verb(argv: list[str]) -> 
     assert not is_network_verb(argv)
     with pytest.raises(NotANetworkVerb):
         spelled(['--', *argv])
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['uv', 'lock', '--offline'],
+        ['uv', 'pip', 'compile', '--offline', 'requirements.in'],
+        ['uv', '--offline', 'sync', '--frozen'],
+        ['git', 'fetch', '~/repos/sibling', 'main'],
+        ['git', 'fetch', '--depth', '1', '../sibling'],
+    ],
+)
+def test_an_offline_command_is_no_network_verb(argv: list[str]) -> None:
+    """2026-11-26 (v1 #1): `uv pip compile --offline` was hinted toward the retry door; it reaches no remote."""
+    assert not is_network_verb(argv)
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['uv', 'lock', '--upgrade'],
+        ['uv', 'pip', 'compile', 'requirements.in'],
+        ['git', 'fetch', '--depth', '1', 'origin'],
+    ],
+)
+def test_the_same_commands_online_stay_network_verbs(argv: list[str]) -> None:
+    """PLANTED CONTROL: without --offline or a local path the very same verbs still reach a remote."""
+    assert is_network_verb(argv)

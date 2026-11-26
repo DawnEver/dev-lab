@@ -85,7 +85,7 @@ from dev_lab.dev._deny_worktree_row import (
     WORKTREES_STAY_INSIDE,
 )
 from dev_lab.dev._deny_writeroots_row import WRITES_STAY_IN_THE_TREE
-from dev_lab.dev._netverb_argv import GIT_NETWORK_VERBS, LOCAL_REPOSITORY, UV_NETWORK_VERBS
+from dev_lab.dev._netverb_argv import GIT_NETWORK_VERBS, GIT_VERB_VALUED, LOCAL_REPOSITORY, UV_NETWORK_VERBS
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 
 
@@ -104,11 +104,14 @@ RETIRED_ROW_KEY = 'deny row'
 _GIT_VERBS = '|'.join(verb for verb in GIT_NETWORK_VERBS if verb != 'submodule')
 _UV_VERBS = '|'.join(verb for verb in UV_NETWORK_VERBS if verb not in {'pip', 'python'})
 #: The shell spelling of :func:`dev_lab.dev._netverb_argv.is_network_verb`, derived from its verb lists.
-#: A git verb whose repository operand is a local path is no remote.
+#: A git verb whose repository operand is a local path is no remote (an option's separate value skipped), and a uv
+#: command run ``--offline`` reaches only the cache (2026-11-26: `uv pip compile --offline` was hinted).
+_GIT_VALUED = '|'.join(sorted(GIT_VERB_VALUED))
+_OPTIONS = rf'(?:\s+(?:{_GIT_VALUED})\s+\S+|\s+-\S+)*'
 NETWORK_VERB_PATTERN = (
-    rf'(?:git(?:\s+-[Cc]\s+\S+)*\s+(?:(?:{_GIT_VERBS})\b(?!(?:\s+-\S+)*\s+["\']?{LOCAL_REPOSITORY}["\']?(?:\s|$))'
+    rf'(?:git(?:\s+-[Cc]\s+\S+)*\s+(?:(?:{_GIT_VERBS})\b(?!{_OPTIONS}\s+["\']?{LOCAL_REPOSITORY}["\']?(?:\s|$))'
     r'|submodule\s+update\b)'
-    rf'|uv\s+(?:{_UV_VERBS}|pip\s+(?:install|sync|compile)|python\s+install)\b)'
+    rf'|uv\b(?![^;&|\n]*\s--offline\b)\s+(?:{_UV_VERBS}|pip\s+(?:install|sync|compile)|python\s+install)\b)'
 )
 
 DENY_ROWS: tuple[dict[str, object], ...] = (
@@ -291,6 +294,10 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'uv sync --frozen',
             'uv pip install requests',
             'uv python install 3.14',
+            # The planted controls for the offline permits: the same verbs online.
+            'uv pip compile requirements.in',
+            'git fetch --depth 1 origin',
+            'uv lock; echo --offline',
         ),
         'permits': (
             'git status',
@@ -305,6 +312,11 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'uv pip list',
             'uv --version',
             'uv python find 3.14',
+            # Offline: the cache only, or a local repository behind an option's value (2026-11-26).
+            'uv lock --offline',
+            'uv pip compile --offline requirements.in',
+            'git fetch --depth 1 ../sibling',
+            'git fetch ~/repos/sibling main',
         ),
     },
     {
