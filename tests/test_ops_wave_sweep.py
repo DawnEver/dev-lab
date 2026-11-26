@@ -11,6 +11,7 @@ from _ops_fixtures import GLASS, config
 from _roles_fixtures import HPC_REPO, carry
 from test_ops_breakglass import GREEN, HEAD, FakeForge, Host
 
+from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeheadgate import PR_CURRENT_CONTEXT
 from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR
@@ -19,8 +20,10 @@ from dev_lab.dev.netverb import Report
 from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.wavesweep import Pull
 
-#: A head a wave may land: green tests AND current (it holds the integration branch, its lock is fresh).
-CURRENT = (*GREEN, CommitStatus(PR_CURRENT_CONTEXT, 'success', 'holds integrate/main', ''))
+#: The normal decision, taken AFTER the parts posted, refused the head: the one case the wave is for (dev-lab#644).
+REFUSED = CommitStatus(MERGE_READY_CONTEXT, 'failure', 'waits on: a merge the audit passes', '', id=9)
+#: A head a wave may land: green tests AND current (it holds the integration branch, its lock is fresh), refused.
+CURRENT = (*GREEN, CommitStatus(PR_CURRENT_CONTEXT, 'success', 'holds integrate/main', ''), REFUSED)
 RED = (
     CommitStatus('tests/base', 'failure', 'VERDICT result=fail', ''),
     CommitStatus('tests/security', 'success', 'nothing found', ''),
@@ -150,11 +153,11 @@ def test_a_green_pr_that_is_not_current_still_lands(tmp_path) -> None:
 
     PLANTED CONTROL: a red head beside them stays.
     """
-    stale = (*GREEN, CommitStatus(PR_CURRENT_CONTEXT, 'failure', 'lacks integrate/main', ''))
+    stale = (*GREEN, CommitStatus(PR_CURRENT_CONTEXT, 'failure', 'lacks integrate/main', ''), REFUSED)
     host = _host(
         tmp_path,
         [Pull(7, 'integrate/main', HEAD, draft=False), Pull(8, 'integrate/main', 'b' * 40, draft=False)],
-        {HEAD: stale, 'c' * 40: GREEN, 'd' * 40: RED},
+        {HEAD: stale, 'c' * 40: (*GREEN, REFUSED), 'd' * 40: RED},
     )
     host.forge.pulls.append(Pull(9, 'integrate/main', 'c' * 40, draft=False))  # green, pr-current absent
     host.forge.pulls.append(Pull(10, 'integrate/main', 'd' * 40, draft=False))
@@ -218,7 +221,7 @@ def test_a_label_the_forge_cannot_read_is_a_skip_not_a_merge(tmp_path, capsys) -
 
 
 def _current(*statuses: CommitStatus) -> tuple[CommitStatus, ...]:
-    return (*statuses, CommitStatus(PR_CURRENT_CONTEXT, 'success', 'holds integrate/main', ''))
+    return (*statuses, CommitStatus(PR_CURRENT_CONTEXT, 'success', 'holds integrate/main', ''), REFUSED)
 
 
 def test_a_pending_test_part_is_not_merged(tmp_path) -> None:  # PLANTED CONTROL
@@ -251,3 +254,24 @@ def test_an_unproduced_hand_part_does_not_hold_a_green_base_back(tmp_path) -> No
     host.open(max_merges=5)
     host.server.tick()
     assert _merged(host) == [7]
+
+
+def test_a_green_pr_the_normal_path_has_not_judged_is_left_to_it(tmp_path) -> None:
+    """dev-lab#644: no merge-ready yet, a pending one, or one older than the parts: the merge tick decides.
+
+    PLANTED CONTROL: the same green head refused by a decision posted after its parts lands (``REFUSED``, id 9).
+    """
+    unjudged, pending, stale, refused = '2' * 40, '3' * 40, '4' * 40, '5' * 40
+    early = CommitStatus(MERGE_READY_CONTEXT, 'failure', 'waits on: its test parts', '', id=1)
+    later = tuple(CommitStatus(one.context, one.state, one.description, '', id=5) for one in GREEN)
+    by_head = {
+        unjudged: GREEN,
+        pending: (*GREEN, CommitStatus(MERGE_READY_CONTEXT, 'pending', 'waits on: tests/base', '', id=9)),
+        stale: (early, *later),
+        refused: (*GREEN, REFUSED),
+    }
+    pulls = [Pull(n, 'integrate/main', h, draft=False) for n, h in zip((7, 8, 9, 10), by_head, strict=True)]
+    host = _host(tmp_path, pulls, by_head)
+    host.open(max_merges=5)
+    host.server.tick()
+    assert _merged(host) == [10]
