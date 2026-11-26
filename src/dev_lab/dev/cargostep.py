@@ -84,18 +84,17 @@ def produce(root: Path, *, run: Callable[..., int] | None = None, cargo: str | N
     cargo part (USAGE); no cargo on the host is UNREACHABLE -- it says nothing about the code. Outside the
     producer ``forge serve`` spawned for the part it is refused, as verify's full suite is.
     """
-    import os  # noqa: PLC0415 -- the producer half is imported only by verify --part cargo
-
-    import lab_commons.launch as _door  # noqa: PLC0415
+    import lab_commons.launch as _door  # noqa: PLC0415 -- the producer half is imported only by verify --part cargo
     from lab_commons.hpc.shell import FULL  # noqa: PLC0415
     from lab_commons.hpc.testcells import upgraded  # noqa: PLC0415
     from lab_commons.log import emit  # noqa: PLC0415
 
+    from dev_lab.dev.harness import child_env  # noqa: PLC0415
     from dev_lab.dev.localpart import local_record, post_local  # noqa: PLC0415
     from dev_lab.dev.platformparts import part_context, record_directory  # noqa: PLC0415
     from dev_lab.dev.producer import Owner, ProducerExit, full_suite_refusal, unreachable  # noqa: PLC0415
 
-    if (refused := full_suite_refusal('verify', os.environ, part_context(PART))) is not None:
+    if (refused := full_suite_refusal('verify', child_env(), part_context(PART))) is not None:
         emit(refused, err=True)
         return ProducerExit.USAGE
     git = shutil.which('git') or 'git'
