@@ -32,9 +32,9 @@ from typing import Final, TextIO
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev._forgehosts_issue import is_private, public_siblings
 from dev_lab.dev.forge import NoCredential, Transport, forge_from_remote, forge_of_url, forge_transport
 from dev_lab.dev.forgeclient import client_for
-from dev_lab.dev.forgehosts import is_private, public_siblings
 from dev_lab.dev.githooks.runner import PUSH_URL_ENV
 
 __all__ = [

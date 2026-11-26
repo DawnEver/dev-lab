@@ -32,8 +32,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
+from dev_lab.dev._forgehosts_issue import HostsIssueLost, hosts_issue
 from dev_lab.dev.forgeclaim import forge_now
-from dev_lab.dev.forgehosts import HostsIssueLost, hosts_issue
 from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_list, marker
 
 if TYPE_CHECKING:

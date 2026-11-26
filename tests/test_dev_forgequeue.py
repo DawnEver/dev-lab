@@ -22,9 +22,10 @@ from lab_commons.hpc.shell import FULL
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import forgehosts, forgequeue, forgeschedule
+from dev_lab.dev._forgehosts_issue import HOSTS_TITLE
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeclaim import Claim
-from dev_lab.dev.forgehosts import HOSTS_TITLE, HostCard, card_owners, publish, read_cards
+from dev_lab.dev.forgehosts import HostCard, card_owners, publish, read_cards
 from dev_lab.dev.forgerequest import UndeclaredRequest
 from dev_lab.dev.platformparts import Part
 

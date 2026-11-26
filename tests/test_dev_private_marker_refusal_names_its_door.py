@@ -17,8 +17,8 @@ import pytest
 from _forge_fake import run_git
 
 from dev_lab.dev import privatemarkers, walls
+from dev_lab.dev._forgehosts_issue import public_siblings
 from dev_lab.dev.forgecli import issue_and_pr
-from dev_lab.dev.forgehosts import public_siblings
 
 _MARKERS = (re.compile('zorblaxhost', re.IGNORECASE),)
 
