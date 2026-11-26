@@ -67,9 +67,9 @@ from lab_commons.log import emit
 from dev_lab.dev import forgerunstate, hpcusage
 from dev_lab.dev._forgehosts_issue import (
     HostsIssueLost,
-    _open_hosts_issue,
     hosts_issue,
     is_private,
+    open_hosts_issue,
 )
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgeclaim import Work, forge_now, serving, this_machine, this_seat
@@ -213,7 +213,7 @@ def publish(client: Client, card: HostCard) -> str:
 
     On a public repository the card is :meth:`HostCard.redacted` and a card left under the raw name is deleted.
     """
-    number = hosts_issue(client) or _open_hosts_issue(client)  # an issue number is never 0
+    number = hosts_issue(client) or open_hosts_issue(client)  # an issue number is never 0
     if not is_private(client):
         _delete_card(client, number, card.host)
         card = card.redacted()

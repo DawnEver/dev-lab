@@ -91,7 +91,8 @@ def hosts_issue(client: Client) -> int | None:
     return found[0]['number'] if found else None
 
 
-def _open_hosts_issue(client: Client) -> int:
+def open_hosts_issue(client: Client) -> int:
+    """Open the hosts issue after a full listing found none; refuse a blind listing (:class:`HostsIssueLost`)."""
     _seen_all_open(client)
     body = f'{HOSTS_MARKER}\nOne comment per serving host, edited in place each tick {HOSTS_ORIGIN}.'
     client.issue_create(HOSTS_TITLE, body)
