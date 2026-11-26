@@ -41,6 +41,7 @@ from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev import _forgeproduce_box, forgeproduce, forgerounds, forgetick
+from dev_lab.dev._forgeschedule_declared import load_schedule
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeaffinity import DEFERRED, HELD
 from dev_lab.dev.forgeclaim import (
@@ -61,7 +62,7 @@ from dev_lab.dev.forgeclaim import (
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND, behind
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
-from dev_lab.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
+from dev_lab.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetick import tick
 from dev_lab.dev.forgewait import NEVER_FITS, Box

@@ -20,6 +20,7 @@ from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import escapes, forgerunstate, forgeship, hostalarm, metrics, retention
+from dev_lab.dev._forgeschedule_declared import load_schedule
 from dev_lab.dev.branchpolicy import prune_duty
 from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.drift import step as drift_step
@@ -40,7 +41,7 @@ from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgequeue import forge_queue, unadmitted
 from dev_lab.dev.forgereview import step as review_step
 from dev_lab.dev.forgescarce import red_alarms as scarce_red
-from dev_lab.dev.forgeschedule import load_schedule, starved_alarms
+from dev_lab.dev.forgeschedule import starved_alarms
 from dev_lab.dev.forgesecurity import step as security_step
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgetidy import load_hygiene

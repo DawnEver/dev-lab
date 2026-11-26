@@ -83,6 +83,7 @@ from lab_commons.config import config_path, section
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
+from dev_lab.dev._forgeschedule_declared import load_schedule
 from dev_lab.dev.artifacts import remote_problem
 from dev_lab.dev.forge import (
     NoCredential,
@@ -111,7 +112,7 @@ from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from dev_lab.dev.forgerequest import declared_request
 from dev_lab.dev.forgerequesthost import remind, request_authors
 from dev_lab.dev.forgescarce import unreached
-from dev_lab.dev.forgeschedule import candidates, load_schedule, repo_name
+from dev_lab.dev.forgeschedule import candidates, repo_name
 from dev_lab.dev.forgesettled import SettledHistories
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetake import ClaimPass

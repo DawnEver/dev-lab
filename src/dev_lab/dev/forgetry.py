@@ -30,6 +30,7 @@ from lab_commons.compute.admission import Admission
 from lab_commons.log import emit
 from lab_commons.resources import admits
 
+from dev_lab.dev._forgeschedule_declared import load_schedule
 from dev_lab.dev.forge import _GIT, NoCredential, Transport, UnreadableRemote, fetch_origin, forge_transport
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -37,7 +38,6 @@ from dev_lab.dev.forgehosts import HostCard, read_cards
 from dev_lab.dev.forgenotice import duration
 from dev_lab.dev.forgepublish import RequestRefused, publish
 from dev_lab.dev.forgerequest import TESTS, Declared, UndeclaredRequest, declared_request
-from dev_lab.dev.forgeschedule import load_schedule
 
 __all__ = ['NO_ROOM_EXIT', 'main', 'room']
 
