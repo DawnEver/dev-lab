@@ -94,8 +94,11 @@ def _door(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, list[t
 
 
 def _runner(calls: list[tuple[str, ...]]) -> Callable[..., SimpleNamespace]:
-    def run(argv: list[str], **_kwargs: object) -> SimpleNamespace:
+    def run(argv: list[str], **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
+        env = kwargs.get('env')
+        if isinstance(env, dict) and 'sync' in argv and env.get('UV_PROJECT_ENVIRONMENT'):
+            Path(env['UV_PROJECT_ENVIRONMENT']).mkdir(parents=True, exist_ok=True)  # what a real sync builds
         return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     return run
