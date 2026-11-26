@@ -50,6 +50,11 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 - **Why it is said.** the forge is a REMOTE service that nobody in this family restarts, and a single transient auth/DNS/connection failure on any of these verbs reads as "blocked" -- which is the report the retry wrapper exists to prevent. Measured 2026-08-21 on a `git fetch`: it failed auth once and succeeded on the retry, and was reported blocked in between. Widened 2026-10-19 to every verb `dev_lab.dev._netverb_argv.is_network_verb` names -- git's `-C`/`-c` spellings, `submodule update`, and uv's resolving verbs -- after a `uv sync` of a git dependency failed once on forge auth and a re-run passed.
 - **The exit.** Re-issue through the retry wrapper, which retries 3x and then REPORTS with a diagnosis: {remedy}
 
+## ENVIRONMENT-THROUGH-DEP
+
+- **Why it is refused.** `dev_lab.dev.dep` is the one writer of a checkout's environment: it selects the declared extras, builds a side-by-side prefix and publishes it, and runs `uv sync` through the network door itself. A bare `uv sync` -- raw, or behind `netverb --` -- builds a plain `.venv` with none of that. Measured 2026-11-26: such a sync built a checkout's environment and nothing refused it.
+- **The exit.** `{python} -m dev_lab.dev.dep --bootstrap <checkout>` for a new tree, or `{python} -m dev_lab.dev.dep --root <checkout> --sync [--extra X]` to resync one.
+
 ## TREE-HAS-A-LIVE-RUN
 
 - **Why it is refused.** a run executes its checkout's code and `.venv` for its whole life, so an edit, a merge, a checkout or an environment sync under it makes its result describe a tree that never existed. Measured 2026-10-19 in consumer-a: during a JMAG `deck run`, an agent edited a test, merged into the checkout and re-synced the venv the run executed from. The run is found WITHOUT its cooperation (`dev_lab.dev.liverun`, read off `lab_commons.census`): a process READS the tree when it is a Python interpreter working in it or an argument names a path in it, and the row binds only while one exists. `output/`, `.claude/` and `.venv/` are not the tree; a process executing from the venv locks the venv (`dep`), not the tree.

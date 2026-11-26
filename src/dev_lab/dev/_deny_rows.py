@@ -78,6 +78,7 @@ from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
 from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
 from dev_lab.dev._deny_subagent_heavy_row import HEAVY_IS_THE_MAIN_SESSIONS
 from dev_lab.dev._deny_subagent_row import MAIN_ONLY_DOOR, SUBAGENT_NO_PUSH
+from dev_lab.dev._deny_uvsync_row import ENVIRONMENT_THROUGH_DEP
 from dev_lab.dev._deny_worktree_row import (
     BASE_IS_EXPLICIT_ALLOW,
     BASE_IS_EXPLICIT_PATTERN,
@@ -319,6 +320,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'git fetch ~/repos/sibling main',
         ),
     },
+    ENVIRONMENT_THROUGH_DEP,
     {
         'id': 'RAW-PROCESS-KILL',
         'pattern': (
