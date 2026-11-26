@@ -56,6 +56,7 @@ ORIGINAL_ROWS = (
     '_original_rows_remote.py',
     '_original_rows_memory.py',
     '_original_rows_ir.py',
+    '_original_rows_guards.py',
 )
 _ORIGINALS_NAME = 'ORIGINAL_MODULES'
 

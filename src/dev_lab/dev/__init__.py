@@ -316,6 +316,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   against OSV. Not re-exported below.
 * :mod:`dev_lab.dev.ephemeralrefs` -- TRACKED-CITES-NO-EPHEMERAL: no tracked file cites what git
   ignores, nothing untracked under a stray root (``scratch/``), and no machine-local path. Not re-exported below.
+* :mod:`dev_lab.dev.evidencerefs` -- EVIDENCE-OUTLIVES-OUTPUT: no tracked Python literal or TOML/YAML/JSON
+  value records output-tree content as its evidence. Not re-exported below.
 * :mod:`dev_lab.dev.devdocs` -- the family's MECHANISM DOCS as DATA: one row per page under this
   repo's ``docs-src/dev/``, with the pointer table a consuming repo RENDERS instead of copying. The
   prose itself is deliberately NOT here -- ``tests/test_arch_rules_pages.py`` refuses markdown under
