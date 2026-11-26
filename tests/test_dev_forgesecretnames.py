@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
+
 from dev_lab.dev import forgesecretnames, forgesecrets
+from dev_lab.dev.family.forgefacts import ClientFacts
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 class _Client:
@@ -89,3 +90,23 @@ def test_list_needs_no_task_and_reads_the_named_checkout(tmp_path: Path, capsys:
     assert forgesecrets.main(['list', '--path', str(tmp_path)], client=client) == 0
     assert seen == [tmp_path]
     assert capsys.readouterr().out == ''
+
+
+def test_one_read_is_the_one_get_of_the_repo_s_secret_names() -> None:
+    client = _Client(_TEA, {_TEA_SECRETS: {'secrets': [{'name': 'B'}, {'name': 'A'}, {'name': ''}]}})
+    assert forgesecretnames.read(client, org=False) == ('A', 'B')
+    assert client.asked == [('GET', _TEA_SECRETS)]
+
+
+def test_a_refused_read_raises_and_never_reads_as_holds_none() -> None:
+    with pytest.raises(ForgeCallFailed):
+        forgesecretnames.read(_Client(_TEA, {}), org=False)
+
+
+def test_a_member_s_facts_read_their_secret_names_through_the_one_reader() -> None:
+    held = ClientFacts(_Client(_TEA, {_TEA_SECRETS: [{'name': 'R'}]}))  # type: ignore[arg-type]
+    assert held._secrets() == frozenset({'R'})
+    assert held.unread == []
+    refused = ClientFacts(_Client(_TEA, {}))  # type: ignore[arg-type]
+    assert refused._secrets() == frozenset()
+    assert refused.unread[0].startswith('secrets (')  # the planted control: refused is named, never "holds none"

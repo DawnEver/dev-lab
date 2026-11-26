@@ -7,7 +7,9 @@ is ever printed, one per line, sorted -- any other field an answer carries is dr
 refuses is refused here (exit 2), never read as "holds none": a list that was not read says nothing.
 
 The question it answers: does a member hold a secret it must not (the review bundle is withheld from every
-non-GitHub forge, :func:`dev_lab.dev.forgesecrets.withheld`).
+non-GitHub forge, :func:`dev_lab.dev.forgesecrets.withheld`). It is the ONE parser and the ONE read of secret
+names: :func:`read` is the GET and the parse, and the family watch's facts (:mod:`dev_lab.dev.family.forgefacts`) read
+through it too.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 if TYPE_CHECKING:
     from dev_lab.dev.forge import Forge
 
-__all__ = ['Reader', 'listed', 'names']
+__all__ = ['Reader', 'listed', 'names', 'read']
 
 
 class Reader(Protocol):
@@ -52,16 +54,20 @@ def _collection(client: Reader, *, org: bool) -> str:
     return f'{root}/orgs/{client.forge.owner}/actions/secrets'
 
 
+def read(client: Reader, *, org: bool) -> tuple[str, ...]:
+    """The one GET of the repo's (or its org's) secret names, parsed; a refusal raises :class:`ForgeCallFailed`."""
+    return names(client.call('GET', _collection(client, org=org)))
+
+
 def listed(client: Reader, *, org: bool) -> int:
     """Print the names, one per line: exit 0, or 2 when the forge refused the read."""
-    path = _collection(client, org=org)
     try:
-        answer = client.call('GET', path)
+        found = read(client, org=org)
     except ForgeCallFailed as refused:
         whose = f'the {client.forge.owner} org' if org else client.forge.identity
         emit(f'[secrets] refused: the secret names of {whose} were not read: {str(refused).splitlines()[0]}',
              err=True)  # fmt: skip
         return 2
-    for name in names(answer):
+    for name in found:
         emit(name)
     return 0
