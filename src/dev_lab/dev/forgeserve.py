@@ -132,6 +132,7 @@ from dev_lab.dev.forgealarm import (
     AUTH,
     IDLE,
     RUN,
+    SEAT,
     UNTAGGED,
     Alarm,
     sound,
@@ -227,7 +228,12 @@ def serve(
         alarm(Alarm(RUN, repo, 'a live cluster run this tool cannot read', why, about=why.split(maxsplit=1)[0]))
 
     runs = list(forgerunstate.live(repo, refused=refused)) if seat is not None else []
-    table, capable, priority, serves, verify, role = declaration(repo, seat, table)  # refused: a named release
+
+    def withheld(why: str) -> None:  # one vendor's undeclared seat count withholds that tool; the rest serves
+        tool = why.split(':', 1)[0]
+        alarm(Alarm(SEAT, repo, f"{tool} withheld from this host's supply", why, about=tool))
+
+    table, capable, priority, serves, verify, role = declaration(repo, seat, table, withhold=withheld)  # refused: named
     tools = {name: one.row() for name, one in inventory(capable, present(root)).items()}
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     if slurm is not None:
