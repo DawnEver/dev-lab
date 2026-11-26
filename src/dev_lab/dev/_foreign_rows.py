@@ -171,7 +171,7 @@ SYNTHETIC: Final[dict[str, str]] = {
         'CLAUDE_ENTRIES, the closed `.claude/` inventory (`hooks/deny-commands.js` and its siblings): the '
         'family-managed names every adopting checkout holds; they name no file of a particular sibling.'
     ),
-    'src/dev_lab/dev/famfiles.py::path': (
+    'src/dev_lab/dev/_famfiles_registry.py::path': (
         'the PROJECT_FILES list names family-managed files (`.claude/settings.json`, the hook files) that '
         'every adopting repo tracks and this one does not yet -- the list is the family`s, not a consumer`s.'
     ),
