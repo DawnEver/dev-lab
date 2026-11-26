@@ -16,6 +16,7 @@ from _sh_native import native
 from _venv_fake import linked_env
 
 from dev_lab.dev import hook_install, venvpointer
+from dev_lab.dev._hook_shim import INSTALL_COMMAND, SHIM_MARKER, shim
 from dev_lab.dev.famtests.hookinstall import (
     assert_declared_hooks_are_installed,
     assert_hooks_dir_is_the_one_git_consults,
@@ -24,11 +25,9 @@ from dev_lab.dev.famtests.hookinstall import (
 from dev_lab.dev.hook_install import (
     ABSENT,
     FOREIGN,
-    INSTALL_COMMAND,
     INSTALLED,
     PROTECTED,
     RETIRED_HOOKS_DIR,
-    SHIM_MARKER,
     STALE,
     UNPROTECTED,
     HookInstallError,
@@ -36,7 +35,6 @@ from dev_lab.dev.hook_install import (
     hooks_dir,
     install,
     report_installation,
-    shim,
 )
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
 from dev_lab.dev.venvpointer import shell_function

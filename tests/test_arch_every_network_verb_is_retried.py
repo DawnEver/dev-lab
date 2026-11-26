@@ -3,7 +3,7 @@
 INCIDENTS 2026-10-19 (consumer-a): ``dep --sync`` ran ``uv sync`` raw and one forge auth blip failed it; a
 ``git ls-remote`` reach probe, a host refresh's ``git fetch`` and a workstation's ``git clone`` ran raw too.
 The primitive is :func:`dev_lab.dev.netverb.run_network_verb`; which argv is a network verb is
-:func:`dev_lab.dev.netverb.is_network_verb`, read here rather than restated.
+:func:`dev_lab.dev._netverb_argv.is_network_verb`, read here rather than restated.
 
 THE SCAN. Every list or tuple literal in ``src`` whose program is ``git``/``uv`` (a constant, or a name
 spelling one: ``_GIT``, ``programs.git``, ``*git``) and whose constant words make a network verb, must be
@@ -24,7 +24,7 @@ from typing import Final
 import pytest
 from _arch_corpus import assert_floor, parse, rel, source_modules
 
-from dev_lab.dev.netverb import is_network_verb
+from dev_lab.dev._netverb_argv import is_network_verb
 
 #: Callables that run a network argv through the retry door, and the argv's positional index in each.
 ROUTERS: Final = {'run_network_verb': 0, 'network': 2}

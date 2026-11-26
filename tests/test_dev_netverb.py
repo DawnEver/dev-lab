@@ -28,19 +28,17 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev._netverb_argv import NotANetworkVerb, is_network_verb, spelled
 from dev_lab.dev._netverb_rows import ROWS
 from dev_lab.dev.netverb import (
     DEFAULT_ATTEMPTS,
     Attempt,
     Diagnosis,
     Disposition,
-    NotANetworkVerb,
     classify,
-    is_network_verb,
     is_retryable,
     main,
     run_network_verb,
-    spelled,
 )
 
 #: FLOORS. The table is the thing this module's judgment lives in, so a scan of it that reached

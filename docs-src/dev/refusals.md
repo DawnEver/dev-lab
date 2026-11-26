@@ -47,7 +47,7 @@ When a command targets another repo, the engine adds one header line naming that
 
 HINT: a bare network verb loses only the retry; force, delete and no-verify pushes are refusals of their own.
 
-- **Why it is said.** the forge is a REMOTE service that nobody in this family restarts, and a single transient auth/DNS/connection failure on any of these verbs reads as "blocked" -- which is the report the retry wrapper exists to prevent. Measured 2026-08-21 on a `git fetch`: it failed auth once and succeeded on the retry, and was reported blocked in between. Widened 2026-10-19 to every verb `dev_lab.dev.netverb.is_network_verb` names -- git's `-C`/`-c` spellings, `submodule update`, and uv's resolving verbs -- after a `uv sync` of a git dependency failed once on forge auth and a re-run passed.
+- **Why it is said.** the forge is a REMOTE service that nobody in this family restarts, and a single transient auth/DNS/connection failure on any of these verbs reads as "blocked" -- which is the report the retry wrapper exists to prevent. Measured 2026-08-21 on a `git fetch`: it failed auth once and succeeded on the retry, and was reported blocked in between. Widened 2026-10-19 to every verb `dev_lab.dev._netverb_argv.is_network_verb` names -- git's `-C`/`-c` spellings, `submodule update`, and uv's resolving verbs -- after a `uv sync` of a git dependency failed once on forge auth and a re-run passed.
 - **The exit.** Re-issue through the retry wrapper, which retries 3x and then REPORTS with a diagnosis: {remedy}
 
 ## TREE-HAS-A-LIVE-RUN

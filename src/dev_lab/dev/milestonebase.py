@@ -18,7 +18,7 @@ version tag is added only on promotion to the trunk or at the user's request. Tw
   CREATING a ``v*`` tag on origin is refused unless :data:`APPROVED_ENV` holds the user's own words -- the
   ``--approved "<words>"`` pattern of ``branchset --discard``, through the environment because git passes a hook
   no flags. The hook cannot tell a tag ``push.followTags`` carried from one the push named, so the refusal names
-  both exits, and :func:`dev_lab.dev.netverb.spelled` pushes with ``--no-follow-tags``. A dev tag not ending in
+  both exits, and :func:`dev_lab.dev._netverb_argv.spelled` pushes with ``--no-follow-tags``. A dev tag not ending in
   ``.dev0`` is refused even approved: hatch-vcs chooses the ``.devN`` distance itself and refuses a
   custom one, so a milestone is ``vX.Y.Z.dev0`` and the next bumps the patch or minor. A human
   push and an existing remote tag are not judged.

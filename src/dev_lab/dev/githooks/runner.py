@@ -69,7 +69,7 @@ __all__ = [
 #: How many characters of path arguments one invocation carries -- under Windows' 32k command line.
 _ARG_BUDGET: Final = 24_000
 
-#: What the shim (:func:`dev_lab.dev.hook_install.shim`) hands the runner: the FIRST candidate whose import probe
+#: What the shim (:func:`dev_lab.dev._hook_shim.shim`) hands the runner: the FIRST candidate whose import probe
 #: failed, ``<python>: <its last stderr line>`` -- the real ImportError (#825), so a refusal under a borrowed
 #: interpreter says why the checkout's own venv was passed over instead of guessing "missing or half-built".
 IMPORT_ERROR_ENV: Final = 'DEV_LAB_HOOK_IMPORT_ERROR'
