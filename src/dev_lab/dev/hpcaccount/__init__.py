@@ -7,7 +7,8 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   ``forge serve`` host in one run; its data is :mod:`~dev_lab.dev.hpcaccount.spec`, its account checks
   :mod:`~dev_lab.dev.hpcaccount.account` and :mod:`~dev_lab.dev.hpcaccount.checks`, its steps
   :mod:`~dev_lab.dev.hpcaccount.steps`, its host check :mod:`~dev_lab.dev.hpcaccount.deployhost`, its declaration
-  :mod:`~dev_lab.dev.hpcaccount.declaration`.
+  :mod:`~dev_lab.dev.hpcaccount.declaration`, its FEMM 5 build where ``[capabilities.femm]`` is declared
+  :mod:`~dev_lab.dev.hpcaccount.femm`.
 * ``tick <repo>... [--lock <path> --wall-minutes <m>]`` (:mod:`~dev_lab.dev.hpcaccount.tick`) is one cron tick: the
   host refreshes the kit (this package's checkout) and the repo, then the kit's ``forge serve`` runs in the repo's
   checkout -- under the lock and within the wall the cron line names (:mod:`~dev_lab.dev.hpcaccount.tickwall`).

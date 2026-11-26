@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
 import urllib.error
 import zipfile
 from collections.abc import Callable
@@ -136,3 +137,22 @@ def test_an_http_refusal_names_its_status_and_its_door(tmp_path: Path) -> None:
     assert 'HTTP 403' in text
     assert 'python -m dev_lab.dev.toolrelease install rclone' in text
     assert not (tmp_path / 'x.zip').exists()
+
+
+def _source_pin_problems(pin: toolrelease.SourceRelease) -> list[str]:
+    """What makes *pin* not a pin: a commit that is not a full sha, a tag not naming its version, a non-https remote."""
+    found = []
+    if not re.fullmatch(r'[0-9a-f]{40}', pin.commit):
+        found.append(f'commit {pin.commit!r} is not a full sha')
+    if pin.version not in pin.tag:
+        found.append(f'tag {pin.tag!r} does not name version {pin.version!r}')
+    if not pin.url.startswith('https://'):
+        found.append(f'url {pin.url!r} is not https')
+    return found
+
+
+def test_the_femm_source_pin_is_one_tagged_release_at_a_full_commit() -> None:
+    assert toolrelease.FEMM_QT.name == 'femm', 'the capability it provides: [capabilities.femm]'
+    assert _source_pin_problems(toolrelease.FEMM_QT) == []
+    moved = replace(toolrelease.FEMM_QT, tag='v5.0.20261021', commit='31ee4bf6')
+    assert len(_source_pin_problems(moved)) == 2, 'PLANTED CONTROL: a short commit and a foreign tag are both caught'
