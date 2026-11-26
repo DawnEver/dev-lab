@@ -119,6 +119,12 @@ class Diagnosis(StrEnum):
     FILE_HELD = 'file-held'
     #: ``uv self update`` refused a uv no standalone installer put there (pip, a package manager).
     SELF_UPDATE_REFUSED = 'self-update-refused'
+    #: No interpreter fits the project's ``requires-python``: the remedy names the requirement and how to find one.
+    PYTHON_UNFIT = 'python-unfit'
+    #: The project has no ``uv.lock``: a frozen sync has nothing to build.
+    LOCK_ABSENT = 'lock-absent'
+    #: A git hook could not start (a module its interpreter lacks): only reinstalling the hooks changes it.
+    HOOK_UNRUNNABLE = 'hook-unrunnable'
     STOPPED_BY_CALLER = 'stopped-by-caller'
 
 
@@ -144,6 +150,10 @@ _RETRYABLE: Final[frozenset[str]] = frozenset(name for name, retryable, _ in ROW
     Diagnosis.TIMED_OUT.value,
     Diagnosis.UNCLASSIFIED.value,
 }
+
+
+#: The requirement uv names when no interpreter fits: ``... Python requirement: `>=3.13``` or ``for Python >=3.13``.
+_REQUIRES: Final = re.compile(r'(?i)python(?: requirement:)? `?(?P<spec>[<>=!~][^`\s]*)')
 
 
 def is_retryable(diagnosis: Diagnosis) -> bool:
@@ -258,6 +268,8 @@ class Report:
         if self.disposition is Disposition.REFUSED:
             said = self._hook_says() if self.diagnosis is Diagnosis.HOOK_REFUSED else ''
             known = REMEDIES.get(self.diagnosis.value, 'read the output and fix what was refused')
+            if self.diagnosis is Diagnosis.PYTHON_UNFIT and (wanted := _REQUIRES.search(self.attempts[-1].output)):
+                known = known.replace('<requires-python>', wanted['spec'])
             return (
                 f'{verb}: REFUSED on attempt {self.attempt_count} with diagnosis '
                 f'{self.diagnosis.value} -- retrying cannot change this answer; '

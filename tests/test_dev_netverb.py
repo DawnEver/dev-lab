@@ -596,3 +596,49 @@ def test_uv_global_options_with_a_value_do_not_hide_the_verb() -> None:
     assert is_network_verb(['uv', '--directory', 'x', 'sync'])
     assert is_network_verb(['uv', '--project', 'x', 'lock'])
     assert not is_network_verb(['uv', '--directory', 'x', 'pip', 'list'])
+
+
+#: What each of today's walls printed, the uv and git shapes they arrive in (2026-11-26).
+_UNFIT = (
+    'error: The requested interpreter resolved to Python 3.12.12, which is incompatible with the '
+    "project's Python requirement: `>=3.13`"
+)
+_NO_LOCK = 'error: Unable to find lockfile at `uv.lock`, but `--frozen` was provided.'
+_NO_PRE_COMMIT = (
+    '/usr/bin/python3: No module named pre_commit\n'
+    "error: failed to push some refs to 'https://forge.example/o/r.git'\nfatal: unable to access 'x'\n"
+)
+
+
+@pytest.mark.parametrize(
+    ('output', 'diagnosis'),
+    [
+        (_UNFIT, Diagnosis.PYTHON_UNFIT),
+        ('error: No interpreter found for Python >=3.13 in managed installations', Diagnosis.PYTHON_UNFIT),
+        (_NO_LOCK, Diagnosis.LOCK_ABSENT),
+        (_NO_PRE_COMMIT, Diagnosis.HOOK_UNRUNNABLE),
+    ],
+)
+def test_todays_walls_are_permanent_never_transient(output: str, diagnosis: Diagnosis) -> None:
+    """A misfit Python, a missing lock and an unrunnable hook were each retried 3/3 as transient; none can clear."""
+    assert classify(output) is diagnosis
+    assert not is_retryable(diagnosis)
+
+
+def test_a_misfit_python_is_refused_naming_the_requirement_to_find() -> None:
+    """The remedy names the requirement uv printed and the command that names a fitting interpreter."""
+    report = run_network_verb(
+        [sys.executable, '-c', f'import sys; sys.stderr.write({_UNFIT!r}); sys.exit(2)'],
+        attempts=3,
+        backoff_s=0.0,
+        sleep=lambda _s: None,
+    )
+    assert report.disposition is Disposition.REFUSED
+    assert report.attempt_count == 1
+    assert 'uv python find ">=3.13"' in report.remedy
+    assert 'dev_lab.dev.dep --bootstrap' in report.remedy
+
+
+def test_a_planted_unrelated_missing_module_stays_unclassified() -> None:
+    """PLANTED CONTROL: only the hook framework's module is the hook row; another missing module is unmeasured."""
+    assert classify('No module named numpy') is Diagnosis.UNCLASSIFIED
