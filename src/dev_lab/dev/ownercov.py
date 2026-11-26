@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING, Any, Final
 import tomlkit
 from lab_commons.log import emit
 
-from dev_lab.dev import covreports, deptable, ownerdag, rustdeps
+from dev_lab.dev import _ownerdag_tree, covreports, deptable, rustdeps
 from dev_lab.dev._ownercov_policy import BARS, GRID, ROWS, TABLE, WHERE, Policy, Refused, policy, shown
 from dev_lab.dev.covreports import Counts, Measurement, ReportRefused
 from dev_lab.dev.deptable import Declared, DependenciesError
@@ -84,7 +84,7 @@ def _owners(root: Path, decl: Declared, files: Iterable[str], language: str) -> 
     if language == 'rust':
         tree = rustdeps.crates(root, files)
         return {name: crate.directory for name, crate in tree.items()}
-    python = ownerdag.python_tree(root)
+    python = _ownerdag_tree.python_tree(root)
     if python is None:
         return '[python.owners] is declared, but pyproject.toml [project].name names no package at src/<name>'
     return {owner: f'{python.directory}/{owner}' for owner in decl.owners}
