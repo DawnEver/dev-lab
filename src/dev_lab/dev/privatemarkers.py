@@ -11,8 +11,13 @@ Two layers:
   Telegram supergroup ids, and an ``OneDrive - <Org>`` folder name.
 * An optional MACHINE-LOCAL denylist at ``~/.claude/private-markers`` -- one case-insensitive
   literal or ``/regex/`` per line, ``#`` comments. It names the private values themselves, so it is
-  never committed; absent, the layer is silent. A denylist hit is reported by KIND only, never by
-  value, so a log of the check cannot leak what it guards.
+  never committed; absent, the layer is silent. A hit names the token and the entry it matched
+  (``private marker /<entry>/``): the markers are names, not secrets, and a refusal that hides its
+  token leaves the agent guessing which word to drop (every-wall-teaches).
+
+A name the target owner publishes (:func:`public_names`) is masked out of every TEXT scan first -- a PR
+body and a commit message alike -- so a public sibling repo named in the denylist still refuses everywhere
+it is not published, and a repo the owner keeps private stays a marker.
 
 The TEXT scans (a PR title or body, a pushed commit message) guard PUBLIC repositories only: a private repo
 is where private names belong. Visibility is the forge's ``private`` flag (:func:`repo_is_private`); when it
@@ -65,6 +70,9 @@ GENERIC: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ('posix home path', re.compile(r'(?<![\w.])/(?:Users|home)/(?![<$%{])[A-Za-z0-9._-]+')),
     ('telegram chat id', re.compile(r'-100\d{9,}')),
     ('cloud folder', re.compile(r'OneDrive[ ]-[ ](?!<)\S')),
+    # The commit-msg stamp (dev_lab.dev.forgeorigin) carries a raw host name in a private repo; a one-letter name
+    # is too short for any denylist entry to match safely, so the trailer shape itself is the marker.
+    ('one-letter host trailer', re.compile(r'^Forge-Host:[ \t]*[A-Za-z][ \t]*$', re.IGNORECASE)),
 )
 
 _MAIL = re.compile(r'(?<![\\\w.%+-])[A-Za-z0-9][A-Za-z0-9._%+-]*@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})\b')
@@ -115,7 +123,7 @@ def _mask(line: str, public: tuple[str, ...]) -> str:
 def scan_text(
     text: str, markers: tuple[re.Pattern[str], ...] = (), *, path: str = '', public: tuple[str, ...] = ()
 ) -> list[tuple[int, str, str]]:
-    """Every ``(line, kind, match)`` in *text*. A private-denylist hit reports its kind only.
+    """Every ``(line, kind, match)`` in *text*; a denylist hit's kind names its entry, ``private marker /<entry>/``.
 
     *public* names what the calling repo publishes ON PURPOSE -- its own name, a public sibling, a
     deploy user named after the repo. Each occurrence is masked out of a line before it is scanned:
@@ -130,10 +138,10 @@ def scan_text(
         for kind, pattern in GENERIC:
             hits.extend((number, kind, m.group(0)) for m in pattern.finditer(line))
         hits.extend((number, 'email', m.group(0)) for m in _MAIL.finditer(line) if not _ALLOWED_MAIL.search(m.group(1)))
-        # The matched private value is never echoed: a log of the check must not leak what it guards.
         if authorship is not None and authorship.match(line):
             continue
-        hits.extend((number, 'private marker', '<redacted>') for p in markers if p.search(line))
+        for p in markers:
+            hits.extend((number, f'private marker /{p.pattern}/', m.group(0)) for m in p.finditer(line))
     return hits
 
 
@@ -272,12 +280,26 @@ def text_refusal(
     hits = scan_text(text, load_markers(MARKERS_FILE) if markers is None else markers, public=public)
     if not hits:
         return None
-    named = ', '.join(f'line {n}: {kind}' for n, kind, _ in hits)
+    named = ', '.join(_named(n, kind, match) for n, kind, match in hits)
     return (
         f'PRIVATE-MARKERS: the {what} names a private value ({named}) and the target repo is not known private\n'
         'Door: drop or neutralize each named marker (a placeholder for each name), then re-run the same command\n'
         'details: docs-src/dev/refusals.md#private-markers (dev-lab)'
     )
+
+
+def _named(number: int, kind: str, match: str) -> str:
+    """One hit as a refusal names it: the line, the token and the declared set (a denylist entry or a generic kind)."""
+    return f"line {number}: '{match}' ({kind})"
+
+
+def _message_hits(
+    root: Path, message: str, markers: tuple[re.Pattern[str], ...], *, url: str = ''
+) -> list[tuple[int, str, str]]:
+    """*message*'s hits with the owner's public names masked; the forge is asked only when a raw scan hits."""
+    if not scan_text(message, markers):
+        return []
+    return scan_text(message, markers, public=public_names(root, url=url))
 
 
 #: The door for a marker in an ALREADY-MADE message: amend is refused (GIT-COMMIT-AMEND), so the unpushed commits of
@@ -292,7 +314,7 @@ def _judge_message(root: Path, message_file: Path, markers: tuple[re.Pattern[str
     """The commit-msg row: the same scan as the pre-push message check, while the reword is still free."""
     lines = message_file.read_text(encoding='utf-8').splitlines(keepends=True)
     message = ''.join(line for line in lines if not line.startswith('#'))
-    hits = scan_text(message, markers)
+    hits = _message_hits(root, message, markers)
     if not hits:
         return 0
     private, why = repo_is_private(root)
@@ -301,8 +323,8 @@ def _judge_message(root: Path, message_file: Path, markers: tuple[re.Pattern[str
     if why:
         emit(f'[private-markers] scanning this message: {why}', err=True)
     emit('PRIVATE-MARKERS: the commit message names a private value; nothing is committed yet:', err=True)
-    for n, kind, _ in hits:
-        emit(f'message line {n}: {kind}', err=True)
+    for hit in hits:
+        emit(f'message {_named(*hit)}', err=True)
     emit('Door: neutralize each named marker and commit again (free before the commit exists)', err=True)
     return 1
 
@@ -327,24 +349,25 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     if args.commit_msg_file is not None:
         return _judge_message(args.root, args.commit_msg_file, markers)
     if args.push:
-        private, why = repo_is_private(args.root, url=args.url or os.environ.get(PUSH_URL_ENV, ''))
+        url = args.url or os.environ.get(PUSH_URL_ENV, '')
+        private, why = repo_is_private(args.root, url=url)
         if private:
             return 0
         if why:
             emit(f'[private-markers] scanning this push: {why}', err=True)
         said = [
-            f'{sha[:12]} message line {n}: {kind}'
+            f'{sha[:12]} message {_named(*hit)}'
             for sha, message in pushed_messages(args.root, (sys.stdin if stdin is None else stdin).read())
-            for n, kind, _ in scan_text(message, markers)
+            for hit in _message_hits(args.root, message, markers, url=url)
         ]
         if said:
             emit('PRIVATE-MARKERS: a pushed commit message names a private value; reword it before pushing:', err=True)
             emit('\n'.join(said), err=True)
         return 1 if said else 0
     found = [
-        f'{rel}:{number}: {kind}'
+        f"{rel}:{number}: '{match}' ({kind})"
         for rel, number, text in staged_added_lines(args.root, args.paths)
-        for _, kind, _ in scan_text(text, markers, path=rel)
+        for _, kind, match in scan_text(text, markers, path=rel)
     ]
     if found:
         emit('PRIVATE-MARKERS: a staged line names a private value; neutralize it before committing:', err=True)

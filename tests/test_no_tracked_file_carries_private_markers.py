@@ -56,8 +56,8 @@ def test_the_private_denylist_reads_literals_regexes_and_comments(tmp_path: Path
     markers.write_text('# a comment\n\nSecretHost\n/proj-\\d+/\n', encoding='utf-8')
     compiled = load_markers(markers)
     assert len(compiled) == 2
-    assert scan_text('on secrethost today', compiled) == [(1, 'private marker', '<redacted>')]
-    assert scan_text('see PROJ-42', compiled) == [(1, 'private marker', '<redacted>')]
+    assert scan_text('on secrethost today', compiled) == [(1, 'private marker /SecretHost/', 'secrethost')]
+    assert scan_text('see PROJ-42', compiled) == [(1, r'private marker /proj-\d+/', 'PROJ-42')]
     assert scan_text('a comment, proj-x', compiled) == []
 
 
@@ -98,8 +98,8 @@ def test_a_name_the_repo_publishes_on_purpose_is_masked_and_nothing_else_is(tmp_
     compiled = load_markers(markers)
     public = ('some-repo', 'other_repo')
     assert scan_text('some-repo and OTHER_REPO', compiled, public=public) == []
-    assert scan_text('some-repo by some person', compiled, public=public) == [(1, 'private marker', '<redacted>')]
-    assert scan_text('other-repo', compiled, public=public) == [(1, 'private marker', '<redacted>')]
+    assert scan_text('some-repo by some person', compiled, public=public) == [(1, 'private marker /some/', 'some')]
+    assert scan_text('other-repo', compiled, public=public) == [(1, 'private marker /other[-_]repo/', 'other-repo')]
 
 
 def test_a_home_named_after_a_public_name_is_a_service_account_and_not_a_person() -> None:
@@ -133,15 +133,15 @@ def _staged_repo(root: Path, committed: str, staged: str) -> list[str]:
     return ['--root', str(root), '--markers', str(denylist), 'note.md']
 
 
-def test_the_pre_commit_entry_refuses_an_added_marker_without_echoing_it(
+def test_the_pre_commit_entry_refuses_an_added_marker_and_names_it(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """PRIVATE-MARKERS at commit time: the forge has no denylist, so only this machine can refuse the commit."""
     argv = _staged_repo(tmp_path, 'clean\n', 'clean\nreached secrethost today\n')
     assert privatemarkers.main(argv) == 1
     out = capsys.readouterr()
-    assert 'note.md:2: private marker' in out.err
-    assert 'secrethost' not in (out.err + out.out).lower()
+    assert "note.md:2: 'secrethost' (private marker /SecretHost/)" in out.err
+    assert "'secrethost'" in (out.err + out.out), 'the refusal names the token'
 
 
 def test_the_pre_commit_entry_judges_only_the_added_lines(tmp_path: Path) -> None:
@@ -185,7 +185,7 @@ def test_the_pre_push_entry_refuses_a_pushed_commit_message_with_a_marker(
     assert privatemarkers.main(argv, stdin=lines) == (1 if refused else 0)
     out = capsys.readouterr()
     assert ('message' in out.err) is refused
-    assert 'secrethost' not in (out.err + out.out).lower()
+    assert ("'secrethost'" in out.err) is refused, 'a refusal names the token'
 
 
 def test_a_new_branch_push_judges_only_the_commits_no_remote_holds(tmp_path: Path) -> None:
@@ -224,7 +224,7 @@ def test_a_pr_body_with_a_marker_is_refused_by_the_create_door(
     assert issue_and_pr(argv, cwd=tmp_path, env={}) == 1
     err = capsys.readouterr().err
     assert 'PRIVATE-MARKERS' in err
-    assert 'secrethost' not in err.lower()
+    assert "'secrethost'" in err, 'the refusal names the token'
     assert privatemarkers.text_refusal('a clean body', 'PR body') is None, 'PLANTED CONTROL'
 
 
@@ -381,4 +381,4 @@ def test_every_forge_text_write_refuses_a_marker_for_a_public_target_before_any_
     err = capsys.readouterr().err
     assert ('PRIVATE-MARKERS' in err) is refused
     assert ('refusals.md#private-markers' in err) is refused
-    assert 'secrethost' not in err.lower()
+    assert ("'secrethost'" in err) is refused, 'a refusal names the token'
