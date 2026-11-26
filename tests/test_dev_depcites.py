@@ -60,8 +60,8 @@ def test_a_cited_package_crate_or_std_path_without_a_row_is_refused(tmp_path: Pa
             '[python.packages] row grants'
         ),
         (
-            'dependencies.toml [rust.external] numerics cites faer in its reason, which no [rust.external] row or '
-            'workspace crate grants'
+            'dependencies.toml [rust.external] numerics cites faer in its reason, which no [rust.external] or '
+            'workspace crate row grants'
         ),
         'dependencies.toml [rust.std] std::env cites std::fs in its reason, which no [rust.std] row grants',
     ]
@@ -75,6 +75,6 @@ def test_a_cited_workspace_crate_is_granted_by_being_a_crate(tmp_path: Path) -> 
     assert depcites.problems(decl) == [
         (
             'dependencies.toml [rust.external] numerics cites runtime_kernel in its reason, which no '
-            '[rust.external] row or workspace crate grants'
+            '[rust.external] or workspace crate row grants'
         )
     ]

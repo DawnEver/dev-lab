@@ -74,7 +74,7 @@ def _rust(decl: Declared, name: str, crates: frozenset[str]) -> str | None:
     if not _CRATE.fullmatch(name):
         return None
     known = {k.replace('-', '_') for k in (*decl.external, *crates)}
-    return None if name.replace('-', '_') in known else '[rust.external] row or workspace crate'
+    return None if name.replace('-', '_') in known else '[rust.external] or workspace crate'
 
 
 def problems(decl: Declared, crates: Iterable[str] = ()) -> list[str]:
