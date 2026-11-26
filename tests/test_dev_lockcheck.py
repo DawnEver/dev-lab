@@ -454,7 +454,7 @@ def test_the_uv_pin_never_falls_below_the_first_freshening() -> None:
 
 @pytest.mark.parametrize('locked', [False, True])
 def test_a_relock_tree_a_killed_run_left_registered_is_rebuilt(tmp_path: Path, *, locked: bool) -> None:
-    """A run killed inside the tree leaves its registration (2026-11-09, a cluster account): the next add must not fail on it."""
+    """A run killed inside the tree leaves its registration (2026-11-09, an account): next add must not fail on it."""
     repo = tmp_path / 'repo'
     repo.mkdir()
     _git(repo, 'init', '-q', '-b', 'main')

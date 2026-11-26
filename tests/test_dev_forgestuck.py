@@ -189,7 +189,7 @@ def test_a_home_relative_run_dir_keeps_its_home_and_quotes_the_rest() -> None:
 def test_a_root_relative_run_dir_keeps_its_root_and_quotes_the_rest() -> None:
     """A run dir under the declared root: quoted whole it reached the shell as ``'"$LAB_ROOT"/runs/...'``.
 
-    Live 2026-11-25: ezxmw9's run of a31807ea2807 could not advance for days -- ``cat: '"$LAB_ROOT"/runs/<sha>/tree/
+    Live 2026-11-25: an account's run of a31807ea2807 could not advance for days -- ``cat: '"$LAB_ROOT"/runs/<sha>/tree/
     .lab-hpc/run-.../manifest.json': No such file or directory`` -- so its supersede never drained and the next
     integration head waited behind it.
     """
