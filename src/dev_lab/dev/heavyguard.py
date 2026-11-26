@@ -144,7 +144,7 @@ def heavy_rules(root: Path) -> tuple[DenyRule, ...]:
             asks='dev_lab.dev.heavyguard',
             hazard='a heavy compute entry saturates every core and the memory of the box it starts on; on a '
             'workstation one froze the whole system (user ruling 2026-11-26).',
-            remedy=DOOR,
+            remedy=DOOR.replace('`python -m', '`{python} -m'),  # the engine names the interpreter
             refuses=refuses,
             permits=permits,
         ),
