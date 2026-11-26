@@ -18,7 +18,7 @@ from typing import Final
 
 import pytest
 from _roles_fixtures import EVERY_CI, HPC_REPO, carry
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.retired import RETIRED
 

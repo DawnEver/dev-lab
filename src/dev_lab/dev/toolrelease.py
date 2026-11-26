@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons import home as _home
+from lab_commons import hostenv
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
@@ -180,9 +181,9 @@ def platform_key(system: str | None = None, machine: str | None = None) -> str:
     return f'{_SYSTEMS.get(found[0], found[0])}-{_MACHINES.get(found[1], found[1])}'
 
 
-def tool_dir(*, windows: bool | None = None, environ: Mapping[str, str] | None = None) -> Path:
+def tool_dir(*, windows: bool | None = None, host: hostenv.Host | None = None) -> Path:
     """Where this door installs: :func:`lab_commons.home.pinned_bin`, the one place a product resolves it too."""
-    return _home.pinned_bin(windows=windows, environ=environ)
+    return _home.pinned_bin(windows=windows, host=host)
 
 
 def resolve(

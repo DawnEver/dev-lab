@@ -12,6 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from lab_commons import hostenv
 
 from dev_lab.dev import toolrelease
 from dev_lab.dev.toolrelease import RCLONE, ChecksumMismatch, ToolAbsent, UnsupportedPlatform
@@ -91,8 +92,8 @@ def test_platform_keys_follow_the_release_names() -> None:
 
 
 def test_the_install_directory_is_user_space() -> None:
-    assert toolrelease.tool_dir(windows=False, environ={'HOME': '/h/u'}) == Path('/h/u/.local/bin')
-    assert toolrelease.tool_dir(windows=True, environ={'LOCALAPPDATA': 'C:/L'}) == Path('C:/L/dev-lab/bin')
+    assert toolrelease.tool_dir(windows=False, host=hostenv.Host(user_home='/h/u')) == Path('/h/u/.local/bin')
+    assert toolrelease.tool_dir(windows=True, host=hostenv.Host(local_appdata='C:/L')) == Path('C:/L/dev-lab/bin')
 
 
 def test_resolve_prefers_the_install_directory_then_path(tmp_path: Path) -> None:
