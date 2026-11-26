@@ -65,9 +65,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'OWNER-DAG',
         (
             # Why: user-approved 2026-11-25 (principles `everything-in-its-place`, `no-detour`; v1 D67/D68).
-            'In a repo holding a root `dependencies.toml` (opt-in; undeclared is not judged), actual imports match '
-            'the declared graph: `[python.owners]` and `[python.siblings."<package>"]` (explicit acyclic DAGs at '
-            'every level, default none), `[python.importers]` (the only importers of a path), `[python.native]`, '
+            'In a repo holding a root `dependencies.toml` (opt-in), actual imports match the declared graph: '
+            '`[python.owners]` and `[python.siblings."<package>"]` (explicit acyclic DAGs at every level, '
+            'default none), `[python.importers]` (the only importers of a path), `[python.native]`, '
             '`[python.packages]`/`[python.stdlib]` (a package no row names is refused; std is restricted by row), '
             '`[rust.crates]`/`[rust.external]`/`[rust.std]` (Cargo dependencies by kind and feature, std paths and '
             'tokens). A cycle, an undeclared edge and a path no layout.toml row declares (rows, never the disk) are '
@@ -93,13 +93,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             # Why: user-approved family policy 2026-11-25 (v1-migration D67/D68) -- env reads changed results unseen.
             'A repo reads the process environment only in the entry module(s) it declares in `[tool.dev_lab.env] '
-            'entry = [...]`: a value that changes a result or behavior is configuration, a fact only the '
-            'environment offers is read there once and passed on as a typed record, and a test switch is a pytest '
-            'option or a resource need -- a read deciding whether a test runs is refused in test code in every mode, '
-            'and an entry never launders one. Existing reads are on record in `pending`, which only shrinks (a stale '
-            'path reds; the `env-pending-shrinks` pre-push row refuses an addition since the merge-base); '
-            '`strict = true` judges every test read too. An AST read of Python `os.environ`/`getenv`/`putenv` and '
-            'a scan of Rust `env::var` (`dev_lab.dev.envreads`), every family checkout`s always-on check.'
+            'entry = [...]`: a value changing a result or behavior is configuration, an environment-only fact is '
+            'read there once and passed on as a typed record, and a test switch is a pytest option or a resource '
+            'need -- a read deciding whether a test runs is refused in test code in every mode, and an entry never '
+            'launders one. Existing reads are listed in `pending`, which only shrinks (a stale path reds; the '
+            '`env-pending-shrinks` pre-push row refuses an addition); `strict = true` judges every test read too. '
+            'Always on in every family checkout (`dev_lab.dev.envreads`: Python `os.environ`/`getenv`/`putenv`, '
+            'Rust `env::var`).'
         ),
         ('tests/test_dev_envreads.py',),
     ),
