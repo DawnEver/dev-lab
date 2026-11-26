@@ -17,12 +17,14 @@ host (:mod:`~dev_lab.dev.hpcaccount.salvageread`, nothing written on the account
 * ``untracked.tar`` -- the untracked, non-ignored files of at most :data:`CARRIED` bytes; a larger one is listed by
   name and size in the manifest, never carried (``--carried`` moves the limit).
 
-They land under the INVOKING checkout's dated output (``<output>/<yy>/<mm>/<dd>/salvage/<user>/<checkout>/``, the
-checkout's home-relative path), beside ``manifest.json`` (at ``salvage/<user>/<path>/``): each file's sha256 and
-bytes, and per checkout its origin, remotes, branch, HEAD, shared git directory and counts. Without ``--apply`` the
-plan is printed and nothing is written. A checkout git cannot read is refused by name with git's own words, the
-others are still salvaged, and the door exits 2. ``salvage-fetch`` (:mod:`~dev_lab.dev.hpcaccount.salvagefetch`)
-then fetches a salvaged bundle into a local repo; nothing here touches any repo.
+They land under the INVOKING checkout's dated output at a FIXED depth (``datedlog.FAMILY_KINDS['salvage']``):
+``<output>/<yy>/<mm>/<dd>/salvage/<user>/<run>/<checkout>/``, beside ``<run>/manifest.json``, where ``<run>`` and
+``<checkout>`` are the salvaged path and the checkout's home-relative path each as ONE :func:`segment`. The manifest
+holds each file's sha256 and bytes, and per checkout its origin, remotes, branch, HEAD, shared git directory and counts.
+Without ``--apply`` the plan is printed and nothing is written. A checkout git cannot read is refused by name with git's
+own words, the others are still salvaged, and the door exits 2. ``salvage-fetch``
+(:mod:`~dev_lab.dev.hpcaccount.salvagefetch`) then fetches a salvaged bundle into a local repo; nothing here touches any
+repo.
 """
 
 from __future__ import annotations
@@ -53,7 +55,7 @@ from dev_lab.dev.hpcaccount.look import home_path
 from dev_lab.dev.hpcaccount.storage import UNREACHABLE, Pin, on_host
 from dev_lab.dev.hpcaccount.transport import grant_runner
 
-__all__ = ['CARRIED', 'FILES', 'KIND', 'MANIFEST', 'TIMEOUT', 'main', 'plan_rows', 'salvage', 'salvage_path']
+__all__ = ['CARRIED', 'FILES', 'KIND', 'MANIFEST', 'TIMEOUT', 'main', 'plan_rows', 'salvage', 'salvage_path', 'segment']
 
 #: The largest untracked file carried as data, in bytes. Hand-made work -- sources, notes, tables, configs -- sits
 #: far below it; above it sit build products and results (a compiled extension, a mesh, a field dump), which
@@ -70,6 +72,11 @@ TIMEOUT: Final = 3600.0
 _GIT_S: Final = 120
 
 
+#: The home (``.``) as a segment, and what joins a path's names into one: neither is a ``look.REPO_NAME`` character.
+_HOME: Final = '~'
+_JOIN: Final = '+'
+
+
 class _Refused(Exception):
     """One checkout (or the whole door) is refused; the message names why and the door."""
 
@@ -77,6 +84,11 @@ class _Refused(Exception):
 def salvage_path(path: str) -> str:
     """*path* when it is ``.`` (the home) or a home-relative path of names (:func:`~.look.home_path`)."""
     return path if path == '.' else home_path(path)
+
+
+def segment(path: str) -> str:
+    """Home-relative *path* as ONE directory name: ``.`` is ``~``, ``a/b`` is ``a+b`` (no name can hold either)."""
+    return _HOME if path == '.' else path.replace('/', _JOIN)
 
 
 def _runner(user: str, connect: Callable[..., Runner], pin: Pin) -> tuple[str, Runner]:
@@ -159,7 +171,7 @@ def _bring(
         msg = f'{", ".join(failed)} on the account: re-run; if it repeats, read the checkout with `look ... inventory`'
         raise _Refused(msg)
     files: dict[str, Any] = {}
-    target = home if found.path == '.' else home / found.path
+    target = home / segment(found.path)
     for name, blob in data.items():
         proof = _verified(name, blob, found, carried, say)
         if not blob or (name == 'untracked' and not proof):
@@ -187,7 +199,7 @@ def _applied(
     say: Callable[[str], None],
 ) -> tuple[Path, list[tuple[str, str]]]:  # fmt: skip
     """Bring every readable checkout home under *out*; the manifest written and the refusals."""
-    home = out / user
+    home = out / user / segment(path)
     refused = list(plan.refused)
     entries = []
     for found in plan.checkouts:
@@ -200,7 +212,7 @@ def _applied(
         landed = ', '.join(f'{name} {sized(f["bytes"])}' for name, f in entry.get('files', {}).items())
         say(f'salvage: {found.path}: {landed or entry.get("refused") or "nothing of its own: nothing written"}')
         entries.append(entry)
-    manifest = home if path == '.' else home / path
+    manifest = home
     manifest.mkdir(parents=True, exist_ok=True)
     record = {
         'format': 1, 'account': user, 'host': host, 'path': path, 'carried_max_bytes': carried,

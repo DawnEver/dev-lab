@@ -34,7 +34,7 @@ from typing import Any, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.hpcaccount.salvage import FILES, MANIFEST
+from dev_lab.dev.hpcaccount.salvage import FILES, MANIFEST, segment
 
 __all__ = ['BRANCH', 'branch_of', 'fetch', 'main', 'repository_name']
 
@@ -69,18 +69,14 @@ def _git(repo: Path, *args: str) -> tuple[int, str]:
 
 
 def _entry(checkout: Path) -> tuple[str, dict[str, Any]]:
-    """The account and the manifest entry of salvaged *checkout*: the nearest manifest above it that lists it."""
-    for folder in (checkout, *checkout.parents):
-        manifest = folder / MANIFEST
-        if not manifest.is_file():
-            continue
+    """The account and the manifest entry of salvaged *checkout*: its run's manifest, one level up, lists it."""
+    manifest = checkout.parent / MANIFEST
+    if manifest.is_file():
         record = json.loads(manifest.read_text(encoding='utf-8'))
-        parts = PurePosixPath(record.get('path', '.')).parts if record.get('path') != '.' else ()
-        home = folder.parents[len(parts) - 1] if parts else folder
         for entry in record.get('checkouts', []):
-            if (home if entry['path'] == '.' else home.joinpath(*PurePosixPath(entry['path']).parts)) == checkout:
+            if segment(entry['path']) == checkout.name:
                 return record['account'], entry
-    msg = f'{checkout} is not a salvaged checkout: no {MANIFEST} above it lists it (hpcaccount salvage ... --apply)'
+    msg = f'{checkout} is not a salvaged checkout: no {MANIFEST} beside it lists it (hpcaccount salvage ... --apply)'
     raise _Refused(msg)
 
 

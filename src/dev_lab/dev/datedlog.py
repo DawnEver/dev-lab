@@ -85,6 +85,13 @@ FAMILY_KINDS: Final[dict[str, dict[str, frozenset[str]]]] = {
     'complexity': {'.': frozenset({'.jsonl'})},  # complexity: one owners.jsonl record per run
     'oraclegc': {'.': frozenset({'.md'})},  # oraclegc report: one report per run
     'deploy-femm': {'.': frozenset({'.log'})},  # hpcaccount.femm: the FEMM build log
+    # hpcaccount.salvage: <user>/<run>/manifest.json and <user>/<run>/<checkout>/ its bundle, diff and tar
+    'salvage': {
+        '.': frozenset(),
+        '*': frozenset(),
+        '*/*': frozenset({'.json'}),
+        '*/*/*': frozenset({'.bundle', '.diff', '.tar'}),
+    },
 }
 
 
