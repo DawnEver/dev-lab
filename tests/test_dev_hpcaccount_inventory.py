@@ -25,14 +25,18 @@ def _git(repo: Path, *args: str) -> str:
     env = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@x', 'GIT_COMMITTER_NAME': 't',
            'GIT_COMMITTER_EMAIL': 't@x', 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'}  # fmt: skip
     assert _GIT is not None, 'no git on PATH'
-    return subprocess.run([_GIT, '-C', str(repo), *args], check=True, capture_output=True, text=True, env=env).stdout
+    done = subprocess.run(
+        [_GIT, '-C', str(repo), *args], check=True, capture_output=True, text=True, encoding='utf-8', env=env
+    )
+    return done.stdout
 
 
 def _read(home: Path, path: str) -> str:
     """Run the inventory's fixed line in a real POSIX shell with *home* as ``$HOME``."""
     assert _SH is not None, 'no sh on PATH: every runner (Linux, Git for Windows) carries one'
     env = {**os.environ, 'HOME': home.as_posix(), 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'}
-    done = subprocess.run([_SH, '-c', inventory.command(path)], capture_output=True, text=True, env=env, check=False)
+    line = inventory.command(path)
+    done = subprocess.run([_SH, '-c', line], capture_output=True, text=True, encoding='utf-8', env=env, check=False)
     assert done.returncode == 0, done.stderr
     return done.stdout
 
@@ -128,3 +132,13 @@ def test_rows_name_each_verdict_and_an_absent_path() -> None:
     assert '  /h/w/r: pushed (origin https://forge/r.git)' in rows
     assert '  /h/w/q: NOT PUSHED -- 2 changed or untracked path(s); no remote' in rows
     assert '     M a.txt' in rows, 'a porcelain line is shown as git printed it'
+
+
+def test_a_commit_only_a_tag_or_an_own_namespace_holds_is_not_pushed(home: Path) -> None:
+    """Measured 2026-11-25: an account's work sat on ``refs/r2/solid`` and a detached HEAD, on no branch."""
+    pushed = home / 'work' / 'src' / 'pushed'
+    for ref in ('refs/tags/kept', 'refs/r2/solid'):
+        sha = _git(pushed, 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', f'only {ref} holds this').strip()
+        _git(pushed, 'update-ref', ref, sha)
+    (checkout,) = (c for c in inventory.parse(_read(home, 'work')).checkouts if Path(c.path).name == 'pushed')
+    assert '2 commit(s) on no remote' in checkout.reasons(), checkout
