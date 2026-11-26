@@ -37,6 +37,7 @@ installed package gets that row's announced skip naming the clone, never a porta
 from __future__ import annotations
 
 import re
+import tomllib
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Final, NamedTuple
@@ -48,6 +49,7 @@ __all__ = [
     'Page',
     'docs_dir',
     'missing_pages',
+    'pinned_base',
     'pointer_table',
     'slugs',
 ]
@@ -221,13 +223,35 @@ def missing_pages(root: Path) -> tuple[str, ...]:
     return tuple(out)
 
 
+def pinned_base(lock: str, package: str = 'dev-lab') -> str:
+    """The forge URL of *package*'s ``docs-src/dev`` AT THE COMMIT the uv.lock text *lock* pins (dev-lab#647).
+
+    A relative link into a sibling clone resolves against whatever that clone holds -- measured 2026-11-16 on one
+    workstation, 1654 commits behind its origin -- so a reader lands on stale pages. The lock already names the one
+    commit this repo runs, so the link is that commit's page on the forge: no clone, no fetch, never stale.
+
+    Raises:
+        ValueError: *lock* pins no git source for *package*; the door is a ``uv lock`` that pins it.
+
+    """
+    for row in tomllib.loads(lock).get('package', []):
+        url = str(row.get('source', {}).get('git', '')) if row.get('name') == package else ''
+        repo, _, sha = url.partition('#')
+        if repo and re.fullmatch(r'[0-9a-f]{40}', sha):
+            repo = repo.removesuffix('.git')
+            way = 'blob' if '://github.com/' in repo else 'src/commit'
+            return f'{repo}/{way}/{sha}/{CANONICAL_TREE}'
+    msg = f'uv.lock pins no git commit of {package}: lock it from its forge (uv lock) so its pages have a pinned URL'
+    raise ValueError(msg)
+
+
 def pointer_table(base: str, pages: Iterable[Page] = PAGES) -> str:
     """The markdown table a CONSUMING repo puts in its own dev index, generated from the rows.
 
-    *base* is how that repo reaches this one -- a relative path to a sibling checkout, or the forge
-    URL of ``docs-src/dev``. It is the caller's because only the caller knows how it reaches the
-    shared tree; everything else comes from :data:`PAGES`, so four repos cannot drift into four
-    different tables of contents.
+    *base* is how that repo reaches this one: the forge URL of ``docs-src/dev`` at its pinned commit
+    (:func:`pinned_base`), never a relative path into a sibling clone, which can be stale. It is the
+    caller's because only the caller knows its lock; everything else comes from :data:`PAGES`, so four
+    repos cannot drift into four different tables of contents.
     """
     rows = '\n'.join(f'| [{page.title}]({base.rstrip("/")}/{page.slug}.md) | {page.subject} |' for page in pages)
     return f'{_HEADER}\n|---|---|\n{rows}'

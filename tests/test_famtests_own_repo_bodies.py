@@ -13,6 +13,8 @@ from dev_lab.dev.famtests.configrender import assert_every_section_is_owned
 from dev_lab.dev.famtests.devdocs import assert_the_index_holds_the_live_table
 
 ROOT = Path(__file__).resolve().parents[1]
+#: The family pages at one pinned commit (dev_lab.dev.devdocs.pinned_base): never a sibling clone.
+_PINNED = f'https://forge.example/o/dev-lab/blob/{"a" * 40}/docs-src/dev'
 
 
 def _index(root: Path, text: str) -> None:
@@ -23,15 +25,23 @@ def _index(root: Path, text: str) -> None:
 
 def test_a_live_table_passes_and_a_stale_or_missing_one_reds(tmp_path: Path) -> None:
     """PLANTED: one live copy greens; a table missing its last row, or no index, reds."""
-    live = pointer_table('../lab-commons/docs-src/dev')
+    live = pointer_table(_PINNED)
     _index(tmp_path / 'ok', f'# Dev\n\n{live}\n')
-    assert_the_index_holds_the_live_table(root=tmp_path / 'ok', base='../lab-commons/docs-src/dev')
+    assert_the_index_holds_the_live_table(root=tmp_path / 'ok', base=_PINNED)
     stale = '\n'.join(live.splitlines()[:-1])
     _index(tmp_path / 'stale', f'# Dev\n\n{stale}\n')
     with pytest.raises(AssertionError, match='Re-render'):
-        assert_the_index_holds_the_live_table(root=tmp_path / 'stale', base='../lab-commons/docs-src/dev')
+        assert_the_index_holds_the_live_table(root=tmp_path / 'stale', base=_PINNED)
     with pytest.raises(AssertionError, match='no dev index'):
-        assert_the_index_holds_the_live_table(root=tmp_path / 'none', base='.')
+        assert_the_index_holds_the_live_table(root=tmp_path / 'none', base=_PINNED)
+
+
+def test_a_relative_base_into_a_sibling_clone_is_refused(tmp_path: Path) -> None:
+    """dev-lab#647: a sibling clone can be stale, so the base is the forge URL at the pinned commit."""
+    sibling = '../../../dev-lab/docs-src/dev'
+    _index(tmp_path, f'# Dev\n\n{pointer_table(sibling)}\n')
+    with pytest.raises(AssertionError, match='through a sibling clone'):
+        assert_the_index_holds_the_live_table(root=tmp_path, base=sibling)
 
 
 def test_the_kit_owns_every_family_table_and_an_undeclared_one_reds() -> None:

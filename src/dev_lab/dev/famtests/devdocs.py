@@ -47,6 +47,7 @@ __all__ = [
     'local_pages',
     'residue_problems',
     'shingles',
+    'sibling_problems',
 ]
 
 #: Words per shingle. Six is long enough that two pages sharing one did not do so by idiom.
@@ -91,17 +92,34 @@ def family_subjects(text: str) -> frozenset[str]:
     return frozenset(_FAMILY_MODULE.findall(lead))
 
 
+#: A markdown link whose target climbs out of the repo into a sibling clone (``](../../../dev-lab/...)``).
+SIBLING_LINK: Final = re.compile(r'\]\((?:\.\./)+[\w.-]+-lab/')
+#: The family page as the pinned forge URL names it (:func:`dev_lab.dev.devdocs.pinned_base`).
+_PINNED: Final = r'dev-lab/(?:blob|src/commit)/[0-9a-f]{40}/'
+
+
 def _links_family_page(text: str, slug: str) -> bool:
     lead = '\n'.join(text.splitlines()[:LINK_WINDOW])
-    return f'dev-lab/{CANONICAL_TREE}/{slug}.md)' in lead
+    return re.search(rf'{_PINNED}{re.escape(CANONICAL_TREE)}/{re.escape(slug)}\.md\)', lead) is not None
+
+
+def sibling_problems(local: Mapping[str, str]) -> list[str]:
+    """Each local page linking a sibling clone by a relative path: it resolves against a clone that can be stale."""
+    return [
+        f'{stem}.md:{n}: links a sibling clone by a relative path, which resolves against whatever that clone holds '
+        f'-- link the forge URL at the pinned commit instead (dev_lab.dev.devdocs.pinned_base)'
+        for stem, text in sorted(local.items())
+        for n, line in enumerate(text.splitlines(), 1)
+        if SIBLING_LINK.search(line)
+    ]
 
 
 def _residue_problems(stem: str, text: str, family: Mapping[str, str]) -> list[str]:
     out = []
     if not _links_family_page(text, stem):
         out.append(
-            f'{stem}.md: under a family page`s name and does not link '
-            f'`.../dev-lab/{CANONICAL_TREE}/{stem}.md` in its first {LINK_WINDOW} lines'
+            f'{stem}.md: under a family page`s name and does not link the pinned '
+            f'`.../dev-lab/blob/<sha>/{CANONICAL_TREE}/{stem}.md` in its first {LINK_WINDOW} lines'
         )
     if stem in family:
         fraction = copied_fraction(family[stem], text)
@@ -150,6 +168,7 @@ def residue_problems(
                 f'family page here -- upstream it to dev-lab `{CANONICAL_TREE}/`, or allowlist it with a reason'
             )
     out += _allowlist_problems(local, subject_allowlist)
+    out += sibling_problems(local)
     return tuple(out)
 
 
@@ -194,11 +213,18 @@ def assert_local_dev_pages_are_residues(
 def assert_the_index_holds_the_live_table(*, root: Path, base: str) -> None:
     """The consumer's verdict on ITS OWN dev index: exactly one copy of the LIVE family pointer table.
 
-    *base* is how this repo reaches the family pages (a relative sibling path or the forge URL), and
+    *base* is how this repo reaches the family pages -- the forge URL at the commit its lock pins
+    (:func:`dev_lab.dev.devdocs.pinned_base`); a relative base into a sibling clone is refused (dev-lab#647) -- and
     the table is re-rendered from the registry rather than compared with a stored copy -- so a page
     added or renamed upstream reds here until this repo re-renders. Moved here 2026-10-03 from a kit
     test that reached into every consumer checkout: a test judges the repo it lives in.
     """
+    if '://' not in base:
+        msg = (
+            f'base {base!r} reaches the family pages through a sibling clone, which can be stale: pass '
+            f"dev_lab.dev.devdocs.pinned_base((root / 'uv.lock').read_text()) instead"
+        )
+        raise AssertionError(msg)
     index = root.joinpath(*CANONICAL_TREE.split('/'), 'index.md')
     if not index.is_file():
         msg = f'no dev index at {index}; the family pointer table has nowhere to live'
