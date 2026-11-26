@@ -20,6 +20,7 @@ package = "sample_pkg"               # importable package the Python modules go 
 package_dir = "src/sample_pkg"       # its directory, relative to the repo root
 quantities = "ir/quantities.toml"
 migrations = "sample_pkg.ir_migrations"   # module holding MIGRATIONS (see Reading and migration)
+boundary = "sample_pkg.units"        # REQUIRED: the ONE unit boundary (see Units cross once, at the boundary)
 
 [tool.dev_lab.ir_schema.modules]     # several schema files; one generated module each
 widgets = "ir/widgets.toml"          # -> sample_pkg/_ir_widgets.py, Rust mod ir_widgets
@@ -105,14 +106,21 @@ flow = "<quantity>"                   # effort x flow must be a power ("1 2 -3 0
 
 - **The input codec** (`_ir_codec.from_boundary(Record, mapping)`) takes a number or a string with a unit (`"250 g"`,
   `"85 degC"`, `"94 dB"`).
-- It converts once, through Pint, to the catalogue unit. A dimension mismatch is refused.
-- Affine temperatures convert as absolute. A `gauge_reference` field converts the gauge value and adds the
-  named field's absolute value.
-- `dB` uses the quantity's `db_reference` and `db_scale`. A quantity without them refuses dB.
+- It converts once, through the consumer's declared `boundary` module, to the catalogue unit. That module
+  is the only code that reads a unit, affine, gauge and logarithmic included:
+  `to_si(magnitude, unit, si_unit, reference=None)` returns the absolute SI magnitude (and raises when the unit
+  does not convert, refused as `IR-BOUNDARY-UNIT`); `from_si(magnitude, si_unit, unit, reference=None)` renders
+  one back. A declaration without `boundary` is refused (`IR-NO-BOUNDARY`).
+- The codec passes the `reference` it reads from the schema and computes nothing with it: for a
+  `gauge_reference` field, the named field's converted absolute value (the reference field converts first);
+  for a quantity with `db_reference`/`db_scale`, the pair `(db_reference, db_scale)`. Affine temperatures need
+  none. A bare number of a gauge field is gauge in the SI unit, and still crosses the boundary.
 - **Output rendering** (`_ir_codec.to_boundary(record, {"field.path": "unit"})`) converts back to a requested
-  display unit, gauge and dB included. Its output reads back through `from_boundary` unchanged.
-- Generated types, canonical bytes and content hashes hold SI only. Pint is imported by the codec, never by
-  the types.
+  display unit through `from_si`, gauge and dB included. Its output reads back through `from_boundary` unchanged.
+- Generated code holds absolute SI values only, imports no unit library and does no unit arithmetic, the codec
+  included. The generator refuses its own output otherwise (`IR-UNIT-LIBRARY`: a generated Python file importing
+  `pint`, calling `log`/`log10`/`power`/`exp`, or doing arithmetic on a field's `gauge`/`db` reference; an
+  `ir.rs` naming a unit crate such as `uom`).
 
 ## Versioning
 
@@ -174,8 +182,8 @@ One byte sequence per value; `content_hash = sha256(canonical bytes)`, hex.
 ## Python output
 
 `python -m dev_lab.dev.irschema generate` refuses a bump below the change's class, then writes `<package_dir>/_ir_<module>.py` for each module. The
-files are git-ignored. No Pydantic; the runtime needs `numpy` only, and
-the codec needs `pint`.
+files are git-ignored. No Pydantic; the runtime and codec need `numpy` only,
+and the codec imports the declared `boundary` module.
 
 - Records are `@dataclass(frozen=True, slots=True, kw_only=True)`; `__post_init__` validates and
   normalizes. An array is copied C-contiguous and made read-only; a list becomes a tuple, sorted when
@@ -185,7 +193,7 @@ the codec needs `pint`.
 - Each record has `to_json() -> bytes`, `content_hash() -> str`, `from_json(bytes)`, `dump(path)` and
   `load(path)`. Equality is equality of canonical bytes.
 - Beside the modules sit `_ir_runtime.py` (validation, canonical JSON, envelope, freshness; numpy only) and
-  `_ir_codec.py` (the boundary; Pint), copied verbatim from `dev_lab.dev._ir_runtime` / `_ir_codec`.
+  `_ir_codec.py` (the record walk delegating to `boundary`), copied from `dev_lab.dev._ir_runtime` / `_ir_codec`.
 
 - Ids live in one shared `_ir_ids.py`, and a field names its record or enum target as text resolved through the
   runtime's registry. Two modules may therefore reference each other: each imports the other only after
