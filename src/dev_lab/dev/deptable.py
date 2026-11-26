@@ -12,19 +12,22 @@ keys to the tables, never to an owner's name, so a repo renames its owners freel
     emit = ["transform"]         # sibling children it may import; default none; acyclic; an edge may carry adds
     [python.importers]           # a path under the package -> the ONLY importers from other owners (paths under
     "contracts/formats" = ["compile/emit", "tests"]  # the package, else repo paths); narrows, never widens
-    [python.native]              # <package>_native.<crate> -> its owner; importable by the owner and by every
-    geometry = "models"          # owner whose row lists that owner
     [python.packages]            # third-party / family package (dotted prefix) -> repo paths ("*" = everywhere);
     numpy = { owners = ["*"], reason = "..." }       # an unlisted one is refused everywhere
+    sympy = { owners = ["src/pkg/compile"], load = "deferred", reason = "4.9 s import; ..." }  # imported only
+                                 # inside a function, and only a deferred row may be (NO-LAZY-IMPORT made declarative)
     [python.stdlib]              # restricted standard-library names (dotted prefix); unlisted = allowed
     "os.environ" = { owners = [], reason = "..." }   # [] = nowhere
-    [rust.crates]                # workspace crate -> the workspace crates it may depend on (dev-deps are tests)
-    assemble = ["contracts"]     # "*" = every crate; an edge may carry adds like a Python one
     [rust.external]              # external crate -> crates; kind normal (default) | build | dev; features required;
     rayon = { crates = ["assemble"], reason = "..." }   # dev_crates: crates granted it for tests only
     serde_json = { crates = ["contracts"], dev_crates = ["*"], reason = "..." }
     [rust.std]                   # restricted std paths or tokens (unsafe, extern "C") -> crates; unlisted = allowed
     "std::env" = { crates = [], reason = "..." }
+
+There is no crate table: a workspace crate lives at ``rust/crates/<owner path>`` (``rust/crates/compile/assemble``,
+named ``compile_assemble``), so it IS a stage of the Python owner graph, and its Cargo edges are judged by the same
+``[python.owners]`` / ``[python.siblings.*]`` edges (:func:`hop`); ``<package>_native.<crate>`` is that stage too.
+A stage whose implementation is only a crate (no Python folder) is a sibling like any other (NATIVE-FIRST).
 
 Every row of a grant table says why (``reason``). A cycle, an edge naming no row, an unknown key or table, and a
 value of the wrong shape are refused here, naming the row; whether rows match the TREE is :mod:`dev_lab.dev.ownerdag`.
@@ -47,12 +50,16 @@ __all__ = [
     'ALL',
     'FILE',
     'KINDS',
+    'LOADS',
+    'RETIRED',
     'Declared',
     'DependenciesError',
     'Edge',
     'Grant',
+    'Hop',
     'declared',
     'edge_to',
+    'hop',
     'load',
 ]
 
@@ -61,10 +68,19 @@ ALL: Final = '*'
 #: What a hop may add (principle ``no-detour``): a translation, a policy, or one point of control.
 ADDS: Final = frozenset({'translation', 'policy', 'control'})
 KINDS: Final = frozenset({'normal', 'build', 'dev'})
+#: When a Python package row's import runs: at module load (default), or only inside a function (heavy-optional).
+LOADS: Final = frozenset({'eager', 'deferred'})
+#: Tables a newer shape replaced, each with its door (refused by name, never read).
+RETIRED: Final = {
+    ('rust', 'crates'): 'the crate graph derives from crate paths: put the crate at rust/crates/<owner path> and '
+    'declare its edges in [python.owners] / [python.siblings."<package>"]',
+    ('python', 'native'): 'a native crate is the stage its path names (<package>_native.<owner>_<child> is '
+    'rust/crates/<owner>/<child>); delete the table',
+}
 _RULE: Final = 'OWNER-DAG'
 _SHAPE: Final = {
-    'python': {'owners', 'siblings', 'importers', 'native', 'packages', 'stdlib'},
-    'rust': {'crates', 'external', 'std'},
+    'python': {'owners', 'siblings', 'importers', 'packages', 'stdlib'},
+    'rust': {'external', 'std'},
 }
 _EDGE_KEYS: Final = frozenset({'name', 'adds'})
 _DETAILS: Final = 'details: docs-src/dev/refusals.md#owner-dag (dev-lab)'
@@ -92,6 +108,8 @@ class Grant:
     features: tuple[str, ...] = ()
     #: ``[rust.external]`` only: crates granted it as a ``[dev-dependencies]`` (tests) beyond *holders*.
     dev_holders: tuple[str, ...] = ()
+    #: ``[python.*]`` only: ``deferred`` -- imported only inside a function (:data:`LOADS`).
+    load: str = 'eager'
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,10 +119,8 @@ class Declared:
     owners: Mapping[str, tuple[Edge, ...]]
     siblings: Mapping[str, Mapping[str, tuple[Edge, ...]]]
     importers: Mapping[str, tuple[str, ...]]
-    native: Mapping[str, str]
     packages: Mapping[str, Grant]
     stdlib: Mapping[str, Grant]
-    crates: Mapping[str, tuple[Edge, ...]]
     external: Mapping[str, Grant]
     std: Mapping[str, Grant]
 
@@ -122,6 +138,43 @@ def declared(root: Path) -> bool:
 def edge_to(edges: tuple[Edge, ...], name: str) -> Edge | None:
     """The edge of *edges* permitting *name* (its own row, else a ``*`` row), else ``None``."""
     return next((e for e in edges if e.name == name), None) or next((e for e in edges if e.name == ALL), None)
+
+
+@dataclass(frozen=True, slots=True)
+class Hop:
+    """The declared edge a dependency from one package path to another crosses.
+
+    *table* is ``python.owners``, ``python.siblings."<parent>"``, or ``child`` (a parent reaching into its own
+    child, never permitted); *origin* -> *target* is the edge, *edges* the origin's row.
+    """
+
+    table: str
+    origin: str
+    target: str
+    edges: tuple[Edge, ...]
+
+    @property
+    def permitted(self) -> bool:
+        """Whether the declaration permits this hop."""
+        return self.table != 'child' and edge_to(self.edges, self.target) is not None
+
+
+def hop(decl: Declared, mine: tuple[str, ...], theirs: tuple[str, ...]) -> Hop | None:
+    """The edge package path *mine* depending on *theirs* crosses; ``None`` when it crosses none (itself, an ancestor).
+
+    Paths are owner paths (``("compile", "assemble")``), a Python package's or a crate's alike: ONE graph.
+    """
+    i = 0
+    while i < min(len(mine), len(theirs)) and mine[i] == theirs[i]:
+        i += 1
+    if i == len(theirs):
+        return None
+    if i == len(mine):
+        return Hop('child', '/'.join(mine), '/'.join(theirs[: i + 1]), ())
+    if i == 0:
+        return Hop('python.owners', mine[0], theirs[0], decl.owners.get(mine[0], ()))
+    parent = '/'.join(mine[:i])
+    return Hop(f'python.siblings."{parent}"', mine[i], theirs[i], decl.siblings.get(parent, {}).get(mine[i], ()))
 
 
 def _edge(table: str, owner: str, item: object) -> Edge:
@@ -164,20 +217,32 @@ def _grant(table: str, name: str, row: object, holder: str, allowed: set[str]) -
         _refuse(f'[{table}] {name} must be {{ {holder} = [...], reason = "..." }}, not {row!r}')
     if unknown := sorted(set(row) - allowed):
         _refuse(f'[{table}] {name}: unknown key(s) {unknown}; allowed {sorted(allowed)}')
-    holders, reason = row.get(holder), row.get('reason')
-    if not isinstance(holders, list) or not all(isinstance(h, str) and h for h in holders):
-        _refuse(f'[{table}] {name} {holder} must be a list of names ("*" = every one), not {holders!r}')
+    spec: dict[str, object] = row  # a TOML table: string keys
+    holders, reason = _names(spec.get(holder)), spec.get('reason')
+    if holders is None or not all(holders):
+        _refuse(f'[{table}] {name} {holder} must be a list of names ("*" = every one), not {spec.get(holder)!r}')
     if not isinstance(reason, str) or not reason.strip():
         _refuse(f'[{table}] {name} has no reason; every row says why')
-    kind, features = row.get('kind', 'normal'), row.get('features', [])
-    if kind not in KINDS:
+    kind, features, load = spec.get('kind', 'normal'), _names(spec.get('features', [])), spec.get('load', 'eager')
+    if not isinstance(load, str) or load not in LOADS:
+        _refuse(f'[{table}] {name}: load {load!r}, not one of {sorted(LOADS)}')
+    if not isinstance(kind, str) or kind not in KINDS:
         _refuse(f'[{table}] {name}: kind {kind!r}, not one of {sorted(KINDS)}')
-    if not isinstance(features, list) or not all(isinstance(f, str) for f in features):
-        _refuse(f'[{table}] {name} features must be a list of feature names, not {features!r}')
-    dev = _dev_crates(table, name, row.get('dev_crates', []))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+    if features is None:
+        _refuse(f'[{table}] {name} features must be a list of feature names, not {spec.get("features")!r}')
+    dev = _dev_crates(table, name, spec.get('dev_crates', []))
     if dev and (kind != 'normal' or ALL in holders):
         _refuse(f'[{table}] {name}: dev_crates adds test-only crates to a normal row; this row already grants them')
-    return Grant(tuple(h.strip('/') if h != ALL else h for h in holders), reason, kind, tuple(features), dev)
+    return Grant(tuple(h.strip('/') if h != ALL else h for h in holders), reason, kind, features, dev, load)
+
+
+def _names(value: object) -> tuple[str, ...] | None:
+    """*value* as a tuple of strings, else ``None`` (not a list, or an item that is no string)."""
+    if not isinstance(value, list):
+        return None
+    items: list[object] = list(value)  # pyright: ignore[reportUnknownArgumentType]
+    names = tuple(i for i in items if isinstance(i, str))
+    return names if len(names) == len(items) else None
 
 
 def _dev_crates(table: str, name: str, value: object) -> tuple[str, ...]:
@@ -191,6 +256,8 @@ def _dev_crates(table: str, name: str, value: object) -> tuple[str, ...]:
 
 def _grants(table: str, rows: Mapping[str, Any], holder: str, *, rust_external: bool = False) -> dict[str, Grant]:
     allowed = {holder, 'reason', *(('kind', 'features', 'dev_crates') if rust_external else ())}
+    if table.startswith('python.'):
+        allowed.add('load')
     return {name: _grant(table, name, row, holder, allowed) for name, row in rows.items()}
 
 
@@ -230,6 +297,8 @@ def _read(path: Path) -> dict[str, Any]:
         if top not in _SHAPE or not isinstance(value, dict):
             _refuse(f'unknown table [{top}]; the shape is {sorted(_SHAPE)}')
         for sub in value:
+            if (door := RETIRED.get((top, sub))) is not None:
+                _refuse(f'[{top}.{sub}] is retired: {door}')
             if sub not in _SHAPE[top] or not isinstance(value[sub], dict):
                 _refuse(f'unknown table [{top}.{sub}]; [{top}] holds {sorted(_SHAPE[top])}')
     return data
@@ -243,18 +312,12 @@ def load(root: Path) -> Declared | None:
     data = _read(path)
     python, rust = data.get('python', {}), data.get('rust', {})
     owners = _edges('python.owners', python.get('owners', {}))
-    native = python.get('native', {})
-    for crate, owner in native.items():
-        if not isinstance(owner, str) or owner not in owners:
-            _refuse(f'[python.native] {crate} names owner {owner!r}, which is no [python.owners] row')
     return Declared(
         owners=owners,
         siblings=_siblings(python.get('siblings', {}), owners),
         importers=_importers(python.get('importers', {}), owners),
-        native=dict(native),
         packages=_grants('python.packages', python.get('packages', {}), 'owners'),
         stdlib=_grants('python.stdlib', python.get('stdlib', {}), 'owners'),
-        crates=_edges('rust.crates', rust.get('crates', {})),
         external=_grants('rust.external', rust.get('external', {}), 'crates', rust_external=True),
         std=_grants('rust.std', rust.get('std', {}), 'crates'),
     )

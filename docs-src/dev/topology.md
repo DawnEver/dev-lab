@@ -26,7 +26,7 @@ host configuration (private): data only, consumed by the dev kit's ops door on e
 | leaf | the shared runtime every member imports (`lab_commons`) | nothing in the family |
 | dev kit | `dev_lab.dev` (forge, integrator, hooks, refusals), `dev_lab.ops` (host roles), `dev_lab.supervise` | the leaf |
 | engine / library | a solver engine, an optimizer, an AI layer, a document or learning toolkit | the leaf; the dev kit as a `test` extra |
-| product | an application that mounts engines (as git dependencies or submodules, [components](components.md)) | engines, libraries, leaf, dev kit |
+| product | an application that mounts engines (as locked git dependencies: `uv.lock` is the pin, `dev_lab.dev.relock` moves it) | engines, libraries, leaf, dev kit |
 | data library | a data-only repo pinned by its product as a data dependency; its PRs run the product's consumer tests (`dev_lab.dev.dataconsumers`) | -- |
 | host configuration | `hosts/<server>.toml` (each host's `supervise.toml`) and `family.toml` (the shared `[family]` layer) | read by `dev_lab.ops` |
 
@@ -154,7 +154,8 @@ memory against its cgroup cap, every metric (disk free, a queue depth a probe de
 installed dev-lab sha, the last auto-upgrade audit line (`dev_lab.supervise.card`). Install serves that one file
 read-only behind the `[ops.caddy] allow` list (`dev_lab.ops.caddy.status_routed`; it needs `[ops.caddy]` and
 `[ops.supervise]`). A workstation reads it with no ssh and no cluster code: the machine file's `[[server]]`
-declares `status = "https://<host><path>"`, and `python -m dev_lab.dev.opsserver <server|all> card` renders it --
+rows are RENDERED into every registered workstation from the family `[dev] servers` (name and address) and each
+server's own `[ops.access]` / `[ops.status]` (`dev_lab.dev.devservers`), and `python -m dev_lab.dev.opsserver <server|all> card` renders it --
 exit 1 for a card unreachable or STALE (no rewrite for 3 intervals), 2 for a server declaring none.
 
 ## 5. Consent: one code per shown plan

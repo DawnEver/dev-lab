@@ -21,6 +21,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Final
 
+from dev_lab.dev.famtests.publicsurface import bound_names
 from dev_lab.dev.rules import tracked_files
 
 #: The repo root: this file is ``<root>/tests/_arch_corpus.py``.
@@ -115,44 +116,6 @@ def corpus_key(path: Path) -> str:
 def parse(path: Path) -> ast.Module:
     """*path* as an AST. A file that does not parse is a failure, never a file that is skipped."""
     return ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
-
-
-def bound_names(body: list[ast.stmt]) -> set[str]:
-    """Every MODULE-LEVEL name a module binds -- by def, class, assignment or import.
-
-    Module level rather than :func:`ast.walk`, because a local variable inside a function is not a
-    name a consumer can import: counting one would let a lying ``__all__`` resolve against it.
-    """
-    names: set[str] = set()
-    for node in body:
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-            names.add(node.name)
-        elif isinstance(node, ast.Import | ast.ImportFrom):
-            names.update((a.asname or a.name).split('.')[0] for a in node.names)
-        elif isinstance(node, ast.Assign):
-            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            names.add(node.target.id)
-        elif isinstance(node, ast.TypeAlias) and isinstance(node.name, ast.Name):
-            # ``type Row = ...`` (PEP 695) binds a module-level name a consumer imports and
-            # annotates with. MEASURED 2026-09-17 on ``dev.shards.Row``: omitting this convicted a
-            # TRUE ``__all__`` entry. The blind spot ran in that direction only -- it manufactured a
-            # lie where there was none, never the reverse -- so nothing already declared was wrong.
-            names.add(node.name.id)
-        elif isinstance(node, ast.If | ast.Try | ast.With):
-            # A module-level ``with`` (an import guard, e.g. dep's commonsfloor) binds its body at module level.
-            names |= bound_names(_branch_bodies(node))
-    return names
-
-
-def _branch_bodies(node: ast.If | ast.Try | ast.With) -> list[ast.stmt]:
-    """Every statement a module-level ``if``/``try``/``with`` runs at module level, in any branch."""
-    if isinstance(node, ast.With):
-        return list(node.body)
-    body = [*node.body, *node.orelse]
-    if isinstance(node, ast.Try):
-        body += [*node.finalbody, *(stmt for handler in node.handlers for stmt in handler.body)]
-    return body
 
 
 def module_names(module: ModuleType) -> set[str]:

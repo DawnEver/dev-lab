@@ -164,3 +164,20 @@ def test_the_migration_closes_a_settled_request_and_keeps_a_live_one() -> None:
     assert forge.issues_by_number[live]['state'] == 'open'
     assert forge.comments[live] == []
     assert 'forge queue' in SETTLED
+
+
+def test_create_then_view_returns_its_labels_through_the_cli(monkeypatch, capsys, tmp_path) -> None:
+    """v1 #2: ``issue create --label`` applies it and ``issue view --json`` returns it; ``label --add`` adds one."""
+    forge = StateForge()
+    monkeypatch.setattr(forgecli, 'client_for', lambda *_a, **_k: forge)
+    argv = ['issue', 'create', '--title', 't', '--kind', 'need', '--label', 'toolchain', '--json']
+    assert forgecli.issue_and_pr(argv, cwd=tmp_path, env={}) == 0
+    number = json.loads(capsys.readouterr().out)['number']
+    assert forgecli.issue_and_pr(['issue', 'view', str(number), '--json'], cwd=tmp_path, env={}) == 0
+    assert json.loads(capsys.readouterr().out)['labels'] == ['kind:need', 'toolchain']
+    relabel = ['issue', 'label', str(number), '--add', 'task:v1', '--json']
+    assert forgecli.issue_and_pr(relabel, cwd=tmp_path, env={}) == 0
+    assert 'task:v1' in json.loads(capsys.readouterr().out)['labels']
+    plain = forge.add_issue('plain')
+    assert forgecli.issue_and_pr(['issue', 'view', str(plain), '--json'], cwd=tmp_path, env={}) == 0
+    assert json.loads(capsys.readouterr().out)['labels'] == [], 'PLANTED CONTROL: an unlabeled issue lists none'

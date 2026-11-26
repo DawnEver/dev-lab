@@ -14,6 +14,10 @@ the function's own parameters unchanged (positionally in order or by keyword, ``
 module ONLY forwards when it has at least one public function, each is a forward, and nothing else is public -- a
 public class or assignment, or any statement but imports, a docstring and a ``TYPE_CHECKING`` block, adds something.
 A file that does not parse is a fact too (:attr:`Facts.error`): its imports cannot be judged, so it is never clean.
+
+WHEN an import runs is a fact too: :attr:`Facts.eager` are the names imported as the module loads (a class body
+included; a ``TYPE_CHECKING`` block never runs), :attr:`Facts.deferred` those imported inside a function or lambda
+body -- what a ``load = "deferred"`` row of OWNER-DAG is judged by.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from __future__ import annotations
 import ast
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev import gitdirs, importedges
 
@@ -32,17 +36,22 @@ if TYPE_CHECKING:
 __all__ = ['VERSION', 'Facts', 'facts', 'forwards']
 
 #: Bump when what a fact means changes: every journaled fact of an older version is re-read.
-VERSION: Final = 2  # 2: a builtin read and never bound is a use, builtins.<name>
+VERSION: Final = 3  # 2: a builtin read and never bound is a use, builtins.<name>; 3: eager / deferred imports
 _JOURNAL: Final = ('dev-lab', 'pyfacts.json')
 
 
 @dataclass(frozen=True, slots=True)
 class Facts:
-    """One file: every dotted name it uses, what it only forwards to (``None``: it adds something), a parse error."""
+    """One file: every dotted name it uses, what it only forwards to (``None``: it adds something), a parse error.
+
+    And when each import runs: *eager* as the module loads, *deferred* inside a function body.
+    """
 
     uses: frozenset[str]
     forwards: tuple[tuple[str, str], ...] | None
     error: str | None = None
+    eager: frozenset[str] = frozenset()
+    deferred: frozenset[str] = frozenset()
 
 
 def _is_docstring(stmt: ast.stmt) -> bool:
@@ -119,6 +128,27 @@ def forwards(tree: ast.Module, bound: dict[str, str]) -> tuple[tuple[str, str], 
     return tuple(out) or None
 
 
+def _when(tree: ast.Module) -> tuple[list[ast.AST], list[ast.AST]]:
+    """``(imports that run as the module loads, function and lambda bodies)``; a TYPE_CHECKING block is neither."""
+    eager: list[ast.AST] = []
+    bodies: list[ast.AST] = []
+    stack: list[ast.AST] = list(tree.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
+            bodies.append(node)
+            if not isinstance(node, ast.Lambda):
+                stack.extend([*node.decorator_list, *node.args.defaults])
+                stack.extend(d for d in node.args.kw_defaults if d is not None)
+        elif isinstance(node, ast.If) and _is_type_checking(node):
+            stack.extend(node.orelse)
+        elif isinstance(node, ast.Import | ast.ImportFrom):
+            eager.append(node)
+        else:
+            stack.extend(ast.iter_child_nodes(node))
+    return eager, bodies
+
+
 def _read(root: Path, rel: str) -> Facts:
     path = root / rel
     try:
@@ -127,16 +157,26 @@ def _read(root: Path, rel: str) -> Facts:
         )
     except (SyntaxError, ValueError, ImportError) as exc:
         return Facts(frozenset(), None, f'{type(exc).__name__}: {exc}')
-    return Facts(reading.uses, forwards(reading.tree, reading.bound))
+    module = importedges.module_name(root, path)
+    package = module if path.name == '__init__.py' else module.rpartition('.')[0]
+    eager, bodies = _when(reading.tree)
+    return Facts(
+        reading.uses,
+        forwards(reading.tree, reading.bound),
+        eager=importedges.imported(eager, package),
+        deferred=importedges.imported(bodies, package),
+    )
 
 
 def _encode(one: Facts) -> list[object]:
-    return [sorted(one.uses), [list(f) for f in one.forwards] if one.forwards is not None else None, one.error]
+    fwd = [list(f) for f in one.forwards] if one.forwards is not None else None
+    return [sorted(one.uses), fwd, one.error, sorted(one.eager), sorted(one.deferred)]
 
 
-def _decode(raw: list) -> Facts:
-    uses, fwd, error = raw
-    return Facts(frozenset(uses), tuple((str(a), str(b)) for a, b in fwd) if fwd is not None else None, error)
+def _decode(raw: list[Any]) -> Facts:
+    uses, fwd, error, eager, deferred = raw
+    forwarded = tuple((str(a), str(b)) for a, b in fwd) if fwd is not None else None
+    return Facts(frozenset(uses), forwarded, error, frozenset(eager), frozenset(deferred))
 
 
 def facts(root: Path, rels: Iterable[str]) -> dict[str, Facts]:

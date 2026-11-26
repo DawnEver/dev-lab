@@ -237,6 +237,11 @@ class StateForge(Client):
         ]
         return self._page(listed, query)
 
+    def _viewed(self, number: int) -> dict[str, Any]:
+        """One issue as gitea's ``GET issues/{n}`` answers it: its labels inline, as in the listing."""
+        held = self.issues_by_number[number]
+        return held | {'labels': [*held['labels'], *self._issue_labels(str(number))]}
+
     def _comment(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
         self._next_comment += 1
         made = {
@@ -392,7 +397,7 @@ class StateForge(Client):
             },
             ('GET', 'issues'): lambda: self._listed(query),
             ('POST', 'issues'): lambda: self.issues_by_number[self.add_issue(sent['title'], sent['body'])],
-            ('GET', 'issue'): lambda: self.issues_by_number[number],
+            ('GET', 'issue'): lambda: self._viewed(number),
             ('PATCH', 'issue'): lambda: self._edit_issue(number, sent),
             ('GET', 'comments'): lambda: self._page(self.comments[number], query),
             ('POST', 'comments'): lambda: self._comment(number, sent),

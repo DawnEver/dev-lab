@@ -11,7 +11,7 @@ aside. A branch deleted in the same push holds nothing (*gone*), and a tag never
 2026-11-17: "no tags -- merge or delete, never an archive tag").
 
 A DERIVED branch (decision D23) is lossless whatever it carries: a machine branch whose whole content its producer
-regenerates -- ``pr/components-bump``, one gitlink commit read off the integration tip and the component heads -- is
+regenerates -- ``pr/relock``, the lock a relock rewrites off the integration tip -- is
 declared in ``[tool.dev_lab.integrator] derived`` with the producer that regenerates it
 (:class:`~dev_lab.dev.lanepolicy.Derived`). Declared, never a branch name in code: an undeclared branch that merely
 looks machine-made is judged like any other, and holds nothing for another branch either, since it may go any time.

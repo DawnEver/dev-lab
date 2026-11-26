@@ -97,8 +97,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'integrate',
     'trialmerge',
     'labsession',
-    'components',
-    'componentbump',
     'shatree',
     'branchprune',
     'branchpolicy',  # ORIGINAL: the branch policy observed and the prune role's one duty (D46, 2026-11-19)
@@ -361,10 +359,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'headroom',  # ORIGINAL: a deploy refuses by name what the file quota cannot fit (2026-11-22)
     'selfclean',  # ORIGINAL: a failed deploy step removes its own half-built output (2026-11-22)
     'accountsweep',  # ORIGINAL: the caller's retention rules streamed to an account too full to update (2026-11-22)
-    'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
-    'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
-    'devschema',
-    'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrollment (2026-11-16)
     'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)
     'liverun',
     'codexdeny',  # ORIGINAL: the deny registry rendered as Codex execpolicy rules, and its gaps (2026-11-16)

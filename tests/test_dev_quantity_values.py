@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from lab_commons.units import Q_
+from lab_commons.quantity import registry
 
 from dev_lab.dev.quantity_values import (
     QuantitySite,
@@ -58,7 +58,7 @@ def test_a_dimensionality_check_would_have_passed_the_angular_defect() -> None:
     This is the check a reasonable person writes first. It is run here against the defect, and it
     ACCEPTS it -- which is why this module does not use it.
     """
-    bare, proper = Q_('1.6'), Q_('1.6 deg')
+    bare, proper = registry().Quantity('1.6'), registry().Quantity('1.6 deg')
     assert bare.dimensionality == proper.dimensionality, 'pint calls an angle dimensionless'
     assert bare.is_compatible_with('rad'), 'the obvious check passes the bare float'
     # And the gate this module actually uses separates them.

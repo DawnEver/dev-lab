@@ -232,7 +232,26 @@ _NON_PYTHON = [
     ('rust', 'rs', 'fn main() {}\n// actual Rust\n'),
     ('shell', 'sh', '#!/bin/sh\necho ready\n'),
     ('powershell', 'ps1', 'param()\nWrite-Output ready\n'),
+    ('starlark', 'rules', 'prefix_rule(pattern = ["git"])\n# a Codex rule\n'),
 ]
+
+
+def test_the_family_rendered_codex_rules_are_read_not_refused(tmp_path: Path) -> None:
+    """2026-11-26: a consumer opting in was refused on ``.codex/rules/*.rules`` ("unsupported source language").
+
+    The Codex execpolicy files are Starlark the family renders; a raw policy measures them like any source.
+    PLANTED CONTROL: one line past the declared limit is refused naming the file -- a read, not a skip.
+    """
+    engine = _engine()
+    rules = 'prefix_rule(\n    pattern = ["git", "push"],\n    decision = "forbidden",\n)\n'
+    root = _repo(tmp_path, {'.codex/rules/family-denies.rules': rules}, policy=_policy('raw', 4))
+    scan = engine.scan(root, engine.read_policy(root))
+    assert scan.module_lengths['.codex/rules/family-denies.rules'] == 4
+    engine.check(root)
+    manifest = '[project]\nname = "planted-layout"\nversion = "0"\n'
+    (root / 'pyproject.toml').write_text(manifest + _policy('raw', 3), encoding='utf-8')
+    with pytest.raises(engine.LayoutViolation, match=r'family-denies\.rules'):
+        engine.check(root)
 
 
 @pytest.mark.parametrize(('language', 'suffix', 'source'), _NON_PYTHON)

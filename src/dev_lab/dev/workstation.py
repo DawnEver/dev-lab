@@ -234,7 +234,7 @@ def _checkouts(
     emit('[checkouts] clone, or fast-forward a clean checkout')
     done = {name: _checkout(step, tools, co, url=urls[name], ref=ref) for name, co in checkouts.items()}
     refused = {name: one.why or f'checkout exited {one.rc}' for name, one in done.items() if one.rc}
-    emit('[venvs] -m dev_lab.dev.dep --bootstrap where missing or moved')
+    emit('[venvs] -m dev_lab.dev.dep --bootstrap <checkout>, where missing or moved')
     for name, co in checkouts.items():
         if name not in refused and (rc := sync_venv(step, tools.bootstrap, co)):
             refused[name] = f'its venv bootstrap exited {rc}'

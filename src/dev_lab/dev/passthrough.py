@@ -6,10 +6,12 @@ function only forwards, and it has no other public item:
 
 * PYTHON: a module :func:`dev_lab.dev.pyfacts.forwards` reads as only forwarding (each public function passes its
   own parameters, unchanged, to one imported function; nothing else public) -- to a function of ANOTHER owner
-  (``[python.owners]``, or a native crate's owner by ``[python.native]``) or of a SIBLING child
-  (``[python.siblings."<package>"]``).
+  (``[python.owners]``) or of a SIBLING child (``[python.siblings."<package>"]``); a native crate is the stage
+  its path names (:mod:`dev_lab.dev.rustdeps`).
 * RUST (:mod:`dev_lab.dev.rustsource`): a top-level ``pub fn`` whose body is one ``path(args)`` call (``return``
-  allowed) passing its parameters in order, the path reaching ANOTHER workspace crate (directly or through ``use``).
+  allowed) passing its parameters in order, the path reaching ANOTHER stage crate (directly or through ``use``),
+  across the owner or sibling edge between the two stages. An exit crate (the Python binding) is not judged: binding
+  IS its translation.
 
 It is refused unless the edge to that owner or crate names what the hop adds --
 ``{ name = "<target>", adds = "translation" | "policy" | "control" }`` in the importer's row. A forward within one
@@ -30,7 +32,7 @@ from dev_lab.dev import deptable, ownerdag, pyfacts, rustdeps, rustsource
 from dev_lab.dev.deptable import Declared, edge_to
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
 __all__ = ['DOOR', 'RULE_ID', 'check', 'main', 'problems', 'refusal']
 
@@ -55,6 +57,7 @@ def _python_problems(root: Path, decl: Declared, files: list[str]) -> list[str]:
     tree = ownerdag.python_tree(root)
     if tree is None or not decl.owners:
         return []
+    stages = rustdeps.stages(root, files, None)
     out: list[str] = []
     facts = pyfacts.facts(root, (f for f in files if f.endswith('.py')))  # the set OWNER-DAG asks: one journal
     for rel in sorted(facts):
@@ -62,7 +65,7 @@ def _python_problems(root: Path, decl: Declared, files: list[str]) -> list[str]:
         if mine is None or mine not in decl.owners:
             continue
         forwards = facts[rel].forwards or ()
-        hops = [_hop(root, decl, tree, rel=rel, mine=mine, target=target) for _, target in forwards]
+        hops = [_hop(root, decl, tree, stages, rel=rel, mine=mine, target=target) for _, target in forwards]
         if not hops or None in hops:
             continue
         names = ', '.join(name for name, _ in forwards)
@@ -76,9 +79,23 @@ def _python_problems(root: Path, decl: Declared, files: list[str]) -> list[str]:
 
 
 def _hop(
-    root: Path, decl: Declared, tree: ownerdag.PythonTree, *, rel: str, mine: str, target: str
+    root: Path,
+    decl: Declared,
+    tree: ownerdag.PythonTree,
+    stages: Mapping[str, tuple[str, ...]],
+    *,
+    rel: str,
+    mine: str,
+    target: str,
 ) -> tuple[str, str, str, str, tuple[deptable.Edge, ...]] | None:
     """``(table, kind, from, to, edges of from)`` for a forward crossing an owner or a sibling edge, else ``None``."""
+    if (stage := ownerdag.native_stage(tree, stages, target)) is not None:
+        here = ownerdag.package_path(tree, rel)
+        found = None if here is None else deptable.hop(decl, here, stage)
+        if found is None or found.table == 'child':
+            return None
+        kind = 'owner' if found.table == 'python.owners' else 'sibling'
+        return found.table, kind, found.origin, found.target, found.edges
     theirs = ownerdag.owner_of_name(tree, decl, target)
     if theirs is None:
         return None
@@ -101,11 +118,9 @@ def _rust_forward(fn: rustsource.FreeFn, bound: dict[str, str], crates: Iterable
 
 
 def _rust_problems(root: Path, decl: Declared, files: list[str]) -> list[str]:
-    if not decl.crates:
-        return []
     crates = rustdeps.crates(root, files)
     out: list[str] = []
-    for crate in sorted((c for c in crates.values() if c.name in decl.crates), key=lambda c: c.name):
+    for crate in sorted((c for c in crates.values() if c.stage is not None), key=lambda c: c.name):
         prefix = f'{crate.directory}/src/' if crate.directory else 'src/'
         for rel in (f for f in files if f.startswith(prefix) and f.endswith('.rs')):
             code = rustsource.code_of((root / rel).read_text(encoding='utf-8'))
@@ -114,12 +129,14 @@ def _rust_problems(root: Path, decl: Declared, files: list[str]) -> list[str]:
             if items.other_public or not targets or None in targets:
                 continue
             names = ', '.join(fn.name for fn in items.functions)
-            out += [
-                f'{rel}: every pub fn forwards to crate {theirs} unchanged ({names}), and [rust.crates] '
-                f'{crate.name} -> {theirs} names nothing the hop adds'
-                for theirs in sorted({t for t in targets if t is not None})
-                if _unadded(decl.crates[crate.name], theirs)
-            ]
+            for theirs in sorted({t for t in targets if t is not None}):
+                stage, other = crate.stage, crates[theirs].stage
+                found = None if stage is None or other is None else deptable.hop(decl, stage, other)
+                if found is not None and found.table != 'child' and _unadded(found.edges, found.target):
+                    out.append(
+                        f'{rel}: every pub fn forwards to crate {theirs} unchanged ({names}), and [{found.table}] '
+                        f'{found.origin} -> {found.target} names nothing the hop adds'
+                    )
     return out
 
 

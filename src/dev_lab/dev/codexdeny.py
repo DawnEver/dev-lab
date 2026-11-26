@@ -48,6 +48,7 @@ FORBIDDEN: Final[dict[str, tuple[Prefix, ...]]] = {
         ('git', 'commit', ('-a', '-am', '--all')),
     ),
     'COMMIT-HOOKS-RUN': (('git', 'commit', ('--no-verify', '-n')),),
+    'ENVIRONMENT-THROUGH-DEP': (('uv', 'sync'),),
     'PUSH-FORCE': (('git', 'push', ('--force', '-f', '--force-with-lease')),),
     'PUSH-NO-VERIFY': (('git', 'push', '--no-verify'),),
     'PUSH-REMOTE-DELETE': (

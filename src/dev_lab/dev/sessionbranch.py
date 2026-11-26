@@ -74,7 +74,6 @@ from lab_commons.log import emit
 from dev_lab.dev import metrics
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, branchset_at
 from dev_lab.dev.breakglass import BREAK_GLASS, reason
-from dev_lab.dev.componentbump import LANE as COMPONENT_LANE
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.native_session import session_of
@@ -105,9 +104,9 @@ P6: Final = 'ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES'
 P7: Final = 'PUSHED-HEAD-CARRIES-ITS-TASK'
 #: The id this guard runs under in ``githooks/base.toml``: its refusals are logged under it, so a bypass is too.
 HOOK_ID: Final = 'session-branch'
-#: The branches the forge's own pushers publish from a detached tip or a sha (relock, component bump): the ONLY
+#: The branches the forge's own pushers publish from a detached tip or a sha (relock): the ONLY
 #: targets a source naming no branch may land on.
-MACHINE_BRANCHES: Final = frozenset({RELOCK_BRANCH, COMPONENT_LANE})
+MACHINE_BRANCHES: Final = frozenset({RELOCK_BRANCH})
 #: The trailer an integration merge names its merged branch under.
 MERGED_BRANCH: Final = 'Merged-Branch'
 

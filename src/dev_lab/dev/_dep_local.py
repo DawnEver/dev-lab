@@ -17,18 +17,20 @@ otherwise move nothing.
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import re
+import shutil
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev._dep_components import _tree
 from dev_lab.dev._dep_network import CHILD_WALL_S
 from dev_lab.dev.familyroot import family_root
 from dev_lab.dev.netverb import run_network_verb
@@ -105,6 +107,33 @@ def resolve(root: Path, names: Sequence[str], *, repos: Mapping[str, Any], famil
             raise OverlayRefused(msg)
         overlays.append(Overlay(name, path))
     return tuple(overlays)
+
+
+_GIT: Final = shutil.which('git') or 'git'
+
+
+def _tree(path: Path) -> str:
+    """``HEAD`` of the checkout at *path*, ``+<hash>`` of its diff (untracked content included) when dirty; ``''``."""
+
+    def git(*args: str) -> str:
+        done = _door.run(
+            [_GIT, '-C', str(path), *args], capture_output=True, text=True, encoding='utf-8', errors='replace',
+            check=False, timeout=60,
+        )  # fmt: skip
+        return done.stdout if done.returncode == 0 else ''
+
+    head = git('rev-parse', 'HEAD').strip()
+    if not head:
+        return ''
+    digest, dirty = hashlib.sha256(git('diff', 'HEAD').encode()), bool(git('diff', 'HEAD'))
+    for name in filter(None, git('ls-files', '--others', '--exclude-standard', '-z').split('\0')):
+        dirty = True
+        digest.update(name.encode() + b'\0')
+        try:
+            digest.update((path / name).read_bytes())
+        except OSError:
+            digest.update(b'<unreadable>')
+    return head + (f'+{digest.hexdigest()[:16]}' if dirty else '')
 
 
 def _stamps(overlays: Sequence[Overlay]) -> dict[str, str]:

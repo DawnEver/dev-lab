@@ -1,4 +1,4 @@
-"""OWNER-DAG over Rust: the crate graph, external crates by kind and feature, restricted std paths and tokens."""
+"""OWNER-DAG over Rust: the crate graph DERIVED from crate paths, external crates by kind and feature, std uses."""
 
 from __future__ import annotations
 
@@ -13,10 +13,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 DECLARED = """
-[rust.crates]
+[python.owners]
 base = []
 middle = ["base"]
-binding = [{ name = "*", adds = "translation" }]
 
 [rust.external]
 rayon = { crates = ["middle"], reason = "data parallelism" }
@@ -32,7 +31,7 @@ unsafe = { crates = ["middle"], reason = "the FFI" }
 LAYOUT = (
     '[layout]\n"." = [".toml"]\n"src" = []\n"tests" = []\n"scratch" = []\n".claude" = []\n'
     '"docs-src" = []\n"output" = []\n"rust" = ["Cargo.toml"]\n"rust/crates" = []\n'
-    '"rust/crates/planned" = ["Cargo.toml"]\n'
+    '"rust/crates/planned" = []\n"rust/crates/planned/kernel" = ["Cargo.toml"]\n'
 )
 WORKSPACE = '[workspace]\nmembers = ["crates/*"]\n[workspace.dependencies]\nserde_json = { version = "1" }\n'
 
@@ -81,7 +80,7 @@ def test_the_declared_workspace_passes(tmp_path: Path) -> None:
     [
         (
             {'rust/crates/base/Cargo.toml': _crate('base', deps='middle = { path = "../middle" }')},
-            'crate base depends on middle, but [rust.crates] base does not list it',
+            'crate base depends on middle, but [python.owners] base does not list middle',
         ),
         (
             {'rust/crates/base/Cargo.toml': _crate('base', deps='num = { package = "middle", path = "../middle" }')},
@@ -119,7 +118,18 @@ def test_the_declared_workspace_passes(tmp_path: Path) -> None:
             {'rust/crates/base/src/lib.rs': 'pub fn f() { unsafe { g() } }\n'},
             'uses unsafe, but [rust.std] unsafe allows it only in middle',
         ),
-        ({'rust/crates/extra/Cargo.toml': _crate('extra')}, 'crate extra has no [rust.crates] row'),
+        (
+            {'rust/crates/extra/Cargo.toml': _crate('extra')},
+            'crate extra lies under rust/crates/extra, which no [python.owners] row names',
+        ),
+        (
+            {'rust/crates/base/Cargo.toml': _crate('base', deps='binding = { path = "../../pybind/binding" }')},
+            'crate base depends on binding, an exit to Python (rust/pybind/binding); no crate depends on an exit',
+        ),
+        (
+            {'rust/crates/middle/inner/Cargo.toml': _crate('inner')},
+            'crate inner lies at rust/crates/middle/inner, so it is named middle_inner',
+        ),
     ],
 )
 def test_each_refusal_names_the_manifest_or_file_and_the_row(tmp_path: Path, extra: dict[str, str], named: str) -> None:
@@ -129,27 +139,72 @@ def test_each_refusal_names_the_manifest_or_file_and_the_row(tmp_path: Path, ext
     assert found[0].startswith(next(iter(extra)))
 
 
-def test_a_row_or_holder_naming_no_crate_is_refused(tmp_path: Path) -> None:
-    stale = DECLARED.replace('binding = [', 'ghost = []\nbinding = [').replace(
-        'crates = ["middle"], reason = "data', 'crates = ["gone"], reason = "data'
-    )
+def test_a_holder_naming_no_crate_is_refused(tmp_path: Path) -> None:
+    stale = DECLARED.replace('crates = ["middle"], reason = "data', 'crates = ["middle", "gone"], reason = "data')
     found = _problems(tmp_path, declared=stale)
-    nowhere = 'which is no crate in the tree and which no layout.toml <crate>/Cargo.toml row declares'
-    assert f'dependencies.toml [rust.crates] ghost names crate ghost, {nowhere}' in found
-    assert f'dependencies.toml [rust.external] rayon names crate gone, {nowhere}' in found
+    nowhere = 'which is no crate in the tree and which no layout.toml <crate dir>/Cargo.toml row declares'
+    assert found == [f'dependencies.toml [rust.external] rayon names crate gone, {nowhere}']
 
 
 def test_a_crate_layout_toml_declares_but_the_tree_lacks_is_allowed(tmp_path: Path) -> None:
-    """PLANTED CONTROL: a crate not created yet passes when layout.toml declares its Cargo.toml; a ghost is refused."""
-    planned = DECLARED.replace('binding = [', 'planned = []\nghost = []\nbinding = [')
+    """PLANTED CONTROL: a crate not created yet passes when layout.toml declares its Cargo.toml; a ghost is refused.
+
+    The planned crate is named for its declared path (``rust/crates/planned/kernel`` -> ``planned_kernel``).
+    """
+    planned = DECLARED.replace(
+        'crates = ["middle"], reason = "data', 'crates = ["middle", "planned_kernel", "ghost"], reason = "data'
+    )
     (tmp_path / 'layout.toml').write_text(LAYOUT, encoding='utf-8')
     found = _problems(tmp_path, declared=planned, layout=declared_layout(tmp_path))
-    assert not any('planned' in line for line in found)
-    assert any('[rust.crates] ghost names crate ghost' in line for line in found)
+    assert found == [
+        (
+            'dependencies.toml [rust.external] rayon names crate ghost, which is no crate in the tree and which no '
+            'layout.toml <crate dir>/Cargo.toml row declares'
+        )
+    ]
+    assert rustdeps.stages(tmp_path, BASE, declared_layout(tmp_path))['planned_kernel'] == ('planned', 'kernel')
 
 
-def test_no_rust_table_means_rust_is_not_judged(tmp_path: Path) -> None:
-    assert _problems(tmp_path, declared='[python.owners]\n') == []
+def test_no_crate_and_no_rust_row_means_rust_is_not_judged(tmp_path: Path) -> None:
+    decl = deptable.Declared({}, {}, {}, {}, {}, {}, {})
+    assert rustdeps.problems(tmp_path, decl, []) == []
+
+
+#: The ONE graph at depth: owner stage with two Rust-owned children (no Python folder), b -> a declared.
+NESTED = DECLARED.replace('middle = ["base"]', 'middle = ["base"]\nstage = []\n\n[python.siblings.stage]\nb = ["a"]')
+NESTED_TREE = {
+    'rust/crates/stage/Cargo.toml': _crate('stage'),
+    'rust/crates/stage/a/Cargo.toml': _crate('stage_a', deps='stage = { path = ".." }'),
+    'rust/crates/stage/b/Cargo.toml': _crate('stage_b', deps='stage_a = { path = "../a" }'),
+}
+
+
+def test_crate_edges_are_the_sibling_edges_of_their_paths(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL: b -> a (declared) and a -> its parent stage pass; the reverse sibling edge is refused."""
+    assert _problems(tmp_path, NESTED_TREE, declared=NESTED) == []
+    reverse = {**NESTED_TREE, 'rust/crates/stage/a/Cargo.toml': _crate('stage_a', deps='stage_b = { path = "../b" }')}
+    assert _problems(tmp_path / 'reverse', reverse, declared=NESTED) == [
+        (
+            'rust/crates/stage/a/Cargo.toml: crate stage_a depends on stage_b, but [python.siblings."stage"] a '
+            'does not list b'
+        )
+    ]
+
+
+def test_a_parent_crate_depending_on_its_child_is_refused(tmp_path: Path) -> None:
+    down = {**NESTED_TREE, 'rust/crates/stage/Cargo.toml': _crate('stage', deps='stage_a = { path = "a" }')}
+    assert _problems(tmp_path, down, declared=NESTED) == [
+        (
+            'rust/crates/stage/Cargo.toml: crate stage depends on stage_a: stage stage depends on its own child '
+            'stage/a; a parent never depends on its children'
+        )
+    ]
+
+
+def test_a_crate_table_is_retired_with_its_door(tmp_path: Path) -> None:
+    (tmp_path / deptable.FILE).write_text('[rust.crates]\nbase = []\n', encoding='utf-8')
+    with pytest.raises(deptable.DependenciesError, match=r'\[rust.crates\] is retired: the crate graph derives'):
+        deptable.load(tmp_path)
 
 
 #: D113: one crate, NORMAL for some crates and DEV (tests only) for every crate.

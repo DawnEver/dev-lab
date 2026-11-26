@@ -9,7 +9,7 @@ takes names; the same resolution still proves the label exists.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from dev_lab.dev._forgebackends import GITHUB
 
@@ -68,11 +68,25 @@ def ensure_labels(client: Client, names: Iterable[str]) -> dict[str, Any]:
 
 
 def add_label(client: Client, number: int, name: str) -> None:
-    """Put label *name* on issue *number*; a label the repository lacks raises :class:`LabelMissing`."""
+    """Put label *name* on issue *number*, PROVEN by the forge's answer (the issue's labels after the write).
+
+    Raises:
+        LabelMissing: the repository lacks the label, or the forge answered without it on the issue -- Gitea's
+            silent drop (v1 #2: ``create --label`` and ``label --add`` printed the issue and it carried none).
+
+    """
     (ident,) = label_ids(client, [name]).values()
-    client.call(
+    answered = client.call(
         'POST', f'{client.repo}/issues/{number}/labels', {'labels': [name if client.backend is GITHUB else ident]}
     )
+    rows = cast('list[object]', answered) if isinstance(answered, list) else []
+    held = {str(cast('dict[str, object]', one).get('name')) for one in rows if isinstance(one, dict)}
+    if name not in held:
+        msg = (
+            f'{client.repo} #{number}: the forge answered the label write without {name!r} on the issue '
+            f'(it holds {sorted(held)}); read it back with `forge issue view {number} --json`'
+        )
+        raise LabelMissing(msg)
 
 
 def remove_label(client: Client, number: int, name: str) -> None:

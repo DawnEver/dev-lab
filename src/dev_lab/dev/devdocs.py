@@ -163,11 +163,6 @@ PAGES: Final[tuple[Page, ...]] = (
         'Submitting research from a workstation',
         "A session's own cluster jobs: reach, grants, build, submit, gather, and which account takes them",
     ),
-    Page(
-        'components',
-        'Components',
-        'A product mounts its engines as submodules: the table, the derived-file check, the bump loop',
-    ),
     Page('artifacts', 'Artifacts', "A run's declared outputs: the store, its layout and its retention"),
     Page('retirement', 'Retirement', 'The archive keeps old code, the registry keeps a dead spelling dead'),
     Page(

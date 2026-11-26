@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.units import ureg
+from lab_commons.quantity import registry
 
 from dev_lab.dev.irmodel import IR, Field, Record, TypeRef, parse, refuse
 
@@ -52,7 +52,7 @@ def _quantity(ir: IR, f: Field, where: str) -> None:
     if f.quantity in ir.quantities:
         return
     try:
-        ureg.Unit(f.quantity)
+        registry().Unit(f.quantity)
     except Exception:  # noqa: BLE001 -- any pint refusal means "not a unit", which is the answer wanted here
         refuse('IR-UNKNOWN-QUANTITY', where, f'quantity {f.quantity!r}')
     refuse('IR-UNIT-IN-SCHEMA', where, f'{f.quantity!r} is a unit, not a quantity name')

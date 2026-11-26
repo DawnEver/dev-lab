@@ -480,6 +480,8 @@ class _Publisher:
         if path == '/r/labels':
             self.labels[body['name']] = len(self.labels) + 1
             return {'id': self.labels[body['name']]}
+        if method == 'POST':  # the issue's labels after the write, as the forge answers it
+            return [{'name': n, 'id': i} for n, i in self.labels.items() if i in body['labels']]
         return {}
 
     def issue_create(self, title: str, body: str) -> SimpleNamespace:

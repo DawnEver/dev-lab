@@ -18,17 +18,9 @@ DECLARED = """
 [python.owners]
 alpha = []
 beta = ["alpha"]
-
-[python.native]
-kernel = "alpha"
-
-[rust.crates]
-base = []
-upper = ["base"]
 """
-ADDED = DECLARED.replace('beta = ["alpha"]', 'beta = [{ name = "alpha", adds = "translation" }]').replace(
-    'upper = ["base"]', 'upper = [{ name = "base", adds = "control" }]'
-)
+#: One edge, one graph: the Python owner edge beta -> alpha is also the edge of crate beta -> crate alpha.
+ADDED = DECLARED.replace('beta = ["alpha"]', 'beta = [{ name = "alpha", adds = "translation" }]')
 #: A pure Python forward: every public function passes its own parameters, unchanged, to owner alpha.
 FORWARD = '''"""A hop."""
 from __future__ import annotations
@@ -61,8 +53,8 @@ def _private(z):
     return z + 1
 '''
 RUST_FORWARD = (
-    'use base::solve;\n'
-    'pub fn run(a: u8, b: u8) -> u8 { base::run(a, b) }\n'
+    'use alpha::solve;\n'
+    'pub fn run(a: u8, b: u8) -> u8 { alpha::run(a, b) }\n'
     'pub fn go(x: u8) -> u8 { return solve(x); }\n'
 )
 
@@ -74,9 +66,9 @@ def _problems(root: Path, files: dict[str, str], declared: str = DECLARED) -> li
         'src/pkg/alpha/__init__.py': '',
         'src/pkg/alpha/core.py': 'def run(a, b, c): return a\n',
         'src/pkg/beta/__init__.py': '',
-        'rust/base/Cargo.toml': '[package]\nname = "base"\n',
-        'rust/base/src/lib.rs': 'pub fn run(a: u8, b: u8) -> u8 { a + b }\n',
-        'rust/upper/Cargo.toml': '[package]\nname = "upper"\n[dependencies]\nbase = { path = "../base" }\n',
+        'rust/crates/alpha/Cargo.toml': '[package]\nname = "alpha"\n',
+        'rust/crates/alpha/src/lib.rs': 'pub fn run(a: u8, b: u8) -> u8 { a + b }\n',
+        'rust/crates/beta/Cargo.toml': '[package]\nname = "beta"\n[dependencies]\nalpha = { path = "../alpha" }\n',
         deptable.FILE: declared,
         **files,
     }
@@ -99,8 +91,8 @@ def test_a_python_module_that_only_forwards_is_refused_until_its_edge_names_what
     assert _problems(tmp_path, {'src/pkg/beta/hop.py': FORWARD}, ADDED) == []
 
 
-def test_a_forward_to_a_native_crate_is_a_forward_to_its_owner(tmp_path: Path) -> None:
-    native = 'from pkg_native import kernel\n\ndef run(a):\n    return kernel.run(a)\n'
+def test_a_forward_to_a_native_crate_is_a_forward_to_its_stage(tmp_path: Path) -> None:
+    native = 'from pkg_native import alpha\n\ndef run(a):\n    return alpha.run(a)\n'
     assert 'forwards to owner alpha' in _problems(tmp_path, {'src/pkg/beta/hop.py': native})[0]
 
 
@@ -139,22 +131,22 @@ def test_a_module_that_adds_anything_is_not_a_pass_through(tmp_path: Path, adds:
 
 
 def test_a_rust_file_that_only_forwards_is_refused_until_its_edge_names_what_it_adds(tmp_path: Path) -> None:
-    files = {'rust/upper/src/lib.rs': RUST_FORWARD}
+    files = {'rust/crates/beta/src/lib.rs': RUST_FORWARD}
     assert _problems(tmp_path, files) == [
         (
-            'rust/upper/src/lib.rs: every pub fn forwards to crate base unchanged (run, go), and [rust.crates] '
-            'upper -> base names nothing the hop adds'
+            'rust/crates/beta/src/lib.rs: every pub fn forwards to crate alpha unchanged (run, go), and '
+            '[python.owners] beta -> alpha names nothing the hop adds'
         )
     ]
     assert _problems(tmp_path, files, ADDED) == []
     for adds in (
-        RUST_FORWARD.replace('base::run(a, b)', 'base::run(b, a)'),
-        RUST_FORWARD.replace('base::run(a, b)', 'base::run(a, b) + 1'),
-        RUST_FORWARD.replace('base::run(a, b)', 'base::run(a, b)?'),
+        RUST_FORWARD.replace('alpha::run(a, b)', 'alpha::run(b, a)'),
+        RUST_FORWARD.replace('alpha::run(a, b)', 'alpha::run(a, b) + 1'),
+        RUST_FORWARD.replace('alpha::run(a, b)', 'alpha::run(a, b)?'),
         RUST_FORWARD + 'pub struct Shape;\n',
-        RUST_FORWARD.replace('base::run(a, b)', 'run_local(a, b)'),
+        RUST_FORWARD.replace('alpha::run(a, b)', 'run_local(a, b)'),
     ):
-        assert _problems(tmp_path, {'rust/upper/src/lib.rs': adds}) == [], adds
+        assert _problems(tmp_path, {'rust/crates/beta/src/lib.rs': adds}) == [], adds
 
 
 def test_check_refusal_and_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

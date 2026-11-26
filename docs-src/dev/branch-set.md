@@ -86,7 +86,7 @@ door. A human push and the forge's own status are not judged; `pr/*` admits the 
 `pr/<task>`, which git cannot hold beside `pr/<task>/<x>`. Agent fan-out (`lane/` `feat/` `fix/`) is local by construction. Deletions are judged by
 SESSION-HISTORY-ONLY-GROWS alone, and tags are not branches, so an existing undeclared origin branch takes no new
 push and is deleted by a human. The machine pushers all land: relock (`pr/relock`), forge autosync (`pr/*`
-heads only), the component bump (`pr/components-bump`), and the declared trunk and integration branch.
+heads only), and the declared trunk and integration branch.
 
 The forge judges the same set after the push: every open PR head into integration carries a `branchset` status
 (`dev_lab.dev.forgeheadgate`), `failure` when its branch is not admitted by the set its own commit declares, and

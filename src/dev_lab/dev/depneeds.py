@@ -79,7 +79,7 @@ def missing_for_part(root: Path, part: str, *, installed: Callable[[str], bool] 
     need_list = ', '.join(repr(extra) for extra in missing)
     return (
         f'verify: refused -- part {part} needs extra {need_list}, not installed in this environment '
-        f'(D78: extras are installed on demand); add it: python -m dev_lab.dev.dep --sync {root} {flags}'
+        f'(D78: extras are installed on demand); add it: python -m dev_lab.dev.dep --root {root} --sync {flags}'
     )
 
 

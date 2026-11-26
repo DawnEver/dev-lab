@@ -27,20 +27,13 @@ inner = ["outer"]
 [python.importers]
 "alpha/formats" = ["gamma/emit", "tests"]
 
-[python.native]
-kernel = "beta"
-
 [python.packages]
 numpy = { owners = ["*"], reason = "arrays" }
+sympy = { owners = ["src/pkg/gamma"], load = "deferred", reason = "4.9 s import" }
 "fam.log" = { owners = ["src/pkg/gamma"], reason = "the one log" }
 
 [python.stdlib]
 "os.environ" = { owners = [], reason = "explicit configuration only" }
-
-[rust.crates]
-core_a = []
-core_b = ["core_a"]
-binding = [{ name = "*", adds = "translation" }]
 
 [rust.external]
 rayon = { crates = ["core_b"], reason = "data parallelism" }
@@ -65,7 +58,6 @@ def test_every_table_of_the_shape_is_read(tmp_path: Path) -> None:
     got = _declare(tmp_path, DECLARED)
     assert got is not None
     assert got.owners['gamma'] == (Edge('alpha'), Edge('beta', 'translation'))
-    assert got.native == {'kernel': 'beta'}
     assert got.siblings == {
         'alpha': {'one': (Edge('two'), Edge('three', 'policy'))},
         'alpha/one': {'inner': (Edge('outer'),)},
@@ -73,7 +65,8 @@ def test_every_table_of_the_shape_is_read(tmp_path: Path) -> None:
     assert got.importers == {'alpha/formats': ('gamma/emit', 'tests')}
     assert got.packages['fam.log'] == Grant(('src/pkg/gamma',), 'the one log')
     assert got.stdlib['os.environ'] == Grant((), 'explicit configuration only')
-    assert got.crates['binding'] == (Edge('*', 'translation'),)
+    assert got.packages['sympy'].load == 'deferred'
+    assert got.packages['numpy'].load == 'eager'
     assert got.external['serde_json'] == Grant(('*',), 'goldens', kind='dev', features=('float_roundtrip',))
     assert got.std['std::env'].holders == ()
     assert {'translation', 'policy', 'control'} == ADDS
@@ -84,7 +77,10 @@ def test_every_table_of_the_shape_is_read(tmp_path: Path) -> None:
     ('text', 'named'),
     [
         ('[python.owners]\nalpha = ["beta"]\nbeta = ["alpha"]\n', 'cycle: alpha -> beta -> alpha'),
-        ('[rust.crates]\na = ["b"]\nb = ["a"]\n', 'cycle: a -> b -> a'),
+        ('[rust.crates]\na = []\n', '[rust.crates] is retired: the crate graph derives from crate paths'),
+        ('[python.native]\nkernel = "beta"\n', '[python.native] is retired: a native crate is the stage its path'),
+        ('[python.packages]\nx = { owners = [], load = "lazy", reason = "x" }\n', "load 'lazy', not one of"),
+        ('[rust.external]\nx = { crates = [], load = "deferred", reason = "x" }\n', "unknown key(s) ['load']"),
         ('[python.owners]\nalpha = ["ghost"]\n', "alpha lists 'ghost', which is no [python.owners] row"),
         ('[python.owners]\nalpha = ["alpha"]\n', 'alpha lists itself'),
         ('[python.owners]\nalpha = []\n[python.siblings.alpha]\none = ["two"]\ntwo = ["one"]\n', 'cycle: one -> two'),
@@ -96,7 +92,6 @@ def test_every_table_of_the_shape_is_read(tmp_path: Path) -> None:
         ('[python.owners]\nalpha = []\nbeta = [{ name = "alpha", adds = "speed" }]\n', "adds 'speed'"),
         ('[python.owners]\nalpha = []\nbeta = [{ name = "alpha", why = "x" }]\n', "unknown key(s) ['why']"),
         ('[python.owners]\nalpha = "beta"\n', 'alpha must be a list'),
-        ('[python.native]\nkernel = "ghost"\n', "kernel names owner 'ghost'"),
         ('[python.packages]\nnumpy = { owners = ["*"] }\n', 'numpy has no reason'),
         ('[python.packages]\nnumpy = { owners = "*", reason = "x" }\n', 'numpy owners must be a list'),
         ('[rust.external]\nrayon = { crates = [], kind = "test", reason = "x" }\n', "kind 'test'"),

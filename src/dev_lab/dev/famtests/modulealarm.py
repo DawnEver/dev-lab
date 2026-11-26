@@ -43,6 +43,7 @@ _LANGUAGES = {
     '.rs': 'rust',
     '.sh': 'shell',
     '.ps1': 'powershell',
+    '.rules': 'starlark',  # the Codex execpolicy rules the family renders (.codex/rules/*.rules)
 }
 _DATA = frozenset(
     {

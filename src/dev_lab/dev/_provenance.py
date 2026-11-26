@@ -49,8 +49,8 @@ PROVENANCE_ROWS = '_provenance_rows.py'
 _ROWS_NAME = 'PROVENANCE'
 
 #: The files of bare names declared :data:`ORIGINAL`, beside the claims: a name claims nothing, so it is no row.
-#: Split by responsibility (the remote doors, memory and rem, the IR schema, the static checks apart) at the
-#: module-size band.
+#: Split by responsibility (remote doors, memory and rem, the IR schema, machine declaration, the static checks
+#: apart) at the module-size band.
 ORIGINAL_ROWS = (
     '_original_rows.py',
     '_original_rows_forge.py',
@@ -58,6 +58,7 @@ ORIGINAL_ROWS = (
     '_original_rows_memory.py',
     '_original_rows_ir.py',
     '_original_rows_guards.py',
+    '_original_rows_machine.py',
     '_original_rows_checks.py',
 )
 _ORIGINALS_NAME = 'ORIGINAL_MODULES'

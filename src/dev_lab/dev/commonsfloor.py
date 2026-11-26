@@ -14,9 +14,16 @@ WALL for a kit that is already mismatched: :func:`importing` turns the missing `
 A STALE VENV IS A THIRD CASE (2026-11-22). A ``git pull`` moves a checkout's code and lock ahead of its venv: the
 lock already carries the lab-commons the code needs, the venv still holds the older one, and ``from lab_commons
 import extras`` dies as a bare ``ImportError: cannot import name``. Relocking is not the door there -- the lock is
-right; ``uv sync --frozen`` in the checkout is. :func:`importing` tells the two apart by comparing the installed
+right; a sync of the checkout is. :func:`importing` tells the two apart by comparing the installed
 lab-commons with the one the checkout's ``uv.lock`` pins, and ``entry=True`` (a ``python -m`` entry point) turns
 the refusal into its message on stderr and exit 2 instead of a traceback.
+
+THE DOOR IS RUN BY ANOTHER INTERPRETER (2026-11-26). This kit's own ``dep --sync`` is refused by this very wall,
+and a raw ``uv sync`` by NETWORK-VERB, so a door spelled either way is a wall with no door. Exempting ``dep --sync``
+from the floor is not possible here: the floor IS the import failure of the lab-commons modules ``dep`` loads. So
+both doors name ``dep`` run by :func:`healthy_interpreter` -- the first interpreter of a sibling checkout (the
+repository's worktrees, the main one first) whose ``dev_lab.dev.dep`` imports -- with ``--root`` aimed at THIS
+checkout (SYNC-OWNS-ITS-ENV admits the foreign invoker). Derived, never a hard-coded path.
 
 IMPORTS ONLY THE STANDARD LIBRARY, so it loads against any lab-commons.
 """
@@ -24,25 +31,81 @@ IMPORTS ONLY THE STANDARD LIBRARY, so it loads against any lab-commons.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 import tomllib
-from collections.abc import Iterator
+from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
 from importlib import metadata
 from pathlib import Path
 
-__all__ = ['CommonsBelowFloor', 'heal', 'importing', 'locked_commons']
+__all__ = ['CommonsBelowFloor', 'heal', 'healthy_interpreter', 'importing', 'locked_commons', 'sync_door']
 
 RULE = 'COMMONS-BELOW-FLOOR'
+#: What a door names when no sibling interpreter passes the floor: the need, not a wrong path.
+ANY_HEALTHY = '<a dev-lab python whose lab-commons passes the floor>'
+_VENV_PYTHON = ('Scripts', 'python.exe') if os.name == 'nt' else ('bin', 'python')
 
 
 class CommonsBelowFloor(ImportError):
     """A kit's lab-commons lacks a module this dev-lab imports; the message names the heal."""
 
 
+def _sibling_interpreters(checkout: Path) -> list[Path]:
+    """Every venv interpreter of *checkout*'s repository, the main worktree first (``git worktree list``)."""
+    git = shutil.which('git')
+    if git is None:
+        return []
+    try:
+        listed = subprocess.run(
+            [git, '-C', str(checkout), 'worktree', 'list', '--porcelain'],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            check=False,
+            timeout=30,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    trees = [Path(line.removeprefix('worktree ')) for line in listed.splitlines() if line.startswith('worktree ')]
+    return [found for tree in trees if (found := tree.joinpath('.venv', *_VENV_PYTHON)).is_file()]
+
+
+def _passes_floor(python: Path) -> bool:
+    """*python* can run the door: its ``dev_lab.dev.dep`` imports (in its own environment)."""
+    try:  # -I: isolated, so an inherited PYTHONPATH cannot lend it this kit's (or a planted) lab-commons
+        ran = subprocess.run(
+            [str(python), '-I', '-c', 'import dev_lab.dev.dep'], capture_output=True, check=False, timeout=60
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return ran.returncode == 0
+
+
+def healthy_interpreter(
+    candidates: Iterable[Path], *, passes: Callable[[Path], bool] = _passes_floor, own: Path | None = None
+) -> str:
+    """The first candidate other than *own* that *passes* the floor, else :data:`ANY_HEALTHY`."""
+    own_resolved = own.resolve() if own else None
+    for python in candidates:
+        if python.resolve() != own_resolved and passes(python):
+            return str(python)
+    return ANY_HEALTHY
+
+
+def _door_python(root: Path) -> str:
+    return healthy_interpreter(_sibling_interpreters(root), own=Path(sys.executable))
+
+
 def heal(root: Path) -> str:
     """The command that relocks lab-commons into *root*'s own environment, run from a healthy dev-lab kit."""
-    return f'<a healthy dev-lab python> -m dev_lab.dev.dep --lock-upgrade {root} --upgrade-package lab-commons'
+    return f'{_door_python(root)} -m dev_lab.dev.dep --lock-upgrade {root} --upgrade-package lab-commons'
+
+
+def sync_door(root: Path) -> str:
+    """The command that syncs *root*'s venv to its (already right) lock, run from a healthy dev-lab kit."""
+    return f'{_door_python(root)} -m dev_lab.dev.dep --root {root} --sync'
 
 
 def locked_commons(checkout: Path) -> str | None:
@@ -69,10 +132,10 @@ def _own_checkout() -> Path | None:
 def _refusal(name: str, root: Path | None) -> str:
     checkout, installed = _own_checkout(), _installed_commons()
     locked = locked_commons(checkout) if checkout else None
-    if locked and installed != locked:
+    if checkout is not None and locked and installed != locked:
         return (
             f"{RULE}: {checkout}'s venv holds lab_commons {installed}, older than its code needs ({name} missing; "
-            f'its uv.lock pins {locked}): run `uv sync --frozen` in {checkout}, then this again'
+            f'its uv.lock pins {locked}). Sync it from another interpreter, then run this again:\n{sync_door(checkout)}'
         )
     return (
         f'{RULE}: this kit ({sys.executable}) has a lab-commons without {name}, which this dev-lab imports: its '
@@ -82,7 +145,7 @@ def _refusal(name: str, root: Path | None) -> str:
 
 
 @contextmanager
-def importing(root: Path | None = None, *, entry: bool = False) -> Iterator[None]:
+def importing(root: Path | None = None, *, entry: bool = False) -> Generator[None]:
     """Run imports; a lab_commons module or name missing is re-raised as :class:`CommonsBelowFloor` naming its door.
 
     With *entry* (the module runs as ``__main__``) the refusal is printed and the process exits 2, no traceback.

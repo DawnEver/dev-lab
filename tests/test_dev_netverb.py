@@ -640,3 +640,101 @@ def test_a_misfit_python_is_refused_naming_the_requirement_to_find() -> None:
 def test_a_planted_unrelated_missing_module_stays_unclassified() -> None:
     """PLANTED CONTROL: only the hook framework's module is the hook row; another missing module is unmeasured."""
     assert classify('No module named numpy') is Diagnosis.UNCLASSIFIED
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['uv', 'python', 'install', '3.14'],
+        ['C:/x/uv.EXE', 'python', 'install', '--reinstall', '3.13'],
+    ],
+)
+def test_uv_python_install_is_a_network_verb_and_the_door_runs_it(argv: list[str]) -> None:
+    """2026-11-26 (v1 #1): `uv python install` downloads an interpreter, yet netverb refused it as no network verb."""
+    assert is_network_verb(argv)
+    assert spelled(['--', *argv]) == argv
+
+
+@pytest.mark.parametrize('argv', [['uv', 'python', 'list'], ['uv', 'python', 'find', '3.14'], ['uv', 'python']])
+def test_a_local_uv_python_subcommand_stays_no_network_verb(argv: list[str]) -> None:
+    """The planted control: only `install` fetches; `list`/`find` read the host."""
+    assert not is_network_verb(argv)
+    with pytest.raises(NotANetworkVerb):
+        spelled(['--', *argv])
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['uv', 'lock', '--offline'],
+        ['uv', 'pip', 'compile', '--offline', 'requirements.in'],
+        ['uv', '--offline', 'sync', '--frozen'],
+        ['git', 'fetch', '~/repos/sibling', 'main'],
+        ['git', 'fetch', '--depth', '1', '../sibling'],
+    ],
+)
+def test_an_offline_command_is_no_network_verb(argv: list[str]) -> None:
+    """2026-11-26 (v1 #1): `uv pip compile --offline` was hinted toward the retry door; it reaches no remote."""
+    assert not is_network_verb(argv)
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['uv', 'lock', '--upgrade'],
+        ['uv', 'pip', 'compile', 'requirements.in'],
+        ['git', 'fetch', '--depth', '1', 'origin'],
+    ],
+)
+def test_the_same_commands_online_stay_network_verbs(argv: list[str]) -> None:
+    """PLANTED CONTROL: without --offline or a local path the very same verbs still reach a remote."""
+    assert is_network_verb(argv)
+
+
+#: What v1 saw retried 3x as "transient" (2026-11-26, v1 #1), and the deterministic shapes beside them.
+_CERTAIN = (
+    ("error: unexpected argument '--frozn' found\n\nUsage: uv sync [OPTIONS]", Diagnosis.USAGE_REFUSED),
+    ('usage: x [-h]\nx: error: unrecognized arguments: --extra X', Diagnosis.USAGE_REFUSED),
+    ("git: 'fetchh' is not a git command. See 'git --help'.", Diagnosis.USAGE_REFUSED),
+    (
+        '  x No solution found when resolving dependencies:\n  Because there is no version of foo==9 ...',
+        Diagnosis.RESOLUTION_FAILED,
+    ),
+    (
+        "error: Distribution `x==1` can't be installed because it doesn't have a source distribution or wheel",
+        Diagnosis.RESOLUTION_FAILED,
+    ),
+    ('x.c(3): fatal error C1083: Cannot open include file\n  x Failed to build `x==1`', Diagnosis.BUILD_FAILED),
+    ('error: could not compile `wdg` (lib) due to 2 previous errors', Diagnosis.BUILD_FAILED),
+    ("fatal: couldn't find remote ref refs/heads/nope", Diagnosis.REF_ABSENT),
+    ('error: src refspec nope does not match any', Diagnosis.REF_ABSENT),
+    ('git@forge: Permission denied (publickey).', Diagnosis.PERMISSION_REFUSED),
+)
+
+
+@pytest.mark.parametrize(('output', 'diagnosis'), _CERTAIN)
+def test_a_certain_failure_is_refused_on_the_first_attempt(output: str, diagnosis: Diagnosis) -> None:
+    """Bad arguments, a failed resolution or build, an absent ref, a refused key: no retry can change the answer."""
+    assert classify(output) is diagnosis
+    report = run_network_verb(
+        [sys.executable, '-c', f'import sys; sys.stderr.write({output!r}); sys.exit(2)'],
+        attempts=3,
+        backoff_s=0.0,
+        sleep=lambda _s: None,
+    )
+    assert report.attempt_count == 1
+    assert report.disposition is Disposition.REFUSED
+    assert 'retrying cannot change this answer' in report.remedy
+
+
+@pytest.mark.parametrize(
+    'output',
+    [
+        "fatal: unable to access 'https://forge.example/x.git/': Could not resolve host: forge.example",
+        'error: RPC failed; curl 56 Recv failure: Connection reset by peer',
+        'remote: Internal Server Error',
+    ],
+)
+def test_a_planted_transient_still_retries(output: str) -> None:
+    """PLANTED CONTROL: the new permanent rows do not swallow a network blip."""
+    assert is_retryable(classify(output))
