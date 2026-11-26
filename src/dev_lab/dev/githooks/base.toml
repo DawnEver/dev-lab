@@ -19,6 +19,9 @@
 #   isolate     run as its own subprocess. A `python -m <module>` row otherwise runs IN the runner's interpreter
 #               (one interpreter per stage); any other `run` is always a subprocess.
 #   bootstraps  it creates the checkout's own venv, so it runs on whichever interpreter the shim found.
+#   rule        the rule a failure of the row is recorded as when its output names none (a tool row: "RUFF").
+#   remedy      the door a failure names: the runner prints `<rule>: ...` and `Door: <remedy> [paths]` after the
+#               row's own output, so a tool that prints only findings still names its door (walls, #842).
 #
 # ONE STAGE PER CHECK: a check runs at the one stage its nature needs, never at two
 # (tests/test_dev_githooks_runner.py, `test_no_base_module_runs_at_two_stages`).

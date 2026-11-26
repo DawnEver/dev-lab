@@ -157,12 +157,16 @@ id = "ruff"
 run = ["ruff", "check", "--force-exclude"]
 files = '\.pyi?$'
 pass_files = true
+rule = "RUFF"
+remedy = "ruff check --fix"
 
 [[tool.dev_lab.hooks.pre-commit]]
 id = "ruff-format"
 run = ["ruff", "format", "--check", "--force-exclude"]
 files = '\.pyi?$'
 pass_files = true
+rule = "RUFF-FORMAT"
+remedy = "ruff format"
 
 # PRIVATE-MARKERS at commit time: an irreversible-harm row -- a pushed marker is public for good, and the forge has
 # no denylist to catch it (absent there, the row judges the generic layer only).

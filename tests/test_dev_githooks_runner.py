@@ -745,3 +745,27 @@ def test_a_milestone_refusal_is_recorded_as_its_rule_with_its_door(repo: Path) -
     (line,) = [json.loads(one) for one in walls.ledger(repo).read_text(encoding='utf-8').splitlines()]
     assert (line['rule'], line['remedy_present']) == ('BASE-HOLDS-THE-MILESTONE', True)
 
+def test_a_lint_row_declaring_a_remedy_prints_its_rule_and_door(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """#842: a tool row prints only findings; its declared rule and remedy are printed after them and recorded."""
+
+    def fail(_argv: list[str], _cwd: Path, _stdin: str | None, _env: object) -> tuple[int, str]:
+        return 1, 'x.py:1:1: F401 `os` imported but unused'
+
+    told = Hook(
+        stage='pre-commit', id='ruff', run=('ruff',), always_run=True, pass_files=True,
+        rule='RUFF', remedy='ruff check --fix',
+    )  # fmt: skip
+    bare = Hook(stage='pre-commit', id='bare-lint', run=('lint',), always_run=True)  # PLANTED: no remedy declared
+    assert run_stage('pre-commit', root=repo, hooks=(told, bare), runner=fail) == 1
+    said = capsys.readouterr().err
+    assert 'RUFF: pre-commit row ruff failed' in said
+    assert 'Door: ruff check --fix' in said
+    lines = [json.loads(one) for one in walls.ledger(repo).read_text(encoding='utf-8').splitlines()]
+    assert [(line['rule'], line['remedy_present']) for line in lines] == [('RUFF', True), ('bare-lint', False)]
+
+
+def test_this_repos_ruff_rows_declare_their_door() -> None:
+    rows = {hook.id: hook for hook in hook_table(Path(__file__).resolve().parents[1])['pre-commit']}
+    assert (rows['ruff'].rule, rows['ruff'].remedy) == ('RUFF', 'ruff check --fix')
+    assert rows['ruff-format'].remedy == 'ruff format'
+
