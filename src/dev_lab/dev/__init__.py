@@ -273,6 +273,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   means to ``forge serve`` (PASS, FAIL, refused argv, INCONCLUSIVE, UNREACHABLE, PART_REFUSED), one source.
 * :mod:`dev_lab.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
 * :mod:`dev_lab.dev.depneeds` -- on-demand extras: a part's needs map to extras; a missing one is refused with its door.
+* :mod:`dev_lab.dev.needs` -- ONE need registry: ``@needs('jmag', 'os:windows', 'extra:x', 'data:s')`` on a test;
+  an unregistered need is refused at collection, a need missing on the host FAILS the test by name.
   STATE rather than by command TEXT: no verdict may cite an environment it did not run in, so a
   mutation DURING a run is PREVENTED against the box lock and a mutation BETWEEN runs RETIRES the
   stored anchors. It reads ``sys.prefix`` of the invoking interpreter, which is what makes the
@@ -753,9 +755,14 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.venvpointer` -- which environment a new launch takes: the twin of ``venv_resolver.js``.
 * :mod:`dev_lab.dev.venvcurrent` -- an environment is built beside, published by pointer, reclaimed when unheld.
 * :mod:`dev_lab.dev.durations` -- what every test COST, as a ledger the runner merges rather than
-  overwrites, and the two readings a ``slow`` marker set is judged by. The wall's own kills arrive
-  at ~0.0s, so they are filed at the WALL: a naive reading acquits exactly what the wall caught.
-  NOT RE-EXPORTED -- ``read``, ``write`` and ``over`` say nothing once flattened.
+  overwrites. A kill is filed at the test's deadline (else the wall): a naive reading acquits what the wall
+  caught. NOT RE-EXPORTED -- ``read`` and ``write`` say nothing once flattened.
+* :mod:`dev_lab.dev.baselines` -- baselines live in the run store; the repo keeps ``tests/baselines.lock``; a
+  rewrite quotes old and new numbers; tracked data under ``tests/`` is refused (``get|put|verify``).
+* :mod:`dev_lab.dev.cargostep` -- each cargo workspace's ``cargo test`` is its own verify step and result, run
+  natively beside pytest -- never wrapped in a pytest test.
+* :mod:`dev_lab.dev.testcost` -- cost is DERIVED: the ledger against the host's ``[test_budget]`` runs what
+  fits here (each with a deadline) and hands the rest; a hand-kept ``slow``/``heavy`` marker is refused.
 * :mod:`dev_lab.dev.famtests` -- the shared test BODIES a consumer parametrizes; no fact has a default.
 * :mod:`dev_lab.dev.jsrun` -- the family's one JS test runtime: a program on stdin under the locked Node.
 * :mod:`dev_lab.dev.supersede` -- has the family ALREADY expressed this roster row; overlap GRADES, never detects.

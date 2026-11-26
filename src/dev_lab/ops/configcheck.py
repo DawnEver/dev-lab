@@ -4,7 +4,8 @@ Five checks, each generic (the repository's own facts arrive as the files it hol
 
 - a HOST file is a server's (``[ops]``), a development machine's (``[dev]``, :mod:`dev_lab.dev.devhost`,
   checked with the family file: a restated family key is refused; the machine tables it renders are open, but
-  ``[ssh]`` is checked against :data:`~dev_lab.dev.devschema.SSH`) or an HPC account's (``[deploy]``, neither of
+  ``[ssh]`` is checked against :data:`~dev_lab.dev.devschema.SSH` and ``[test_budget]`` by
+  :func:`~dev_lab.dev.testcost.budget_defects`) or an HPC account's (``[deploy]``, neither of
   the others: :mod:`dev_lab.dev.accounthost`, checked with the family file that holds its grant); a
   server's file loads by structure
   (:func:`dev_lab.ops.config.load` with ``structure_only``): the shape the live door will load, without the host's
@@ -38,7 +39,7 @@ from urllib.parse import urlsplit
 
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devschema, rolecheck, roles, writeroots
+from dev_lab.dev import accounthost, devschema, rolecheck, roles, testcost, writeroots
 from dev_lab.dev.machineroutes import route_defects
 from dev_lab.ops import clientkeys
 from dev_lab.ops import config as opsconfig
@@ -49,6 +50,10 @@ __all__ = ['LABEL', 'LOCAL_ONLY', 'check_family', 'check_host', 'check_roles', '
 
 #: Tables a machine holds for itself; the family layer never carries them.
 LOCAL_ONLY: Final = ('repos', 'writeroots', 'sync')
+#: Where a development machine's host file has a new machine table opened: the door its refusal names.
+_OPENS: Final = 'dev_lab.dev.devschema.MACHINE_TABLES'
+#: Where a server host file's tables and their keys are declared.
+_DEFAULTS: Final = 'dev_lab.supervise.config.DEFAULTS'
 #: The label a PR gets when its change needs consent at apply time.
 LABEL: Final = 'needs-consent'
 
@@ -85,6 +90,7 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
                      f'declare a machine key as [dev] {clientkeys.DEV_KEY} in its own host file')  # fmt: skip
     if 'dev' in parsed:
         found += [f'{path.name}: {line}' for line in devschema.check(parsed, shared)]
+        found += [f'{path.name}: {line}' for line in testcost.budget_defects(parsed.get(testcost.BUDGET_TABLE, {}))]
         if 'ssh' in parsed:
             found += [f'{path.name}: {line}' for line in devschema.ssh_defects(parsed['ssh'])]
     if 'ops' in parsed or 'dev' not in parsed:
@@ -102,7 +108,25 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
         **({'ssh': {}} if 'dev' in parsed else {}),
         **({app: {} for app in devschema.app_tables(shared)} if 'dev' in parsed else {}),
     }
-    return found + [f'{path.name}: {key} is not a declared key' for key in _undeclared(parsed, schema)]
+    return found + [
+        f'{path.name}: {line}' for line in _taught(_undeclared(parsed, schema), schema, dev='dev' in parsed)
+    ]
+
+
+def _taught(keys: Iterator[str], schema: Mapping[str, Any], *, dev: bool) -> Iterator[str]:
+    """Each undeclared *keys* refusal, naming what its level declares and where a new one is opened."""
+    for key in keys:
+        head, _, _ = key.rpartition('.')
+        level: Mapping[str, Any] = schema
+        for part in head.split('.') if head else ():
+            level = level[part]
+        tables = ', '.join(sorted(level))
+        if head:
+            yield f'{key} is not a declared key -- [{head}] declares {tables} ({_DEFAULTS})'
+        elif dev:
+            yield f'{key} is not a declared key -- a host file declares {tables}; open a machine table in {_OPENS}'
+        else:
+            yield f'{key} is not a declared key -- a server host file declares {tables} ({_DEFAULTS})'
 
 
 def _forge_repos(ops: Mapping[str, Any], family: Mapping[str, Any]) -> list[str]:

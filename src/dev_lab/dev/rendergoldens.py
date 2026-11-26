@@ -1,8 +1,9 @@
 """Every family file the generators render for a set of declaration fixtures, pinned byte for byte as goldens.
 
-THE CONTRACT IT CLOSES: a generator change is shown not to change unrelated repos. A fixture is a directory holding a
-``pyproject.toml`` (its ``[tool.dev_lab.ci]`` declarations), a ``roles.jsonl`` (the executor kinds its family binds,
-as :data:`~dev_lab.dev.roles.ROLES_ENV` carries them) and a ``deltas.py`` (its ``DELTAS``); its render is
+THE CONTRACT IT CLOSES: a generator change is shown not to change unrelated repos. A fixture is a directory holding ONE
+module, ``fixture.py`` (:data:`FIXTURE_FILE`): ``PYPROJECT`` (its ``[tool.dev_lab.ci]`` declarations, as text),
+``ROLES`` (the executor kinds its family binds, as :data:`~dev_lab.dev.roles.ROLES_ENV` carries them) and ``DELTAS``
+-- in-code values, never a tracked data file (H2, 2026-11-24); its render is
 every RENDERED famconfig base it declares a delta for, every whole family file (:func:`famfiles.render_agent_files`'s
 set) and every workflow :mod:`dev_lab.dev.ciworkflows` places. :func:`compare` names each render that moved against
 the goldens, so a generator change shows exactly which renders it moves; ``update`` rewrites them, and that rewrite is
@@ -14,7 +15,7 @@ the explicit edit a reviewer reads.
 from __future__ import annotations
 
 import argparse
-import json
+import importlib.util
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -26,13 +27,12 @@ from dev_lab.dev.roles import Roles
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from types import ModuleType
 
     from dev_lab.dev.famconfig import Delta
 
 __all__ = [
-    'DELTAS_FILE',
-    'MANIFEST',
-    'ROLES_FILE',
+    'FIXTURE_FILE',
     'SEP',
     'SUFFIX',
     'compare',
@@ -43,12 +43,8 @@ __all__ = [
     'write',
 ]
 
-#: The declaration file of a fixture: its ``[tool.dev_lab.ci]`` tables.
-MANIFEST: Final = 'pyproject.toml'
-#: The file of a fixture naming the executor kind of each role, as a rendered workflow carries them.
-ROLES_FILE: Final = 'roles.jsonl'
-#: The module file of a fixture holding its ``DELTAS``.
-DELTAS_FILE: Final = 'deltas.py'
+#: The one module of a fixture: ``PYPROJECT``, ``ROLES`` and ``DELTAS`` as in-code values.
+FIXTURE_FILE: Final = 'fixture.py'
 #: The suffix of a golden file: a rendered ``.gitignore`` stored bare would be read by git as an ignore rule.
 SUFFIX: Final = '.golden'
 #: What a golden's file name spells a repo-relative ``/`` as. Goldens are FLAT under their fixture: a nested
@@ -84,14 +80,23 @@ def render_fixture(text: str, deltas: Mapping[str, Delta], origin: str, roles: R
 def render_fixtures(fixtures: Path) -> dict[str, str]:
     """Every fixture directory under *fixtures* rendered, keyed ``<fixture>/<repo-relative path>``."""
     out: dict[str, str] = {}
-    for fixture in sorted(path for path in fixtures.iterdir() if (path / MANIFEST).is_file()):
-        manifest = fixture / MANIFEST
-        deltas = famfiles.load_deltas(fixture / DELTAS_FILE)
-        [record] = (fixture / ROLES_FILE).read_text(encoding='utf-8').splitlines()
-        roles = Roles.of_kinds(**json.loads(record))
-        rendered = render_fixture(manifest.read_text(encoding='utf-8'), deltas, str(manifest), roles)
+    for fixture in sorted(path for path in fixtures.iterdir() if (path / FIXTURE_FILE).is_file()):
+        module = _load(fixture / FIXTURE_FILE)
+        roles = Roles.of_kinds(**module.ROLES)
+        rendered = render_fixture(module.PYPROJECT, module.DELTAS, str(fixture / FIXTURE_FILE), roles)
         out.update({f'{fixture.name}/{rel}': text for rel, text in rendered.items()})
     return out
+
+
+def _load(path: Path) -> ModuleType:
+    """The fixture module at *path*, loaded under a name unique to its directory."""
+    spec = importlib.util.spec_from_file_location(f'_render_fixture_{path.parent.name}', path)
+    if spec is None or spec.loader is None:
+        msg = f'cannot load a fixture module from {path}'
+        raise ImportError(msg)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def read_goldens(goldens: Path) -> dict[str, str]:

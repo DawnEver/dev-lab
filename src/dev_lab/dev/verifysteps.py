@@ -31,9 +31,9 @@ from lab_commons.box import POLL_S
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev import durations
+from dev_lab.dev import baselines, cargostep, durations
 from dev_lab.dev._logdistil import distil_log
-from dev_lab.dev._verify_address import tree_address
+from dev_lab.dev._verify_address import _git_z, tree_address
 from dev_lab.dev._verify_coverage import cache_env, coverage_args, coverage_env, coverage_report, coverage_total
 from dev_lab.dev.commandtests import declared_command, script_paths, selected_command
 from dev_lab.dev.datedlog import output_dir
@@ -281,6 +281,27 @@ def script_step(root: Path, paths: tuple[str, ...], *, handle: IO[str]) -> StepR
     return StepReport(name=name, reported=(name, *paths), failures=() if code == 0 else paths)
 
 
+def _native_steps(
+    root: Path, pytest_args: tuple[str, ...], scripts: tuple[str, ...], *, handle: IO[str], cargo: bool
+) -> list[StepReport]:
+    """The steps beside pytest: script tests, then on an untargeted run ``baselines verify`` and cargo.
+
+    ``baselines verify`` is H2's; each cargo workspace's own step (T8) runs only outside a producer, whose part
+    hands it to ``tests/cargo``.
+    """
+    steps = [script_step(root, scripts, handle=handle)] if scripts else []
+    if scripts or is_targeted(root, pytest_args):  # a selection (pytest or script) judges itself, not the tree
+        return steps
+    steps.append(baselines.step(root))
+    if not cargo:
+        return steps
+    tracked = _git_z(root, 'ls-files', '-z') or ()
+    return [
+        *steps,
+        *(cargostep.step(root, one, handle=handle, tee=_tee) for one in cargostep.workspaces(root, tracked)),
+    ]
+
+
 def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec: str, log: LogRef) -> Verdict:
     """Fold the step reports into ONE verdict over the whole verify run.
 
@@ -351,6 +372,7 @@ def run_verify(
     wait_s: float = WAIT_S,
     poll_s: float = POLL_S,
     hooks: bool = True,
+    cargo: bool = True,
 ) -> Verdict:
     """Run the three steps under *root*, tee them into a fresh log, and return the verdict.
 
@@ -412,8 +434,7 @@ def run_verify(
                 reports.append(read_hooks(root, handle=handle))
             for name, arguments in LINT_STEPS:
                 reports.append(read_lint(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
-            if scripts:
-                reports.append(script_step(root, scripts, handle=handle))
+            reports.extend(_native_steps(root, pytest_args, scripts, handle=handle, cargo=cargo))
             if not no_pytest:
                 handle.write(_PYTEST_BANNER)
                 stamp = {
