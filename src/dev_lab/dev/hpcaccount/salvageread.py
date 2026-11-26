@@ -159,9 +159,17 @@ def _number(text: str) -> int:
 
 def _row(last: Checkout, tag: str, rest: list[str]) -> bool:
     """Fold one per-checkout row into *last*; ``False`` when it is not one."""
-    single = {'B': 'branch', 'H': 'head', 'C': 'common', 'T': 'stash', 'U': 'unpushed'}
-    if tag in single:
-        setattr(last, single[tag], '\t'.join(rest).strip())
+    text = '\t'.join(rest).strip()
+    if tag == 'B':
+        last.branch = text
+    elif tag == 'H':
+        last.head = text
+    elif tag == 'C':
+        last.common = text
+    elif tag == 'T':
+        last.stash = text
+    elif tag == 'U':
+        last.unpushed = text
     elif tag == 'R' and len(rest) == 2:  # noqa: PLR2004 -- a remote's name and its url
         last.remotes.append((rest[0], rest[1]))
     elif tag == 'L':

@@ -102,3 +102,10 @@ def test_the_cli_records_and_shows_the_trend(
     out = capsys.readouterr().out
     assert 'owners.jsonl' in out
     assert 'run ' in out
+
+
+def test_an_owner_reads_out_every_reading_by_its_record_name() -> None:
+    """The record's columns are the owner's readings, named once (no attribute looked up by a string)."""
+    owner = Owner('m', fan_out=1, call_path=2, surface=3)
+    assert owner.readings() == {'fan_out': 1, 'call_path': 2, 'surface': 3}
+    assert tuple(owner.readings()) == complexity._READINGS, "the record's column order"

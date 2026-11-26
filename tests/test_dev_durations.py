@@ -406,16 +406,3 @@ def test_two_readings_in_one_clock_tick_still_order_newest_last(
     write(tmp_path / 'two', [Row('a::t', 90.0)], selector='all', worker='gw0')
     assert read(tmp_path / 'one').seconds == {'a::t': 0.1}
     assert read(tmp_path / 'two').seconds == {'a::t': 90.0}
-
-
-@pytest.mark.parametrize('name', sorted(durations.RETIRED))
-def test_a_retired_slow_marker_reading_is_refused_by_name(name: str) -> None:
-    """RETIRED-NAMES-REGISTERED: the hand-kept marker ratchet is gone, and its names say where cost lives now."""
-    with pytest.raises(AttributeError, match=rf'{name} is retired 2026-11-24.*dev_lab\.dev\.testcost'):
-        getattr(durations, name)
-
-
-def test_an_unknown_name_is_still_an_ordinary_attribute_error() -> None:
-    """PLANTED CONTROL: the refusal is for the registered names only."""
-    with pytest.raises(AttributeError, match="has no attribute 'never_was'"):
-        getattr(durations, 'never_was')  # noqa: B009 -- the attribute is the subject

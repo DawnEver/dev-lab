@@ -63,6 +63,10 @@ class Owner:
     call_path: int
     surface: int
 
+    def readings(self) -> dict[str, int]:
+        """The three readings by name, in :data:`_READINGS` order."""
+        return {'fan_out': self.fan_out, 'call_path': self.call_path, 'surface': self.surface}
+
 
 def _owned(rel: str) -> bool:
     path = PurePosixPath(rel)
@@ -178,7 +182,7 @@ def record(root: Path, *, repo: str) -> Path:
             'vcs.repository.url.full': repo,
             'vcs.ref.head.revision': revision,
             'code.namespace': owner.name,
-            **{f'lab.{KIND}.{reading}': getattr(owner, reading) for reading in _READINGS},
+            **{f'lab.{KIND}.{reading}': value for reading, value in owner.readings().items()},
         }
         for owner in owners(root, _tracked(root))
     ]

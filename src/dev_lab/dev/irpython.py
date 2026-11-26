@@ -244,6 +244,13 @@ def _template(ir: IR, source: Path) -> str:
     return text.replace(_BOUNDARY_PLACEHOLDER, f'import {ir.declaration.boundary} as _boundary')
 
 
+def _called(func: ast.expr) -> str:
+    """The name a call calls: ``f`` of ``f(..)`` and of ``x.f(..)``, else ``''``."""
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return func.id if isinstance(func, ast.Name) else ''
+
+
 def _unit_handling(source: str) -> list[str]:
     """What in *source* reads a unit: a unit-library import, a log/power call, or arithmetic on a gauge/dB spec."""
     found = []
@@ -253,7 +260,7 @@ def _unit_handling(source: str) -> list[str]:
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             found += [f'imports {node.module}'] if node.module.split('.')[0] in UNIT_LIBRARIES else []
         elif isinstance(node, ast.Call):
-            name = getattr(node.func, 'attr', getattr(node.func, 'id', ''))
+            name = _called(node.func)
             found += [f'calls {name}'] if name in _UNIT_ARITHMETIC_CALLS else []
         elif isinstance(node, ast.BinOp):
             named = {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)} & _UNIT_REFERENCE_ATTRIBUTES

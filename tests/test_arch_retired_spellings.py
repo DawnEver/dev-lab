@@ -32,6 +32,26 @@ MOVED_TABLES: Final = (
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
     **dict.fromkeys(
+        (
+            f'durations.{name}'
+            for name in (
+                'SLOW',
+                'FAST',
+                'NO_DATA',
+                'Finding',
+                'over',
+                'unmarked_but_slow',
+                'marked_but_fast',
+                'unmeasured',
+                'assert_the_readings_still_convict',
+            )
+        ),
+        (
+            'dev_lab.dev.testcost: cost is derived from the dev_lab.dev.durations ledger, never a hand-kept marker',
+            'user ruling 2026-11-24 (T3/H1): the slow-marker ratchet retired; registered here, not by a module hook',
+        ),
+    ),
+    **dict.fromkeys(
         ('session_entries', 'scratch-sessions', 'SESSION_DIR'),
         (
             'dev_lab.dev._scratch_owners (an owner record per entry, claimed where it is made) and own_entries',
