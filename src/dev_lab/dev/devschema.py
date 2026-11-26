@@ -13,7 +13,7 @@ from typing import Any, Final
 from lab_commons import config as machineconfig
 from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
-from dev_lab.dev import remote
+from dev_lab.dev import devservers, remote
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops import clientkeys
 
@@ -67,7 +67,8 @@ VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'license_server': st
 SCHEMA: Final = {
     'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
     'helpers': dict, 'channels': dict, 'bridge': dict, 'hooks': str, 'default': dict, 'apps': list,
-    'client_keys': list, 'hostname': str, 'key_account': str, 'forge_reach': list,
+    'client_keys': list, 'hostname': str, 'key_account': str, 'forge_reach': list, 'servers': dict,
+    'operates_servers': bool,
 }  # fmt: skip
 #: ``[dev] forge_reach``: the transports this machine reaches the forge's approval doors (consent, break-glass) by,
 #: in its order of preference -- ``ssh`` (port 22) and/or ``https`` (443, :mod:`dev_lab.ops.httpsdoor`). Undeclared
@@ -86,15 +87,16 @@ CADENCE_DEFAULT: Final = '6 h'
 #: ``[dev] hooks``: ``enforce`` -- a firing hook row refuses; ``warn`` -- it only warns (an unmanaged machine).
 HOOK_MODES: Final = ('enforce', 'warn')
 #: ``[dev]`` keys only the family declares: ``default`` -- the profile an undeclared machine renders
-#: (:mod:`dev_lab.dev.devprofile`).
-FAMILY_ONLY: Final = ('default', 'apps')
+#: (:mod:`dev_lab.dev.devprofile`); ``servers`` -- the servers every workstation operates, by address
+#: (:mod:`dev_lab.dev.devservers`).
+FAMILY_ONLY: Final = ('default', 'apps', 'servers')
 #: ``[dev]`` keys that are one machine's facts and never the family's: ``channels`` -- session channel source ->
 #: the user whose messages through it ARE the machine's user (an undeclared channel or user carries no authority);
 #: ``client_keys`` -- the machine's ssh client public keys, from which a server derives who may reach its approval
 #: accounts (:mod:`dev_lab.ops.clientkeys`); ``hostname`` -- the machine's own host name, the part after ``@`` in
 #: every one of its key comments (:func:`key_comment_defects`); ``forge_reach`` -- the transports its own network lets
 #: it reach the forge by (:data:`FORGE_REACH`).
-HOST_ONLY: Final = ('channels', 'client_keys', 'hostname', 'forge_reach')
+HOST_ONLY: Final = ('channels', 'client_keys', 'hostname', 'forge_reach', 'operates_servers')
 #: ``[dev]`` keys the family declares for every machine and a host may OVERRIDE with a different value: ``forges`` --
 #: the workstation login is one person's, so another person's machine names its own; ``key_account`` -- the account
 #: named before ``@`` in every client key comment, likewise one person's. A host restating the family's value is still
@@ -265,6 +267,13 @@ def _shape(table: Mapping[str, Any], where: str) -> list[str]:
         found += channel_defects(table['channels'], f'{where}.channels')
     if 'client_keys' in table:
         found += clientkeys.defects(table['client_keys'], f'{where}.client_keys')
+    if table.get('operates_servers') is False and 'client_keys' in table:
+        found.append(
+            f'{where}.operates_servers = false declares this machine joins no server; its client_keys '
+            'would admit it to them: keep one of the two'
+        )
+    if isinstance(table.get('servers'), dict):
+        found += devservers.defects(table['servers'], f'{where}.servers')
     reach = table.get('forge_reach', list(FORGE_REACH[:1]))
     if not (isinstance(reach, list) and reach and len(set(reach)) == len(reach) and set(reach) <= set(FORGE_REACH)):
         found.append(f'{where}.forge_reach must list, once each and in preference order, some of {list(FORGE_REACH)}')

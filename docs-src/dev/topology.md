@@ -154,7 +154,8 @@ memory against its cgroup cap, every metric (disk free, a queue depth a probe de
 installed dev-lab sha, the last auto-upgrade audit line (`dev_lab.supervise.card`). Install serves that one file
 read-only behind the `[ops.caddy] allow` list (`dev_lab.ops.caddy.status_routed`; it needs `[ops.caddy]` and
 `[ops.supervise]`). A workstation reads it with no ssh and no cluster code: the machine file's `[[server]]`
-declares `status = "https://<host><path>"`, and `python -m dev_lab.dev.opsserver <server|all> card` renders it --
+rows are RENDERED into every registered workstation from the family `[dev] servers` (name and address) and each
+server's own `[ops.access]` / `[ops.status]` (`dev_lab.dev.devservers`), and `python -m dev_lab.dev.opsserver <server|all> card` renders it --
 exit 1 for a card unreachable or STALE (no rewrite for 3 intervals), 2 for a server declaring none.
 
 ## 5. Consent: one code per shown plan
