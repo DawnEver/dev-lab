@@ -38,6 +38,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final, Protocol
 
+import lab_commons.launch as _door
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
@@ -234,7 +235,7 @@ def _run_store(root: Path) -> Store:
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run(
+    return _door.run(
         [_GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8', check=True, timeout=120
     ).stdout
 
