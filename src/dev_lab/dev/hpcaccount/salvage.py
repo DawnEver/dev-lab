@@ -3,7 +3,7 @@
 User ruling 2026-11-25: an account is cleaned completely. Before its contents may go, every commit on no remote and
 every uncommitted change in its checkouts must be on the workstation, and no door brought them: ``look ... inventory``
 only REPORTS what is not pushed, ``archive`` tars a path to a run store (none was declared), and raw ssh is
-forbidden. Measured that day: one research account held eleven checkouts NOT PUSHED under ``~/src`` alone (40
+forbidden. Measured that day: one research account held eleven checkouts NOT PUSHED in one home directory alone (40
 commits in one, dirty files and untracked notes in others).
 
 This door finds every checkout under ``~/<path>`` (``.`` is the home) -- nested ones and worktrees included, by the
