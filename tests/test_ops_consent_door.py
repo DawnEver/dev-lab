@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 from _ops_fixtures import NOW, RFC_KEY
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 
 from dev_lab.dev import planrunoffer, sshhold
 from dev_lab.dev.consentguard import state_dir

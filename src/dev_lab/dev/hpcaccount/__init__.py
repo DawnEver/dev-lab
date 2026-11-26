@@ -7,7 +7,8 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   ``forge serve`` host in one run; its data is :mod:`~dev_lab.dev.hpcaccount.spec`, its account checks
   :mod:`~dev_lab.dev.hpcaccount.account` and :mod:`~dev_lab.dev.hpcaccount.checks`, its steps
   :mod:`~dev_lab.dev.hpcaccount.steps`, its host check :mod:`~dev_lab.dev.hpcaccount.deployhost`, its declaration
-  :mod:`~dev_lab.dev.hpcaccount.declaration`.
+  :mod:`~dev_lab.dev.hpcaccount.declaration`, its FEMM 5 build where ``[capabilities.femm]`` is declared
+  :mod:`~dev_lab.dev.hpcaccount.femm`.
 * ``tick <repo>... [--lock <path> --wall-minutes <m>]`` (:mod:`~dev_lab.dev.hpcaccount.tick`) is one cron tick: the
   host refreshes the kit (this package's checkout) and the repo, then the kit's ``forge serve`` runs in the repo's
   checkout -- under the lock and within the wall the cron line names (:mod:`~dev_lab.dev.hpcaccount.tickwall`).
@@ -42,6 +43,12 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   (:mod:`~dev_lab.dev.hpcaccount.archive`) send ``~/<path>`` to the family's run store as tar parts, each read back
   and its sha256 compared, under a manifest; then delete it through ``lab_commons.hpc clean`` only once that
   archive is proved and the tree unchanged.
+* ``salvage --account <user> <path> [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.salvage`) brings every checkout's
+  own git work under ``~/<path>`` home before the account is cleaned -- a bundle of the commits on no remote, the
+  tracked diff, the untracked files -- through the Runner's stdout, writing nothing on the account, under the
+  invoking checkout's dated ``salvage`` output with a sha256 manifest; ``salvage-fetch <salvaged checkout> --into
+  <repo> [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.salvagefetch`) fetches one bundle into a local repo as
+  ``salvage/<account>/<checkout>/<name>`` branches, matched by its origin's repository name.
 * ``reclaim-foreign --account <user> <home-relative path> [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.reclaim`)
   removes the entries OTHER declared fleet accounts own under one account's home: grants each owner traverse,
   has each owner delete its own, removes the rest, revokes and re-reads every grant; without ``--apply`` the plan.
@@ -83,7 +90,7 @@ _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
     '{deploy [...] | deploy-fleet [...] | drift[-fleet] [...] | ci-pause[-fleet] [...] | '
     'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | keys [...] | look [...] | '
-    'archive [...] | archive-clean [...] | '
+    'archive [...] | archive-clean [...] | salvage [...] | salvage-fetch [...] | '
     'reclaim-foreign [...] | storage-check [...] | '
     'tick-status [...] | tick-stop [...] | '
     'tick <repo>... [--lock <path> --wall-minutes <m>] | allocate [...]}'
@@ -105,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
         keys,
         look,
         reclaim,
+        salvage,
+        salvagefetch,
         storage,
         storagecheck,
         tickstop,
@@ -128,6 +137,8 @@ def main(argv: list[str] | None = None) -> int:
         'look': look.main,
         'archive': archive.main,
         'archive-clean': lambda rest: archive.main(rest, verb='archive-clean'),
+        'salvage': salvage.main,
+        'salvage-fetch': salvagefetch.main,
         'reclaim-foreign': reclaim.main,
         'tick-status': tickstop.main_status,
         'tick-stop': tickstop.main_stop,
@@ -151,12 +162,12 @@ def _tick(argv: list[str]) -> int:
     """``tick <repo>... [--lock <path> --wall-minutes <m>]``: unlocked and unbounded without ``--lock``."""
     from dev_lab.dev import tickholder  # noqa: PLC0415 -- the package imports no verb
     from dev_lab.dev.hpcaccount import tick, tickwall  # noqa: PLC0415 -- the package imports no verb
-    from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL_MINUTES  # noqa: PLC0415 -- the tick verb's default
+    from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL  # noqa: PLC0415 -- the tick verb's default
 
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount tick')
     parser.add_argument('repos', nargs='+')
     parser.add_argument('--lock', type=Path, help="this tick's lock; its holder record is written beside it")
-    parser.add_argument('--wall-minutes', type=int, default=DEFAULT_TICK_WALL_MINUTES)
+    parser.add_argument('--wall-minutes', type=int, default=DEFAULT_TICK_WALL // 60)
     args = parser.parse_args(argv)
     probed: dict[str, bool] = {}  # one probe per tool per tick, however many repos it serves
 

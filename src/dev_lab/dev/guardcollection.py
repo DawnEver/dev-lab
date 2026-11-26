@@ -81,7 +81,7 @@ def _module_wide(tree: ast.Module) -> str:
                 return f'its module-level pytestmark is {found[0]}'
         call = stmt.value if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call) else None
         skips = call is not None and isinstance(call.func, ast.Attribute) and call.func.attr == 'skip'
-        if skips and any(kw.arg == 'allow_module_level' for kw in call.keywords):
+        if skips and call is not None and any(kw.arg == 'allow_module_level' for kw in call.keywords):
             return 'it skips itself at module level'
     return ''
 

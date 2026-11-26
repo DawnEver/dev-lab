@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.log import emit
-from lab_commons.units import Q_
+from lab_commons.quantity import parse
 
 from dev_lab.dev.producer import Owner, owner_of
 
@@ -62,16 +62,11 @@ _SYNC_NOT_RED: Final = ('waits behind', 'is not an ephemeral head', 'conflicts w
 
 
 def duration(key: str, text: str) -> timedelta:
-    """*text* (the value of policy *key*) as a :class:`timedelta`; a bare number or a non-duration is refused."""
-    try:
-        quantity = Q_(text)
-    except Exception as bad:
-        msg = f'{key} {text!r} is not a duration; write one such as "2 h"'
-        raise ValueError(msg) from bad
-    if not isinstance(quantity, Q_) or not quantity.check('[time]'):
-        msg = f'{key} {text!r} is not a duration (it needs a unit); write one such as "2 h"'
-        raise ValueError(msg)
-    return timedelta(seconds=float(quantity.m_as('s')))
+    """*text* (the value of policy *key*) as a :class:`timedelta`; a bare number or a non-duration is refused.
+
+    The family's one duration parser reads it (:func:`lab_commons.quantity.parse`); its refusal names *key*.
+    """
+    return timedelta(seconds=parse(key, text, 'duration'))
 
 
 @dataclass(frozen=True)

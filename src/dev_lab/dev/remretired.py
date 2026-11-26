@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import sys
@@ -40,6 +39,8 @@ from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.launch import run
 from lab_commons.log import emit
+
+from dev_lab.dev import harness
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -150,11 +151,11 @@ def migrate(root: Path, *, apply: bool) -> tuple[list[str], list[str]]:
 
 
 def _claude_config() -> Path:
-    return Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude')
+    return Path(harness.context().claude_config_dir or Path.home() / '.claude')
 
 
 def _codex_home() -> Path:
-    return Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex')
+    return Path(harness.context().codex_home or Path.home() / '.codex')
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -252,7 +253,7 @@ def _session_root() -> Path:
     except ValueError:
         payload = {}
     cwd = payload.get('cwd') if isinstance(payload, dict) else None
-    return Path(os.environ.get('CLAUDE_PROJECT_DIR') or cwd or Path.cwd())
+    return Path(harness.context().project_dir or cwd or Path.cwd())
 
 
 def main(argv: Sequence[str] | None = None) -> int:

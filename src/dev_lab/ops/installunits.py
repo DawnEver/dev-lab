@@ -12,8 +12,9 @@ from typing import Final
 
 from dev_lab.ops.access import keys_file
 from dev_lab.ops.backuprole import Backup
-from dev_lab.ops.config import OpsConfig, Probe
+from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.placement import Placement
+from dev_lab.ops.proberole import Probe
 from dev_lab.ops.upgradefollow import AUDIT
 from dev_lab.supervise.daemon import watchdog_seconds
 

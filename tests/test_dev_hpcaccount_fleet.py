@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 from lab_commons.config import CONFIG_ENV
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 from lab_commons.hpc.grants import Grant, Machine
 
 from dev_lab.dev import devhost

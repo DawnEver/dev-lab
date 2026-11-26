@@ -103,6 +103,7 @@ _IDS = frozenset(
         'ONE-BRANCH-PER-SESSION',
         'MERGE-OR-DELETE',
         'RECURSIVE-DELETE',
+        'BASELINE-REWRITE-QUOTED',
         'MERGE-DEVIATIONS-NAMED',
         'MERGE-RESOLUTION-DECLARED',
         'AUTO-MODE-RUNS-THE-DOORS',
@@ -146,7 +147,11 @@ _IDS = frozenset(
         'ONE-FORMAT-PER-NEED',
         'ZERO-CORE-CHANGE',
         'NATIVE-FIRST',
+        'OWNER-DAG',
+        'NO-DETOUR',
+        'ENV-IS-READ-ONCE',
         'MACHINES-MEET-ONLY-THROUGH-THE-FORGE',
+        'CONFIG-VALUES-CARRY-UNITS',
     }
 )
 

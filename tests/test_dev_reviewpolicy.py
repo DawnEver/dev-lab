@@ -38,7 +38,7 @@ def test_the_schema_is_pinned(tmp_path: Path, capsys: pytest.CaptureFixture[str]
 def test_a_repo_override_overlays_the_family_defaults(tmp_path: Path) -> None:
     """``[tool.dev_lab.review]`` replaces only what it declares; the rest stays the family's."""
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.dev_lab.review]\ncode = ["**/*.py"]\nmax_total_bytes = 7\nmax_diff_bytes = 3\n', encoding='utf-8'
+        '[tool.dev_lab.review]\ncode = ["**/*.py"]\nmax_total = "7 B"\nmax_diff = "3 B"\n', encoding='utf-8'
     )
     got = policy(tmp_path)
     assert (got['code'], got['max_total_bytes'], got['max_file_bytes']) == (['**/*.py'], 7, 3)

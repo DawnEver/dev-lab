@@ -5,7 +5,8 @@ the byte-equality test only. Each record gets a borrowed ``<Record>View<'py>`` w
 ``numpy::PyReadonlyArrayDyn`` -- a ZERO-COPY read of the Python record's buffers -- and ``into_owned()`` makes the
 owned record with at most one copy per array. ``FromPyObject`` for the owned record goes through its view;
 ``IntoPyObject`` builds the Python dataclass by keyword, moving each array into numpy without a copy
-(``PyArrayDyn::from_owned_array``). Enums convert by value, ids as ``str``. Targets pyo3 0.29 / numpy 0.29.
+(``PyArrayDyn::from_owned_array``). Enums convert by value, ids as ``str``. The pyo3 / rust-numpy line it targets is
+``PYO3_VERSION`` / ``NUMPY_VERSION``; the equivalence test builds the emitted code against exactly those.
 """
 
 from __future__ import annotations
@@ -21,7 +22,13 @@ type Path = Callable[[str], str]
 #: A field's owned Rust type.
 type Owned = Callable[['Field', 'TypeRef'], str]
 
-__all__ = ['PY_RUNTIME_RS', 'enum_py', 'id_py', 'record_py']
+__all__ = ['NUMPY_VERSION', 'PYO3_VERSION', 'PY_RUNTIME_RS', 'enum_py', 'id_py', 'record_py']
+
+#: The ``pyo3`` requirement a crate compiling the emitted code declares. One line: 0.30 removed what 0.28
+#: deprecated, and no consumer pins an older one for this code.
+PYO3_VERSION: Final = '0.30'
+#: The ``numpy`` (rust-numpy) requirement; its line follows pyo3's (numpy 0.30 requires pyo3 ^0.30).
+NUMPY_VERSION: Final = '0.30'
 
 _CFG: Final = '#[cfg(feature = "pyo3")]'
 _NUMPY: Final = {

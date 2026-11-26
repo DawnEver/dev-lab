@@ -37,13 +37,30 @@ from dev_lab.dev.checkout import git_out
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.lanepolicy import Policy
 
-__all__ = ['LOSSY', 'ORIGIN', 'PROTECTED', 'Verdict', 'grant', 'granted', 'judge', 'unlanded']
+__all__ = [
+    'DISCARDED',
+    'LOSSY',
+    'ORIGIN',
+    'PROTECTED',
+    'Verdict',
+    'discarded',
+    'grant',
+    'granted',
+    'judge',
+    'landed',
+    'unlanded',
+    'would_discard',
+]
 
 #: Where the fetched origin branches live.
 ORIGIN: Final = 'refs/remotes/origin/'
 #: Its refusals, each said once, here.
 LOSSY: Final = '{branch}: refused -- {count} commit(s) exist on it alone ({commits}), with unlanded content in: {files}'
 PROTECTED: Final = '{branch}: refused -- it is {why}, never deleted'
+DISCARDED: Final = (
+    '{branch}: refused -- {holder} holds its commits only as ancestors: merge {merge} kept none of its content in: '
+    '{files}'
+)
 _UNFETCHED: Final = '{branch}: refused -- {sha} is not a commit this clone holds, so what it carries is unknown'
 _FIRST: Final = 5
 
@@ -82,10 +99,8 @@ def judge(
     skipped = {branch, 'HEAD', *gone, *producers}
     others = [name for name in (ref.removeprefix(ORIGIN) for ref in listed) if name not in skipped]
     others.sort(key=lambda name: (name != policy.integration, name not in open_heads, name))
-    for name in others:
-        if git_out(root, 'merge-base', '--is-ancestor', sha, f'{ORIGIN}{name}') is not None:
-            label = f'open PR #{open_heads[name]} ({name})' if name in open_heads else name
-            return Verdict(branch, sha, container=label)
+    if held := _held(root, branch, sha, others, open_heads):
+        return held
     lost = (git_out(root, 'rev-list', sha, '--not', *(f'{ORIGIN}{name}' for name in others)) or '').split()
     files = unlanded(root, sha, others, policy.integration, exempt=GENERATED) if lost else ()
     if not files:
@@ -96,6 +111,84 @@ def judge(
     others_refs = (f'{ORIGIN}{name}' for name in others)
     roots = (git_out(root, 'rev-list', '--max-parents=0', sha, '--not', *others_refs) or '').split()
     return Verdict(branch, sha, lost=tuple(lost), refused=refused, roots=tuple(roots))
+
+
+def _held(root: Path, branch: str, sha: str, others: Sequence[str], open_heads: dict[str, int]) -> Verdict | None:
+    """The first of *others* holding *sha* as an ancestor: its container, or a refusal when only a discard holds it."""
+    for name in others:
+        if git_out(root, 'merge-base', '--is-ancestor', sha, f'{ORIGIN}{name}') is None:
+            continue
+        if dropped := discarded(root, sha, f'{ORIGIN}{name}'):
+            merge, files = dropped
+            lost = tuple((git_out(root, 'rev-list', sha, f'^{merge}^1') or '').split())
+            refused = DISCARDED.format(branch=branch, holder=name, merge=merge[:12], files=', '.join(files))
+            return Verdict(branch, sha, lost=lost, refused=refused)
+        label = f'open PR #{open_heads[name]} ({name})' if name in open_heads else name
+        return Verdict(branch, sha, container=label)
+    return None
+
+
+def would_discard(root: Path, sha: str, integration: str) -> str:
+    """What dropping the branch at *sha* discards, as one line the user approves or not: its commits and files.
+
+    Its commits are those *integration* lacks -- or, when only a content-neutral merge made them ancestors
+    (:func:`discarded`), those that merge brought in -- and its files the ones whose content *integration* lacks.
+    """
+    holder = f'{ORIGIN}{integration}'
+    ancestor = git_out(root, 'merge-base', '--is-ancestor', sha, holder) is not None
+    dropped = discarded(root, sha, holder) if ancestor else None
+    if dropped is not None:
+        merge, files = dropped
+        commits = (git_out(root, 'rev-list', '--no-merges', sha, f'^{merge}^1') or '').split()
+    else:
+        commits = (git_out(root, 'rev-list', '--no-merges', sha, '--not', holder) or '').split()
+        files = unlanded(root, sha, [integration], integration, exempt=frozenset()) if commits else ()
+    shown = ', '.join(one[:12] for one in commits[:_FIRST]) + (' ...' if len(commits) > _FIRST else '')
+    return f'{len(commits)} commit(s) ({shown or "none"}) with content in: {", ".join(files) or "none"}'
+
+
+def landed(root: Path, sha: str, holders: Sequence[str]) -> bool:
+    """*sha* is an ancestor of one of *holders*, and the merge bringing it there kept its content (:func:`discarded`).
+
+    The landed predicate every survey, policy and queue reads: ancestry alone reads an ``-s ours`` discard as landed.
+    """
+    return any(
+        git_out(root, 'merge-base', '--is-ancestor', sha, holder) is not None and discarded(root, sha, holder) is None
+        for holder in holders
+    )
+
+
+def discarded(root: Path, sha: str, holder: str) -> tuple[str, tuple[str, ...]] | None:
+    """The merge that brought *sha* into *holder* and the files of *sha*'s branch it threw away; ``None`` when none.
+
+    ANCESTRY IS NOT LANDING (dev-lab #611). A content-neutral merge -- ``git merge -s ours``, or a resolution that took
+    the base side of every file -- makes the branch's commits ancestors of *holder* while none of their content
+    arrives, so ``merge-base --is-ancestor`` reads the work as landed. The LANDING MERGE is the oldest commit on
+    *holder*'s first-parent chain that reaches *sha*; when *sha* is itself on that chain it landed directly. A file
+    the branch changed since its merge base with the landing merge's first parent was DISCARDED when the merge kept
+    the first parent's entry and that entry is not the branch's. A false "discarded" is safe; a false "landed" loses
+    work. Fails closed: git failing to answer names every file the branch wrote.
+    """
+    chain = (git_out(root, 'rev-list', '--first-parent', '--ancestry-path', f'{sha}..{holder}') or '').split()
+    if not chain:
+        return None
+    merge = chain[-1]
+    first = git_out(root, 'rev-parse', '--verify', '--quiet', f'{merge}^1')
+    if first is None or git_out(root, 'merge-base', '--is-ancestor', sha, first.strip()) is not None:
+        return None  # sha is on holder's own first-parent chain: it landed directly
+    base = (git_out(root, 'merge-base', first.strip(), sha) or '').strip()
+    written = git_out(root, 'diff', '-z', '--name-only', '--no-renames', base, sha) if base else None
+    if written is None:
+        return merge, ("(git could not list the branch's files)",)
+    paths = sorted(set(written.split('\0')) - {''})
+    if not paths:
+        return None
+    trees = [_entries(root, rev, paths) for rev in (merge, f'{merge}^1', sha)]
+    if any(tree is None for tree in trees):
+        return merge, tuple(paths)
+    kept, before, branch = (tree or {} for tree in trees)
+    files = tuple(path for path in paths if kept.get(path) == before.get(path) != branch.get(path))
+    return (merge, files) if files else None
 
 
 def _grant_path(root: Path, branch: str) -> Path:

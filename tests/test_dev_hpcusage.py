@@ -125,7 +125,7 @@ LEDGER = 'COMPLETED|4|60|36000000\nRUNNING|8|600|0\n'
 
 
 def _grant(user: str, *, billed: bool = False, cluster: str = 'c', account: str = 'acct') -> Grant:
-    budget = Budget(20000, '2026-08-01', '2027-08-01') if billed else None
+    budget = Budget(20000 * 3600.0, '2026-08-01', '2027-08-01') if billed else None
     return Grant(user, ('h',), account, billed=billed, budget=budget, role='research', cluster_name=cluster)
 
 

@@ -154,4 +154,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
     'forgepr',  # ORIGINAL: pr close and pr edit, split from forgecli at the module-size band (2026-11-25)
+    # ORIGINAL: no door removed a whole redundant clone; RECURSIVE-DELETE refused it with no exit (2026-11-19).
+    'cloneremove',
+    # ORIGINAL: no door purged the pre-generation unit results a records home still held (2026-11-17).
+    'forgerecordpurge',
+    # ORIGINAL: the read-only secret-name list (2026-11-10); no consumer listed names.
+    'forgesecretnames',
 )

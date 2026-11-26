@@ -115,7 +115,7 @@ def sibling_problems(local: Mapping[str, str]) -> list[str]:
 
 
 def _residue_problems(stem: str, text: str, family: Mapping[str, str]) -> list[str]:
-    out = []
+    out: list[str] = []
     if not _links_family_page(text, stem):
         out.append(
             f'{stem}.md: under a family page`s name and does not link the pinned '
@@ -133,7 +133,7 @@ def _residue_problems(stem: str, text: str, family: Mapping[str, str]) -> list[s
 
 
 def _allowlist_problems(local: Mapping[str, str], subject_allowlist: Mapping[str, str]) -> list[str]:
-    out = []
+    out: list[str] = []
     for stem, reason in sorted(subject_allowlist.items()):
         if not reason.strip():
             out.append(f'{stem}: allowlisted with no reason')

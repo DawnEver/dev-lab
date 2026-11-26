@@ -92,6 +92,12 @@ _ENFORCED = {
     'PRIOR-ART-FIRST': (guard('tests/test_dev_priorart.py'),),
     'ZERO-CORE-CHANGE': (guard('tests/test_dev_corechange.py'),),
     'NATIVE-FIRST': (guard('tests/test_dev_nativefirst.py'),),
+    'OWNER-DAG': (
+        guard('tests/test_dev_ownerdag.py'),
+        guard('tests/test_dev_rustdeps.py'),
+        guard('tests/test_dev_deptable.py'),
+    ),
+    'NO-DETOUR': (guard('tests/test_dev_passthrough.py'),),
     'MEASURE-BEFORE-PORTING': (guard('tests/test_dev_portmeasure.py'), guard('tests/test_dev_forgemerge.py')),
     'ONE-FORMAT-PER-NEED': (
         guard('tests/test_dev_layout.py'),
@@ -235,6 +241,10 @@ _ENFORCED = {
         guard('tests/test_dev_units.py'),
         guard('tests/test_no_name_carries_a_unit.py'),
     ),
+    'CONFIG-VALUES-CARRY-UNITS': (
+        guard('tests/test_dev_configkeys.py'),
+        guard('tests/test_config_keys_carry_no_unit.py'),
+    ),
     'VERDICT-BAR-IS-THE-INCREMENT': (guard('tests/test_dev_verdict.py'),),
     'XFAIL-NOT-SKIP': (guard('tests/test_arch_skips_are_a_named_set.py'),),
     # Prevention is the deny row (proved through the real engine); detection is the family body run
@@ -249,6 +259,10 @@ _ENFORCED = {
     'OUTPUT-HOLDS-NO-CODE': (guard('tests/test_dev_outputcode.py'),),
     # 2026-11-24 (user ruling, ruling C): a credential value never reaches an output sink; hashes only.
     'NEVER-LOG-SECRETS': (guard('tests/test_dev_secretlog.py'),),
+    # 2026-11-25 (family policy, v1-migration D67/D68): the environment is read in the declared entry only.
+    'ENV-IS-READ-ONCE': (guard('tests/test_dev_envreads.py'),),
+    # 2026-11-25 (tests-by-need, H2): a rewritten baseline quotes both its old and new deviation.
+    'BASELINE-REWRITE-QUOTED': (guard('tests/test_dev_baselines.py'),),
     # 2026-11-23 (user ruling): origin holds only family version tags; pre-push refuses any other tag.
     'ONLY-VERSION-TAGS': (guard('tests/test_dev_milestonebase.py'),),
     # User 2026-11-20: a research deploy called crontab on a cluster forbidding it; steps derive from `serves`.

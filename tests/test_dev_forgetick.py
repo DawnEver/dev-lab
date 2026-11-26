@@ -20,6 +20,7 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 from _roles_fixtures import HPC_REPO, carry
 from lab_commons.box import BOX_ENV, GB, Capacity, Holding, holdings
 from lab_commons.box.providers import box_engine
+from lab_commons.compute import learned
 from lab_commons.compute.model import (
     BRANCH,
     FEATURE,
@@ -39,7 +40,7 @@ from lab_commons.hpc.config import Cost
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev import forgeproduce, forgerounds, forgetick
+from dev_lab.dev import _tick_demand, forgeproduce, forgerounds, forgetick
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeaffinity import DEFERRED, HELD
 from dev_lab.dev.forgeclaim import (
@@ -66,6 +67,7 @@ from dev_lab.dev.forgetick import tick
 from dev_lab.dev.forgewait import NEVER_FITS, Box
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.producer import Owner, ProducerExit, release_reason
+from dev_lab.dev.testcost import NO_BUDGET_FITS
 
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
@@ -598,6 +600,39 @@ def test_a_part_larger_than_every_live_host_is_refused_on_its_commit_at_once(ser
     assert waiting.blocked.endswith(f'{NEVER_FITS} here: mem_gb 40 asked of a 32 size')
 
 
+def test_a_part_no_live_hosts_test_budget_fits_is_refused_on_its_commit_naming_the_test(
+    server, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """It would never be claimed anywhere: an answer naming the test, its cost and every budget -- never silence.
+
+    PLANTED CONTROL: a live host whose test budget fits it is on the cards -- it waits for that host, refused nowhere.
+    """
+    machine = tmp_path / 'machine.toml'
+    machine.write_text('[test_budget]\ntest = "10 min"\n', encoding='utf-8')
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(machine))
+    monkeypatch.setattr(learned, 'part_files', lambda _repo, _needs: ('tests/test_a.py',))
+    monkeypatch.setattr(learned, 'learned', lambda _repo: {'durations': {'tests/test_a.py::test_long': 3580.9}})
+    repo, tips = _origin(tmp_path)
+    head, lane = _head_and_pr(tips)
+    small = HostCard('box1', 'bob', 'windows', NOW.isoformat(), supply={'cpu': 8}, test_s=600.0)
+    report = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=8), cards=[small])
+    assert report.claimed == ()
+    for sha in (head, lane):
+        (refusal,) = [
+            r['body'] for r in Recorder.received if r['method'] == 'POST' and r['path'] == f'{API}/statuses/{sha}'
+        ]
+        assert refusal['state'] == 'error'
+        assert refusal['description'].startswith(f'{REFUSED_AT_COMMIT} {NO_BUDGET_FITS}'), refusal
+        assert 'tests/test_a.py::test_long' in refusal['description']
+    assert report.queue == ()
+    Recorder.received.clear()
+    _head_and_pr(tips)
+    big = HostCard('ada/v1', 'bob', 'windows', NOW.isoformat(), supply={'cpu': 96}, test_s=7200.0)
+    waits = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=8), cards=[small, big])
+    assert not [r for r in Recorder.received if r['method'] == 'POST']
+    assert [item.blocked.startswith('over this host test budget') for item in waits.queue] == [True, True]
+
+
 def _claimed_as(tips: dict[str, str]) -> list[str]:
     """The claim descriptions this tick posted on the head."""
     path = f'{API}/statuses/{tips["integrate/main"]}'
@@ -725,7 +760,7 @@ def test_a_tick_claims_the_integration_tip_ahead_of_a_boosted_pr(server, tmp_pat
 
     PLANTED CONTROL: the label moved to the other PR moves that PR ahead in the queue; the head is still claimed.
     """
-    monkeypatch.setattr(forgetick.Capacity, 'read', staticmethod(lambda: Capacity(cpu=4.0, mem_bytes=8 * GB, seats={})))
+    monkeypatch.setattr(Capacity, 'read', staticmethod(lambda: Capacity(cpu=4.0, mem_bytes=8 * GB, seats={})))
     repo, tips = _origin(tmp_path)
     head, lane, other = tips['integrate/main'], tips['topic/a'], tips['wip/b']
     lacking = f'{NOT_ADMITTED}: lacking cpu (4 asked, 0 free), mem_gb (8 asked, 0 free)'
@@ -750,7 +785,7 @@ def test_over_budget_or_not_admitted_is_not_claimed_and_says_so(server, tmp_path
     repo, tips = _origin(tmp_path)
     head = tips['integrate/main']
     (repo / 'pyproject.toml').write_text(
-        PRODUCE + '[tool.lab_commons.schedule]\ndaily_budget_core_h = {integration = 10}\n', 'utf-8'
+        PRODUCE + '[tool.lab_commons.schedule]\ndaily_budget = {integration = "10 h"}\n', 'utf-8'
     )
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{head}', (200, []))
@@ -895,7 +930,7 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
     assert report.artifacts == problem, 'the host card states why'
     if not claims:
         assert not any(r['method'] == 'POST' for r in Recorder.received), 'no claim is posted'
-        assert any('threshold_mb' in reason and _MISSING in reason for reason in report.refused)
+        assert any('threshold' in reason and _MISSING in reason for reason in report.refused)
         assert any(_MISSING in item.blocked for item in report.queue)
 
 
@@ -1365,9 +1400,9 @@ def test_a_part_is_sized_at_the_ids_the_commits_parts_hand_it() -> None:
         CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=workstation:1,jmag:2', ''),
         CommitStatus('tests/jmag', 'success', 'scope=full ran=2 hands=workstation:5', ''),
     ]
-    assert forgetick.handed(statuses, 'workstation') == 6
-    assert forgetick.handed(statuses, 'jmag') == 2
-    assert forgetick.handed(statuses, 'base') is None
+    assert _tick_demand.handed(statuses, 'workstation') == 6
+    assert _tick_demand.handed(statuses, 'jmag') == 2
+    assert _tick_demand.handed(statuses, 'base') is None
 
 
 def _stacked(repo: Path, tips: dict[str, str], change: dict[str, str]) -> tuple[str, str]:

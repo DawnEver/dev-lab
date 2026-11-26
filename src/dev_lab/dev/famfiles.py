@@ -30,7 +30,6 @@ license, its architecture, its release history) is owned, and the row says which
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import re
 import sys
 import tomllib
@@ -43,13 +42,14 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import ciworkflowshape
-from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artifact_base, inspect_file, render
+from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, ForkedDelta, artifact_base, inspect_file, render
+from dev_lab.dev.repodeltas import load_deltas
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from dev_lab.dev.famconfig import Delta
+    from dev_lab.dev.famconfig import Base, Delta
 
 __all__ = [
     'GENERATED',
@@ -62,9 +62,9 @@ __all__ = [
     'RETIRED_PROJECT_FILES',
     'ProjectFile',
     'Renderer',
+    'delta_base',
     'due_renderers',
     'is_member',
-    'load_deltas',
     'main',
     'managed_sections',
     'plan',
@@ -204,6 +204,9 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
 #: with why. Tracked again in any repo, it is refused by name (:mod:`dev_lab.dev.famtests.famfiles`).
 RETIRED_PROJECT_FILES: Final[dict[str, str]] = {
     '.claude/rem.json': 'the backlog is the Gitea tasks repo plus the issue tracker; no per-repo rem config',
+    '.claude/rules/principles.md': (
+        'the principles render only inside AGENTS.md`s family section (dev_lab.dev.agentsection); no rule page'
+    ),
     '.claude/sharp-review.json': 'the forge review is the one review (2026-11-05); no sharp-review ledger',
     '.rgignore': 'no family search-skip file (user ruling 2026-11-24)',
     'ruff.toml': 'ruff config lives only under [tool.ruff] in pyproject.toml',
@@ -359,26 +362,40 @@ def _run(argv: list[str], root: Path) -> int:
     return _door.run(argv, cwd=root, check=False).returncode
 
 
-def load_deltas(path: Path) -> Mapping[str, Delta]:
-    """The ``DELTAS`` mapping a repo declares, read from the module file at *path* (its own convention)."""
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    if spec is None or spec.loader is None:
-        msg = f'cannot load a module from {path}'
-        raise ImportError(msg)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules.setdefault(path.stem, module)
-    spec.loader.exec_module(module)
-    return module.DELTAS
+def delta_base(artifact: str) -> Base:
+    """The base a repo's delta for *artifact* renders over, or a refusal naming why there is none and the door.
+
+    EVERY-WALL-TEACHES (2026-11-25): famconfig's "no family base" sends a stale delta to ADD a base row, which
+    for a file the family retired or hands to the repo is the wrong door. Both facts live in this module's
+    tables, above famconfig, so the refusal that knows them is raised here.
+    """
+    if artifact in RETIRED_PROJECT_FILES:
+        msg = (
+            f'{artifact!r} is RETIRED from the family (dev_lab.dev.famfiles.RETIRED_PROJECT_FILES): '
+            f'{RETIRED_PROJECT_FILES[artifact]}. Its delta renders over nothing -- drop its row (and any constant '
+            f'only it used) from the repo DELTAS module and `git rm {artifact}`.'
+        )
+        raise ForkedDelta(msg)
+    row = PROJECT_FILES.get(artifact)
+    if row is not None and row.kind == OWNED:
+        msg = (
+            f"{artifact!r} is the repo's OWN file, with no family base (dev_lab.dev.famfiles.PROJECT_FILES: "
+            f'{row.how}). Its delta renders over nothing -- drop its row (and any constant only it used) from '
+            f'the repo DELTAS module; the file itself stays the repo`s.'
+        )
+        raise ForkedDelta(msg)
+    return artifact_base(artifact)
 
 
 def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple[str, ...]:
     """Every RENDERED base this repo declares, re-rendered into *root*; one line per artifact, what happened.
 
     With *write* false nothing is written and the lines say what WOULD change: the check mode.
+    A delta with no base is refused by :func:`delta_base`, which names the retirement or ownership if either holds.
     """
     out: list[str] = []
     for artifact in sorted(deltas):
-        base = artifact_base(artifact)
+        base = delta_base(artifact)
         path = root / artifact
         report = inspect_file(path, base, deltas[artifact])
         if report.status == INSTALLED:

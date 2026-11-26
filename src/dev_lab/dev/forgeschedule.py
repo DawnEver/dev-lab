@@ -30,11 +30,16 @@ family default and a repository overrides key by key (a table key by table key):
     [tool.lab_commons.schedule]
     classes = {integration = 100, pr = 60, feature = 45, branch = 30, request = 20}
     aging_rate = 10                  # value per hour waited
-    starve_after_hours = {integration = 6, pr = 12, feature = 18, branch = 24, request = 48}
-    daily_budget_core_h = {branch = 200}   # per ref of the class, per 24 h; absent = unbounded
+    starve_after = {integration = "6 h", pr = "12 h", feature = "18 h", branch = "24 h", request = "48 h"}
+    daily_budget = {branch = "200 h"}      # core time per ref of the class, per 24 h; absent = unbounded
     boosts = {"priority:user" = 1000}
     classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}  # ordered; replaces whole
-    prior_cost_h = 4.0
+    prior_cost = "4 h"
+    request_unadmitted = "6 h"         # a request waiting unclaimed this long is told why, once
+
+Every duration is a quantity string (:mod:`lab_commons.quantity`); the loader maps it onto
+:class:`~lab_commons.compute.model.Schedule`'s hour fields, and a retired unit-suffixed key (``prior_cost_h``,
+``starve_after_hours``, ...) is refused with its new line (user ruling 2026-11-25).
 
 ONE RUN PER REF AND PART (D6, user ruling 2026-10-17). A ref of a ``coalesce`` class has at most one run
 of a part in flight across the fleet; its current tip waits behind that run
@@ -46,7 +51,7 @@ earlier tip never claimed is never a candidate. A lane is tested at every pushed
 WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): waiting behind its ref's
 run in flight, no host serves its part, over its ref's budget, or not admitted here -- naming the resources it lacks
 (:func:`lab_commons.compute.admission.admit`). A candidate waiting longer than its class's
-``starve_after_hours`` is STARVED and raises a ``forgealarm`` naming that reason.
+``starve_after`` is STARVED and raises a ``forgealarm`` naming that reason.
 
 The pure scoring -- :class:`~lab_commons.compute.model.Schedule`, :func:`~lab_commons.compute.model.rank` -- lives
 in :mod:`lab_commons.compute.model`; this module gathers candidates and loads the numbers (I/O).
@@ -80,6 +85,7 @@ from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.shell import FULL, INCREMENTAL
 
 from dev_lab.dev._forgeschedule_requests import issue_labels, request_candidates
+from dev_lab.dev._schedule_durations import HOURS, SCHEDULE_RENAMED, in_hours, refuse_unit_keys
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import STARVED, Alarm
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND
@@ -134,6 +140,8 @@ def load_schedule(root: Path) -> Schedule:
         with manifest.open('rb') as handle:
             declared = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get(SCHEDULE_TABLE, {})
     default = Schedule()
+    where = f'[tool.lab_commons.{SCHEDULE_TABLE}] in {manifest}:'
+    refuse_unit_keys(where, declared)
     retired = [
         f'{key} is retired: {RETIRED[f"{SCHEDULE_TABLE}] {key}"]}'
         for key in declared
@@ -142,7 +150,7 @@ def load_schedule(root: Path) -> Schedule:
     if retired:
         msg = f'[tool.lab_commons.{SCHEDULE_TABLE}] in {manifest}: ' + '; '.join(retired)
         raise ValueError(msg)
-    known = {one.name for one in dataclasses.fields(Schedule)}
+    known = {one.name for one in dataclasses.fields(Schedule)} - set(SCHEDULE_RENAMED) | set(HOURS)
     unknown = sorted(set(declared) - known)
     if unknown:
         msg = (
@@ -152,7 +160,7 @@ def load_schedule(root: Path) -> Schedule:
         raise ValueError(msg)
     merged: dict[str, Any] = {}
     defaults = dataclasses.asdict(default)
-    for key, given in declared.items():
+    for key, given in in_hours(where, declared).items():
         current = defaults[key]
         replaces = key == 'classes_by_ref' or not isinstance(current, Mapping)
         merged[key] = given if replaces else {**current, **given}

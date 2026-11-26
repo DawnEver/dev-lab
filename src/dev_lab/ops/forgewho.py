@@ -25,8 +25,9 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from dev_lab.dev.forge import Transport
-    from dev_lab.ops.config import Breakglass, OpsConfig, Probe
+    from dev_lab.ops.config import Breakglass, OpsConfig
     from dev_lab.ops.judgerole import Judge
+    from dev_lab.ops.proberole import Probe
 
 __all__ = ['ROLES', 'WhoRefused', 'run', 'whoami']
 

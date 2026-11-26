@@ -42,10 +42,9 @@ Cites, from the shared registry: `LATEST-DEPENDENCIES`, `PUBLIC-SURFACE-DECLARED
 
 ## A rule is shared; the thing that refuses one is not
 
-This repo AUTHORS the family's development rules (`dev_lab.dev.rules`). These are the
-constraints that come with owning that file. Universal rules are not restated here — they are
-cited by ID, and `tests/test_the_adoption_accounts_for_every_rule.py` is what makes the citation
-a check.
+This repo AUTHORS the family's development rules (`dev_lab.dev.rules`). These are the constraints that come with
+owning that file. Universal rules are not restated here — they are cited by ID, and
+`tests/test_the_adoption_accounts_for_every_rule.py` is what makes the citation a check.
 
 - **A STATEMENT is universal; a MECHANISM is a path in ONE tree. Never conflate them.** A row in
   `_rule_rows.py` carries the statement plus the EXISTENCE PROOF that the rule is enforceable at
@@ -87,7 +86,8 @@ _Rendered by `dev_lab.dev.agentsection` from `dev_lab.dev.principles`; a hand ed
   detail; no duplication across levels.
 - **Keep every valuable parameter and option** (`keep-valuable-options`): Generality is a requirement: keep every
   parameter and option a real case uses or plausibly needs. A reference match ADDS a selectable option and never
-  replaces or deletes the alternative; numerical method choices are options even with no current caller.
+  replaces or deletes the alternative; numerical method choices are options even with no current caller. Every
+  retirement is classified (renamed, baggage, or capability-dropped) and only a user ruling drops a capability.
 - **Every wall teaches** (`every-wall-teaches`): Every refusal or failure an agent hits names its cause and its door;
   one that does not is a mechanism gap, and closing it (a hook row, a remedy, a test) comes before the task. Never route
   around a wall or hand the user a command. The loop: docs-src/dev/feedback.md.
@@ -102,6 +102,10 @@ _Rendered by `dev_lab.dev.agentsection` from `dev_lab.dev.principles`; a hand ed
   Rust from its first line; a Python version of it is only a scratch prototype, never a second implementation;
   acceptance is against references (analytic, the vendor ladder, the previous implementation during a migration), never
   against a Python twin.
+- **Everything in its place** (`everything-in-its-place`): Each thing lives in the one owner responsible for it; a
+  misplaced thing moves, never leaving a pointer or a copy.
+- **No detour** (`no-detour`): Every hop must add something; a rule that forces a detour is the defect. Complexity is
+  measured, not guessed.
 
 ## Family workflow
 

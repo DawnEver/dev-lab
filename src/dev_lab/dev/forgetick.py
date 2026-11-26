@@ -18,7 +18,7 @@ and give each claimed part what produces it: the ONE producer the claimed commit
 that commit) or a cluster part (:func:`dev_lab.dev.platformparts.cluster_part`). A part
 whose producer the repo does not declare is not claimed; its refusal names the pyproject key to add. A
 cluster host whose rclone remote is unusable (:func:`dev_lab.dev.artifacts.remote_problem`) claims
-no part with declared outputs -- they could exceed ``threshold_mb`` -- and says why; a part with none is
+no part with declared outputs -- they could exceed ``threshold`` -- and says why; a part with none is
 still claimed. It runs nothing itself.
 
 ADMISSION, NOT ONE CLAIM A TICK. Each candidate is a :class:`~lab_commons.compute.model.Job` whose
@@ -48,7 +48,7 @@ Where the supply counts ``submits`` (a cluster account), a claim takes one.
 A WAIT IS ANSWERED, BOUNDED AND SEEN (:mod:`dev_lab.dev.forgewait`). Given its *box*, a tick tells every part
 it does not admit when it could start and protects that start from lower-ranked parts; a part larger than
 this box that no live host in *cards* can take is refused on its commit at once, naming the remedy; and a
-part waiting ``not admitted`` past the schedule's ``request_unadmitted_hours`` is told on ``waits/<part>``.
+part waiting ``not admitted`` past the schedule's ``request_unadmitted`` is told on ``waits/<part>``.
 """
 
 from __future__ import annotations
@@ -65,24 +65,21 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from lab_commons.box import Capacity
-from lab_commons.box.providers import box_engine
-from lab_commons.compute.learned import box_demand, learned, request_demand
+from lab_commons.compute.learned import learned
 from lab_commons.compute.model import (
-    REQUEST,
     Candidate,
     Ranked,
     Supply,
     expected_cost,
     rank,
 )
-from lab_commons.compute.presence import cached
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import config_path, section
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
+from dev_lab.dev._tick_demand import box_now, demand_of
 from dev_lab.dev.artifacts import remote_problem
 from dev_lab.dev.forge import (
     NoCredential,
@@ -103,25 +100,23 @@ from dev_lab.dev.forgeclaim import (
     this_seat,
 )
 from dev_lab.dev.forgeclient import client_for
-from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgehosts import HostCard
+from dev_lab.dev.forgehosts import HostCard, card_host
 from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from dev_lab.dev.forgerequest import declared_request
 from dev_lab.dev.forgerequesthost import remind, request_authors
 from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgeschedule import candidates, load_schedule, repo_name
 from dev_lab.dev.forgesettled import SettledHistories
-from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetake import ClaimPass
 from dev_lab.dev.forgeunit import ForgeResults, pending_dir
-from dev_lab.dev.forgewait import Box, nowhere, tell
+from dev_lab.dev.forgewait import Box, card_budgets, nowhere, tell
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.layout import scan_refusal
 from dev_lab.dev.partrows import this_platform
-from dev_lab.dev.platformparts import derived, origin_url, parts_of
+from dev_lab.dev.platformparts import derived, origin_url
+from dev_lab.dev.testcost import read_budget
 from dev_lab.dev.unproduced import unproduced_waived
 
 __all__ = ['TickReport', 'main', 'tick']
@@ -268,7 +263,7 @@ def tick(
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
     room = supply or _whole(machine or 'this host', cluster=bool(serve.hpc))
-    sized = demand or _demand_of(root, cluster=bool(serve.hpc), history=history, room=room)
+    sized = demand or demand_of(root, cluster=bool(serve.hpc), history=history, room=room)
     taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
         size=sized,
@@ -276,6 +271,8 @@ def tick(
         authors=frozenset(request_authors() if authors is None else authors),
         store_why=probe(root) if serve.hpc else '', history=history,
         serves=serves or Serves.of(section(SERVE_TABLE)), reserve=reserve, box=box,
+        test_budget=read_budget(section),
+        budgets=lambda needs: card_budgets(cards, needs, me=card_host(machine, seat), now=now),
     )  # fmt: skip
     favored = (priority or Priority.of(section(PRIORITY_TABLE))).matches
     mine = (declared(config_path(), origin_url(root)) if verify is None else tuple(verify)) if serve.hpc else ()
@@ -292,9 +289,12 @@ def tick(
     for item in ranked:
         taken.consider(item)
     answered = set()
-    for key, (one, asked, seen) in taken.unfit.items():
-        why = nowhere(asked, seen, cards, me=machine, now=now)
-        if why and not dry_run:
+    answers = [
+        (key, one, nowhere(asked, seen, cards, me=machine, now=now)) for key, (one, asked, seen) in taken.unfit.items()
+    ]
+    answers += [(key, one, why) for key, (one, why) in taken.starving.items()]  # no host's test budget fits it
+    for key, one, why in answers:
+        if why and not dry_run and key not in answered:
             done = refuse(built, one, why)
             answered.add(key)
             taken.work = [done if item is one else item for item in taken.work]
@@ -337,47 +337,7 @@ def _whole(scope: str, *, cluster: bool) -> Supply:
     if cluster:
         msg = f"{scope}: a cluster tick needs the account's measured supply (forgeslurm standing); none was given"
         raise ValueError(msg)
-    return dataclasses.replace(_box_now(), scope=scope)
-
-
-def _box_now() -> Supply:
-    """What lies outside this box ledger's claims now (:func:`lab_commons.box.providers.box_engine`)."""
-    return box_engine(capacity=Capacity.read(), presence=cached()).available('box')
-
-
-def handed(statuses: Sequence[CommitStatus], part: str) -> int | None:
-    """How many ids the commit's posted parts hand to *part* -- its selection's size; ``None`` when none says."""
-    counts = [one.hands[part] for one in parts_of(statuses)[0].values() if part in one.hands]
-    return sum(counts) if counts else None
-
-
-def _demand_of(
-    root: Path,
-    *,
-    cluster: bool,
-    history: Callable[[str], Sequence[CommitStatus]] = lambda _sha: (),
-    room: Supply | None = None,
-) -> Callable[[Candidate, frozenset[str]], Mapping[str, float]]:
-    """A candidate's demand: a cluster part's measured ask, else what it will declare to this box.
-
-    A box REQUEST is sized by its own row (:func:`~lab_commons.compute.learned.request_demand`), a box part
-    by :func:`~lab_commons.compute.learned.box_demand` at the ids its commit's parts hand it (:func:`handed`),
-    narrowed to the box's FREE *room* (this tick's supply; measured now when not given).
-    """
-    repo_url = origin_url(root)
-    if cluster:
-        asked = part_demand(repo_url, ceiling_gb=None)
-        return lambda _wanted, needed: asked(needed)
-    free = (room or _box_now()).resources
-
-    def sized(wanted: Candidate, needed: frozenset[str]) -> Mapping[str, float]:
-        if wanted.kind == REQUEST:
-            row = declared_request(root, wanted.sha, wanted.producer, wanted.paths)
-            return request_demand(repo_url, row.name, needed, cpu=row.cpu, mem_gb=row.mem_gb)
-        ids = handed(history(wanted.sha), wanted.platform)
-        return box_demand(repo_url, needed, cpu=free['cpu'], mem_gb=free['mem_gb'], ids=ids)
-
-    return sized
+    return dataclasses.replace(box_now(), scope=scope)
 
 
 def _parser() -> argparse.ArgumentParser:

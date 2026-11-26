@@ -17,8 +17,8 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     # {runtimes.<name>.<key>}: THIS host's machine-file [runtimes.<name>] value (repo says WHAT, host WHERE)
     model = "<id>"             # the default is FAMILY_MODEL
     synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
-    max_diff_bytes = 400000    # one slice: what one reviewer reads
-    max_total_bytes = 800000   # one review: slices past it are listed, not read (strictest lens first)
+    max_diff = "400 kB"        # one slice: what one reviewer reads
+    max_total = "800 kB"       # one review: slices past it are listed, not read (strictest lens first)
     derived = []               # globs of generated files beyond the family's (famfiles.GENERATED)
     strict = [...]             # globs read under the strict lens; light = [...] under the light one
     code = [...]               # globs of what executes (reviewcode.CODE): nothing else is read or capped
@@ -49,9 +49,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 
-from lab_commons.units import Q_
+from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
 from dev_lab.dev import forgereview_batch as batching_
 from dev_lab.dev import forgereview_scope, reviewcode
@@ -166,6 +166,10 @@ RETIRED_KEYS: Final = {
 }
 
 _TABLE: Final = 'review'
+#: The keys declared as sizes (``"400 kB"``); a :class:`Review` holds them in bytes.
+_SIZES: Final = ('max_diff', 'max_total')
+#: Unit-suffixed keys retired by the 2026-11-25 ruling (a value carries its unit), refused with their new line.
+_UNIT_RENAMED: Final = {'max_diff_bytes': Renamed('max_diff', 'B'), 'max_total_bytes': Renamed('max_total', 'B')}
 
 #: What an empty ``command`` is refused with (user ruling 2026-10-31, every PR is reviewed): no repo opts out, and
 #: an omitted ``command`` is the family's, so the one fix is to delete the empty declaration.
@@ -181,8 +185,8 @@ class Review:
     command: tuple[str, ...] = FAMILY_COMMAND  # declare only a genuinely different method
     model: str = FAMILY_MODEL  # fills ``{model}``
     synthesis: tuple[str, ...] = ()  # undeclared: the slice outputs are merged, nothing reads across them
-    max_diff_bytes: int = 400_000  # one slice: every slice pays the fixed prompt again, so few and large
-    max_total_bytes: int = 800_000  # one review: slices past it are listed, not read (spend 2026-11-03)
+    max_diff: int = 400_000  # bytes, one slice: every slice pays the fixed prompt again, so few and large
+    max_total: int = 800_000  # bytes, one review: slices past it are listed, not read (spend 2026-11-03)
     derived: tuple[str, ...] = ()
     strict: tuple[str, ...] = STRICT
     light: tuple[str, ...] = LIGHT
@@ -201,7 +205,8 @@ class Review:
 
     def __post_init__(self) -> None:
         """Refuse a bad ``judge_app``, a bad ``bundle`` or duration."""
-        if isinstance(self.judge_app, bool) or not isinstance(self.judge_app, int) or self.judge_app < 0:
+        app: object = self.judge_app  # read from TOML: its declared type is what this refuses
+        if isinstance(app, bool) or not isinstance(app, int) or app < 0:
             msg = f'judge_app = {self.judge_app!r} is no GitHub App id (a positive integer)'
             raise ValueError(msg)
         if self.judge_login and self.judge_app:
@@ -234,9 +239,7 @@ class Review:
     @property
     def budget(self) -> Budget:
         """The bounds and globs :func:`~dev_lab.dev.forgereview_scope.plan` cuts a head by."""
-        return Budget(
-            self.max_diff_bytes, self.max_total_bytes, self.derived, self.strict, self.light, self.code, self.not_code
-        )
+        return Budget(self.max_diff, self.max_total, self.derived, self.strict, self.light, self.code, self.not_code)
 
 
 def review_from(text: str, origin: str) -> Review:
@@ -245,12 +248,28 @@ def review_from(text: str, origin: str) -> Review:
     if retired := [f'{key} is retired: {RETIRED_KEYS[key]}' for key in declared if key in RETIRED_KEYS]:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: ' + '; '.join(retired)
         raise ValueError(msg)
+    try:
+        refuse_renamed(f'[tool.dev_lab.{_TABLE}] in {origin}:', declared, _UNIT_RENAMED)
+        declared = {
+            **declared,
+            **{
+                key: int(parse(f'[tool.dev_lab.{_TABLE}] in {origin}: {key}', declared[key], 'size', positive=True))
+                for key in _SIZES
+                if key in declared
+            },
+        }
+    except QuantityRefused as bad:
+        raise ValueError(str(bad)) from bad
     known = {field.name for field in dataclasses.fields(Review)}
     if unknown := sorted(set(declared) - known):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     try:
-        review = Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
+        fields: dict[str, Any] = {
+            key: tuple(cast('list[object]', value)) if isinstance(value, list) else value
+            for key, value in declared.items()
+        }
+        review = Review(**fields)
     except ValueError as bad:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {bad}'
         raise ValueError(msg) from bad
@@ -313,9 +332,9 @@ def forge_review(client: Client, integration: str) -> Review:
 
 
 def _default_branch(client: Client) -> str:
-    repo: Any = client.call('GET', client.repo)
-    default = repo.get('default_branch') if isinstance(repo, dict) else None
-    if not default:
+    repo: object = client.call('GET', client.repo)
+    default = cast('dict[str, object]', repo).get('default_branch') if isinstance(repo, dict) else None
+    if not isinstance(default, str) or not default:
         msg = 'the forge names no default branch: which integration branch a review trusts is undecided'
         raise DeclarationUnread(msg)
     return default
@@ -392,16 +411,11 @@ def stale_after(review: Review) -> timedelta:
 
 
 def _duration(key: str, value: str) -> timedelta:
-    """The declared *key*'s *value* as a :class:`~datetime.timedelta`; a bare number or a non-duration is refused."""
-    try:
-        quantity = Q_(value)
-    except Exception as bad:
-        msg = f'{key} {value!r} is not a duration; write one such as "1 h"'
-        raise ValueError(msg) from bad
-    if not isinstance(quantity, Q_) or not quantity.check('[time]'):
-        msg = f'{key} {value!r} is not a duration (it needs a unit); write one such as "1 h"'
-        raise ValueError(msg)
-    return timedelta(seconds=float(quantity.m_as('s')))
+    """The declared *key*'s *value* as a :class:`~datetime.timedelta`; a bare number or a non-duration is refused.
+
+    The family's one duration parser reads it (:func:`lab_commons.quantity.parse`); its refusal names *key*.
+    """
+    return timedelta(seconds=parse(key, value, 'duration'))
 
 
 def command_for(

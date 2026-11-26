@@ -30,10 +30,11 @@ module is the client and the CLI::
   A host's route is DECLARED in the machine file -- ``[ssh] jump = {"<dest>" = "<bastion>"}`` (:func:`route`) -- so a
   plan whose hosts route differently (one direct, one through a bastion) opens each on its own; ``--jump`` names the
   bastion of every host the table does not.
-* ``--hours`` above the ceiling (``[ssh.hold] max_hours`` in the machine file, default
+* ``--hours`` above the ceiling (``[ssh.hold] ceiling`` in the machine file, a duration such as ``"24 h"``, default
   :data:`DEFAULT_MAX_HOURS`) is REFUSED, never clamped. A quiet session lives to that ceiling (keepalives hold the
   connection, :func:`dev_lab.dev._sshholder.ssh_argv`); it ends early on idle only when the machine file names
-  ``[ssh.hold] idle_minutes`` -- a 30 min default ended a 4 h session, measured 2026-11-10.
+  ``[ssh.hold] idle`` (a duration, ``"30 min"``) -- a 30 min default ended a 4 h session, measured 2026-11-10.
+  The unit-suffixed ``max_hours`` / ``idle_minutes`` are refused with the line that replaces them (2026-11-25).
 * A dropped connection is said by name and the user re-opens: never a silent re-authentication.
 * Every open/run/credential/close appends one JSONL line to :func:`audit_path` -- a ``run`` records its command
   VERBATIM, so A SECRET NEVER GOES THROUGH ``run``. A forge token goes through ``credential`` alone: read from
@@ -56,8 +57,10 @@ from typing import Any, Final
 import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
+from lab_commons.quantity import QuantityRefused, parse, refuse_renamed
 
 from dev_lab.dev import msyspath, remote, sshholdplan, sshholdprobe
+from dev_lab.dev.devschema import RENAMED
 from dev_lab.dev.sshholdrun import DEFAULT_TIMEOUT_S, run_command, store_credential
 from dev_lab.dev.sshholdstate import audit, forget, read_session, state_dir, state_path
 from dev_lab.dev.sshholdwire import HoldRefused, held, live, ping, request
@@ -83,10 +86,24 @@ _OPEN_WAIT_S: Final = 120.0
 
 
 def _table(table: dict[str, Any] | None) -> dict[str, Any]:
-    if table is not None:
-        return table
-    hold = section('ssh').get('hold', {})
-    return hold if isinstance(hold, dict) else {}
+    if table is None:
+        held_table = section('ssh').get('hold', {})
+        table = held_table if isinstance(held_table, dict) else {}
+    try:
+        refuse_renamed('[ssh.hold]', table, RENAMED['ssh.hold'])
+    except QuantityRefused as retired:
+        raise HoldRefused(str(retired)) from retired
+    return table
+
+
+def _duration(table: dict[str, Any], key: str) -> float | None:
+    """``[ssh.hold] <key>`` in seconds, ``None`` when undeclared; a value that is not a duration is refused."""
+    if key not in table:
+        return None
+    try:
+        return parse(f'[ssh.hold] {key}', table[key], 'duration', positive=True)
+    except QuantityRefused as bad:
+        raise HoldRefused(str(bad)) from bad
 
 
 def route(dest: str, jump: str | None = None, table: dict[str, Any] | None = None) -> tuple[str, ...]:
@@ -106,14 +123,14 @@ def route(dest: str, jump: str | None = None, table: dict[str, Any] | None = Non
 
 
 def ceiling(table: dict[str, Any] | None = None) -> float:
-    """``[ssh.hold] max_hours`` from the machine file (*table* overrides it), else :data:`DEFAULT_MAX_HOURS`."""
-    return float(_table(table).get('max_hours', DEFAULT_MAX_HOURS))
+    """``[ssh.hold] ceiling`` in hours from the machine file (*table* overrides it), else :data:`DEFAULT_MAX_HOURS`."""
+    seconds = _duration(_table(table), 'ceiling')
+    return DEFAULT_MAX_HOURS if seconds is None else seconds / 3600
 
 
 def idle_s(table: dict[str, Any] | None = None) -> float | None:
-    """``[ssh.hold] idle_minutes`` in seconds, else ``None``: no idle limit, the session lives to its ceiling."""
-    minutes = _table(table).get('idle_minutes')
-    return None if minutes is None else float(minutes) * 60
+    """``[ssh.hold] idle`` in seconds, else ``None``: no idle limit, the session lives to its ceiling."""
+    return _duration(_table(table), 'idle')
 
 
 def session_over(*, now: float, expires: float, quiet_s: float, idle: float | None) -> bool:
@@ -125,7 +142,7 @@ def check_hours(hours: float, limit: float) -> None:
     """Refuse *hours* outside ``(0, limit]``; never clamp it."""
     if not 0 < hours <= limit:
         msg = (
-            f'--hours {hours:g} is outside (0, {limit:g}]: the ceiling is [ssh.hold] max_hours in the machine '
+            f'--hours {hours:g} is outside (0, {limit:g}]: the ceiling is [ssh.hold] ceiling in the machine '
             'file; ask for a shorter session, or the user raises the ceiling'
         )
         raise HoldRefused(msg)

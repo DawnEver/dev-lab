@@ -19,6 +19,9 @@
 #   isolate     run as its own subprocess. A `python -m <module>` row otherwise runs IN the runner's interpreter
 #               (one interpreter per stage); any other `run` is always a subprocess.
 #   bootstraps  it creates the checkout's own venv, so it runs on whichever interpreter the shim found.
+#   rule        the rule a failure of the row is recorded as when its output names none (a tool row: "RUFF").
+#   remedy      the door a failure names: the runner prints `<rule>: ...` and `Door: <remedy> [paths]` after the
+#               row's own output, so a tool that prints only findings still names its door (walls, #842).
 #
 # ONE STAGE PER CHECK: a check runs at the one stage its nature needs, never at two
 # (tests/test_dev_githooks_runner.py, `test_no_base_module_runs_at_two_stages`).
@@ -81,6 +84,12 @@ run = ["python", "-m", "dev_lab.dev.privatemarkers", "--commit-msg-file"]
 
 # Warns on a malformed `Refs #N` / `Closes #N` / `Fixes #N` and never blocks (dev_lab.dev.issueref): `advisory`, so
 # the warning is shown although the row passes.
+# BASELINE-REWRITE-QUOTED (user ruling 2026-11-24, H2): a staged rewrite of a `tests/baselines.lock` row must quote
+# its old and new numbers in the message -- judged before the commit exists, while the message is still free to edit.
+[[commit-msg]]
+id = "baseline-rewrite-quoted"
+run = ["python", "-m", "dev_lab.dev.baselines", "check-message"]
+
 [[commit-msg]]
 id = "issue-ref"
 run = ["python", "-m", "dev_lab.dev.issueref"]
@@ -140,6 +149,14 @@ always_run = true
 [[pre-push]]
 id = "zero-core-change"
 run = ["python", "-m", "dev_lab.dev.corechange"]
+always_run = true
+
+# ENV-IS-READ-ONCE, the ledger half (dev_lab.dev.envreads, family policy 2026-11-25): a pushed head adding a path to
+# [tool.dev_lab.env] pending since its merge-base with origin/<integration> is refused -- the census lands once, at
+# adoption (a base with no table), and from there the list only shrinks. The always-on family check is the tree half.
+[[pre-push]]
+id = "env-pending-shrinks"
+run = ["python", "-m", "dev_lab.dev.envreads"]
 always_run = true
 
 # The session-branch invariants at push, local reads only (dev_lab.dev.sessionbranch): a declared session branch

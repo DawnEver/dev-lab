@@ -20,8 +20,9 @@ from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import forgeclaim, forgehosts
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_TITLE, HostCard, publish, read_cards
+from dev_lab.dev.forgehosts import HostCard, publish, read_cards
 from dev_lab.dev.forgework import is_pull
+from dev_lab.dev.hostsissue import HOSTS_MARKER, HOSTS_TITLE, HostsIssueLost
 from dev_lab.dev.roles import Unbound
 from tests._forge_state import StateForge
 
@@ -77,9 +78,9 @@ def test_planted_control_the_old_lookup_opens_a_duplicate_every_tick() -> None:
 def test_a_lookup_that_cannot_see_the_issue_it_just_created_refuses(monkeypatch) -> None:
     forge = StateForge()
     monkeypatch.setattr('dev_lab.dev.forgepulls.is_pull', _presence_only)  # the 2026-10-12 blindness
-    with pytest.raises(forgehosts.HostsIssueLost):
+    with pytest.raises(HostsIssueLost):
         publish(forge, _card('ada/alice'))
-    with pytest.raises(forgehosts.HostsIssueLost, match='repository counts 1'):
+    with pytest.raises(HostsIssueLost, match='repository counts 1'):
         publish(forge, _card('ada/alice', 5))
     assert len(forge.titled(HOSTS_TITLE)) == 1, 'blind, the second tick refuses before it creates'
 
@@ -138,6 +139,17 @@ def test_a_card_shows_its_accounts_role_and_reads_back() -> None:
     assert read_cards(forge) == (card,)
     assert 'role: verification' in next(iter(forge.comments.values()))[0]['body']
     assert 'role:' not in HostCard('box', 'a', 'windows', NOW.isoformat()).text()
+
+
+def test_a_card_states_its_hosts_test_budget_and_reads_back() -> None:
+    """The starvation guard reads every live host's ``[test_budget] test_s`` off its card. PLANTED CONTROL: none."""
+    card = HostCard('ada/alice', 'a', 'linux', NOW.isoformat(), test_s=7200.0)
+    forge = StateForge()
+    publish(forge, card)
+    assert read_cards(forge) == (card,)
+    assert 'test budget: 7200 s per test' in next(iter(forge.comments.values()))[0]['body']
+    assert card.redacted().test_s == 7200.0, 'scheduling reads it, so a public card keeps it'
+    assert 'test budget:' not in HostCard('box', 'a', 'windows', NOW.isoformat()).text()
 
 
 def test_a_card_written_before_a_field_was_renamed_reads_without_it() -> None:

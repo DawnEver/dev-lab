@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 from _ops_fixtures import NOW, RFC_KEY, code
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 from test_ops_consent_door import Wire
 
 from dev_lab.dev.forgebreakglass import wave_main

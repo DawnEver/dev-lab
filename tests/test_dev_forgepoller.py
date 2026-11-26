@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_TITLE
 from dev_lab.dev.forgepoller import elect, lease_of
 from dev_lab.dev.forgepulls import Marker, comment_list, marker
+from dev_lab.dev.hostsissue import HOSTS_MARKER, HOSTS_TITLE
 from tests._forge_state import NOW_HTTP, StateForge
 
 TTL = timedelta(minutes=15)

@@ -100,7 +100,7 @@ def test_a_raw_remote_delete_is_still_refused_and_its_remedy_names_the_door() ->
     assert 'dev_lab.dev.branchprune delete <branch>' in remedy
     assert 'delete-tag' not in remedy, 'D22 retired the tag delete'
     assert '--approved' not in remedy, 'D22 retired the approved delete'
-    assert 'git merge -s ours' in remedy, 'a refused branch is merged or landed, never tagged'
+    assert 'never `-s ours`' in remedy, 'a refused branch is merged or discarded by the user, never landed empty'
     assert denies(DENY_RULES, '.venv/Scripts/python.exe -m dev_lab.dev.branchprune delete lane/x') is None
 
 
@@ -217,7 +217,7 @@ def test_a_line_deletion_is_refused(tmp_path: Path) -> None:
 
 
 def test_a_lossy_refusal_names_the_merge_door_never_a_tag(tmp_path: Path) -> None:
-    """D22 (2026-11-17): "either merge or delete" -- the refusal names MERGE and the declared `-s ours` landing.
+    """D22 (2026-11-17): "either merge or delete" -- the refusal names MERGE and the user's discard (#611).
 
     PLANTED control: a contained branch beside it still deletes, so the refusal is the content, not the door.
     """
@@ -230,10 +230,8 @@ def test_a_lossy_refusal_names_the_merge_door_never_a_tag(tmp_path: Path) -> Non
     assert not _on_origin(work, 'feat/done')
     refusal = next(line for line in said if line.startswith('lane/mine: refused'))
     assert 'MERGE what is still wanted' in refusal
-    assert 'merge origin/lane/mine into a pr/ branch with `git merge -s ours`' in refusal
-    assert '`<path>: <class> -- <why>`' in refusal
-    assert 'Merge-Audit:' in refusal
-    assert 're-run `branchprune delete lane/mine`' in refusal
+    assert 'python -m dev_lab.dev.branchprune discard lane/mine --approved' in refusal
+    assert 'Never `git merge -s ours`' in refusal, 'a content-neutral landing loses the content (#611)'
     assert 'tag' not in refusal.replace('no tags', ''), 'no tag door survives D22'
 
 

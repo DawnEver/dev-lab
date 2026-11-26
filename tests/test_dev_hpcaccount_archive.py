@@ -13,10 +13,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from lab_commons.objects import RCLONE_CONFIG
 
 from dev_lab.dev.hpcaccount import archive, archivestream
 from dev_lab.dev.hpcaccount.fleet import Target
-from dev_lab.dev.storage import DEFAULT_RCLONE
 
 ROOT = '/scratch/u1/lab'
 DECLARED = SimpleNamespace(runs='vault:bucket', runs_remote='vault', reach=[SimpleNamespace(name='vault')])
@@ -91,7 +91,7 @@ def test_the_account_half_gets_the_store_the_accounts_rclone_and_the_mode(
     (spec,) = account.specs
     assert spec == {
         'mode': mode, 'path': 'work/data', 'dest': 'vault:bucket/archive/u1/work/data', 'rclone': ['/opt/rclone'],
-        'config': DEFAULT_RCLONE.as_posix(), 'part_bytes': archivestream.PART_BYTES, 'tar': ['tar'],
+        'config': RCLONE_CONFIG.as_posix(), 'part_bytes': archivestream.PART_BYTES, 'tar': ['tar'],
     }  # fmt: skip
     assert said == ['archive: a line']
 

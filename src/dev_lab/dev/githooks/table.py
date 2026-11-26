@@ -76,6 +76,15 @@ class Hook:
     isolate: bool = False
     #: It only SPEAKS (a notice, a warning): its output is shown whatever its exit, which never fails the stage.
     advisory: bool = False
+    #: The rule a failure of this row is (a tool row prints none of its own: ``RUFF``); else the id upper-cased.
+    rule: str = ''
+    #: The door a failure of this row names, printed as ``<rule>: ...`` then ``Door: <remedy> [paths]`` (#842): a tool
+    #: row (a linter) prints findings and no remedy line, so the row declares it.
+    remedy: str = ''
+
+    def wall_rule(self) -> str:
+        """The rule this row's failure is recorded as when its output names none: :attr:`rule`, else the id."""
+        return self.rule or self.id.upper()
 
     def selects(self, path: str) -> bool:
         """Whether *path* (repo-relative, POSIX) is one this hook judges."""
@@ -124,6 +133,10 @@ def _hook(stage: str, row: dict[str, Any], origin: str) -> Hook:
         )
         raise HookTableError(msg)
     _check_selectors(stage, row, origin)
+    for key in ('rule', 'remedy'):
+        if not isinstance(row.get(key, ''), str):
+            msg = f'{origin}: {stage} hook {row["id"]!r} has a `{key}` that is not a string'
+            raise HookTableError(msg)
     env = row.get('env', {})
     if not isinstance(env, dict) or not all(isinstance(v, str) for v in env.values()):
         msg = f'{origin}: {stage} hook {row["id"]!r} has an `env` that is not a table of strings'
