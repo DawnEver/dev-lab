@@ -212,8 +212,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'matches': 'command',
         'hazard': 'a bundle parks unlanded work where nobody reads it again (ONLY-VERSION-TAGS).',
         'remedy': (
-            'Unlanded work is merged or discarded (MERGE-OR-DELETE): merge it through a PR, or LAND its discard with '
-            'a declared `git merge -s ours` PR, then `branchprune delete <branch>`'
+            'Unlanded work is merged or discarded (MERGE-OR-DELETE): merge it through a PR, or on the user words '
+            '`branchprune discard <branch> --approved "<their words>"`; never `git merge -s ours`'
         ),
         'needs': None,
         'refuses': ('git bundle create ../x.bundle origin/pr/a', 'git -C ../lab bundle create out.bundle --all'),
