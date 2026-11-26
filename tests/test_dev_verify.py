@@ -1196,6 +1196,14 @@ def test_missing_paths_reads_only_selected_paths(tmp_path: Path) -> None:
     assert verify.missing_paths(tmp_path, ('tests::t', 'gone.py::t', '-q')) == ('gone.py',)
 
 
+def test_the_serial_width_value_is_no_path(tmp_path: Path) -> None:
+    """`verify --serial` appends `-n 0`: the `0` is the option's value, never a selected path that is missing."""
+    (tmp_path / 'tests').mkdir()
+    for valued in (('-n', '0'), ('--numprocesses', '0'), ('--durations', '0'), ('--timeout', '0'), ('--dist', 'no')):
+        assert verify.missing_paths(tmp_path, ('tests', *valued)) == (), valued
+    assert verify.missing_paths(tmp_path, ('tests', '0')) == ('0',), 'PLANTED CONTROL: a bare `0` is a selection'
+
+
 def test_only_an_argument_naming_the_tree_makes_a_run_targeted(tmp_path: Path) -> None:
     (tmp_path / 'tests').mkdir()
     assert verify.is_targeted(tmp_path, ('tests',))
