@@ -7,7 +7,7 @@ User ruling D46 (integrator, 2026-11-19): the branch policy is a per-repo DECLAR
   is absent). Its doors (user correction 2026-11-19): LAND IT NOW, and RECORD WHY it ran past the limit -- no test
   producer, nobody integrating, or the lane withheld finished work. Never "split it": the work is done, and the
   cause of the backlog is what is recorded.
-* :data:`STALE` -- its tip has sat idle for ``max_idle_hours`` (the same bound the prune deletes a merged branch
+* :data:`STALE` -- its tip has sat idle for ``max_idle`` (the same bound the prune deletes a merged branch
   by). Its doors: LAND it through a PR, or RETIRE it.
 
 RETIRING is the user's call, never the observer's: LAND the branch with a declared ``git merge -s ours`` PR into a
@@ -46,7 +46,7 @@ from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete
 from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
-from dev_lab.dev.forgethreads import feed_dir, read_json, seconds
+from dev_lab.dev.forgethreads import declared_seconds, feed_dir, read_json
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.prlanded import serve_close_landed
 from dev_lab.dev.roles import PRUNE, Roles, Unbound, performs, roles_at
@@ -139,7 +139,7 @@ def derive(root: Path, branchset: BranchSet, policy: Policy, *, now: datetime) -
         idle_h = (now - datetime.fromtimestamp(int(stamp), tz=UTC)).total_seconds() / _HOUR_S
         if branchset.max_ahead is not None and ahead > branchset.max_ahead:
             rows.append(PolicyRow(OVER_AHEAD, name, sha, ahead, behind, idle_h))
-        if idle_h >= branchset.max_idle_hours:
+        if idle_h * _HOUR_S >= branchset.max_idle:
             rows.append(PolicyRow(STALE, name, sha, ahead, behind, idle_h))
     return tuple(sorted(rows, key=lambda row: (row.branch, row.kind)))
 
@@ -148,7 +148,7 @@ def wanted(rows: tuple[PolicyRow, ...], branchset: BranchSet, integration: str) 
     """Title -> body of the one issue each row keeps open."""
     bounds = {
         OVER_AHEAD: f'max_ahead = {branchset.max_ahead}',
-        STALE: f'max_idle_hours = {branchset.max_idle_hours:g}',
+        STALE: f'max_idle = "{branchset.max_idle / _HOUR_S:g} h"',
     }
     return {row.title: row.body(integration, bounds[row.kind]) for row in rows}
 
@@ -231,14 +231,14 @@ def run_here(
 DEFAULT_PRUNE_DUTY_S: Final = 1800
 
 
-def prune_duty_s(table: object = None) -> int:
-    """The forge feed's prune-duty interval: ``[forgefeed] prune_duty_s``, else :data:`DEFAULT_PRUNE_DUTY_S`.
+def prune_duty_s(table: object = None) -> float:
+    """The forge feed's prune-duty interval in seconds: ``[forgefeed] prune_duty``, else :data:`DEFAULT_PRUNE_DUTY_S`.
 
     Raises:
-        ValueError: the declared value is not a positive integer (named, with its key).
+        ValueError: the declared value is not a positive duration, or is the retired ``prune_duty_s`` (named).
 
     """
-    return seconds('forgefeed', 'prune_duty_s', DEFAULT_PRUNE_DUTY_S, table)
+    return declared_seconds('forgefeed', 'prune_duty', DEFAULT_PRUNE_DUTY_S, table)
 
 
 def duty_once(

@@ -12,6 +12,7 @@ import os
 from pathlib import Path, PurePosixPath
 
 from lab_commons import home as _home
+from lab_commons import hostenv
 from lab_commons.config import CONFIG_ENV
 
 __all__ = ['default_layout']
@@ -19,7 +20,7 @@ __all__ = ['default_layout']
 
 def default_layout() -> tuple[str, str]:
     """``(machine home under $HOME, machine file under the machine home)``, POSIX-spelled, overrides unset."""
-    saved = {name: os.environ.pop(name) for name in (_home.HOME_ENV, CONFIG_ENV) if name in os.environ}
+    saved = {name: os.environ.pop(name) for name in (hostenv.HOME_ENV, CONFIG_ENV) if name in os.environ}
     try:
         machine_home = _home.home().relative_to(Path.home())
         under = _home.config_path().relative_to(_home.home())

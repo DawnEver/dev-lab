@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 
 import pytest
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 from test_dev_planrun import PLAN as STEPPED
 from test_dev_planrun import STEPS, FakeHost, secret_here
 from test_ops_consent_door import NOW, PLAN, Wire, issuer

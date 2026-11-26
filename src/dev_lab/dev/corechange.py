@@ -189,28 +189,6 @@ def _under(name: str, package: str) -> bool:
     return name == package or name.startswith(package + '.')
 
 
-def _cycle(graph: dict[str, set[str]]) -> list[str] | None:
-    """One cycle of *graph* as ``[a, b, ..., a]``, else ``None`` (iterative DFS, deterministic order)."""
-    state: dict[str, int] = {}  # 1: on the stack, 2: done
-    for start in sorted(graph):
-        if start in state:
-            continue
-        path, stack = [start], [iter(sorted(graph[start]))]
-        state[start] = 1
-        while stack:
-            nxt = next(stack[-1], None)
-            if nxt is None:
-                state[path.pop()] = 2
-                stack.pop()
-            elif state.get(nxt) == 1:
-                return [*path[path.index(nxt) :], nxt]
-            elif nxt not in state:
-                state[nxt] = 1
-                path.append(nxt)
-                stack.append(iter(sorted(graph.get(nxt, ()))))
-    return None
-
-
 def static_problems(root: Path, layers: Layers, files: Iterable[str]) -> list[str]:
     """The static rules over the ``.py`` *files* (repo-relative): core imports no application; applications acyclic."""
     py = sorted(f for f in files if f.endswith('.py'))
@@ -230,7 +208,7 @@ def static_problems(root: Path, layers: Layers, files: Iterable[str]) -> list[st
                 problems.append(f'{rel} (core) imports application module(s) {", ".join(sorted(hit))}')
         else:
             graph[packages[app]] |= hit - {packages[app]}
-    if (cycle := _cycle(graph)) is not None:
+    if (cycle := importedges.cycle(graph)) is not None:
         problems.append(f'the applications import in a cycle: {" -> ".join(cycle)}')
     return [f'{RULE_ID}: {p} -- {_STATIC_DOOR}\n{_DETAILS}' for p in problems]
 

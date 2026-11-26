@@ -23,8 +23,9 @@ from typing import Any, Final
 from dev_lab.dev.devschema import app_tables
 from dev_lab.dev.hpcaccount.grantslice import granted_root
 from dev_lab.dev.hpcaccount.spec import parse
+from dev_lab.dev.testcost import BUDGET_TABLE, budget_defects
 
-__all__ = ['TABLES', 'check', 'derived', 'grant_of', 'is_account']
+__all__ = ['TABLES', 'TABLES_DOOR', 'check', 'derived', 'grant_of', 'is_account']
 
 #: What an account file may declare; an empty table is open (its own module checks its keys).
 TABLES: Final[Mapping[str, Any]] = {
@@ -36,7 +37,10 @@ TABLES: Final[Mapping[str, Any]] = {
     'storage': {'reach': {}},  # which storage remotes this account reaches (lab_commons.storage)
     'hpc': {'paging': {}},
     'writeroots': {},  # the account's writable-root allowlist (dev_lab.dev.writeroots, ruling R8)
+    'test_budget': {},  # the account's test budget (dev_lab.dev.testcost.budget_defects checks its keys)
 }
+#: Where an account table is opened: the door an undeclared one's refusal names.
+TABLES_DOOR: Final = 'dev_lab.dev.accounthost.TABLES'
 #: ``[deploy]`` keys the family grant owns: stated in an account file they would be a second copy.
 _DERIVED: Final = ('role', 'slurm_account', 'partitions')
 
@@ -75,9 +79,12 @@ def _leaves(table: Mapping[str, Any], prefix: str = '') -> Iterator[str]:
 
 
 def _undeclared(table: Mapping[str, Any], schema: Mapping[str, Any], prefix: str = '') -> Iterator[str]:
+    """Each undeclared dotted key of *table*, with the keys its level declares and where one is opened."""
     for key, value in table.items():
         if key not in schema:
-            yield f'{prefix}{key}'
+            level = f'[{prefix[:-1]}] declares' if prefix else 'an account file declares'
+            tables = ', '.join(sorted(schema))
+            yield f'{prefix}{key} is not an account table -- {level} {tables}; open one in {TABLES_DOOR}'
         elif schema[key] and isinstance(value, Mapping):
             yield from _undeclared(value, schema[key], f'{prefix}{key}.')
 
@@ -100,7 +107,8 @@ def check(path: Path, host: Mapping[str, Any], family: Mapping[str, Any]) -> lis
         for key in sorted(set(_leaves(host)) & set(_leaves(family)))
     ]
     opened = {**TABLES, **{app: {} for app in app_tables(family)}}
-    found += [f'{key} is not an account table' for key in _undeclared(host, opened)]
+    found += list(_undeclared(host, opened))
+    found += budget_defects(host.get(BUDGET_TABLE, {}))
     try:  # an unstated root is the grant's cluster root (dev-lab #878): the family declaration is the source
         parse(host, path, root=granted_root(family.get('hpc'), name))
     except ValueError as bad:

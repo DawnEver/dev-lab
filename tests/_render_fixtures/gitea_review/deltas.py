@@ -1,9 +1,0 @@
-"""Render-golden fixture DELTAS: a representative declaration, not any real repo's."""
-
-from __future__ import annotations
-
-from dev_lab.dev.famconfig import Delta
-
-DELTAS = {
-    '.gitignore': Delta(repo='gitea', added=('/data/',), dropped={}, ceiling=1),
-}

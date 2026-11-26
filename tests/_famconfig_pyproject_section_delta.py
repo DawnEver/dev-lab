@@ -15,7 +15,14 @@ from __future__ import annotations
 
 from typing import Final
 
-from dev_lab.dev._famconfig_pyproject_rows import BUILD_SYSTEM, COVERAGE_HTML, HATCH_VERSION, PROJECT, PYTEST_INI
+from dev_lab.dev._famconfig_pyproject_rows import (
+    BUILD_SYSTEM,
+    COVERAGE_HTML,
+    HATCH_VERSION,
+    PROJECT,
+    PYRIGHT,
+    PYTEST_INI,
+)
 from dev_lab.dev.famconfig import SectionDelta
 
 __all__ = ['PYPROJECT_SECTION_DELTAS']
@@ -28,5 +35,6 @@ PYPROJECT_SECTION_DELTAS: Final[dict[str, dict[str, SectionDelta]]] = {
         BUILD_SYSTEM: SectionDelta(repo='lab-commons', added={}, dropped={}, ceiling=0),
         HATCH_VERSION: SectionDelta(repo='lab-commons', added={}, dropped={}, ceiling=0),
         COVERAGE_HTML: SectionDelta(repo='lab-commons', added={}, dropped={}, ceiling=0),
+        PYRIGHT: SectionDelta(repo='lab-commons', added={}, dropped={}, ceiling=0),
     },
 }

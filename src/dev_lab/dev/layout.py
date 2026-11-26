@@ -13,6 +13,7 @@ the root's own files), each value the list of what a file there may be -- a ``.s
     # layout.toml
     read_only = ['temp']                      # user-maintained input: never written, never cleaned, never judged
     tool_caches = ['pytest', 'ruff']          # output/cache/<tool>/ of each NAMED tool holds what the tool writes
+    vendor_jobs = ['femm', 'matlab']          # output/logs/<yy>/<mm>/<dd>/vendor/<program>/: a NAMED program's jobs
     [layout]
     '.' = ['.toml', '.md', '.lock', '.gitignore']
     src = ['.py', '.typed']
@@ -30,18 +31,28 @@ directory, a row with no glob character beats a globbed one, then the row with f
 tied are refused by name as ambiguous.
 Nothing is allowed by default: a new directory or format is refused until it is declared on purpose.
 
-THE FAMILY HOLDS THREE THINGS, NOT THE TREE (a repo's formats are its own): every family home
+THE FAMILY HOLDS FOUR THINGS, NOT THE TREE (a repo's formats are its own): every family home
 (:data:`dev_lab.dev.codeplace.FAMILY_HOMES`) must be declared; ``output`` may never allow a
-:data:`~dev_lab.dev._deny_outputcode_row.CODE_SUFFIXES` suffix nor ``*``; and under :data:`NO_COPY_ROOTS` a COPY
+:data:`~dev_lab.dev._deny_outputcode_row.CODE_SUFFIXES` suffix nor ``*``; under :data:`NO_COPY_ROOTS` a COPY
 is refused whatever the table says -- a directory holding ``.git`` (a clone or worktree), a ``pyproject.toml``
-beside a ``src/`` (an exported tree), or a :data:`BACKUP_SUFFIXES` file (a bundle or patch parked as a backup).
-Its door is MERGE-OR-DELETE: land the work through its branch, or delete it.
+beside a ``src/`` (an exported tree), or a :data:`BACKUP_SUFFIXES` file (a bundle or patch parked as a backup),
+its door MERGE-OR-DELETE: land the work through its branch, or delete it; and THE FAMILY'S DATED KINDS
+(:data:`dev_lab.dev.datedlog.FAMILY_KINDS`, the kinds dev-lab's own mechanisms write under
+``output/logs/<yy>/<mm>/<dd>/``) are rows of every repo's table without being listed there
+(:data:`~dev_lab.dev._layout_table.FAMILY_ROWS`, with the dated levels above them): a repo row naming one is
+refused, and inside one only the family's rows judge, so a repo's open ``<day>/*`` row never widens it. A repo
+lists only its own kinds.
 
-TWO EXEMPTIONS, BOTH NAMED (user rulings 2026-11-24). A ``read_only`` path is user input of whatever format the
-user keeps: the scan never judges or descends it, and the write hook refuses any write into it. A tool in
-``tool_caches`` owns ``output/cache/<tool>/`` (every tool cache lives there, never at the root): the scan and the
-hook leave its files unjudged. Each entry is ONE tool's name -- a glob, a path or an empty name is refused, so an
-unnamed tool's cache is judged like any undeclared directory.
+THREE EXEMPTIONS, ALL NAMED (user rulings 2026-11-24 and D95, 2026-11-25). A ``read_only`` path is user input of
+whatever format the user keeps: the scan never judges or descends it, and the write hook refuses any write into it.
+A tool in ``tool_caches`` owns ``output/cache/<tool>/`` (every tool cache lives there, never at the root): the scan
+and the hook leave its files unjudged. Each entry is ONE tool's name -- a glob, a path or an empty name is refused,
+so an unnamed tool's cache is judged like any undeclared directory. A program in ``vendor_jobs`` (entries validated
+as ``tool_caches``' are) owns its job tree ``output/logs/<yy>/<mm>/<dd>/vendor/<program>/``: the program reads the
+model and driver scripts its driver emits (``.py`` for AEDT, ``.lua`` for FEMM, ``.m`` for MATLAB) from disk beside
+its own files, so the scan leaves that tree unjudged, code suffixes included. The write hook sees an AGENT's tool
+call, never the driver writing at run time, so it cannot admit per writer: it refuses an agent's Write/Edit there
+whatever the suffix, naming the driver as the door (:mod:`dev_lab.dev._layout_vendor`).
 
 ONE TABLE, ONE PREDICATE, THREE CALLERS: the scan :func:`layout_violations`, the write hook's
 :func:`refuse_layout`, and the scan entry :func:`main` that ``verify`` and every forge tick run.
@@ -62,7 +73,6 @@ import argparse
 import fnmatch
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Final
@@ -70,7 +80,18 @@ from typing import Final
 from lab_commons.log import emit
 
 from dev_lab.dev import floors, gitdirs
-from dev_lab.dev._layout_table import ANY, RULE_ID, TABLE, TOOL_CACHE_ROOT, Layout, LayoutNotDeclared, declared_layout
+from dev_lab.dev._layout_table import (
+    RULE_ID,
+    TABLE,
+    AmbiguousRowError,
+    Layout,
+    LayoutNotDeclared,
+    allowed,
+    declared_at,
+    declared_layout,
+    row_for,
+)
+from dev_lab.dev._layout_vendor import vendor_refusal
 from dev_lab.dev.codeplace import FAMILY_HOMES, LAYOUT_FILE, PRUNED_NAMES
 from dev_lab.dev.disclosure import details_for
 
@@ -79,7 +100,6 @@ __all__ = [
     'COPY_DOOR',
     'COPY_RULE_ID',
     'NO_COPY_ROOTS',
-    'allowed',
     'copy_marker',
     'judge',
     'layout_violations',
@@ -93,10 +113,6 @@ COPY_RULE_ID: Final = 'NO-BACKUP-COPIES'
 NO_COPY_ROOTS: Final = ('output', 'scratch')
 #: A file that is a parked copy of work rather than a product: a git bundle, a patch, a diff.
 BACKUP_SUFFIXES: Final = frozenset({'.bundle', '.patch', '.diff'})
-#: What makes a pattern segment a glob (:func:`fnmatch.fnmatchcase`): each match is one wildcard.
-_GLOB: Final = re.compile(r'[*?]|\[[^]]*\]')
-#: How many mirror hops a twin lookup follows (a mirror of a mirror is two); a cycle stops here, undeclared.
-_MIRROR_HOPS: Final = 8
 #: Agent state lives once, at the checkout root (user ruling 2026-11-23): a scoped ``.claude/`` below it is refused.
 _SCOPED: Final = '.claude'
 _SCOPED_CAUSE: Final = (
@@ -123,82 +139,15 @@ def _within(rel: str, prefixes: tuple[str, ...]) -> bool:
 
 
 def _skipped(rel_dir: str, layout: Layout) -> bool:
-    """A directory never judged: tool state by name, a pruned path, a read_only input, or a named tool cache."""
+    """A directory never judged: tool state by name, a pruned path, a read_only input, a named tool cache or job."""
     parts = [] if rel_dir == '.' else rel_dir.split('/')
-    caches = tuple(f'{TOOL_CACHE_ROOT}/{tool}' for tool in layout.tool_caches)
     return (
         bool(PRUNED_NAMES.intersection(parts))
         or _within(rel_dir, layout.pruned_paths)
         or _within(rel_dir, layout.read_only)
-        or _within(rel_dir, caches)
+        or layout.in_tool_cache(rel_dir)
+        or layout.in_vendor_job(rel_dir)
     )
-
-
-class _AmbiguousRowError(ValueError):
-    """Two or more rows judge one directory with equal precedence: the table must say which."""
-
-
-def _precedence(pattern: str) -> tuple[bool, int]:
-    """Among the rows of one depth: an explicit (unglobbed) row wins, then fewer wildcards win."""
-    wildcards = len(_GLOB.findall(pattern))
-    return (wildcards == 0, -wildcards)
-
-
-def _mirrored(parts: list[str], pattern: str, layout: Layout, hops: int) -> bool:
-    """Whether MIRROR row *pattern* declares the directory *parts*: an extra name, or a declared twin."""
-    segs = pattern.split('/')
-    if len(segs) >= len(parts) or not all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False)):
-        return False
-    target, extra, depth = layout.mirrors[pattern]
-    if depth is not None and len(parts) - len(segs) > depth:
-        return False  # below the twinned levels: the ordinary rows judge it
-    rel = '/'.join(parts[len(segs) :])
-    if rel in extra:
-        return True
-    if hops >= _MIRROR_HOPS:
-        return False
-    try:
-        return _row_for(f'{target}/{rel}', layout, hops + 1) is not None
-    except _AmbiguousRowError:
-        return True  # the twin is declared; its own files are named ambiguous
-
-
-def _row_for(rel_dir: str, layout: Layout, hops: int = 0) -> tuple[str, frozenset[str]] | None:
-    """The row of *rel_dir* ITSELF (``.`` is the root) by :func:`_precedence`, with what it allows; no inheritance.
-
-    A directory no row of its own depth matches is declared by a MIRROR row above it whose twin is declared.
-
-    Raises:
-        _AmbiguousRowError: rows tied on precedence, named.
-
-    """
-    if rel_dir == '.':
-        return ('.', layout.rows['.']) if '.' in layout.rows else None
-    parts = rel_dir.split('/')
-    matching = [
-        pattern
-        for pattern in layout.rows
-        if pattern != '.'
-        and len(segs := pattern.split('/')) == len(parts)
-        and all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False))
-    ] or [pattern for pattern in layout.mirrors if _mirrored(parts, pattern, layout, hops)]
-    if not matching:
-        return None
-    top = max(map(_precedence, matching))
-    best = sorted(p for p in matching if _precedence(p) == top)
-    if len(best) > 1:
-        msg = (
-            f'rows {best} judge {rel_dir} equally (same depth, same wildcard count): ambiguous; declare an explicit '
-            f'row for it or make one pattern narrower'
-        )
-        raise _AmbiguousRowError(msg)
-    return best[0], layout.rows[best[0]]
-
-
-def allowed(name: str, allows: frozenset[str]) -> bool:
-    """Whether file *name* is one of *allows*: ``*``, its exact (lower-cased) name, or its suffix (``""``: none)."""
-    lower = name.lower()
-    return ANY in allows or lower in allows or Path(lower).suffix in allows
 
 
 def copy_marker(rel_dir: str, files: set[str], dirs: set[str]) -> str | None:
@@ -230,8 +179,8 @@ def judge(rel: str, layout: Layout) -> str | None:
 def _row_verdict(rel_dir: str, name: str, layout: Layout) -> str | None:
     """Why the row judging *rel_dir* refuses file *name*: undeclared, ambiguous, or a format it does not allow."""
     try:
-        row = _row_for(rel_dir, layout)
-    except _AmbiguousRowError as exc:
+        row = row_for(rel_dir, layout)
+    except AmbiguousRowError as exc:
         return str(exc)
     if row is None:
         return _undeclared(rel_dir)
@@ -322,8 +271,8 @@ def _scan_dir(rel_dir: str, folder: Path, layout: Layout) -> tuple[list[str], li
 def _declared_row(rel_dir: str, layout: Layout) -> tuple[str, frozenset[str]] | bool | None:
     """The row of *rel_dir*, ``True`` when its rows tie (its files are each named ambiguous), else ``None``."""
     try:
-        return _row_for(rel_dir, layout)
-    except _AmbiguousRowError:
+        return row_for(rel_dir, layout)
+    except AmbiguousRowError:
         return True
 
 
@@ -368,15 +317,11 @@ def layout_violations(root: Path, layout: Layout | None = None, *, incremental: 
 
 def refuse_layout(path: Path) -> str | None:
     """The write hook's refusal for *path*; ``None`` when admitted or the checkout declares no layout."""
-    target = Path(path).resolve()
-    root = gitdirs.checkout_of(target.parent)
-    if root is None:
+    if (declared := declared_at(path)) is None:
         return None
-    try:
-        layout = declared_layout(root)
-    except LayoutNotDeclared:
-        return None
-    rel = target.relative_to(root).as_posix()
+    root, layout, rel = declared
+    if layout.in_vendor_job(rel):
+        return vendor_refusal(root, rel)
     if _within(rel, layout.read_only):
         return (
             f'{RULE_ID}: {rel} -- {rel.split("/", 1)[0]}/ is declared read_only in '

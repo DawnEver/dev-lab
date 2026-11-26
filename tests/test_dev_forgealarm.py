@@ -69,7 +69,7 @@ def test_a_configured_channel_takes_it_and_a_repeat_inside_the_window_is_not_del
 
 
 def test_the_repeat_window_is_the_receivers_declaration() -> None:
-    """``[alerts] repeat_hours``: the person paged decides how often; absent, six hours."""
+    """``[alerts] repeat``: the person paged decides how often, as a duration; absent, six hours."""
     sent: list[Notice] = []
 
     def telegram(notice: Notice) -> list[Delivery]:
@@ -77,11 +77,19 @@ def test_the_repeat_window_is_the_receivers_declaration() -> None:
         return [Delivery('telegram', ok=True)]
 
     assert repeat_window({}) == timedelta(hours=6)
-    hourly = {'repeat_hours': 1}
+    hourly = {'repeat': '1 h'}
     assert sound(ALARM, alerts=hourly, send=telegram, now=NOW) == ('telegram',)
     assert sound(ALARM, alerts=hourly, send=telegram, now=NOW + timedelta(minutes=30)) == ()
     assert sound(ALARM, alerts=hourly, send=telegram, now=NOW + timedelta(hours=1)) == ('telegram',)
     assert len(sent) == 2
+
+
+def test_the_repeat_window_carries_its_unit_and_the_retired_key_is_refused_with_its_line() -> None:
+    assert repeat_window({'repeat': '30 min'}) == timedelta(minutes=30)
+    with pytest.raises(ValueError, match=r'\[alerts\] repeat = 1 is a bare number'):
+        repeat_window({'repeat': 1})
+    with pytest.raises(ValueError, match=r'repeat_hours = 1 is retired.*write repeat = "1 h"'):
+        repeat_window({'repeat_hours': 1})
 
 
 def test_a_channel_that_failed_is_tried_again_next_tick() -> None:

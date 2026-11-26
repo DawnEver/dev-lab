@@ -95,6 +95,7 @@ from dev_lab.dev._famconfig_rows import (
     STAMP,
 )
 from dev_lab.dev._famconfig_sections import (
+    CARGO_SECTIONS,
     DIVERGED,
     NO_FILE,
     NO_TABLE,
@@ -133,6 +134,7 @@ from dev_lab.dev._famconfig_survey import (
 __all__ = [
     'ABSENT',
     'BASES',
+    'CARGO_SECTIONS',
     'DIVERGED',
     'DRIFTED',
     'FOREIGN',
