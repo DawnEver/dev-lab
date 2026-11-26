@@ -199,3 +199,20 @@ def test_only_a_refusal_line_records_a_wall_never_an_id_in_output(tmp_path: Path
     assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(payload))) == 0
     recorded = [line['rule'] for line in _lines(tmp_path)] if walls.ledger(tmp_path).exists() else []
     assert recorded == rules
+
+
+@pytest.mark.parametrize(
+    ('output', 'declared', 'rule'),
+    [
+        (
+            '\n  REFUSED: BASE-HOLDS-THE-MILESTONE: pr/x lacks v1.0.0.\n    Door: forge sync\n',
+            '',
+            'BASE-HOLDS-THE-MILESTONE',
+        ),
+        ('x.py:1:1: F401 unused import', 'RUFF', 'RUFF'),
+        ('no', '', 'milestone-base'),  # PLANTED: an output naming no rule keeps the row id
+    ],
+)
+def test_a_hook_rows_wall_is_the_rule_its_refusal_names(output: str, declared: str, rule: str) -> None:
+    """#870: a row id (`milestone-base`) is a table key; the rule its refusal line names is what a reader looks up."""
+    assert walls.hook_rule('milestone-base', output, declared) == rule

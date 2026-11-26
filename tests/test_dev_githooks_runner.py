@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from _venv_fake import linked_env
 
-from dev_lab.dev import venvpointer, walls
+from dev_lab.dev import milestonebase, venvpointer, walls
 from dev_lab.dev.githooks import _gitread, runner
 from dev_lab.dev.githooks import main as githooks_main
 from dev_lab.dev.githooks._gitread import ZERO_SHA, parse_push_lines
@@ -730,3 +730,18 @@ def test_a_failing_git_query_of_the_runner_names_its_cause_and_door(repo: Path, 
     assert 'fatal: bad object deadbeef' in said
     assert 'git diff' in said
     assert 'Traceback' not in said
+
+
+def test_a_milestone_refusal_is_recorded_as_its_rule_with_its_door(repo: Path) -> None:
+    """#870: the milestone-base row's real refusal is a wall of BASE-HOLDS-THE-MILESTONE that names its door."""
+    said = '\n' + '\n'.join(f'  REFUSED: {line}' for line in [milestonebase._behind('v1.0.0.dev0', 'pr/x', 'a' * 40)])
+
+    def fail(_argv: list[str], _cwd: Path, _stdin: str | None, _env: object) -> tuple[int, str]:
+        return 1, said
+
+    # The row's stage does not change how its wall is named; commit-msg needs no pushed objects in the planted repo.
+    row = Hook(stage='commit-msg', id='milestone-base', run=('m',))
+    assert run_stage('commit-msg', ['.git/COMMIT_EDITMSG'], root=repo, hooks=(row,), runner=fail) == 1
+    (line,) = [json.loads(one) for one in walls.ledger(repo).read_text(encoding='utf-8').splitlines()]
+    assert (line['rule'], line['remedy_present']) == ('BASE-HOLDS-THE-MILESTONE', True)
+

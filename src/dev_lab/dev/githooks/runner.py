@@ -330,7 +330,8 @@ def _log(root: Path, stage: str, failed: Mapping[str, str], push: Sequence[PushL
     """The stage's metrics (:mod:`dev_lab.dev.metrics`): one refusal per failed hook, and every pre-push as a push.
 
     A refusal goes through :func:`dev_lab.dev.walls.refused`, so it is this session's wall too: the failed hook's
-    *failed* output (``hook id -> output``) is what says whether it named a door.
+    *failed* output (``hook id -> output``) is what says whether it named a door, and which rule it is (the
+    rule its refusal line names, else its id: :func:`dev_lab.dev.walls.hook_rule`).
 
     A push line names the branch and tip it publishes (the first ref it does not delete): a branch's first push
     is where its edit starts.
@@ -350,7 +351,8 @@ def _log(root: Path, stage: str, failed: Mapping[str, str], push: Sequence[PushL
             vcs_ref_head_revision=head.local_sha if head else '',
         )
     for hook_id, output in refused.items():
-        walls.refused(root, repo=repo, rule=hook_id, reason=stage, remedy=walls.has_remedy(output))
+        rule = walls.hook_rule(hook_id, output)
+        walls.refused(root, repo=repo, rule=rule, reason=stage, remedy=walls.has_remedy(output))
 
 
 def _verdict(stage: str, failed: Sequence[str]) -> int:

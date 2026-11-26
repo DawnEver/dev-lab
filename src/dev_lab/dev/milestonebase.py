@@ -110,8 +110,8 @@ def newest_milestone(root: Path, line: Sequence[str]) -> str | None:
 
 def _behind(tag: str, branch: str, sha: str) -> str:
     return (
-        f'{BASE_RULE}: {branch} at {sha[:12]} does not contain the newest milestone {tag}; every push builds on it. '
-        f'Merge the integration branch in: `python -m dev_lab.dev.forge sync`, then push again'
+        f'{BASE_RULE}: {branch} at {sha[:12]} does not contain the newest milestone {tag}; every push builds on it.\n'
+        f'    Door: merge the integration branch in: `python -m dev_lab.dev.forge sync`, then push again'
     )
 
 

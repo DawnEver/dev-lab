@@ -52,6 +52,7 @@ __all__ = [
     'close',
     'digest',
     'has_remedy',
+    'hook_rule',
     'ledger',
     'main',
     'open_walls',
@@ -89,6 +90,8 @@ _HOOK_ERROR: Final = re.compile(r'(?m)^\w+:\w+ hook error:')
 _CAUSE_AND_DOOR: Final = 2
 #: The engine's header when a command targets another checkout: context, not the cause or the door.
 _TARGET_HEADER: Final = re.compile(r'^\[targets .*\]$')
+#: A hook's refusal line naming its rule, ``[REFUSED: ]<RULE-ID>: ...``: the rule a hook row's wall is recorded as.
+_HOOK_RULE_LINE: Final = re.compile(r'(?m)^\s*(?:REFUSED:\s*)?([A-Z][A-Z0-9]+(?:-[A-Z0-9]+)+):')
 
 
 def ledger(root: Path, day: tuple[str, str, str] | None = None) -> Path:
@@ -111,6 +114,16 @@ def has_remedy(text: str) -> bool:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     lines = [line for line in lines if not line.startswith(DETAILS_PREFIX) and not _TARGET_HEADER.match(line)]
     return len(lines) >= _CAUSE_AND_DOOR
+
+
+def hook_rule(hook_id: str, output: str, declared: str = '') -> str:
+    """The rule a failed hook row's wall is: the rule its refusal line names, else *declared*, else *hook_id*.
+
+    A row's id is a table key (``milestone-base``), not a rule; the refusal it prints names the rule
+    (``BASE-HOLDS-THE-MILESTONE``), which is what a reader looks up (#870).
+    """
+    found = _HOOK_RULE_LINE.search(output)
+    return found.group(1) if found else (declared or hook_id)
 
 
 def _session(session: str | None) -> str:
