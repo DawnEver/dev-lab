@@ -14,22 +14,24 @@ and read by :func:`declared_branchset`::
     max_idle = "24 h"              # how long a branch's tip sits idle before it is pruned (merged) or STALE (unmerged)
     max_ahead = 10                 # how many unlanded commits a branch may hold before it is OVER_AHEAD
 
-Three questions are asked of it, all through local refs (fetch first; the remote is the authority):
+Three questions are asked of it, all through local refs (fetch first; the remote is the authority); the
+first two are the census, :mod:`dev_lab.dev._branchset_census`:
 
-* :func:`census` -- which ORIGIN branches are undeclared (debt), which LOCAL branches are undeclared
-  and hold nothing origin lacks (debt), and which local ones hold UNPUSHED work (reported, never
-  deleted: unpushed work exists nowhere else).
-* :func:`merge_candidates` -- every undeclared branch, local and on origin, and every branch PARKED as an
-  ``archive/*`` tag (MERGE-OR-DELETE: a tag nobody reads is not a place to keep work), and whether it may be
-  DELETED now: its tip is an ancestor of the trunk or of a session branch. Anything else is merged
-  first. ``python -m dev_lab.dev.branchset [--root R]`` prints this list; it deletes nothing.
+* :func:`~dev_lab.dev._branchset_census.census` -- which ORIGIN branches are undeclared (debt), which LOCAL
+  branches are undeclared and hold nothing origin lacks (debt), and which local ones hold UNPUSHED work
+  (reported, never deleted: unpushed work exists nowhere else).
+* :func:`~dev_lab.dev._branchset_census.merge_candidates` -- every undeclared branch, local and on origin, and
+  every branch PARKED as an ``archive/*`` tag (MERGE-OR-DELETE: a tag nobody reads is not a place to keep work),
+  and whether it may be DELETED now: its tip is an ancestor of the trunk or of a session branch. Anything else
+  is merged first. ``python -m dev_lab.dev.branchset [--root R]`` prints this list; it deletes nothing.
 * :func:`dev_lab.dev.branchfate.discard` -- ``--discard <branch> --approved "<the user's words>"``: the door for
   ONE UNLANDED lane the user approved dropping (user ruling 2026-11-13): its worktree and local branch, pinned to
   the sha it saw. Origin is never touched.
 
 The live set is judged by the forge alone (:mod:`dev_lab.dev.forgeheadgate`), never a test. ``prune_merged`` (default
 ``false``) lets the forge prune merged origin branches (:mod:`dev_lab.dev.branchprune`); an agent never deletes a remote
-ref by hand, only through :data:`ORIGIN_DOOR` (LOSSLESS-DELETE), which ``--apply`` names on every landed origin row.
+ref by hand, only through :data:`~dev_lab.dev._branchset_census.ORIGIN_DOOR` (LOSSLESS-DELETE), which ``--apply``
+names on every landed origin row.
 """
 
 from __future__ import annotations
@@ -48,33 +50,33 @@ from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
 from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
+from dev_lab.dev._branchset_census import (
+    ORIGIN_DOOR,
+    Candidate,
+    checked_out,
+    holders,
+    merge_candidates,
+    unpushed_count,
+)
 from dev_lab.dev.branchfate import discard, settle
-from dev_lab.dev.checkout import authority_for, git_out, origin_branches
+from dev_lab.dev.checkout import git_out
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.reclaim import QUIET_S, reclaim
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'ARCHIVE_PREFIX',
     'EPHEMERAL_OFF',
     'FAMILY_EPHEMERAL',
     'FAMILY_TASK_HEADS',
-    'ORIGIN_DOOR',
     'BranchSet',
     'BranchSetKeyRetired',
     'BranchSetNotDeclared',
-    'Candidate',
-    'Census',
     'KitOlderThanCheckout',
     'apply_local',
     'branchset_at',
     'branchset_from',
-    'census',
-    'checked_out',
     'declared_branchset',
-    'holders',
     'main',
-    'merge_candidates',
 ]
 
 _TABLE = '[tool.dev_lab.branchset]'
@@ -95,11 +97,6 @@ FAMILY_TASK_HEADS: Final = 'pr/<task>/<feature>'
 _TASK_TAIL: Final = '<task>/<feature>'
 #: What a manifest that turned the namespace off is told, by every assertion that reads it.
 EPHEMERAL_OFF: Final = '[tool.dev_lab.branchset] ephemeral = [] turns off the family pr/* namespace -- delete the line'
-
-#: The ref shape a branch is PARKED under instead of being merged or deleted. MERGE-OR-DELETE (user ruling
-#: 2026-10-11): "you drop it into an archive tag and nobody ever looks at it" -- such a tag is debt exactly
-#: like an undeclared branch: merged -> deleted, unmerged -> merged. A release tag is never this shape.
-ARCHIVE_PREFIX = 'archive/'
 
 
 class BranchSetNotDeclared(ValueError):
@@ -163,24 +160,6 @@ class BranchSet:
     def admits(self, name: str) -> bool:
         """Whether *name* may sit on origin: a declared long-lived branch or one in an ephemeral namespace."""
         return name in self.declared or self.is_ephemeral(name)
-
-
-@dataclasses.dataclass(frozen=True)
-class Census:
-    """What a checkout carries beyond its declared set. Every field is sorted branch names."""
-
-    undeclared_origin: tuple[str, ...]
-    local_debt: tuple[str, ...]
-    unpushed: tuple[str, ...]
-
-
-@dataclasses.dataclass(frozen=True)
-class Candidate:
-    """One undeclared branch and whether it may be deleted without losing a commit."""
-
-    name: str
-    where: str
-    deletable: bool
 
 
 def declared_branchset(root: Path) -> BranchSet:
@@ -287,80 +266,6 @@ def _bounds(table: dict, manifest: str) -> tuple[bool, float, int | None]:
     return prune, float(idle), ahead
 
 
-def _short_refs(root: Path, prefix: str) -> tuple[str, ...] | None:
-    """The sorted short names of the refs under *prefix*, or ``None`` when git could not answer."""
-    out = git_out(root, 'for-each-ref', '--format=%(refname:short)', prefix)
-    return None if out is None else tuple(sorted(n for n in out.splitlines() if n))
-
-
-def _unpushed(root: Path, branch: str) -> int | None:
-    out = git_out(root, 'rev-list', '--count', f'refs/heads/{branch}', '--not', '--remotes=origin')
-    return None if out is None else int(out.strip())
-
-
-def census(root: Path, branchset: BranchSet) -> Census | None:
-    """The undeclared branches of *root*, or ``None`` when git could not answer -- never a clean read."""
-    remote = origin_branches(root, protected=frozenset({'HEAD'}))
-    local = _short_refs(root, 'refs/heads/')
-    if remote is None or local is None:
-        return None
-    debt: list[str] = []
-    unpushed: list[str] = []
-    for name in local:
-        if branchset.admits(name):
-            continue
-        ahead = _unpushed(root, name)
-        if ahead is None:
-            return None
-        (unpushed if ahead else debt).append(name)
-    return Census(tuple(n for n in remote if not branchset.admits(n)), tuple(debt), tuple(unpushed))
-
-
-def holders(root: Path, branchset: BranchSet) -> tuple[str, ...]:
-    """The refs whose history makes a tip safe to delete: the trunk's authority and every session."""
-    refs = [authority_for(root, branchset.trunk)]
-    for session in sorted(branchset.sessions):
-        refs += [
-            r
-            for r in (f'refs/remotes/origin/{session}', f'refs/heads/{session}')
-            if git_out(root, 'rev-parse', '--verify', '--quiet', r)
-        ]
-    return tuple(refs)
-
-
-ORIGIN_DOOR: Final = 'python -m dev_lab.dev.branchprune delete'
-"""The agent's exit for a landed origin branch: LOSSLESS-DELETE re-judges it after a fresh fetch, then lease-deletes."""
-
-
-def merge_candidates(root: Path, branchset: BranchSet) -> tuple[Candidate, ...] | None:
-    """Every undeclared branch (local, origin) and parked tag, and whether its tip is held by a declared one."""
-    remote = origin_branches(root, protected=frozenset({'HEAD'}))
-    local = _short_refs(root, 'refs/heads/')
-    parked = _short_refs(root, f'refs/tags/{ARCHIVE_PREFIX}')
-    if remote is None or local is None or parked is None:
-        return None
-    held_by = holders(root, branchset)
-    rows: list[Candidate] = []
-    for where, names, prefix in (
-        ('local', local, 'refs/heads/'),
-        ('origin', remote, 'refs/remotes/origin/'),
-        ('tag', parked, 'refs/tags/'),
-    ):
-        for name in names:
-            if name in branchset.declared:
-                continue
-            held = any(git_out(root, 'merge-base', '--is-ancestor', f'{prefix}{name}', h) is not None for h in held_by)
-            rows.append(Candidate(name, where, held))
-    return tuple(rows)
-
-
-def checked_out(root: Path) -> frozenset[str]:
-    """The local branches checked out in any worktree of *root*."""
-    out = git_out(root, 'for-each-ref', '--format=%(refname:short)|%(worktreepath)', 'refs/heads/')
-    rows = (line.partition('|') for line in (out or '').splitlines())
-    return frozenset(name for name, _, tree in rows if tree.strip())
-
-
 def apply_local(
     root: Path,
     branchset: BranchSet,
@@ -405,7 +310,7 @@ def apply_local(
         sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
         if not row.deletable or row.name in branchset.declared or not sha:
             out.append(f'kept     local   {row.name}  (not held by a declared branch)')
-        elif row.name in busy or _unpushed(root, row.name) != 0:
+        elif row.name in busy or unpushed_count(root, row.name) != 0:
             out.append(f'kept     local   {row.name}  (checked out in a worktree, or holds commits origin lacks)')
         elif not any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in held_by):
             out.append(f'kept     local   {row.name}  (ancestry re-check failed)')

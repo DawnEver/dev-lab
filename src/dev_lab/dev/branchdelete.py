@@ -41,9 +41,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from dev_lab.dev._branchset_census import checked_out
 from dev_lab.dev.backgroundrun import held
 from dev_lab.dev.branchlocal import main
-from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, checked_out, declared_branchset
+from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.deletejudge import ORIGIN, Verdict, grant, judge, unlanded
 from dev_lab.dev.forge import _GIT

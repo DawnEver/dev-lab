@@ -326,7 +326,7 @@ def reclaimable(
 
     An orphan directory under *home* is reclaimable iff nothing occupies it and it is not SEVERED (a ``.git``
     file) and holds no runtime. *holders* are the refs whose content counts
-    as landed: the trunk's authority and every declared session (``dev_lab.dev.branchset.holders``).
+    as landed: the trunk's authority and every declared session (``dev_lab.dev._branchset_census.holders``).
     """
     trees = worktrees(root)
     locked = locked_trees(root)
