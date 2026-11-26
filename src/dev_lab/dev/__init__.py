@@ -593,6 +593,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.ownercov` -- OWNER-COVERAGE: each declared owner meets the family line/branch bar (a repo may
   only raise it) and a floor that ratchets up; :mod:`dev_lab.dev.covreports` reads coverage.py's and
   ``cargo llvm-cov``'s JSON reports per file.
+* :mod:`dev_lab.dev.envreads` -- ENV-IS-READ-ONCE: the environment is read only in a repo's declared entry modules;
+  the pending ledger of existing reads only shrinks; a test switch is refused in every mode.
+* :mod:`dev_lab.dev.harness` -- dev-lab's ENV-IS-READ-ONCE entry: the harness context as a typed record, and the
+  environment a child process inherits.
+* :mod:`dev_lab.dev.complexity` -- the per-owner complexity report (fan-out, call path, public surface): a dated
+  JSONL record per run and its trend view; a report, not a gate.
 * :mod:`dev_lab.dev.consentguard` -- CONSENT-CODE-FROM-THE-USER: where granted consent credentials live, and the
   refusal of an agent writing there (:mod:`dev_lab.ops.consent`).
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.

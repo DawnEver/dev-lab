@@ -34,6 +34,7 @@ from lab_commons.liveness import creation_stamp
 from lab_commons.log import emit
 
 from dev_lab.dev import tickholder
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.servelock import held
 
 __all__ = ['GRACE_S', 'HELD', 'STOPPED', 'WALL', 'TickStopped', 'Wall', 'locked', 'within']
@@ -79,7 +80,7 @@ class Wall:
 
     def env(self) -> dict[str, str]:
         """The serve's environment: this one, plus the record it names its phases in."""
-        return {**os.environ, tickholder.ENV: str(self.record)}
+        return child_env({tickholder.ENV: str(self.record)})
 
     def ended(self, why: str) -> str:
         """The one line a tick ended early prints: why, after how long, doing what."""
