@@ -742,7 +742,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'rows = {path: frozen.index_object(root, path)[1] for path in (_SETTINGS, _DOCS)}',
     ): 'index_object returns None for an untracked path; the fixture tracked both',
     (
-        'tests/test_dev_large_objects.py',
+        'tests/test_dev_storage_run_objects.py',
         'arg-type',
         "assert forgeunit.main(['unit=x'], cwd=_checkout(tmp_path), client=object()) == 2",
     ): 'planted control: a client that is not one, to prove the refusal happens before any call',

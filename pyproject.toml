@@ -9,10 +9,10 @@ requires-python = ">=3.12"
 # dev-lab IS the development system, so what lab-commons shipped as its `dev` extra is this package's base
 # install: the lab-commons runtime it is built on (logging, paths, config, units for the duration/quantity
 # parsers) plus the tools it DRIVES as executables (pytest, ruff, `cz check` for the base commit-msg hook).
-# Floor: lab-commons 8c79d039 (hatch-vcs 0.3.1.dev1763), the wave-#254 merge carrying lab_commons.quantity, .objects and
-# .hostenv, which dev-lab imports at load (a relock moving dev-lab alone would leave kits on an older lab-commons
-# that dies importing them); a floor any dev-lab import needs is raised here, so `--upgrade-package dev-lab` pulls
-# lab-commons along.
+# Floor: lab-commons 8c79d039 (hatch-vcs 0.3.1.dev1763), the wave-#254 merge carrying lab_commons.quantity,
+# .objects and .hostenv, which dev-lab imports at load (a relock moving dev-lab alone would leave kits on an older
+# lab-commons that dies importing them); a floor any dev-lab import needs is raised here, so `--upgrade-package
+# dev-lab` pulls lab-commons along.
 # One bare git URL graph-wide, as the
 # consumers spell it, so uv.lock pins its tip -- never a machine-local path.
 dependencies = [
