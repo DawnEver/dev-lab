@@ -119,13 +119,30 @@ def _note(template: str, **fields: str) -> str:
     return '> ' + template.format(day=today().isoformat(), **fields)
 
 
+def _english(approved: str) -> None:
+    """Refuse non-ASCII approving words BEFORE any write: the note is tracked source (NO-CJK-IN-TRACKED-SOURCE)."""
+    if not approved.isascii():
+        msg = (
+            'the user`s approving words are written into the note verbatim and a tracked note is English only -- '
+            "pass them rendered in English, marked `(user, translated)`, e.g. --approved '<words> (user, translated)'"
+        )
+        raise MemoryRefused(msg)
+
+
 def amend(root: Path, rel: str, line: int, text: str, *, reason: str, approved: str) -> Path:
     """Replace line *line* (1-based) of the entry with *text* and add the approved amendment note."""
+    _english(approved)
     path = _entry_path(root, rel)
     old = entry.lf(path.read_text(encoding='utf-8'))
     lines = old.splitlines()
     if not 1 <= line <= len(lines):
         msg = f'{rel}: has {len(lines)} lines, not a line {line}'
+        raise MemoryRefused(msg)
+    if lines[line - 1].startswith('> '):
+        msg = (
+            f'{rel}: line {line} is a note, not an amendment target -- a note is never amended; to remove a '
+            f'private span from it: python -m dev_lab.dev.memory redact {rel} <span> <kebab-token>'
+        )
         raise MemoryRefused(msg)
     lines[line - 1] = text
     new = '\n'.join([*lines, '', _note(entry.AMENDMENT_NOTE, reason=reason, approved=approved)]) + '\n'
@@ -157,6 +174,7 @@ def redact(root: Path, rel: str, span: str, placeholder: str) -> Path:
 
 def rename(root: Path, rel: str, new_name: str, *, approved: str) -> Path:
     """The redacting rename: the entry moves to *new_name* in its directory with a ``renamed`` amendment note."""
+    _english(approved)
     path = _entry_path(root, rel)
     target = path.with_name(new_name)
     old_rel, new_rel = _rel(root, path), _rel(root, target)
@@ -176,6 +194,7 @@ def rename(root: Path, rel: str, new_name: str, *, approved: str) -> Path:
 
 def delete(root: Path, name: str, paths: Sequence[str], *, reason: str, approved: str, day: date | None = None) -> Path:
     """Remove the attachments *paths*, recorded in the new entry *name* whose note approves each deletion."""
+    _english(approved)
     files = [(root / rel).resolve() for rel in paths]
     rels = [_rel(root, path) for path in files]
     for rel, path in zip(rels, files, strict=True):

@@ -19,10 +19,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
-__all__ = ['CONTAINED_TAG_DOOR', 'TAG_EVENT', 'delete_contained_tags']
+__all__ = ['APPROVED_TAG_DOOR', 'CONTAINED_TAG_DOOR', 'TAG_EVENT', 'delete_contained_tags']
 
 #: The door an agent deletes a remote TAG through: only one whose commit integration or the trunk contains.
 CONTAINED_TAG_DOOR: Final = 'python -m dev_lab.dev.branchprune tag <tag>'
+#: The door for a tag holding UNLANDED work: on the user's words it goes, its dropped commits recorded first.
+APPROVED_TAG_DOOR: Final = 'python -m dev_lab.dev.branchprune tag <tag> --approved "<the user`s words, in English>"'
 #: The ``event`` of the record each tag deletion writes BEFORE its push (name, ref sha, commit).
 TAG_EVENT: Final = 'lab_commons.forge.tag-delete'
 
@@ -52,12 +54,15 @@ def delete_contained_tags(
     fetch: Callable[[Path], None],
     say: Callable[[str], None],
     push: Callable[[Path, str, str], str] = _push_tag_delete,
+    approved: str = '',
 ) -> int:
     """Delete each origin tag whose commit origin's trunk or integration contains; 0 when every one went, else 1.
 
     A tag holds nothing of its own only when its commit is in declared history, so that is the whole judgment
     (by ancestry; a tag is never judged by content). Each deletion is RECORDED -- name, ref sha, commit -- before
-    its push, so the tag can be recreated from the record; a tag naming uncontained work is kept and named.
+    its push, so the tag can be recreated from the record. A tag naming uncontained work is kept and named with
+    its door, unless *approved* carries the user's words (every non-version tag is cleaned, user ruling
+    2026-11-26): then the record also lists each unlanded commit it drops and the words, and it goes.
     """
     fetch(root)
     policy = load_policy(root)
@@ -76,11 +81,22 @@ def delete_contained_tags(
             ),
             '',
         )
-        if not holder:
-            say(f'{tag}: kept -- {commit[:12]} is in neither origin/{policy.trunk} nor origin/{policy.integration}')
+        record: dict[str, object] = {'event': TAG_EVENT, 'ref': tag, 'sha': ref, 'commit': commit}
+        if holder:
+            record['container'] = holder
+        elif approved.strip():
+            landed = (f'{ORIGIN}{policy.trunk}', f'{ORIGIN}{policy.integration}')
+            dropped = git_out(root, 'rev-list', commit, '--not', *landed)
+            record |= {'dropped': (dropped or '').split(), 'approved': approved}
+            holder = 'the user`s words'
+        else:
+            say(
+                f'{tag}: kept -- {commit[:12]} is in neither origin/{policy.trunk} nor origin/{policy.integration}; '
+                f'to drop its unlanded work on the user`s words: {APPROVED_TAG_DOOR}'
+            )
             failed += 1
             continue
-        say(json.dumps({'event': TAG_EVENT, 'ref': tag, 'sha': ref, 'commit': commit, 'container': holder}))
+        say(json.dumps(record))
         if why := push(root, tag, ref):
             say(f'{tag}: the delete failed: {why}')
             failed += 1
