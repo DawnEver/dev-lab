@@ -75,7 +75,8 @@ PRINCIPLES: Final = (
         'Keep every valuable parameter and option',
         'Generality is a requirement: keep every parameter and option a real case uses or plausibly needs. A '
         'reference match ADDS a selectable option and never replaces or deletes the alternative; numerical '
-        'method choices are options even with no current caller.',
+        'method choices are options even with no current caller. Every retirement is classified (renamed, '
+        'baggage, or capability-dropped) and only a user ruling drops a capability.',
     ),
     Principle(
         'every-wall-teaches',

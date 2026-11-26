@@ -36,6 +36,7 @@ def test_a_reference_match_adds_an_option_and_the_razors_never_remove_capability
         'ADDS a selectable option',
         'never replaces or deletes the alternative',
         'numerical method choices are options even with no current caller',
+        'only a user ruling drops a capability',
     ):
         assert clause in kept
     assert by_id['occams-razor'].endswith('never a capability.')
