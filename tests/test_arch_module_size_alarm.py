@@ -75,7 +75,7 @@ def code_lines(path: Path) -> int:
 #: measures. `resources.py` is the standing one -- it holds the broker, the registry and the record
 #: in one file, and splitting it is its own change.
 DEBT: dict[str, int] = {
-    'src/dev_lab/dev/_rule_rows.py': 401,  # 2026-10-23: the memory rows moved to _rule_rows_memory.py (was 422)
+    'src/dev_lab/dev/_rule_rows.py': 382,  # 2026-11-26: the machine rows moved to _rule_rows_machine.py (was 414)
     'src/dev_lab/dev/_unit_tokens.py': 310,  # 408 raw; a token registry, 10 lines over
 }
 
@@ -87,7 +87,8 @@ DEBT: dict[str, int] = {
 #: 2026-10-23: down to the sum, 1473 -> 1349, paid back by the _rule_rows memory split.
 #: 2026-10-26: down to the sum, 1349 -> 1347, paid back by the forgecontexts split.
 #: 2026-11-02: down to the sum, 1347 -> 711, paid back by the workstation probe/registry split.
-DEBT_CEILING = 711
+#: 2026-11-26: down to the sum, 711 -> 692, paid back by the _rule_rows machine-rows split.
+DEBT_CEILING = 692
 
 
 def oversized(paths: tuple[Path, ...], band: int) -> dict[str, int]:

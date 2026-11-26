@@ -67,6 +67,7 @@ from dev_lab.dev._rule_rows_feedback import ROWS as _ROWS_FEEDBACK
 from dev_lab.dev._rule_rows_hooks import ROWS as _ROWS_HOOKS
 from dev_lab.dev._rule_rows_hosts import ROWS as _ROWS_HOSTS
 from dev_lab.dev._rule_rows_layout import ROWS as _ROWS_LAYOUT
+from dev_lab.dev._rule_rows_machine import ROWS as _ROWS_MACHINE
 from dev_lab.dev._rule_rows_memory import ROWS as _ROWS_MEMORY
 from dev_lab.dev._rule_rows_output import ROWS as _ROWS_OUTPUT
 from dev_lab.dev._rule_rows_pr_flow import ROWS as _ROWS_PR_FLOW
@@ -321,6 +322,7 @@ def _build(rows: Iterable[tuple[str, str, tuple[str | tuple[str, str], ...]]]) -
 #: and the honest repair when it disagrees is to edit the digit.
 RULES: Final[tuple[Rule, ...]] = _build(
     ROWS
+    + _ROWS_MACHINE
     + _ROWS_MEMORY
     + _ROWS_B
     + _ROWS_CITATIONS
