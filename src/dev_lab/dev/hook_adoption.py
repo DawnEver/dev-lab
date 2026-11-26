@@ -12,7 +12,12 @@ disobey or stop, and the first is what actually happens. So :func:`deny_rules` D
 rather than softening its reason, :func:`unremedied` makes the resulting gap visible instead of
 silent, and :func:`assert_shippable` refuses a remedy whose file the tree does not track.
 
-THE CONSUMPTION RECIPE, for the three repos that have nothing today. The wiring is a separate change
+A REPO DECLARES ITS ADOPTION AS DATA by default: ``[tool.dev_lab.hook_adoption]`` in its pyproject
+(:func:`adoption_from_table`; ``remedies.<RULE-ID> = { kind, command }``, ``command`` spelling the interpreter
+``{python}``), rendered by ``python -m dev_lab.dev.hook_adoption`` with no ``--adoption``. A module is the
+alternative for a repo with LOCAL rows, which data cannot hold.
+
+THE CONSUMPTION RECIPE as a module, for the three repos that have nothing today. The wiring is a separate change
 and is deliberately not performed from here::
 
     # <repo>/scripts/repo/write_deny_rules.py
@@ -52,6 +57,7 @@ from __future__ import annotations
 import argparse
 import json
 import runpy
+import tomllib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -61,9 +67,12 @@ from lab_commons.log import emit
 from dev_lab.dev._deny_rows import retired_row
 from dev_lab.dev.agent_wiring import RULES_REL
 from dev_lab.dev.hooks import DENY_RULES, SEVERITIES, DenyRule, Remedy, UnremediedRule, rules_by_id
+from dev_lab.dev.venvpath import current_os_name, venv_interpreter
 
 __all__ = [
+    'ADOPTION_TABLE',
     'HookAdoption',
+    'adoption_from_table',
     'assert_shippable',
     'deny_rules',
     'main',
@@ -109,6 +118,69 @@ class HookAdoption:
                 f'row that reads as shipped while being waived is the failure this registry cannot see.'
             )
             raise ValueError(msg)
+
+
+#: The pyproject table declaring a repo's adoption as DATA, the alternative to an adoption module.
+ADOPTION_TABLE = 'tool.dev_lab.hook_adoption'
+_TABLE_KEYS = frozenset({'app_name', 'remedies', 'declared_absent', 'severities'})
+_REMEDY_KEYS = frozenset({'kind', 'command', 'allow', 'path'})
+
+
+def _known_keys(raw: Mapping[str, object], known: frozenset[str], where: str) -> None:
+    if unknown := sorted(set(raw) - known):
+        msg = f'[{where}] has unknown keys {unknown}; known: {sorted(known)}'
+        raise ValueError(msg)
+
+
+def adoption_from_table(table: Mapping[str, object], *, app_name: str) -> HookAdoption:
+    """The :class:`HookAdoption` a ``[tool.dev_lab.hook_adoption]`` table declares, *app_name* its default name.
+
+    ``remedies.<RULE-ID> = { kind, command, allow?, path? }``; ``{python}`` in a command is THIS box's venv
+    interpreter (:func:`dev_lab.dev.venvpath.venv_interpreter`), resolved at render and never spelled in data.
+    ``declared_absent`` is a list of rule IDs; ``severities`` maps a rule ID to its severity here.
+
+    Raises:
+        ValueError: an unknown key or a value of the wrong shape, named -- a typo in data ships nothing silently.
+
+    """
+    _known_keys(table, _TABLE_KEYS, ADOPTION_TABLE)
+    absent = table.get('declared_absent', [])
+    if not isinstance(absent, list) or not all(isinstance(one, str) for one in absent):
+        msg = f'[{ADOPTION_TABLE}] declared_absent is a list of rule IDs, got {absent!r}'
+        raise ValueError(msg)
+    raw_remedies = table.get('remedies', {})
+    severities = table.get('severities', {})
+    tables = isinstance(raw_remedies, dict) and isinstance(severities, dict)
+    if not tables:
+        msg = f'[{ADOPTION_TABLE}] remedies and severities are tables keyed by rule ID'
+        raise ValueError(msg)
+    python = venv_interpreter(os_name=current_os_name())
+    remedies: dict[str, Remedy] = {}
+    for rule_id, raw in raw_remedies.items():
+        where = f'{ADOPTION_TABLE}.remedies.{rule_id}'
+        table_shaped = isinstance(raw, dict)
+        if not table_shaped:
+            msg = f'[{where}] is a table {{ kind, command, allow?, path? }}, got {raw!r}'
+            raise ValueError(msg)
+        _known_keys(raw, _REMEDY_KEYS, where)
+        command = str(raw.get('command', '')).replace('{python}', python)
+        remedies[rule_id] = Remedy(str(raw.get('kind', '')), command, raw.get('allow'), raw.get('path'))
+    return HookAdoption(
+        app_name=str(table.get('app_name', app_name)),
+        remedies=remedies,
+        declared_absent=frozenset(absent),
+        severities={str(key): str(value) for key, value in severities.items()},
+    )
+
+
+def _declared(root: Path) -> tuple[HookAdoption, Sequence[DenyRule]] | None:
+    """*root*'s ``[tool.dev_lab.hook_adoption]`` adoption (no local rows: data cannot hold one), else ``None``."""
+    manifest = root / 'pyproject.toml'
+    data = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
+    table = data.get('tool', {}).get('dev_lab', {}).get('hook_adoption')
+    if table is None:
+        return None
+    return adoption_from_table(table, app_name=str(data.get('project', {}).get('name', root.name))), ()
 
 
 def needing(rules: Sequence[DenyRule]) -> frozenset[str]:
@@ -270,22 +342,33 @@ def assert_shippable(adoption: HookAdoption, tracked: Iterable[str], rules: Sequ
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``--adoption <module> [--repo R]``: write R's rules file from its module's ``ADOPTION`` and ``LOCAL_RULES``.
+    """``[--adoption <module>] [--repo R]``: write R's rules file from its adoption.
 
-    ``LOCAL_RULES`` (optional) is the rows the family registry cannot hold, rendered after the family's.
-
-    The renderer of ``.claude/hooks/deny-rules.json`` (:data:`dev_lab.dev.famfiles.RENDERERS`), re-run by a relock.
+    The adoption is DATA -- R's ``[tool.dev_lab.hook_adoption]`` table (:func:`adoption_from_table`) -- or, with
+    ``--adoption``, a module's ``ADOPTION`` and optional ``LOCAL_RULES`` (the rows the family registry cannot hold,
+    rendered after the family's). The renderer of ``.claude/hooks/deny-rules.json``
+    (:data:`dev_lab.dev.famfiles.RENDERERS`), re-run by a relock.
     """
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.hook_adoption', description=main.__doc__)
     parser.add_argument('--repo', type=Path, default=Path.cwd())
-    parser.add_argument('--adoption', type=Path, required=True, help='the module declaring ADOPTION, from --repo')
+    parser.add_argument('--adoption', type=Path, help='a module declaring ADOPTION, from --repo; else the table')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
-    declared = runpy.run_path(str(root / args.adoption))
+    if args.adoption is not None:
+        module = runpy.run_path(str(root / args.adoption))
+        adoption, local, source = module['ADOPTION'], module.get('LOCAL_RULES', ()), args.adoption.as_posix()
+    elif (declared := _declared(root)) is not None:
+        (adoption, local), source = declared, f'[{ADOPTION_TABLE}]'
+    else:
+        msg = (
+            f'{root}: no adoption to render -- declare [{ADOPTION_TABLE}] in its pyproject.toml (remedies, '
+            'declared_absent, severities), or pass --adoption <module> declaring ADOPTION'
+        )
+        raise SystemExit(msg)
     target = root / RULES_REL
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(render(declared['ADOPTION'], local=declared.get('LOCAL_RULES', ())), encoding='utf-8')
-    emit(f'[hook-adoption] wrote {RULES_REL} from {args.adoption.as_posix()}')
+    target.write_text(render(adoption, local=local), encoding='utf-8')
+    emit(f'[hook-adoption] wrote {RULES_REL} from {source}')
     return 0
 
 

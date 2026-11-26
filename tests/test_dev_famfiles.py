@@ -280,6 +280,9 @@ def test_a_due_renderer_missing_its_declared_input_is_refused_by_name(tmp_path: 
 # ------------------------------------------------------------------- the one door: every declared artifact
 
 
+_NO_ADOPTION = '[tool.dev_lab.render] adoption is not declared, nor [tool.dev_lab.hook_adoption]'
+
+
 def _declare(root: Path, table: str) -> None:
     (root / 'pyproject.toml').write_text(f'[tool.dev_lab.render]\n{table}', encoding='utf-8')
 
@@ -303,9 +306,7 @@ def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path:
     assert ran[3][-2:] == ['--adoption', 'scripts/deny_rules.py']
     (hooks / 'deny-rules.json').unlink()
     _declare(tmp_path, 'deltas = "d.py"\n')
-    assert 'hook_adoption: skipped -- [tool.dev_lab.render] adoption is not declared' in render_repo(
-        tmp_path, 'py', lambda _argv, _root: 0
-    )
+    assert f'hook_adoption: skipped -- {_NO_ADOPTION}' in render_repo(tmp_path, 'py', lambda _argv, _root: 0)
     with pytest.raises(ValueError, match='the renderer famfiles exited 3'):
         render_repo(tmp_path, 'py', lambda _argv, _root: 3)
 
@@ -325,7 +326,7 @@ def test_a_family_repo_with_no_render_table_gets_its_workflows(tmp_path: Path) -
     lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
     assert 'ciworkflows: rendered' in lines
     assert ['py', '-m', 'dev_lab.dev.ciworkflows', 'render', '--root', str(tmp_path)] in ran
-    assert 'hook_adoption: skipped -- [tool.dev_lab.render] adoption is not declared' in lines
+    assert f'hook_adoption: skipped -- {_NO_ADOPTION}' in lines
 
 
 @pytest.mark.parametrize(
@@ -350,7 +351,7 @@ def test_the_guard_waits_for_the_deny_rules_it_installs_over(tmp_path: Path) -> 
     """
     _declare(tmp_path, 'deltas = "d.py"\n')
     lines = render_repo(tmp_path, 'py', lambda _argv, _root: 0)
-    skipped = 'agent_guard: skipped -- it needs hook_adoption, skipped: [tool.dev_lab.render] adoption is not declared'
+    skipped = f'agent_guard: skipped -- it needs hook_adoption, skipped: {_NO_ADOPTION}'
     assert skipped in lines
     _declare(tmp_path, 'adoption = "a.py"\n')
     assert {'agent_guard: rendered', 'hook_adoption: rendered'} <= set(render_repo(tmp_path, 'py', lambda _a, _r: 0))
