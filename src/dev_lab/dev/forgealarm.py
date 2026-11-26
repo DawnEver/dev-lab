@@ -125,6 +125,8 @@ DRIFT: Final = 'drift'
 ESCAPE: Final = 'escape'
 #: A family member not fully joined, found by the tick's family watch (:mod:`dev_lab.dev.family.watch`, 2026-11-09).
 FAMILY: Final = 'family'
+#: A vendor capability with no declared seat count, withheld from this host's supply (:mod:`.forgeservedeclared`).
+SEAT: Final = 'seat'
 
 
 #: The alarms that are a prompt or a notice, not a failure: they are no host failure in the metrics log.
