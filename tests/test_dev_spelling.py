@@ -14,6 +14,7 @@ import tomllib
 from datetime import date
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from dev_lab.dev import spelling, verifysteps
@@ -85,3 +86,50 @@ def test_a_missing_binary_names_its_door(tmp_path: Path, monkeypatch: pytest.Mon
     assert spelling.check(_repo(tmp_path / 'r', {'a.md': 'x\n'}), handle=handle) == spelling.ERRORED
     assert 'dev_lab.dev.dep --sync' in handle.getvalue()
     assert read_lint('typos', spelling.ERRORED).truncated, 'an errored checker is not a clean tree'
+
+
+# spelling-off
+def test_a_binary_golden_survives_write_byte_identical(tmp_path: Path) -> None:
+    """PLANTED CONTROL: --write never touches a binary; an .npz carrying a British word survives byte for byte."""
+    root = _repo(tmp_path / 'r', {'notes.md': 'the colour\n'})
+    golden = root / 'tests' / 'goldens' / 'behaviour.npz'
+    golden.parent.mkdir(parents=True)
+    np.savez(golden, colour=np.array(['behaviour colour']))
+    before = golden.read_bytes()
+    assert spelling.check(root, handle=io.StringIO(), write=True) != spelling.ERRORED
+    assert golden.read_bytes() == before
+    assert (root / 'notes.md').read_text(encoding='utf-8') == 'the color\n'
+
+
+def test_a_binary_of_any_extension_is_never_handed_to_typos(tmp_path: Path) -> None:
+    root = _repo(tmp_path / 'r', {})
+    blob = root / 'data.bin'
+    blob.write_bytes(b'colour\0behaviour colour\n')
+    before = blob.read_bytes()
+    assert spelling.check(root, handle=io.StringIO(), write=True) == spelling.CLEAN
+    assert blob.read_bytes() == before
+
+
+@pytest.mark.parametrize('name', ['fixtures/cases.jsonl', '.claude/hooks/deny-rules.json'])
+def test_declared_data_is_neither_checked_nor_written(tmp_path: Path, name: str) -> None:
+    """The config's excludes hold for the explicit file list too: data and rendered machine data stay as written."""
+    root = _repo(tmp_path / 'r', {name: '{"colour": "behaviour"}\n'})
+    assert spelling.check(root, handle=io.StringIO(), write=True) == spelling.CLEAN
+    assert (root / name).read_text(encoding='utf-8') == '{"colour": "behaviour"}\n'
+
+
+def test_a_checked_path_beside_the_excluded_still_reds(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the excludes are paths, not a checker that stopped reading."""
+    root = _repo(tmp_path / 'r', {'fixtures/cases.jsonl': 'colour\n', 'fixtures/cases.json': 'colour\n'})
+    out = io.StringIO()
+    assert spelling.check(root, handle=out) == spelling.FOUND
+    assert 'cases.json:' in out.getvalue()
+    assert 'cases.jsonl' not in out.getvalue()
+
+
+# spelling-on
+
+
+def test_a_cited_author_is_a_word() -> None:
+    config = tomllib.loads(spelling.CONFIG.read_text(encoding='utf-8'))
+    assert config['default']['extend-words']['Mak'] == 'Mak'

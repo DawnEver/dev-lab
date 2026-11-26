@@ -163,6 +163,8 @@ WHAT IS HERE, one module per shared body:
   SOURCE SOMEBODY WILL PASTE: what shipped ``.venv/Scripts/python.exe`` into two consuming repos was
   a ``::`` RECIPE BLOCK in a module docstring, so recipe blocks are scanned and narrative prose --
   where this family records a retirement -- is not.
+* :mod:`dev_lab.dev.famtests.renderedspelling` -- every family render passes the family spelling
+  check at the path it lands on, so a render that would red a consumer reds at its source first.
 
 
 * :mod:`dev_lab.dev.famtests.density` -- what fraction of a module's own lines name something
