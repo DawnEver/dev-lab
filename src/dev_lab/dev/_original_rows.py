@@ -390,6 +390,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'frozen',  # USER-FROZEN-FILES: the user's frozen files and closed tracked inventory (2026-11-24), new here
     'machineguard',  # MACHINE-FILE-IS-RENDERED: the machine file is written by its doors alone, new here
     'familyrepos',  # FAMILY-REPO-IS-CHECKED-OUT: [repos] against the family's repos, listed and enforced, new here
+    'familymanifest',  # a repo's manifest text or its family row's declaration (split from familyrepos)
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
     'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
     'purge',  # one door deletes one git-ignored, untracked named path (rulings 2026-11-23), new here

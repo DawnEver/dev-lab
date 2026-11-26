@@ -583,7 +583,7 @@ def test_an_account_deployed_at_an_old_root_still_takes_its_credential() -> None
 
 
 def test_an_account_deployed_at_an_old_home_relative_root_still_takes_its_credential() -> None:
-    """Measured 2026-11-20 (ezxmw9): root '.local/share/lab-forge/repos' was refused "must be an absolute path".
+    """Measured 2026-11-20 (an account): root '.local/share/lab-forge/repos' was refused "must be an absolute path".
 
     The pre-root layout held checkouts at ``~/<root>/<name>``; the home-level store needs only that checkout.
     PLANTED CONTROL: the deploy-side read (no ``as_deployed``) still refuses the relative root by name.

@@ -36,12 +36,14 @@ from dev_lab.ops.backuprole import Backup, Offsite
 from dev_lab.ops.caddy import Caddy, Status
 from dev_lab.ops.configretired import refuse as refuse_retired
 from dev_lab.ops.consentrole import Access, Consent, ConsentClient
+from dev_lab.ops.forgerunner import ForgeRunner, runners
 from dev_lab.ops.giteaadmin import Forge
 from dev_lab.ops.httpsdoor import HttpsDoor, behind_allowlist
 from dev_lab.ops.judgerole import Judge
 from dev_lab.ops.pgroles import Postgres
 from dev_lab.ops.placement import Placement
-from dev_lab.ops.served import served, served_by
+from dev_lab.ops.proberole import Probe
+from dev_lab.ops.served import served_by
 from dev_lab.supervise.config import ENV_PREFIX, load_config
 
 __all__ = [
@@ -51,7 +53,6 @@ __all__ = [
     'ConfigSource',
     'Forge',
     'OpsConfig',
-    'Probe',
     'Promote',
     'Supervise',
     'Upgrade',
@@ -191,31 +192,6 @@ class Breakglass(Placement, HttpsDoor):
 
 
 @dataclass(frozen=True)
-class Probe(Placement):
-    """The forge probe (:mod:`dev_lab.ops.probe`): the repos it reads, a READ-ONLY token per forge, when, as whom.
-
-    ``repos`` are clone URLs on any forge -- its own set, as break-glass's is; ``tokens`` maps each forge host to the
-    file holding that forge's probe token (refused as :class:`Breakglass` refuses its own); ``state`` the directory
-    of what was already alerted; ``schedule`` the timer's ``OnCalendar``; ``user`` the account it runs as, which must
-    read the token files.
-    """
-
-    user: str
-    schedule: str
-    state: str
-    repos: tuple[str, ...] = ()
-    tokens: Mapping[str, str] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        """Refuse a declaration that lies (see :func:`~dev_lab.ops.served.served`)."""
-        served(self.repos, self.tokens, '[ops.probe]')
-
-    def token_file(self, url: str) -> str:
-        """The file holding the probe token of *url*'s forge."""
-        return self.tokens[forge_of_url(url).host]
-
-
-@dataclass(frozen=True)
 class Supervise(Placement):
     """The host's supervisor daemon (:mod:`dev_lab.supervise`), serving ``project`` with this same file as config.
 
@@ -252,6 +228,7 @@ class OpsConfig:
     caddy: Caddy | None = None
     status: Status | None = None
     postgres: Postgres | None = None
+    runners: tuple[ForgeRunner, ...] = ()
 
     def checkout(self, url: str) -> Path:
         """Where the host keeps its clone of *url*."""
@@ -263,7 +240,7 @@ class OpsConfig:
 OPS_KEYS: Final = frozenset({
     'home', 'python', 'repos', 'environment_file',
     'promote', 'breakglass', 'consent', 'consent_client', 'backup', 'access', 'caddy', 'supervise', 'judge',
-    'upgrade', 'probe', 'config', 'forge', 'status', 'postgres', clientkeys.TABLE,
+    'upgrade', 'probe', 'config', 'forge', 'status', 'postgres', 'runner', clientkeys.TABLE,
 })  # fmt: skip
 
 
@@ -411,6 +388,7 @@ def load(
         environment_file=environment_file,
         status=_role(Status, ops.get('status'), '[ops.status]'),
         postgres=_role(Postgres, ops.get('postgres'), '[ops.postgres]'),
+        runners=runners(ops.get('runner')),
     )
     found = _with_clients(found, ops.get(clientkeys.TABLE))
     doors = {name: role for name, role in (('consent', found.consent), ('breakglass', found.breakglass))

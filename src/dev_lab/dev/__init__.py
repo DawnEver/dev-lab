@@ -409,6 +409,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`dev_lab.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
 * :mod:`dev_lab.dev.forgerecordkeep` -- what a records prune keeps: record names, live shas, the selection.
+* :mod:`dev_lab.dev.forgerecordpurge` -- generation-less unit results deleted once: ``--dry-run`` or ``--apply``.
 * :mod:`dev_lab.dev.forgeunit` -- compute units on the forge: shared results (first wins), a unit offered as a Job.
 * :mod:`dev_lab.dev.toolrelease` -- a pinned tool release (rclone): sha256-checked, installed user-space.
 * :mod:`dev_lab.dev.familyroot` -- the MAIN checkout and the family root, from git alone (no lab-commons subpackage).
@@ -653,6 +654,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   loses nothing (held by integration, another live branch or an open PR head, by content, or declared derived).
 * :mod:`dev_lab.dev.pushdelete` -- LOSSLESS-DELETE at pre-push: every branch a push deletes, however spelled, is
   judged on git's ref lines; refused naming ``branchprune delete``; an unreadable forge or origin refuses.
+* :mod:`dev_lab.dev.cloneremove` -- CLONE-REMOVE: ``cloneremove <path> --approved "<words>"`` removes a whole
+  redundant clone, refused while a commit is on no remote, work is uncommitted or stashed, a process or a
+  ``[repos]`` row holds it.
 * :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented and closed,
   its branch left to the prune; every serve tick, and ``forge pr close-landed``.
 * :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
@@ -727,6 +731,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   its doors.
 * :mod:`dev_lab.dev.familyrepos` -- FAMILY-REPO-IS-CHECKED-OUT: ``[repos]`` against the family's ``[family_repos]``:
   listed at SessionStart, census in ``devhost drift``, a clone of a checked-out family repo refused.
+* :mod:`dev_lab.dev.familymanifest` -- a repo's manifest text: its ``pyproject.toml``, or its family row's declaration.
 * :mod:`dev_lab.dev.devprofile` -- the default an undeclared machine renders, its enrollment door, ``[bridge]``.
 * :mod:`dev_lab.dev.devschema` -- the ``[dev]`` host-file table's keys and checks, and what they derive.
 * :mod:`dev_lab.dev.devdeclared` -- the effective ``[dev]`` of a host: the family's table under the host file's.
@@ -757,6 +762,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeverdict` -- a reported credential refusal, recorded; a later success with it logs a MISREAD.
 * :mod:`dev_lab.dev.machineroutes` -- MACHINES-MEET-ONLY-THROUGH-THE-FORGE: no host file routes to another machine.
 * :mod:`dev_lab.dev.machinehome` -- where another account's machine home and machine file sit, overrides unset.
+* :mod:`dev_lab.dev.forgesecretnames` -- `secrets list`: the Actions secret NAMES a repo or its org holds, read only.
 * :mod:`dev_lab.dev.gitenv` -- the environment a git call against another repository runs in: no locator inherited.
 * :mod:`dev_lab.dev.datadeps` -- a DATA dependency is pinned: declared once, synced to its rev, a stale copy refused.
 * :mod:`dev_lab.dev.dataconsumers` -- a data repo's PR is judged by its consumers' tests at its head.
