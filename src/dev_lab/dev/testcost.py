@@ -36,7 +36,7 @@ import contextlib
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 import pytest
 from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
@@ -115,6 +115,7 @@ def budget_defects(table: object) -> list[str]:
     """
     if not isinstance(table, Mapping):
         return [f'[{BUDGET_TABLE}] must be a table of {", ".join(BUDGET_KEYS)} (dev_lab.dev.testcost)']
+    table = cast('Mapping[str, Any]', table)
     if not table:
         return []
     try:
@@ -153,7 +154,7 @@ class Plan:
 
     local: tuple[str, ...]
     handed: tuple[str, ...]
-    deadlines: dict[str, float] = field(default_factory=dict)
+    deadlines: dict[str, float] = field(default_factory=dict[str, float])
     unmeasured: tuple[str, ...] = ()
 
 
@@ -164,7 +165,10 @@ def killed_at(deadline_s: float) -> float:
 
 def plan(nodeids: Iterable[str], seconds: Mapping[str, float], budget: Budget) -> Plan:
     """Split *nodeids* by their measured *seconds* against *budget* (module docstring)."""
-    local, handed, unmeasured, deadlines = [], [], [], {}
+    local: list[str] = []
+    handed: list[str] = []
+    unmeasured: list[str] = []
+    deadlines: dict[str, float] = {}
     for nodeid in nodeids:
         cost = seconds.get(nodeid)
         if cost is None:

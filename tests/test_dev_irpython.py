@@ -10,16 +10,18 @@ import json
 import shutil
 import sys
 import tomllib
+from collections.abc import Iterator
 from dataclasses import FrozenInstanceError
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
+from typing import Protocol
 
 import numpy as np
 import pytest
 
 from dev_lab.dev import irpython
 from dev_lab.dev.ircheck import load
-from dev_lab.dev.irmodel import IRSchemaError
+from dev_lab.dev.irmodel import IR, IRSchemaError
 
 FIXTURE = Path(__file__).parent / 'data' / 'ir_schema' / 'repo'
 
@@ -38,8 +40,8 @@ def repo(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def ir(repo: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    irpython.write(load(repo))
+def ir(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
+    irpython.write(_loaded(repo))
     monkeypatch.syspath_prepend(str(repo / 'src'))
     _purge()
     yield SimpleNamespace(
@@ -52,7 +54,31 @@ def ir(repo: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     _purge()
 
 
-def _widget(w: object, **change: object) -> object:
+class _Record(Protocol):
+    """What these tests read off a generated IR record (a frozen dataclass: assigning ``mass`` raises)."""
+
+    mass: float
+
+    def to_json(self) -> bytes:
+        """Its canonical JSON."""
+        ...
+
+    def content_hash(self) -> str:
+        """The sha256 of :meth:`to_json`."""
+        ...
+
+    def dump(self, path: Path) -> None:
+        """Write it with its version to *path*."""
+        ...
+
+
+def _loaded(root: Path) -> IR:
+    found = load(root)
+    assert found is not None, f'no IR schema under {root}'
+    return found
+
+
+def _widget(w: ModuleType, **change: object) -> _Record:
     fields = {
         'id': w.WidgetId('w-1'),
         'finish': w.Finish.painted,
@@ -63,7 +89,7 @@ def _widget(w: object, **change: object) -> object:
     return w.Widget(**{**fields, **change})
 
 
-def _sample(s: object, n: int = 2, **change: object) -> object:
+def _sample(s: ModuleType, n: int = 2, **change: object) -> _Record:
     fields = {
         'widget': 'w-1',
         'label': 'first',
@@ -78,7 +104,7 @@ def _sample(s: object, n: int = 2, **change: object) -> object:
 
 
 def test_every_generated_file_carries_its_fingerprint_and_is_ignored(repo: Path) -> None:
-    ir = load(repo)
+    ir = _loaded(repo)
     written = irpython.write(ir)
     names = {p.name for p in written}
     templates = {'_ir_runtime.py', '_ir_surface.py', '_ir_codec.py'}
@@ -100,7 +126,7 @@ def _imported(source: str) -> set[str]:
 
 
 def test_generated_python_holds_si_only_and_imports_no_unit_library(repo: Path) -> None:
-    files = irpython.expected_files(load(repo))
+    files = irpython.expected_files(_loaded(repo))
     sources = {path.name: text for path, text in files.items() if path.suffix == '.py'}
     assert all('pint' not in _imported(text) for text in sources.values())
     assert 'import sample_units as _boundary' in sources['_ir_codec.py'], 'the codec delegates to the declared module'
@@ -113,7 +139,7 @@ def test_a_generated_module_importing_pint_is_refused(
     planted.write_text('import pint\n', encoding='utf-8')
     monkeypatch.setitem(irpython._TEMPLATES, '_ir_codec.py', planted)
     with pytest.raises(IRSchemaError, match=r'IR-UNIT-LIBRARY: .*_ir_codec\.py.*pint'):
-        irpython.write(load(repo))
+        irpython.write(_loaded(repo))
     assert not (repo / 'src' / 'sample_pkg' / '_ir_codec.py').exists(), 'a refused generation writes nothing'
 
 
@@ -132,7 +158,7 @@ def test_a_generated_codec_doing_gauge_or_db_arithmetic_is_refused(
     planted.write_text(source, encoding='utf-8')
     monkeypatch.setitem(irpython._TEMPLATES, '_ir_codec.py', planted)
     with pytest.raises(IRSchemaError, match=rf'IR-UNIT-LIBRARY: .*_ir_codec\.py.*{named}'):
-        irpython.write(load(repo))
+        irpython.write(_loaded(repo))
 
 
 def test_the_codec_hands_gauge_and_db_references_to_the_boundary(
@@ -328,7 +354,7 @@ def test_two_modules_referencing_each_other_import_without_a_cycle(repo: Path, m
         handle.write(OWNER)
     with (repo / 'ir' / 'samples.toml').open('a', encoding='utf-8') as handle:
         handle.write(TAG)
-    irpython.write(load(repo))
+    irpython.write(_loaded(repo))
     monkeypatch.syspath_prepend(str(repo / 'src'))
     _purge()
     try:

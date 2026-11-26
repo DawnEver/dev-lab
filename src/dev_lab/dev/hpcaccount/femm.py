@@ -115,7 +115,7 @@ def build_script(pin: SourceRelease = FEMM_QT, jobs: int = BUILD_JOBS) -> str:
 
 def _build_tools(step: Step, environment: str) -> list[str]:
     """The :data:`BUILD_TOOLS` that do not run in *environment* and could not be installed here."""
-    missing = []
+    missing: list[str] = []
     for tool in BUILD_TOOLS:
         if runs(step.tools.sh, environment, tool):
             continue

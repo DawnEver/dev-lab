@@ -159,7 +159,7 @@ def owners(root: Path, files: Iterable[str]) -> tuple[Owner, ...]:
     return tuple(Owner(name, len(graph[name]), paths[name], _surface(trees[name])) for name in sorted(graph))
 
 
-def _tracked(root: Path) -> tuple[str, ...]:
+def _tracked(root: Path) -> frozenset[str]:
     return tracked_files(root)
 
 
@@ -215,7 +215,7 @@ def trend(lines: Sequence[Mapping[str, object]], *, top: int) -> list[str]:
     runs: dict[str, dict[str, Mapping[str, object]]] = defaultdict(dict)
     for line in lines:
         runs[str(line['time'])][str(line['code.namespace'])] = line
-    view = []
+    view: list[str] = []
     for time, by_owner in sorted(runs.items()):
         totals = ' '.join(
             f'{reading} {sum(int(str(o[f"lab.{KIND}.{reading}"])) for o in by_owner.values())}' for reading in _READINGS
@@ -238,7 +238,9 @@ def trend(lines: Sequence[Mapping[str, object]], *, top: int) -> list[str]:
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     """``record`` today's readings of the checkout at *cwd*; ``trend [--top N]`` prints every run and the top owners."""
-    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.complexity', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        prog='python -m dev_lab.dev.complexity', description=(__doc__ or '').splitlines()[0]
+    )
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('record', help="append today's per-owner readings")
     shown = verbs.add_parser('trend', help='every run, then the top owners first -> last')

@@ -36,7 +36,7 @@ import tomllib
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 __all__ = [
     'RULE',
@@ -116,12 +116,12 @@ def refusal(site: Site) -> str:
 
 def _walk(node: object, prefix: str) -> Iterator[str]:
     if isinstance(node, dict):
-        for key, value in node.items():
+        for key, value in cast('dict[object, object]', node).items():
             dotted = f'{prefix}.{key}' if prefix else str(key)
             yield dotted
             yield from _walk(value, dotted)
     elif isinstance(node, list):
-        for item in node:
+        for item in cast('list[object]', node):
             yield from _walk(item, f'{prefix}[]')
 
 

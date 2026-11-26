@@ -92,6 +92,7 @@ def test_an_owner_below_its_floor_reds_naming_the_owner_the_measured_value_and_t
     coverage = '[tool.dev_lab.coverage.floors.rust]\ncore_b = { line = "98.50 %" }\n'
     root, files = _repo(tmp_path, coverage)
     found = ownercov.problems(root, files, **_both(rs={'core_a': FULL, 'core_b': GOOD}))
+    assert found is not None
     assert len(found) == 1
     assert found[0].startswith('[rust.crates] core_b: line coverage 97.00 % is below its floor 98.50 %')
     assert 'record' in found[0]  # the door: floors are written only by `record`
@@ -250,6 +251,7 @@ def test_a_malformed_declaration_is_refused_by_name(tmp_path: Path, coverage: st
     table = coverage if coverage.startswith('[') else f'[tool.dev_lab.coverage]\n{coverage}'
     root, files = _repo(tmp_path, f'{table}\n')
     found = ownercov.problems(root, files, **_both())
+    assert found is not None
     assert len(found) == 1
     assert why in found[0]
     assert found[0].startswith('pyproject.toml [tool.dev_lab.coverage')

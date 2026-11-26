@@ -92,7 +92,10 @@ class LockRefused(ValueError):
 class Store(Protocol):
     """A content-addressed store: :meth:`put` a file and get its sha256; :meth:`get` those bytes back."""
 
-    name: str
+    @property
+    def name(self) -> str:
+        """The store's name in a lock row."""
+        ...
 
     def put(self, path: Path) -> str:
         """Store *path*; its sha256."""
@@ -199,7 +202,7 @@ def unquoted(names: Iterable[str], message: str) -> tuple[str, ...]:
 
 def data_files(tracked: Iterable[str]) -> list[str]:
     """The tracked paths under ``tests/`` that are data, not code (:data:`CODE_SUFFIXES`, :data:`CODE_NAMES`)."""
-    found = []
+    found: list[str] = []
     for path in tracked:
         pure = PurePosixPath(path)
         if pure.parts[:1] == ('tests',) and pure.suffix not in CODE_SUFFIXES and pure.name not in CODE_NAMES:
@@ -247,7 +250,7 @@ def _rows_at(root: Path, rev: str) -> list[Row]:
 
 def refusals(root: Path, commit: str | None = None) -> list[str]:
     """Every refusal ``verify`` names for *root* (and *commit*'s rewrites): malformed lock, tracked test data."""
-    refusals = []
+    refusals: list[str] = []
     try:
         read_lock(root / LOCK)
     except LockRefused as why:

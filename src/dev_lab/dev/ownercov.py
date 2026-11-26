@@ -67,9 +67,11 @@ _TOOLS: Final = {'python': covreports.PYTHON_TOOL, 'rust': covreports.RUST_TOOL}
 @dataclass
 class _Judgment:
     policy: Policy
-    found: list[str] = field(default_factory=list)
+    found: list[str] = field(default_factory=list[str])
     #: (language, owner) -> its summed counts, and whether its report measured branches
-    measured: dict[tuple[str, str], tuple[Counts, bool]] = field(default_factory=dict)
+    measured: dict[tuple[str, str], tuple[Counts, bool]] = field(
+        default_factory=dict[tuple[str, str], tuple[Counts, bool]]
+    )
 
 
 def _owners(root: Path, decl: Declared, files: Iterable[str], language: str) -> dict[str, str | None] | str:
@@ -277,7 +279,7 @@ def _report(found: list[str]) -> str:
 
 def main(argv: list[str] | None = None, *, cwd: Path | None = None) -> int:
     """``check`` or ``record`` the tracked tree against the reports; exit 1 on a refusal, 0 when clean or undeclared."""
-    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.ownercov', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.ownercov', description=(__doc__ or '').splitlines()[0])
     parser.add_argument('verb', choices=('check', 'record'))
     parser.add_argument('--python', type=Path, help=f'a {covreports.PYTHON_TOOL} JSON report')
     parser.add_argument('--rust', type=Path, help=f'a {covreports.RUST_TOOL} JSON summary report')

@@ -75,6 +75,14 @@ def _ref(target: str, here: str, suffix: str = '') -> str:
     return f'{name}{suffix}' if module == here else f'{_alias(module)}.{name}{suffix}'
 
 
+def _item(ref: TypeRef) -> TypeRef:
+    """A list reference's element reference; the IR model guarantees a list carries one."""
+    if ref.item is None:
+        msg = f'a list type reference carries no item: {ref!r}'
+        raise ValueError(msg)
+    return ref.item
+
+
 def _hint(f: Field, ref: TypeRef, here: str, local: frozenset[str]) -> str:
     kind = ref.kind
     if kind in _SCALAR_HINTS:
@@ -82,7 +90,7 @@ def _hint(f: Field, ref: TypeRef, here: str, local: frozenset[str]) -> str:
     if kind == 'array':
         return f'NDArray[np.{f.dtype}]'
     if kind == 'list':
-        return f'tuple[{_hint(f, ref.item, here, local)}, ...]'
+        return f'tuple[{_hint(f, _item(ref), here, local)}, ...]'
     if kind == 'id' and ref.target.split('.')[0] in local:
         return f'{ref.target.split(".")[1]}Id'  # every local id lives in _ir_ids
     return _ref(ref.target, here, 'Id' if kind == 'id' else '')
@@ -108,7 +116,7 @@ def _spec(ir: IR, f: Field, ref: TypeRef, here: str, *, name: str) -> str:
     if ref.kind in ('enum', 'record'):
         parts.append(f'target={ref.target!r}')
     if ref.kind == 'list':
-        parts.append(f'item={_spec(ir, f, ref.item, here, name="")}')
+        parts.append(f'item={_spec(ir, f, _item(ref), here, name="")}')
     if name:
         parts += _scalar_keys(ir, f)
     if name and f.unique_by:
@@ -253,7 +261,7 @@ def _called(func: ast.expr) -> str:
 
 def _unit_handling(source: str) -> list[str]:
     """What in *source* reads a unit: a unit-library import, a log/power call, or arithmetic on a gauge/dB spec."""
-    found = []
+    found: list[str] = []
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
             found += [f'imports {a.name}' for a in node.names if a.name.split('.')[0] in UNIT_LIBRARIES]
@@ -291,7 +299,7 @@ def write(ir: IR) -> tuple[Path, ...]:
     """Write every generated file whose content differs; the paths written."""
     files = expected_files(ir)
     refuse_unit_handling(files)
-    written = []
+    written: list[Path] = []
     for path, content in files.items():
         if not path.is_file() or path.read_text(encoding='utf-8') != content:
             path.parent.mkdir(parents=True, exist_ok=True)
