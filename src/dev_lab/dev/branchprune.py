@@ -314,7 +314,7 @@ RETIRED: Final = {
 
 def retired(argv: Sequence[str]) -> str:
     """The refusal naming the first retired spelling in *argv* and its door; ``''`` when none."""
-    if list(argv[:1]) == ['discard']:
+    if list(argv[:1]) in (['discard'], ['tag']):
         argv = [word for word in argv if word.partition('=')[0] != '--approved']
     for word in argv:
         door = RETIRED.get(word.partition('=')[0])
@@ -350,6 +350,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     discarded.add_argument('--approved', default='', help="the user's own words ordering the drop (required)")
     tagged = verbs.add_parser('tag', help='an origin tag whose commit integration or the trunk contains (recorded)')
     tagged.add_argument('tags', nargs='+')
+    tagged.add_argument('--approved', default='', help="the user's words dropping a tag's UNLANDED work (recorded)")
     tasked = verbs.add_parser('task', help="a closed task's pr/<slug>/* heads, each deleted losslessly or named")
     tasked.add_argument('slug')
     swept = verbs.add_parser('sweep')
@@ -366,7 +367,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
             door = functools.partial(discard, approved=args.approved) if args.verb == 'discard' else delete
             return door(root, args.branches, client=client, session=session, fetch=fetch_origin, say=say)
         if args.verb == 'tag':
-            return delete_contained_tags(root, args.tags, fetch=fetch_origin, say=say)
+            return delete_contained_tags(root, args.tags, fetch=fetch_origin, say=say, approved=args.approved)
         if args.verb == 'task':
             return delete_task(root, args.slug, client=client, session=session, fetch=fetch_origin, say=say)
         return sweep(root, client=client, session=session, fetch=fetch_origin, say=say, local=args.local)
