@@ -91,4 +91,6 @@ are named by role here, never by name (this repo is public).
 - Keys with NO unit anywhere (`timeout = 10`, `max_age = 1800`, `warning = 80` in the forge host's components) are
   the opposite defect -- the unit is nowhere -- and outside this ruling.
 
-> Amended 2026-11-26: US spelling (family rule); learn-lab renames the key to utilization_pct -- approved: "全部同意"
+> Amended 2026-11-26: US spelling (family rule); learn-lab renames the key to utilization_pct -- approved: "<agree-to-all>"
+
+> Redacted 2026-11-26: site markers removed (public repo).
