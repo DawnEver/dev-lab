@@ -17,7 +17,7 @@ import pytest
 from _forge_state import FORGE, StateForge
 from _task_ledger import on_branch, open_task, plant_ledger
 
-from dev_lab.dev import forgefeed, forgefeedstatus, forgethreads, sessionprs
+from dev_lab.dev import _forgefeed_inbox, forgefeed, forgefeedstatus, forgethreads, sessionprs
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgestatus import status_post
 
@@ -43,12 +43,12 @@ def test_one_poll_delivers_each_change_to_its_own_sessions_inbox_once() -> None:
     status_post(forge, SHA, context='tests/base', state='failure', description='boom')
     forgefeed.poll_once(clients=lambda _f: forge, now=100.0)
     forgefeed.poll_once(clients=lambda _f: forge, now=200.0)
-    mine = forgefeed.take_unread('s1')
+    mine = _forgefeed_inbox.take_unread('s1')
     assert len(mine) == 1
     assert mine[0].startswith(key)
     assert 'failure' in mine[0]
     assert other not in ''.join(mine), "PLANTED CONTROL: another session's PR never reaches this inbox"
-    assert forgefeed.take_unread('s1') == [], 'a read event is not surfaced again'
+    assert _forgefeed_inbox.take_unread('s1') == [], 'a read event is not surfaced again'
 
 
 def test_the_beat_hears_a_session_only_while_fresh_live_and_covering(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -100,7 +100,7 @@ def test_run_polls_until_it_yields_its_venv() -> None:
     polls = iter(['', '', 'venv update pending'])
     code = forgefeed.run(clients=lambda _f: forge, every_s=0, sleep=lambda _s: None, yielding=lambda: next(polls))
     assert code == forgefeed.YIELDED
-    assert len(forgefeed.take_unread('s1')) == 1
+    assert len(_forgefeed_inbox.take_unread('s1')) == 1
     assert not forgefeed.running(), 'the lock is released on exit'
 
 
@@ -160,7 +160,7 @@ def _row(number: int, updated: str, labels: tuple[str, ...] = (), *, pull: bool 
 
 
 def _alpha() -> list[str]:
-    return forgefeed.take_task_unread('s1', 'alpha')
+    return _forgefeed_inbox.take_task_unread('s1', 'alpha')
 
 
 def _hear(*forges: RepoForge) -> tuple[str, ...]:
@@ -185,7 +185,7 @@ def test_a_labeled_thread_reaches_its_tasks_sessions_and_an_unlabeled_one_reache
     said = _alpha()
     assert any('#3 ' in line for line in said)
     assert not any('#4 ' in line for line in said), 'PLANTED CONTROL: an unlabeled thread is routed nowhere'
-    assert forgefeed.take_task_unread('s2', 'beta') == [], 'PLANTED CONTROL: an unnamed task hears nothing'
+    assert _forgefeed_inbox.take_task_unread('s2', 'beta') == [], 'PLANTED CONTROL: an unnamed task hears nothing'
 
 
 def test_the_cursor_resumes_per_repository_and_a_thread_at_the_cursor_is_not_heard_twice() -> None:
@@ -229,7 +229,7 @@ def test_every_session_on_a_tasks_branch_hears_its_events_once(
     open_task(ledger, 'gamma')
     _hear(RepoForge([_row(9, '2026-11-18T10:00:00Z', ('task:gamma',))]))
     assert _alpha() == [], 'PLANTED CONTROL: another task hears nothing'
-    assert any('#9' in line for line in forgefeed.task_pending('gamma'))
+    assert any('#9' in line for line in _forgefeed_inbox.task_pending('gamma'))
     work = on_branch(Path(tmp_path) / 'work', 'pr/gamma/x')
     for session in ('s3', 's4'):
         payload = json.dumps({'session_id': session, 'cwd': str(work)})

@@ -479,7 +479,7 @@ RETIRED_SPELLINGS: Final = {
         (
             (
                 'dev_lab.dev.taskledger: ledger() (the global tasks repo) and task_of(cwd) (the task its branch '
-                'pr/<slug>/<feature> names); forgefeed.take_task_unread; depneeds.task_extras'
+                'pr/<slug>/<feature> names); _forgefeed_inbox.take_task_unread; depneeds.task_extras'
             ),
             'user ruling 2026-11-23: the task ledger is one global repo and the binding store is cancelled',
             'renamed',

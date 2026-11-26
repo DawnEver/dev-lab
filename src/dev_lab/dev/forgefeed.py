@@ -12,7 +12,7 @@ How a task hears the forge (docs-src/dev/forgefeed.md):
   304 to the stored ETag costs nothing.
 * ROUTED TO THE TASK. Each changed thread goes to every task it belongs to -- a PR a session opened belongs to the
   task its branch ``pr/<slug>/<feature>`` names (:func:`dev_lab.dev.taskledger.slug_on`) -- into that task's queue
-  (:func:`task_pending`). Every session whose checkout works on the task (its branch,
+  (:func:`dev_lab.dev._forgefeed_inbox.task_pending`). Every session whose checkout works on the task (its branch,
   :func:`dev_lab.dev.taskledger.task_of`) reads the queue through its own cursor, so each hears every event once.
   A thread whose newest change is this machine's own comment (:func:`record_own`, called by the one comment door,
   within :data:`OWN_WINDOW_S`) is not news.
@@ -43,12 +43,11 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TextIO
 
-from lab_commons import home as _home
 from lab_commons.config import section
 from lab_commons.liveness import creation_stamp
 from lab_commons.log import emit
 
-from dev_lab.dev import branchpolicy, forgewaves, native_session, sessionprs, taskledger
+from dev_lab.dev import _forgefeed_inbox, branchpolicy, forgewaves, native_session, sessionprs, taskledger
 from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.forge import Forge, forge_from_remote
 from dev_lab.dev.forgefeedstatus import (
@@ -86,7 +85,6 @@ __all__ = [
     'POLL_S',
     'RULE',
     'YIELDED',
-    'deliver',
     'ensure',
     'hear_feed',
     'heard',
@@ -95,10 +93,6 @@ __all__ = [
     'poll_once',
     'run',
     'running',
-    'sessions',
-    'take_task_unread',
-    'take_unread',
-    'task_pending',
     'tick_s',
 ]
 
@@ -156,103 +150,13 @@ def held() -> Iterator[bool]:
     yield False
 
 
-def sessions() -> tuple[str, ...]:
-    """Every session with a PR record on this machine."""
-    found = _home.home() / sessionprs.SESSIONS
-    return tuple(sorted(p.stem for p in found.glob('*.json') if native_session.valid(p.stem))) if found.is_dir() else ()
-
-
-def _inbox(session: str) -> Path:
-    return _home.home() / sessionprs.SESSIONS / f'{session}.inbox.jsonl'
-
-
-def _cursor(session: str) -> Path:
-    return _home.home() / sessionprs.SESSIONS / f'{session}.inbox.read'
-
-
-def deliver(session: str, line: str, *, at: float | None = None) -> None:
-    """Append *line* to *session*'s inbox."""
-    path = _inbox(session)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a', encoding='utf-8') as out:
-        out.write(json.dumps({'at': time.time() if at is None else at, 'line': line}) + '\n')
-
-
-def take_unread(session: str) -> list[str]:
-    """*session*'s inbox lines not yet read, oldest first; they are marked read."""
-    if not native_session.valid(session):
-        return []
-    try:
-        lines = _inbox(session).read_text(encoding='utf-8').splitlines()
-    except OSError:
-        return []
-    try:
-        done = int(_cursor(session).read_text(encoding='utf-8').strip() or 0)
-    except (OSError, ValueError):
-        done = 0
-    fresh = []
-    for raw in lines[done:]:
-        with contextlib.suppress(ValueError, TypeError):
-            fresh.append(str(json.loads(raw)['line']))
-    _cursor(session).write_text(str(len(lines)), encoding='utf-8')
-    return fresh
-
-
-def _pr_tasks() -> dict[str, set[str]]:
-    """PR key -> the task its branch ``pr/<slug>/<feature>`` names, for every open PR a session here pushed."""
-    tasks: dict[str, set[str]] = {}
-    for session in sessions():
-        for row in sessionprs.open_rows(session):
-            if slug := taskledger.slug_on(row.branch):
-                tasks.setdefault(row.key, set()).add(slug)
-    return tasks
-
-
-def _queue(slug: str) -> Path:
-    return _dir() / 'tasks' / f'{slug}.jsonl'
-
-
-def task_pending(slug: str) -> list[str]:
-    """Every event kept for task *slug*, oldest first; read, not consumed (``task status``)."""
-    try:
-        raws = _queue(slug).read_text(encoding='utf-8').splitlines()
-    except OSError:
-        return []
-    found = []
-    for raw in raws:
-        with contextlib.suppress(ValueError, KeyError, TypeError):
-            found.append(str(json.loads(raw)['line']))
-    return found
-
-
-def take_task_unread(session: str, slug: str) -> list[str]:
-    """Task *slug*'s events *session* has not read yet, oldest first; marked read for *session* only."""
-    if not native_session.valid(session):
-        return []
-    found = task_pending(slug)
-    cursor = _home.home() / sessionprs.SESSIONS / f'{session}.{slug}.read'
-    try:
-        done = int(cursor.read_text(encoding='utf-8').strip() or 0)
-    except (OSError, ValueError):
-        done = 0
-    cursor.parent.mkdir(parents=True, exist_ok=True)
-    cursor.write_text(str(len(found)), encoding='utf-8')
-    return found[done:]
-
-
-def _keep(slug: str, line: str) -> None:
-    _queue(slug).parent.mkdir(parents=True, exist_ok=True)
-    with _queue(slug).open('a', encoding='utf-8') as out:
-        out.write(json.dumps({'at': time.time(), 'line': line}) + '\n')
-
-
 def _say(thread: Thread) -> str:
     return f'{thread.key} ({thread.kind or "thread"}) changed at {thread.updated}: {thread.title}'
 
 
 def hear_feed(clients: Callable[[Forge], Client], forges: Iterable[Forge]) -> tuple[str, ...]:
     """One read per declared repository; each changed thread to its tasks' queues; the repositories heard."""
-    pr_tasks, mine, heard_repos = _pr_tasks(), own(), []
+    pr_tasks, mine, heard_repos = _forgefeed_inbox.pr_tasks(), own(), []
     for forge in sorted(set(forges), key=lambda f: f.identity):
         threads = read_feed(clients(forge))
         heard_repos.append(forge.identity)
@@ -266,7 +170,7 @@ def _deliver_thread(thread: Thread, tasks: set[str]) -> None:
     """*thread* into the queue of each of *tasks*."""
     line = _say(thread)
     for slug in sorted(tasks):
-        _keep(slug, line)
+        _forgefeed_inbox.keep(slug, line)
 
 
 def _checkouts() -> list[Path]:
@@ -293,11 +197,14 @@ def poll_once(
     started = time.time() if now is None else now
     hosts = hear_feed(clients, (forges or _forges)())
     covers: list[str] = []
-    for session in sessions():
+    for session in _forgefeed_inbox.sessions():
         polled = {row.key for row in sessionprs.open_rows(session)}
         polled |= {sessionprs.Row(row.forge, row.branch).key for row in sessionprs.pending_rows(session)}
         poll_session(
-            session, clients=clients, say=lambda line, s=session: deliver(s, line), seen=sessionprs.heard(session)
+            session,
+            clients=clients,
+            say=lambda line, s=session: _forgefeed_inbox.deliver(s, line),
+            seen=sessionprs.heard(session),
         )
         covers += [
             row.key
@@ -392,11 +299,11 @@ def _inbox_hook(stdin: TextIO) -> None:
     """The UserPromptSubmit hook: this session's unread events and its task's, once."""
     payload = _payload(stdin)
     session = str(payload.get('session_id') or '')
-    lines = take_unread(session)
+    lines = _forgefeed_inbox.take_unread(session)
     if native_session.valid(session):
         lines += forgewaves.news(session)
     if (slug := _task_here(Path(payload.get('cwd') or Path.cwd()))) is not None:
-        lines += take_task_unread(session, slug)
+        lines += _forgefeed_inbox.take_task_unread(session, slug)
     if lines:
         said = f"{RULE}: news on this session's task:\n" + '\n'.join(lines)
         emit(json.dumps({'hookSpecificOutput': {'hookEventName': 'UserPromptSubmit', 'additionalContext': said}}))
@@ -423,14 +330,20 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         case ['status'] | ['status', _]:
             root = Path.cwd()
             slug = args[1] if len(args) > 1 else _task_here(root)
-            emit('\n'.join(status(root, slug, clients=clients_at(root), forges=_forges(), pending=task_pending)))
+            emit(
+                '\n'.join(
+                    status(
+                        root, slug, clients=clients_at(root), forges=_forges(), pending=_forgefeed_inbox.task_pending
+                    )
+                )
+            )
         case ['session-start', *_]:
             _session_start(stdin or sys.stdin)
         case ['inbox', *_]:
             _inbox_hook(stdin or sys.stdin)
         case ['task-pending', slug]:
-            kept = task_pending(slug)
-            emit('\n'.join(kept) if kept else f'task {slug}: no events kept ({_queue(slug)})')
+            kept = _forgefeed_inbox.task_pending(slug)
+            emit('\n'.join(kept) if kept else f'task {slug}: no events kept ({_forgefeed_inbox.queue(slug)})')
         case _:
             emit(USAGE, err=True)
             return 2
