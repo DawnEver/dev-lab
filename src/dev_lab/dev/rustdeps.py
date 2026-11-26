@@ -8,8 +8,8 @@ manifest and name:
 
 * a workspace crate dependency its ``[rust.crates]`` row does not list (``[dev-dependencies]`` are tests: free);
 * an external crate no ``[rust.external]`` row names, one the row does not allow in this crate, one of another
-  kind (a ``normal`` row grants ``[dependencies]`` and ``[dev-dependencies]``; ``build`` and ``dev`` only their
-  own), or one missing a feature the row requires;
+  kind (a ``normal`` row grants ``[dependencies]`` and ``[dev-dependencies]``, its ``dev_crates`` only the
+  latter; ``build`` and ``dev`` only their own), or one missing a feature the row requires;
 * in the crate's ``src/`` (``#[cfg(test)]`` items, ``tests/``, ``benches/`` and ``build.rs`` are not judged), a
   restricted ``[rust.std]`` path -- ``use`` trees expanded, ``core``/``alloc`` read as ``std``, the longest row
   wins -- or token (``unsafe``, ``extern "C"``) outside the row's crates;
@@ -117,7 +117,8 @@ def _external(crate: Crate, kind: str, real: str, have: set[str], decl: Declared
         return f'{head}, which no [rust.external] row names'
     if kind not in _GRANTS[grant.kind]:
         return f'{head}, but [rust.external] {real} is kind {grant.kind}'
-    if not _allowed(grant, crate.name):
+    tests_only = kind == 'dev' and (ALL in grant.dev_holders or crate.name in grant.dev_holders)
+    if not tests_only and not _allowed(grant, crate.name):
         return f'{head}, but [rust.external] {real} allows it only in {_only(grant)}'
     if missing := sorted(set(grant.features) - have):
         return f'{head} without the required feature(s) {missing} ({grant.reason})'

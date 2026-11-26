@@ -7,17 +7,21 @@ the tracked tree (nothing is imported or run) and refuses, naming the file, the 
 * PYTHON (read with :mod:`dev_lab.dev.pyfacts`, so ``os.environ`` after ``import os`` counts). The
   owners are the child packages of the repo's package (``src/<[project].name>``, ``-`` read as ``_``; or
   ``<name>`` at the root): an owner importing an owner its ``[python.owners]`` row does not list; two children of
-  one package inside an owner importing each other (siblings, at every depth) unless ``[python.siblings."<package
+  one package inside an owner importing each other (siblings, at every depth; a nested package's table is keyed by
+  its path, ``[python.siblings."compile/transform"]``) unless ``[python.siblings."<package
   path>"]`` lists the edge -- default none; any importer from another owner of a path ``[python.importers]`` names
   unless it lies under one of that row's importers (a narrowing below the owner edge, never a widening);
   ``<package>_native.<crate>`` imported by an owner that neither owns the crate (``[python.native]``) nor lists its
   owner, a crate no row names, or the bare native module; a third-party or family name no ``[python.packages]`` row
-  names, or one used outside its row's paths; a restricted ``[python.stdlib]`` name used outside its paths. A child
+  names, or one used outside its row's paths; a restricted ``[python.stdlib]`` name used outside its paths (a
+  dotted member such as ``os.system``, a builtin as ``builtins.open``, a private module such as ``_thread``). A child
   package with no row is refused, and so is every dependencies.toml path no layout.toml row declares (layout.toml is
   the one source of which directories may exist; a declared owner not created yet passes, and whether a path exists
   is DECLARED-LAYOUT's to judge). A test file is judged like any other, ``tests`` or ``tests/unit`` naming it as a
   path; an import of a repo-local name (``tests``, a sibling module) is not judged.
 * RUST: :mod:`dev_lab.dev.rustdeps` (Cargo dependencies and std paths).
+* THE DECLARATION ITSELF: :mod:`dev_lab.dev.depcites` -- a package, stdlib name or crate a row's reason cites and
+  no row grants, before any code uses it.
 
 WHAT IT CANNOT SEE: a dynamic import, a name rebound locally, an attribute reached through an assignment.
 Where it runs: the always-on family check (:func:`check`), every ``verify`` (:func:`refusal`), and the CLI
@@ -34,7 +38,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import deptable, pyfacts, rustdeps
+from dev_lab.dev import depcites, deptable, pyfacts, rustdeps
 from dev_lab.dev._layout_table import Layout, LayoutNotDeclared, declared_layout, declares
 from dev_lab.dev.deptable import ALL, Declared, DependenciesError, Grant, edge_to
 from dev_lab.dev.rules import tracked_files
@@ -130,6 +134,18 @@ def sibling_hop(root: Path, tree: PythonTree, rel: str, name: str) -> tuple[str,
     return '/'.join(mine[:i]), mine[i], theirs[i]
 
 
+def _child_of(scope: _Scope, rel: str, name: str) -> tuple[str, str] | None:
+    """``(parent, child)`` when *name* lies in a child package of *rel*'s package (a child may import its parent)."""
+    mine = list(PurePosixPath(rel).relative_to(scope.tree.directory).with_suffix('').parts)[:-1]
+    theirs = name.split('.')[1:]
+    if len(theirs) <= len(mine) or theirs[: len(mine)] != mine:
+        return None
+    child = theirs[: len(mine) + 1]
+    if not (scope.root / scope.tree.directory / Path(*child)).is_dir():
+        return None
+    return '/'.join(mine), '/'.join(child)
+
+
 @dataclass(frozen=True, slots=True)
 class _Scope:
     """What every Python judgment reads: the checkout, its declaration, its package, its repo-local top names."""
@@ -189,21 +205,28 @@ def _importers(scope: _Scope, rel: str, name: str) -> str | None:
     return f'imports {name}, but [python.importers] "{key}" allows only {", ".join(who)}'
 
 
+def _within_owner(scope: _Scope, rel: str, name: str) -> str | None:
+    """Inside one owner: a parent importing its child, or a sibling import its table does not list."""
+    if (child := _child_of(scope, rel, name)) is not None:
+        return f'{child[0]} imports its own child {child[1]} ({name}); a parent never imports its children'
+    if (hop := sibling_hop(scope.root, scope.tree, rel, name)) is None:
+        return None
+    parent, child_name, other = hop
+    if edge_to(scope.decl.siblings.get(parent, {}).get(child_name, ()), other):
+        return None
+    return (
+        f'{parent}/{child_name} imports its sibling {parent}/{other}, but [python.siblings."{parent}"] {child_name} '
+        f'does not list {other}'
+    )
+
+
 def _internal(scope: _Scope, rel: str, name: str) -> str | None:
     decl = scope.decl
     mine, theirs = owner_of_path(scope.tree, rel), owner_of_name(scope.tree, decl, name)
     if theirs is None:
         return None
     if mine is not None and mine == theirs:
-        if (hop := sibling_hop(scope.root, scope.tree, rel, name)) is None:
-            return None
-        parent, child, other = hop
-        if edge_to(decl.siblings.get(parent, {}).get(child, ()), other):
-            return None
-        return (
-            f'{parent}/{child} imports its sibling {parent}/{other}, but [python.siblings."{parent}"] {child} '
-            f'does not list {other}'
-        )
+        return _within_owner(scope, rel, name)
     if mine is not None and not edge_to(decl.owners[mine], theirs):
         return f'owner {mine} imports {name} (owner {theirs}), but [python.owners] {mine} does not list {theirs}'
     return _importers(scope, rel, name)
@@ -326,6 +349,7 @@ def problems(root: Path, decl: Declared, files: Iterable[str]) -> list[str]:
     except LayoutNotDeclared as exc:
         layout = None
         out = [f'{_FILE} paths are layout.toml rows, but {root.name} declares no usable layout.toml ({exc})']
+    out += depcites.problems(decl)
     return out + _python_problems(root, decl, files, layout) + rustdeps.problems(root, decl, files, layout=layout)
 
 

@@ -20,8 +20,9 @@ keys to the tables, never to an owner's name, so a repo renames its owners freel
     "os.environ" = { owners = [], reason = "..." }   # [] = nowhere
     [rust.crates]                # workspace crate -> the workspace crates it may depend on (dev-deps are tests)
     assemble = ["contracts"]     # "*" = every crate; an edge may carry adds like a Python one
-    [rust.external]              # external crate -> crates; kind normal (default) | build | dev; features required
-    rayon = { crates = ["assemble"], reason = "..." }
+    [rust.external]              # external crate -> crates; kind normal (default) | build | dev; features required;
+    rayon = { crates = ["assemble"], reason = "..." }   # dev_crates: crates granted it for tests only
+    serde_json = { crates = ["contracts"], dev_crates = ["*"], reason = "..." }
     [rust.std]                   # restricted std paths or tokens (unsafe, extern "C") -> crates; unlisted = allowed
     "std::env" = { crates = [], reason = "..." }
 
@@ -89,6 +90,8 @@ class Grant:
     reason: str
     kind: str = 'normal'
     features: tuple[str, ...] = ()
+    #: ``[rust.external]`` only: crates granted it as a ``[dev-dependencies]`` (tests) beyond *holders*.
+    dev_holders: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,11 +174,23 @@ def _grant(table: str, name: str, row: object, holder: str, allowed: set[str]) -
         _refuse(f'[{table}] {name}: kind {kind!r}, not one of {sorted(KINDS)}')
     if not isinstance(features, list) or not all(isinstance(f, str) for f in features):
         _refuse(f'[{table}] {name} features must be a list of feature names, not {features!r}')
-    return Grant(tuple(h.strip('/') if h != ALL else h for h in holders), reason, kind, tuple(features))
+    dev = _dev_crates(table, name, row.get('dev_crates', []))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+    if dev and (kind != 'normal' or ALL in holders):
+        _refuse(f'[{table}] {name}: dev_crates adds test-only crates to a normal row; this row already grants them')
+    return Grant(tuple(h.strip('/') if h != ALL else h for h in holders), reason, kind, tuple(features), dev)
+
+
+def _dev_crates(table: str, name: str, value: object) -> tuple[str, ...]:
+    names: list[str] = []
+    for item in value if isinstance(value, list) else [None]:  # pyright: ignore[reportUnknownVariableType]
+        if not isinstance(item, str) or not item:
+            _refuse(f'[{table}] {name} dev_crates must be a list of crate names ("*" = every one), not {value!r}')
+        names.append(item)
+    return tuple(names)
 
 
 def _grants(table: str, rows: Mapping[str, Any], holder: str, *, rust_external: bool = False) -> dict[str, Grant]:
-    allowed = {holder, 'reason', *(('kind', 'features') if rust_external else ())}
+    allowed = {holder, 'reason', *(('kind', 'features', 'dev_crates') if rust_external else ())}
     return {name: _grant(table, name, row, holder, allowed) for name, row in rows.items()}
 
 

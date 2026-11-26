@@ -21,15 +21,19 @@ Which tests a CHANGE reaches is a different, path-level question -- :mod:`dev_la
 from __future__ import annotations
 
 import ast
+import builtins
 from dataclasses import dataclass
 from importlib.util import resolve_name
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
     from pathlib import Path
 
 __all__ = ['Reading', 'bindings', 'cycle', 'dotted_uses', 'import_edges', 'imports_of', 'module_name', 'read']
+
+#: The names Python provides without an import (``open``, ``print``), read as ``builtins.<name>``.
+_BUILTINS: Final = frozenset(dir(builtins))
 
 
 def module_name(root: Path, path: Path) -> str:
@@ -106,7 +110,25 @@ def read(source: str, module: str, *, is_package: bool = False) -> Reading:
             head = head.value
         if isinstance(head, ast.Name) and head.id in bound:
             names.add('.'.join([bound[head.id], *reversed(chain)]))
-    return Reading(tree, frozenset(names), bound)
+    return Reading(tree, frozenset(names | _builtin_uses(tree, bound)), bound)
+
+
+def _builtin_uses(tree: ast.AST, bound: Mapping[str, str]) -> set[str]:
+    """``builtins.<name>`` for each builtin *tree* reads and never binds itself (``open(...)`` -> ``builtins.open``).
+
+    A builtin needs no import, so without this a ``[python.stdlib] "builtins.open"`` row would judge nothing. A name
+    the module binds anywhere (assigned, a parameter, a def, an import) is the module's own, not the builtin.
+    """
+    own = set(bound)
+    loads: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            (loads if isinstance(node.ctx, ast.Load) else own).add(node.id)
+        elif isinstance(node, ast.arg):
+            own.add(node.arg)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            own.add(node.name)
+    return {f'builtins.{name}' for name in loads - own if name in _BUILTINS}
 
 
 def bindings(source: str, module: str, *, is_package: bool = False) -> dict[str, str]:
