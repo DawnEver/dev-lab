@@ -21,7 +21,7 @@ from dev_lab.dev.forgealarm import INTEGRATION
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.roles import CI, HOST, HPC, PRUNE, Executor, Roles, performs
 from tests._forge_state import StateForge
-from tests.test_dev_branchprune import NOW, BareForge, _commit, _git, _on_origin, _planted
+from tests.test_dev_branchprune import ACTIVITY, NOW, BareForge, _commit, _git, _on_origin, _planted
 
 # ---------------------------------------------------------------------------------------------- the declaration
 
@@ -66,7 +66,7 @@ def test_rows_name_the_unmerged_stale_and_the_over_ahead_lane_and_acquit_the_res
     """lane/unmerged holds 3 unlanded commits and is idle 72 h; merged, declared and young lanes are never rows."""
     root, _ = _planted(tmp_path, extra='max_ahead = 2\nmax_idle_hours = 12\n')
     _heavy(root, 2)
-    rows = derive(root, declared_branchset(root), load_policy(root), now=NOW)
+    rows = derive(root, declared_branchset(root), load_policy(root), now=NOW, activity=ACTIVITY)
     assert {(row.kind, row.branch) for row in rows} == {(OVER_AHEAD, 'lane/unmerged'), (STALE, 'lane/unmerged')}
     over = next(row for row in rows if row.kind == OVER_AHEAD)
     assert over.ahead == 3
@@ -76,14 +76,14 @@ def test_a_lane_at_its_bound_is_not_over_ahead(tmp_path: Path) -> None:
     """PLANTED: exactly max_ahead unlanded commits is inside the bound."""
     root, _ = _planted(tmp_path, extra='max_ahead = 3\nmax_idle_hours = 1000\n')
     _heavy(root, 2)
-    assert derive(root, declared_branchset(root), load_policy(root), now=NOW) == ()
+    assert derive(root, declared_branchset(root), load_policy(root), now=NOW, activity=ACTIVITY) == ()
 
 
 def test_an_over_ahead_row_says_land_it_now_and_record_why_and_never_split(tmp_path: Path) -> None:
     """User correction 2026-11-19: the doors are landing and recording the cause; no door splits the work."""
     root, _ = _planted(tmp_path, extra='max_ahead = 0\nmax_idle_hours = 1000\n')
     branchset, policy = declared_branchset(root), load_policy(root)
-    (row,) = derive(root, branchset, policy, now=NOW)
+    (row,) = derive(root, branchset, policy, now=NOW, activity=ACTIVITY)
     body = wanted((row,), branchset, policy.integration)[row.title]
     assert 'land it now' in body
     assert 'record why it ran past' in body
@@ -94,7 +94,7 @@ def test_an_over_ahead_row_says_land_it_now_and_record_why_and_never_split(tmp_p
 
 def test_a_lane_inside_both_bounds_is_no_row(tmp_path: Path) -> None:
     root, _ = _planted(tmp_path, extra='max_ahead = 100\nmax_idle_hours = 1000\n')
-    assert derive(root, declared_branchset(root), load_policy(root), now=NOW) == ()
+    assert derive(root, declared_branchset(root), load_policy(root), now=NOW, activity=ACTIVITY) == ()
 
 
 # ---------------------------------------------------------------------------------------------- the alarms
@@ -103,7 +103,7 @@ def test_a_lane_inside_both_bounds_is_no_row(tmp_path: Path) -> None:
 def test_observe_raises_one_alarm_per_row_and_none_once_the_row_clears(tmp_path: Path) -> None:
     """A row is an alarm, never an issue (2026-11-19); a cleared row raises nothing -- nothing is stored."""
     root, _ = _planted(tmp_path, extra='max_idle_hours = 12\n')
-    first = observe(root, 'o/r', now=NOW)
+    first = observe(root, 'o/r', now=NOW, activity=ACTIVITY)
     assert [(a.kind, a.about, a.subject) for a in first] == [
         (INTEGRATION, f'{STALE} lane/unmerged', f'{PREFIX}{STALE} lane/unmerged')
     ]
@@ -111,17 +111,17 @@ def test_observe_raises_one_alarm_per_row_and_none_once_the_row_clears(tmp_path:
     _git(root, 'merge', '-q', '--no-ff', '-m', 'land it', 'lane/unmerged')
     _git(root, 'push', '-q', 'origin', 'integrate/main')
     _git(root, 'fetch', '-q', '--prune', 'origin')
-    assert observe(root, 'o/r', now=NOW) == ()
+    assert observe(root, 'o/r', now=NOW, activity=ACTIVITY) == ()
 
 
 def test_the_alarm_key_carries_no_sha_so_a_moved_branch_repeats_as_one(tmp_path: Path) -> None:
     root, _ = _planted(tmp_path, extra='max_idle_hours = 12\n')
-    before = observe(root, 'o/r', now=NOW)
+    before = observe(root, 'o/r', now=NOW, activity=ACTIVITY)
     _git(root, 'checkout', '-q', 'lane/unmerged')
     _commit(root, 'more')
     _git(root, 'push', '-q', 'origin', 'lane/unmerged')
     _git(root, 'fetch', '-q', '--prune', 'origin')
-    after = observe(root, 'o/r', now=NOW)
+    after = observe(root, 'o/r', now=NOW, activity=ACTIVITY)
     assert [a.about for a in after] == [a.about for a in before]
 
 

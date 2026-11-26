@@ -104,6 +104,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'branchpolicy',  # ORIGINAL: the branch policy observed and the prune role's one duty (D46, 2026-11-19)
     'branchdelete',
     'deletejudge',  # LOSSLESS-DELETE's judgment, split from branchdelete for the pre-push row (2026-11-17)
+    'branchactivity',  # ORIGINAL: idle is push or PR activity, UNKNOWN when unrecorded (#611, 2026-11-26)
     'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
     'partrows',
     'slurmkilled',

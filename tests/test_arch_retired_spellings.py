@@ -361,6 +361,10 @@ RETIRED_SPELLINGS: Final = {
         'artifactstores.ref_of_entry (the Ref is lab_commons.compute.store.Ref; .key is .ref)',
         'L3 Ref half 2026-11-19: one Ref for artifacts and large objects; run_id_of / manifest_of are functions',
     ),
+    'MERGE_OR_LAND': (
+        'branchdelete.MERGE_OR_DISCARD (merge it, or the user approves what branchprune discard drops)',
+        'dev-lab #611 2026-11-26: an -s ours landing kept the commits as ancestors and lost their content',
+    ),
     'RETIRED_FILES': (
         "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to strays.retired_copies",
         "2026-11-17: the leaf scan's remedy -- a consumer's tree path is that consumer's data, never the leaf's",

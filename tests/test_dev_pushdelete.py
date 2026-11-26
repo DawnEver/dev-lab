@@ -156,7 +156,7 @@ def test_a_shell_assembled_delete_of_an_unlanded_branch_is_refused_and_the_ref_s
     assert done.returncode != 0, done.stderr
     assert _on_origin(work, 'pr/mine'), 'the unlanded branch survives on origin'
     assert f'{pushdelete.RULE}: pr/mine: refused -- 1 commit(s) exist on it alone ({unique[:12]})' in done.stderr
-    assert '-m dev_lab.dev.branchprune delete pr/mine' in done.stderr
+    assert '-m dev_lab.dev.branchprune discard pr/mine --approved' in done.stderr
 
 
 def test_the_same_shell_assembled_delete_of_a_landed_branch_goes(tmp_path: Path) -> None:
@@ -200,7 +200,7 @@ def test_a_tag_on_origin_holds_no_delete_whatever_the_env_says(tmp_path: Path) -
     assert done.returncode != 0, done.stderr
     assert _on_origin(work, 'lane/old')
     assert 'lane/old: refused -- 1 commit(s) exist on it alone' in done.stderr
-    assert '`git merge -s ours`' in done.stderr, 'the door names MERGE or LAND, never a tag'
+    assert 'branchprune discard lane/old --approved' in done.stderr, 'the door names MERGE or the discard, never a tag'
 
 
 def test_a_held_red_bump_on_a_declared_derived_branch_deletes_through_the_hook(tmp_path: Path) -> None:

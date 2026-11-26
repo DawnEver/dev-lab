@@ -607,6 +607,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.branchpolicy` -- BRANCH-POLICY-OBSERVED: an unlanded origin branch past ``max_ahead`` or
   ``max_idle_hours`` keeps one stable-keyed integration issue, closed when it clears; ``prune_duty`` is the ``prune``
   role's one pass, run by its executor (an hpc tick, or the forge feed of the bound host).
+* :mod:`dev_lab.dev.branchactivity` -- IDLE-IS-ACTIVITY: an origin branch's idle age is its last push or PR
+  activity, UNKNOWN when the forge records neither -- never its committer date (#611).
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: the prune role's executor deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones; it is the
   command line of ``delete`` and ``sweep``.

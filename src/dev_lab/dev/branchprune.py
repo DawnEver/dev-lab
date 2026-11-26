@@ -7,7 +7,11 @@ on its serve tick (:func:`serve_prune`), after the tick's ``git fetch --prune``.
 deletion is pinned to the judged sha, so two hosts racing delete once and the second finds it gone (a no-op).
 
 AN ORIGIN BRANCH IS A ROW of :func:`survey` when it is NOT declared (the branch set, the integration branch,
-the trunk) and its tip has sat idle -- its committer date -- for at least ``max_idle_hours``. Then:
+the trunk) and it has sat idle -- since its last push or PR activity (:mod:`dev_lab.dev.branchactivity`), never its
+committer date -- for at least ``max_idle_hours``; a branch with no activity on record is listed UNKNOWN
+(:data:`UNKNOWN_IDLE`) and nothing is done to it. MERGED means LANDED: an ancestor whose landing merge kept its
+content (:func:`~dev_lab.dev.deletejudge.landed`), so a branch an ``-s ours`` merge only made an ancestor is UNMERGED
+(dev-lab #611). Then:
 
 * MERGED (:data:`MERGED`): its tip is an ancestor of origin's integration branch or trunk, and no open pull
   request has it as head. Deleted (:data:`DELETE`) when the repo declares ``prune_merged = true``, else
@@ -16,9 +20,10 @@ the trunk) and its tip has sat idle -- its committer date -- for at least ``max_
   ephemeral``, e.g. ``pr/*``), it is MERGED, and no open pull request has it as head. Always DELETED --
   declaring the namespace IS the opt-in, and a landed PR head outlives its PR by nothing but the grace.
 * UNMERGED (:data:`UNMERGED`): anything else, ephemeral or not. LISTED and ALARMED with its age (:data:`STALE`)
-  and its two doors -- MERGE it through a PR, or LAND it with a declared ``git merge -s ours`` PR, then
-  ``branchprune delete`` -- NEVER deleted: its commits exist nowhere else, and the survey deletes nothing
-  LOSSLESS-DELETE would refuse (D30, user 2026-11-17, retiring the delete of an unmerged no-PR ephemeral head).
+  with what dropping it would discard and its two doors -- MERGE it through a PR, or, only on the user's words,
+  ``branchprune discard`` it (:data:`~dev_lab.dev.branchdelete.MERGE_OR_DISCARD`) -- NEVER deleted: its commits
+  exist nowhere else, and the survey deletes nothing LOSSLESS-DELETE would refuse (D30, user 2026-11-17, retiring
+  the delete of an unmerged no-PR ephemeral head).
 
 THE SERVE TICK'S DELETION IS DATA: the opt-in is a reviewed edit of the repo's ``[tool.dev_lab.branchset]``.
 AN AGENT'S DELETION, THE USER'S DISCARD and THE LANDED SWEEP live in :mod:`dev_lab.dev.branchdelete`
@@ -50,10 +55,11 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev._branch_tags import delete_contained_tags
-from dev_lab.dev.branchdelete import DOOR, UNAPPROVED, delete, delete_task, discard, sweep
+from dev_lab.dev.branchactivity import UNKNOWN, Activity, activity_of, idle_hours
+from dev_lab.dev.branchdelete import DOOR, MERGE_OR_DISCARD, UNAPPROVED, delete, delete_task, discard, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.deletejudge import ORIGIN
+from dev_lab.dev.deletejudge import ORIGIN, landed, would_discard
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
 from dev_lab.dev.forgeclient import client_for
@@ -72,6 +78,7 @@ __all__ = [
     'EVENT',
     'MERGED',
     'STALE',
+    'UNKNOWN_IDLE',
     'UNMERGED',
     'Row',
     'listing',
@@ -93,6 +100,8 @@ EPHEMERAL: Final = 'ephemeral-done'
 DELETE: Final = 'delete'
 DELETABLE: Final = 'deletable'
 STALE: Final = 'stale'
+#: Listed, never acted on: the forge records no push or PR activity, so how long it sat idle is UNKNOWN.
+UNKNOWN_IDLE: Final = 'unknown-idle'
 
 _HOUR_S: Final = 3600.0
 #: The forge's answer for a branch that does not exist.
@@ -107,11 +116,16 @@ class Row:
     sha: str
     rule: str
     action: str
-    idle_h: float
+    idle_h: float | None
+
+    @property
+    def idle(self) -> str:
+        """The idle age as printed: hours, or UNKNOWN when the forge records no activity."""
+        return UNKNOWN if self.idle_h is None else f'{self.idle_h:.0f} h'
 
     def line(self) -> str:
         """The row as a human reads it."""
-        return f'{self.action:<9} {self.ref}  {self.sha[:12]}  {self.rule}, idle {self.idle_h:.0f} h'
+        return f'{self.action:<9} {self.ref}  {self.sha[:12]}  {self.rule}, idle {self.idle}'
 
 
 def _holders(root: Path, policy: Policy) -> tuple[str, ...]:
@@ -120,9 +134,20 @@ def _holders(root: Path, policy: Policy) -> tuple[str, ...]:
 
 
 def survey(
-    root: Path, branchset: BranchSet, policy: Policy, *, open_heads: Iterable[str], now: datetime
+    root: Path,
+    branchset: BranchSet,
+    policy: Policy,
+    *,
+    open_heads: Iterable[str],
+    now: datetime,
+    activity: Activity,
 ) -> tuple[Row, ...]:
     """Every undeclared origin branch of *root* idle past the grace, as a :class:`Row`; read from local refs.
+
+    Idle is the branch's last push or PR *activity* (:mod:`dev_lab.dev.branchactivity`); a branch whose activity
+    the forge does not record is an :data:`UNKNOWN` row, listed and never deleted. MERGED is LANDED -- an ancestor
+    of integration or the trunk whose landing merge kept its content (:func:`~dev_lab.dev.deletejudge.landed`);
+    a branch only an ``-s ours`` merge made an ancestor is UNMERGED.
 
     Raises:
         OSError: git could not list origin's refs -- an unread origin is not a clean one.
@@ -137,15 +162,20 @@ def survey(
     holders = _holders(root, policy)
     rows: list[Row] = []
     for line in listed.splitlines():
-        ref, sha, stamp = line.split('\t')
+        ref, sha, stamp = line.split('	')
         name = ref.removeprefix(ORIGIN)
-        idle_h = (now - datetime.fromtimestamp(int(stamp), tz=UTC)).total_seconds() / _HOUR_S
-        if name in keep or idle_h < branchset.max_idle_hours:
+        if name in keep:
+            continue
+        committed = datetime.fromtimestamp(int(stamp), tz=UTC)
+        idle_h = idle_hours(name, committed, now=now, bound=branchset.max_idle_hours, activity=activity)
+        if idle_h is not None and idle_h < branchset.max_idle_hours:
             continue
         if branchset.is_ephemeral(name) and name in heads:
             continue  # its open PR owns it
-        merged = any(git_out(root, 'merge-base', '--is-ancestor', sha, holder) is not None for holder in holders)
-        if not merged:
+        merged = landed(root, sha, holders)
+        if idle_h is None:
+            rows.append(Row(name, sha, MERGED if merged else UNMERGED, UNKNOWN_IDLE, None))
+        elif not merged:
             rows.append(Row(name, sha, UNMERGED, STALE, idle_h))
         elif branchset.is_ephemeral(name):
             rows.append(Row(name, sha, EPHEMERAL, DELETE, idle_h))
@@ -157,7 +187,9 @@ def survey(
 def listing(root: Path, client: Client, *, now: datetime) -> tuple[Row, ...]:
     """*root*'s declared branch set and policy, the open pull requests' heads, and the :func:`survey` they give."""
     heads = {pr.head for pr in pr_list(client)}
-    return survey(root, declared_branchset(root), load_policy(root), open_heads=heads, now=now)
+    policy = load_policy(root)
+    activity = activity_of(client, policy.integration)
+    return survey(root, declared_branchset(root), policy, open_heads=heads, now=now, activity=activity)
 
 
 def _live_tip(client: Client, name: str) -> str | None:
@@ -199,11 +231,11 @@ def _stale_entry(root: Path, row: Row, integration: str) -> str:
     counted = git_out(root, 'rev-list', '--left-right', '--count', f'{row.sha}...{ORIGIN}{integration}')
     ahead, behind = counted.split() if counted else ('?', '?')
     return (
-        f'{row.ref} {row.sha[:12]} idle {row.idle_h:.0f} h, not merged: {ahead} ahead, {behind} behind {integration}\n'
+        f'{row.ref} {row.sha[:12]} idle {row.idle}, not merged: {ahead} ahead, {behind} behind {integration}\n'
         f'  land it:   python -m dev_lab.dev.forge pr create --head {row.ref} --base {integration} '
         f'--title "<what it does>"\n'
-        f'  abandon it (the user decides; its {ahead} commit(s) exist nowhere else): LAND it with a declared '
-        f'`git merge -s ours` PR into a pr/ branch, then python -m dev_lab.dev.branchprune delete {row.ref}'
+        f'  dropping it discards {would_discard(root, row.sha, integration)}\n'
+        f'  {MERGE_OR_DISCARD.format(branch=row.ref)}'
     )
 
 
@@ -227,12 +259,12 @@ def prune(
 
     def merged_now(sha: str) -> bool:
         fetch(root)
-        return any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in _holders(root, policy))
+        return landed(root, sha, _holders(root, policy))
 
     deleted = [row for row in rows if row.action == DELETE and _delete(client, row, say, merged_now)]
     repo = client.forge.repo
     if deleted:
-        body = '\n'.join(f'{row.ref} {row.sha[:12]} ({row.rule}, idle {row.idle_h:.0f} h)' for row in deleted)
+        body = '\n'.join(f'{row.ref} {row.sha[:12]} ({row.rule}, idle {row.idle})' for row in deleted)
         alarm(Alarm(PRUNED, repo, f'{len(deleted)} merged branch(es) deleted from origin', body))
     stale = [row for row in rows if row.action == STALE]
     if stale:
@@ -274,8 +306,9 @@ def _write_log(root: Path, lines: Sequence[str]) -> None:
 #: or delete"), each refused by name with the door that replaced it, never parsed as unknown.
 RETIRED: Final = {
     'delete-tag': 'tags are no place to keep work (D22); a branch is merged or deleted: ' + DOOR,
-    '--approved': 'no tag-held delete (D22); a refused branch names its doors: MERGE it, or LAND it with a declared '
-    '`git merge -s ours` PR, then ' + DOOR,
+    '--approved': 'no tag-held delete (D22); a refused branch names its doors: MERGE it, or on the user words '
+    'discard it: python -m dev_lab.dev.branchprune discard <branch> --approved "<the user words>"; a landed one: '
+    + DOOR,
 }
 
 

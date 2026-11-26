@@ -15,9 +15,10 @@ passes it with no exemption. The one lossy delete that passes is the user's orde
 grant for exactly that branch at that sha while its push runs (:func:`dev_lab.dev.deletejudge.granted`), and a
 refusal whose branch carries a root of its own names that door.
 A tag on origin holds nothing (user ruling D22: "no tags -- merge or delete, never an
-archive tag"): a branch with unlanded work is MERGED through a PR, or LANDED by a declared ``git merge -s ours`` PR,
-and then deleted. A branch the policy declares DERIVED (decision D23, ``[tool.dev_lab.integrator] derived``) is
-regenerated whole by its producer and goes.
+archive tag"): a branch with unlanded work is MERGED through a PR, or, on the user's words, discarded through
+``branchprune discard`` -- never a ``git merge -s ours``, which keeps the commits and loses their content (#611).
+A branch the policy declares DERIVED (decision D23, ``[tool.dev_lab.integrator] derived``) is regenerated whole by
+its producer and goes.
 
 FAILS CLOSED (:data:`UNJUDGED`): a repo declaring no integration branch (or a malformed ``derived`` row), a failed
 fetch or an unreadable forge refuses naming the cause and the retry, never passes unjudged. A tag deletion is not
@@ -76,8 +77,9 @@ def _door_for(verdict: Verdict) -> str:
     door = f'{_python()} -m dev_lab.dev.branchprune delete {branch}'
     if verdict.lost:
         return (
-            f'MERGE what is still wanted through a PR, or LAND the branch with a declared `git merge -s ours` PR '
-            f'into a pr/ branch, then {door}{second_root(verdict)}'
+            f'MERGE what is still wanted through a PR, or show the user what dropping it discards and, on their '
+            f'words, {_python()} -m dev_lab.dev.branchprune discard {branch} --approved "<their words>"'
+            f'{second_root(verdict)}'
         )
     return f'{door} -- it fetches afresh and names what holds the branch, or why it stays'
 

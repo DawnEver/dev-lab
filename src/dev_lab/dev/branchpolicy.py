@@ -7,12 +7,16 @@ User ruling D46 (integrator, 2026-11-19): the branch policy is a per-repo DECLAR
   is absent). Its doors (user correction 2026-11-19): LAND IT NOW, and RECORD WHY it ran past the limit -- no test
   producer, nobody integrating, or the lane withheld finished work. Never "split it": the work is done, and the
   cause of the backlog is what is recorded.
-* :data:`STALE` -- its tip has sat idle for ``max_idle_hours`` (the same bound the prune deletes a merged branch
-  by). Its doors: LAND it through a PR, or RETIRE it.
+* :data:`STALE` -- it has sat idle for ``max_idle_hours`` since its last push or PR activity
+  (:mod:`dev_lab.dev.branchactivity`; never its committer date, and never when the forge records no activity -- that
+  branch reads UNKNOWN and is no row). Its doors: LAND it through a PR, or RETIRE it.
 
-RETIRING is the user's call, never the observer's: LAND the branch with a declared ``git merge -s ours`` PR into a
-``pr/`` head, then ``branchprune delete`` it (LOSSLESS-DELETE). A branch merged into integration or the trunk is
-never a row: the prune owns it (:mod:`dev_lab.dev.branchprune`).
+RETIRING is the user's call, never the observer's (dev-lab #611): the row lists what dropping the branch would
+discard, and only on the user's words is it ``branchprune discard``-ed
+(:data:`~dev_lab.dev.branchdelete.MERGE_OR_DISCARD`); otherwise it is left alone. Never a ``git merge -s ours``: that
+made commits ancestors while their content was lost. A branch LANDED into integration or the trunk -- an ancestor
+whose landing merge kept its content (:func:`~dev_lab.dev.deletejudge.landed`) -- is never a row: the prune owns it
+(:mod:`dev_lab.dev.branchprune`).
 
 ONE ALARM PER ROW, NEVER AN ISSUE (user ruling 2026-11-19: issues do not record events nor fan out). A row
 is an ``integration`` alarm on the host card and the session feed, keyed by ``about = <kind> <branch>`` -- no
@@ -35,11 +39,12 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.branchdelete import DOOR, serve_sweep
+from dev_lab.dev.branchactivity import UNKNOWN, Activity, activity_of, idle_hours
+from dev_lab.dev.branchdelete import MERGE_OR_DISCARD, serve_sweep
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.deletejudge import ORIGIN
+from dev_lab.dev.deletejudge import ORIGIN, landed, would_discard
 from dev_lab.dev.forge import Forge, fetch_origin, forge_from_remote
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import this_machine
@@ -85,7 +90,9 @@ class PolicyRow:
     tip: str
     ahead: int
     behind: int
-    idle_h: float
+    idle_h: float | None
+    #: What dropping the branch would discard (:func:`~dev_lab.dev.deletejudge.would_discard`), on a STALE row.
+    discards: str = ''
 
     @property
     def title(self) -> str:
@@ -94,9 +101,10 @@ class PolicyRow:
 
     def body(self, integration: str, bound: str) -> str:
         """The row, the bound it breaks, and its doors."""
+        idle = UNKNOWN if self.idle_h is None else f'{self.idle_h:.0f} h'
         head = (
             f'{self.branch} at {self.tip[:12]}: {self.ahead} ahead, {self.behind} behind {integration}, '
-            f'idle {self.idle_h:.0f} h -- {bound}\n'
+            f'idle {idle} -- {bound}\n'
             f'- land it now: python -m dev_lab.dev.forge pr create --head {self.branch} --base {integration}\n'
         )
         if self.kind == OVER_AHEAD:
@@ -105,8 +113,8 @@ class PolicyRow:
                 'finished work -- a comment on this issue\n'
             )
         return head + (
-            f'- retire it (the user decides; its {self.ahead} commit(s) exist nowhere else): LAND it with a declared '
-            f'`git merge -s ours` PR into a pr/ head, then {DOOR} {self.branch}\n'
+            f'- retire it (the user decides): dropping it discards {self.discards}\n'
+            f'- {MERGE_OR_DISCARD.format(branch=self.branch)}\n'
         )
 
 
@@ -115,8 +123,13 @@ def _holders(root: Path, policy: Policy) -> tuple[str, ...]:
     return tuple(ref for ref in refs if git_out(root, 'rev-parse', '--verify', '--quiet', ref))
 
 
-def derive(root: Path, branchset: BranchSet, policy: Policy, *, now: datetime) -> tuple[PolicyRow, ...]:
+def derive(
+    root: Path, branchset: BranchSet, policy: Policy, *, now: datetime, activity: Activity
+) -> tuple[PolicyRow, ...]:
     """Every row of *root*'s origin branches breaking *branchset*'s bounds, sorted; from local refs.
+
+    Idle is the branch's last push or PR *activity*; an UNKNOWN one is never STALE. A branch is acquitted as landed
+    only when its landing merge kept its content (:func:`~dev_lab.dev.deletejudge.landed`).
 
     Raises:
         OSError: git could not list origin's refs -- an unread origin is not a clean one.
@@ -132,15 +145,17 @@ def derive(root: Path, branchset: BranchSet, policy: Policy, *, now: datetime) -
     for line in listed.splitlines():
         ref, sha, stamp = line.split('\t')
         name = ref.removeprefix(ORIGIN)
-        if name in keep or any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in holders):
+        if name in keep or landed(root, sha, holders):
             continue
         counted = git_out(root, 'rev-list', '--left-right', '--count', f'{sha}...{ORIGIN}{policy.integration}')
         ahead, behind = (int(n) for n in counted.split()) if counted else (0, 0)
-        idle_h = (now - datetime.fromtimestamp(int(stamp), tz=UTC)).total_seconds() / _HOUR_S
+        committed = datetime.fromtimestamp(int(stamp), tz=UTC)
+        idle_h = idle_hours(name, committed, now=now, bound=branchset.max_idle_hours, activity=activity)
         if branchset.max_ahead is not None and ahead > branchset.max_ahead:
             rows.append(PolicyRow(OVER_AHEAD, name, sha, ahead, behind, idle_h))
-        if idle_h >= branchset.max_idle_hours:
-            rows.append(PolicyRow(STALE, name, sha, ahead, behind, idle_h))
+        if idle_h is not None and idle_h >= branchset.max_idle_hours:
+            discards = would_discard(root, sha, policy.integration)
+            rows.append(PolicyRow(STALE, name, sha, ahead, behind, idle_h, discards))
     return tuple(sorted(rows, key=lambda row: (row.branch, row.kind)))
 
 
@@ -153,10 +168,10 @@ def wanted(rows: tuple[PolicyRow, ...], branchset: BranchSet, integration: str) 
     return {row.title: row.body(integration, bounds[row.kind]) for row in rows}
 
 
-def observe(root: Path, repo: str, *, now: datetime) -> tuple[Alarm, ...]:
+def observe(root: Path, repo: str, *, now: datetime, activity: Activity) -> tuple[Alarm, ...]:
     """Derive *root*'s rows as alarms: one per row, keyed by kind and branch, nothing stored."""
     branchset, policy = declared_branchset(root), load_policy(root)
-    rows = derive(root, branchset, policy, now=now)
+    rows = derive(root, branchset, policy, now=now, activity=activity)
     bodies = wanted(rows, branchset, policy.integration)
     return tuple(
         Alarm(INTEGRATION, repo, row.title, bodies[row.title], about=f'{row.kind} {row.branch}') for row in rows
@@ -183,7 +198,8 @@ def prune_duty(
     serve_prune(root, client, now=now, say=say, alarm=alarm)
     serve_records_prune(root, client, now=now, say=say, alarm=alarm)
     try:
-        for raised in observe(root, repo, now=now):
+        activity = activity_of(client, load_policy(root).integration)
+        for raised in observe(root, repo, now=now, activity=activity):
             alarm(raised)
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         alarm(Alarm(INTEGRATION, repo, 'the branch policy was not observed', str(failed)))

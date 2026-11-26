@@ -9,8 +9,10 @@ CONTENT, when no file its own commits wrote differs on integration, generated fi
 merges holds no work -- and otherwise refuses naming the commits and the files carrying unlanded content. The SAME
 judgment runs at pre-push on every delete a push carries, however it was spelled (:mod:`dev_lab.dev.pushdelete`),
 and this door's own push passes it there. A refused branch is told the two doors MERGE-OR-DELETE leaves (user
-ruling D22, 2026-11-17: "no tags -- either merge or delete"): MERGE what is still wanted, or LAND the branch with a
-declared content-neutral merge (``git merge -s ours``) and re-run the delete, now lossless. No tag holds a branch.
+ruling D22, 2026-11-17: "no tags -- either merge or delete"): MERGE what is still wanted, or show the user what
+dropping it discards and, on their words, :func:`discard` it (:data:`MERGE_OR_DISCARD`). Never a content-neutral
+merge (``git merge -s ours``, dev-lab #611): it made commits ancestors while their content was lost, and the judge
+now refuses a branch only such a merge holds (:func:`dev_lab.dev.deletejudge.discarded`). No tag holds a branch.
 The delete is a lease on the judged sha through the network door, recorded as one
 :data:`DELETED_EVENT` line and a ``pruned`` alarm naming the ``Lab-Session`` and the container.
 
@@ -25,8 +27,8 @@ wherever integration moves: the forge's repo-wide serve pass (:func:`serve_sweep
 integration runs (``ci_base.toml``); on a workstation, :mod:`dev_lab.dev.reclaimrun` reclaims the local half.
 
 THE USER'S ORDER TO DROP A BRANCH is :func:`discard` (``branchprune discard <branch> --approved "<the user's
-words>"``, 2026-11-24): a branch whose history must not be published -- a private second root a ``-s ours`` landing
-would put into the mainline -- is deleted WITHOUT landing, only with the user's words, never integration, the trunk
+words>"``, 2026-11-24, and dev-lab #611): an unlanded branch the user approves dropping -- including a private second
+root no merge may publish -- is deleted WITHOUT landing, only with the user's words, never integration, the trunk
 or an open PR head. Its push passes the pre-push row by a grant naming that branch at that sha
 (:func:`dev_lab.dev.deletejudge.grant`); it is recorded as one :data:`DISCARDED_EVENT` line and a ``pruned`` alarm
 naming the sha and the words. No bundle or backup is kept (R2). A lossy refusal whose own commits carry a root of
@@ -62,7 +64,7 @@ __all__ = [
     'DISCARDED_EVENT',
     'DISCARD_DOOR',
     'DOOR',
-    'MERGE_OR_LAND',
+    'MERGE_OR_DISCARD',
     'TASK_HEAD_DOORS',
     'UNAPPROVED',
     'TaskBranches',
@@ -88,12 +90,13 @@ UNAPPROVED: Final = (
     '[branchprune] discard: --approved "<the user words>" is required: it drops commits held nowhere else, '
     'so only the user orders it'
 )
-#: What a LOSSY refusal adds: the two doors MERGE-OR-DELETE leaves (D22), never a tag.
-MERGE_OR_LAND: Final = (
-    'MERGE-OR-DELETE (D22, no tags): MERGE what is still wanted through a PR; or, when that content is already on '
-    'integration in another form or retired by a ruling, LAND the branch: merge origin/{branch} into a pr/ branch '
-    'with `git merge -s ours`, declare each conflicted file `<path>: <class> -- <why>` and each dropped test '
-    '`Merge-Audit: ...`, land the PR, then re-run `branchprune delete {branch}`'
+#: What a LOSSY refusal adds: the two doors MERGE-OR-DELETE leaves (D22, no tags). Never a content-neutral merge
+#: (dev-lab #611): ``git merge -s ours`` makes the commits ancestors, so every ancestry check reads them landed, and
+#: their content is lost; the user approves what a discard drops, or the branch is left alone.
+MERGE_OR_DISCARD: Final = (
+    'MERGE-OR-DELETE (D22, no tags): MERGE what is still wanted through a PR; or show the user what dropping it '
+    'discards and, only on their words, ' + DISCARD_DOOR + '; else leave it. Never `git merge -s ours`: it keeps '
+    'the commits as ancestors and loses their content'
 )
 
 
@@ -103,7 +106,7 @@ def second_root(verdict: Verdict) -> str:
         return ''
     shown = ', '.join(one[:12] for one in verdict.roots)
     return (
-        f'; it carries a root of its own ({shown}): a `-s ours` landing would publish that history into the '
+        f'; it carries a root of its own ({shown}): a merge would publish that history into the '
         f"mainline, so on the user's order to drop it: {DISCARD_DOOR.format(branch=verdict.branch)}"
     )
 
@@ -134,7 +137,7 @@ def delete(
 ) -> int:
     """LOSSLESS-DELETE each of *branches* after a fresh fetch; 0 when every one was deleted, else 1.
 
-    A branch refused for commits on it alone is told its two doors (:data:`MERGE_OR_LAND`); nothing deletes it.
+    A branch refused for commits on it alone is told its two doors (:data:`MERGE_OR_DISCARD`); nothing deletes it.
     """
     fetch(root)
     policy = load_policy(root)
@@ -145,7 +148,7 @@ def delete(
         found = judge(root, policy, branch, tip, open_heads=heads)
         why = found.refused or push(root, branch, found.sha)
         if why:
-            doors = f'. {MERGE_OR_LAND.format(branch=branch)}{second_root(found)}' if found.lost else ''
+            doors = f'. {MERGE_OR_DISCARD.format(branch=branch)}{second_root(found)}' if found.lost else ''
             say(why + doors if found.refused else f'{branch}: the delete failed: {why}')
             failed += 1
             continue
@@ -272,7 +275,9 @@ def delete_task(
 #: The doors an unmerged ``pr/<slug>/*`` head that blocks ``task close`` is told (user ruling 2026-11-24).
 TASK_HEAD_DOORS: Final = (
     'Door: MERGE each through a PR; or discard it -- a local one: python -m dev_lab.dev.branchset --discard <branch> '
-    '--approved "<the user\'s words>"; an origin one: LAND it with a declared `git merge -s ours` PR, then {door}'
+    '--approved "<the user\'s words>"; an origin one: show the user what it discards, then '
+    'on their words python -m dev_lab.dev.branchprune discard <branch> --approved "<the user\'s words>"; a landed one: '
+    '{door}'
 )
 
 

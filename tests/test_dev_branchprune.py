@@ -31,6 +31,13 @@ _GIT = shutil.which('git') or 'git'
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=UTC)
 OLD = '2026-10-10T12:00:00+00:00'
 YOUNG = '2026-10-13T11:00:00+00:00'
+
+
+def ACTIVITY(name: str) -> datetime:
+    """The planted branches' last activity: lane/young was pushed an hour ago, every other one days ago."""
+    return datetime.fromisoformat(YOUNG if name == 'lane/young' else OLD)
+
+
 POLICY = Policy(integration='integrate/main', trunk='main')
 
 _MANIFEST = """[project]
@@ -92,6 +99,8 @@ class BareForge(Client):
         self.origin = origin
         self.pulls = pulls
         self.moved: set[str] = set()
+        #: Each branch's PR ``updated_at``; a name it lacks has no PR (Gitea records no push time: UNKNOWN).
+        self.activity: dict[str, str] = {}
         self.deleted: list[str] = []
         self.calls: list[tuple[str, str]] = []
 
@@ -120,6 +129,10 @@ class BareForge(Client):
                 }
                 for n, head in enumerate(self.pulls, start=1)
             ]  # fmt: skip
+        if route.startswith(f'{API}/pulls/'):
+            head = urllib.parse.unquote(route.removeprefix(f'{API}/pulls/').partition('/')[2])
+            stamp = self.activity.get(head, YOUNG if head == 'lane/young' else OLD)
+            return {'number': 9, 'updated_at': stamp, 'head': {'ref': head}}
         name = urllib.parse.unquote(route.removeprefix(f'{API}/branches/'))
         if method == 'GET':
             return self._tip(name)
@@ -170,7 +183,14 @@ def test_a_malformed_or_unknown_key_is_refused_by_name(tmp_path: Path, extra: st
 def test_the_survey_names_merged_idle_and_unmerged_stale_and_nothing_else(tmp_path: Path) -> None:
     """Declared, young, and open-PR branches are never rows; the acquittal half is asserted by NAME."""
     root, _ = _planted(tmp_path)
-    rows = survey(root, declared_branchset(root), load_policy(root), open_heads=frozenset({'lane/with-pr'}), now=NOW)
+    rows = survey(
+        root,
+        declared_branchset(root),
+        load_policy(root),
+        open_heads=frozenset({'lane/with-pr'}),
+        now=NOW,
+        activity=ACTIVITY,
+    )
     assert {(r.ref, r.rule, r.action) for r in rows} == {
         ('lane/merged', MERGED, DELETABLE),
         ('lane/unmerged', 'unmerged-stale', STALE),
@@ -182,7 +202,7 @@ def test_the_survey_names_merged_idle_and_unmerged_stale_and_nothing_else(tmp_pa
 def test_opting_in_turns_deletable_into_delete(tmp_path: Path) -> None:
     root, _ = _planted(tmp_path)
     branchset = BranchSet('main', frozenset({'integrate/main', 'feat/session'}), prune_merged=True)
-    rows = survey(root, branchset, load_policy(root), open_heads=frozenset(), now=NOW)
+    rows = survey(root, branchset, load_policy(root), open_heads=frozenset(), now=NOW, activity=ACTIVITY)
     assert {r.ref for r in rows if r.action == DELETE} == {'lane/merged', 'lane/with-pr'}
 
 
@@ -222,11 +242,9 @@ def test_the_stale_alarm_names_ahead_behind_and_the_two_next_commands(tmp_path: 
     assert f'1 ahead, {behind} behind integrate/main' in stale.body, stale.body
     pr = 'python -m dev_lab.dev.forge pr create --head lane/unmerged --base integrate/main --title'
     assert pr in stale.body, stale.body
-    assert '`git merge -s ours` PR into a pr/ branch, then python -m dev_lab.dev.branchprune delete lane/unmerged' in (
-        stale.body
-    ), stale.body
-    (abandon,) = [line for line in stale.body.splitlines() if 'abandon it' in line]
-    assert '--approved' not in abandon, 'no tag-held delete (D22)'
+    assert 'dropping it discards 1 commit(s)' in stale.body, stale.body
+    assert 'python -m dev_lab.dev.branchprune discard lane/unmerged --approved' in stale.body, stale.body
+    assert 'merge -s ours` PR' not in stale.body, 'never a content-neutral landing (#611)'
     assert 'push origin --delete' not in stale.body, 'a raw delete is refused at pre-push; the door is named'
     assert 'lane/merged' not in stale.body, 'control: a merged branch is never offered for abandonment'
 
@@ -301,7 +319,7 @@ def test_an_unmerged_ephemeral_branch_is_listed_with_its_doors_and_never_deleted
     _git(root, 'push', '-q', 'origin', 'integrate/main')
     _git(root, 'fetch', '-q', 'origin')
     branchset = BranchSet('main', frozenset({'integrate/main', 'feat/session'}), ephemeral=('pr/*',))
-    rows = survey(root, branchset, POLICY, open_heads=frozenset({'pr/open'}), now=NOW)
+    rows = survey(root, branchset, POLICY, open_heads=frozenset({'pr/open'}), now=NOW, activity=ACTIVITY)
     assert {(r.ref, r.rule, r.action) for r in rows if r.ref.startswith('pr/')} == {
         ('pr/landed', EPHEMERAL, DELETE),
         ('pr/unmerged', UNMERGED, STALE),
@@ -314,4 +332,4 @@ def test_an_unmerged_ephemeral_branch_is_listed_with_its_doors_and_never_deleted
     stale = next(a for a in alarms if a.kind == STALE_BRANCH)
     assert 'pr/unmerged' in stale.body
     assert 'pr create --head pr/unmerged' in stale.body
-    assert 'git merge -s ours' in stale.body
+    assert 'branchprune discard pr/unmerged --approved' in stale.body
