@@ -123,7 +123,7 @@ def flags(root: Path, part: str) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``python -m dev_lab.dev.depneeds flags --root R --part P``: print the part's extra flags (CI's sync)."""
-    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.depneeds', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.depneeds', description=(__doc__ or '').splitlines()[0])
     sub = parser.add_subparsers(dest='verb', required=True)
     flag = sub.add_parser('flags', help="the part's `--extra` flags: the declared extras plus its needs' extras")
     flag.add_argument('--root', type=Path, default=Path.cwd())

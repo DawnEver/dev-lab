@@ -13,7 +13,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import TYPE_CHECKING, Final, NoReturn
+from typing import TYPE_CHECKING, Final, NoReturn, cast
 
 from dev_lab.dev.family import declared_table
 
@@ -127,6 +127,7 @@ def policy(root: Path) -> Policy:
         for owner, row in rows.items():
             if not isinstance(row, dict) or not row:
                 _refuse(f'{where} {owner} holds no floor: {{ line = "<share> %", branch = "<share> %" }}, from record')
-            _unknown(f'{where} {owner}', row, BARS)
-            floors[language][owner] = {k: Floor(_share(f'{where} {owner} {k}', v), v) for k, v in row.items()}
+            held = cast('dict[str, object]', row)
+            _unknown(f'{where} {owner}', held, BARS)
+            floors[language][owner] = {k: Floor(_share(f'{where} {owner} {k}', v), str(v)) for k, v in held.items()}
     return Policy(bars, floors)

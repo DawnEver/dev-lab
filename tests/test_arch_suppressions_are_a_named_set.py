@@ -808,10 +808,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/_ir_codec.py',
         'PLR0911',
-        (
-            'def _value_out(spec: object, value: object, units: Mapping[str, str], prefix: str, reference: object)'
-            ' -> object:'
-        ),
+        ('def _value_out(spec: F, value: object, units: Mapping[str, str], prefix: str, reference: object) -> object:'),
     ): 'one return per IR field kind: a dispatch, split further it only scatters the table',
     (
         'src/dev_lab/dev/_ir_codec.py',
@@ -881,11 +878,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLC0415',
         'from dev_lab.dev.localpart import local_record, post_local',
     ): 'localpart imports this module at its top for the cargo part, so a top-level import here would be a cycle',
-    (
-        'src/dev_lab/dev/covreports.py',
-        'ANN401',
-        'def _load(tool: str, report: Path) -> Any:',
-    ): 'a coverage report is parsed JSON whose shape the tool decides; each reader narrows the part it reads',
     (
         'src/dev_lab/dev/sectionrender.py',
         'ANN401',

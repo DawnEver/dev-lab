@@ -104,7 +104,7 @@ class Checkout:
     """One checkout as the plan line printed it."""
 
     path: str
-    remotes: list[tuple[str, str]] = field(default_factory=list)
+    remotes: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])
     branch: str = ''
     head: str = ''
     common: str = ''
@@ -113,7 +113,7 @@ class Checkout:
     bundle_bytes: int = 0
     changed: int = 0
     diff_bytes: int = 0
-    untracked: list[Untracked] = field(default_factory=list)
+    untracked: list[Untracked] = field(default_factory=list[Untracked])
 
     @property
     def origin(self) -> str:
@@ -144,9 +144,9 @@ class Plan:
 
     path: str = ''
     absent: bool = False
-    checkouts: list[Checkout] = field(default_factory=list)
-    refused: list[tuple[str, str]] = field(default_factory=list)
-    unread: list[str] = field(default_factory=list)
+    checkouts: list[Checkout] = field(default_factory=list[Checkout])
+    refused: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])
+    unread: list[str] = field(default_factory=list[str])
 
 
 def _safe(path: str) -> bool:
@@ -224,7 +224,7 @@ def sections(text: str) -> tuple[dict[str, bytes], dict[str, str], list[str]]:
             current = ''
         elif tag == 'X':
             refused.append(tail.replace('\t', ': '))
-    decoded = {}
+    decoded: dict[str, bytes] = {}
     for name, lines in data.items():
         try:
             decoded[name] = base64.b64decode(''.join(lines), validate=True)

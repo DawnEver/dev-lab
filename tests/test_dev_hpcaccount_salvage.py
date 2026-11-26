@@ -56,10 +56,10 @@ def _commit(repo: Path, name: str, text: str, message: str) -> str:
 def _runner(home: Path) -> Runner:
     """The account's Runner: the fixed line in a real POSIX shell with *home* as ``$HOME``."""
     assert _SH is not None, 'no sh on PATH: every runner (Linux, Git for Windows) carries one'
-    env = {**os.environ, **_ENV, 'HOME': home.as_posix()}
+    sh, env = _SH, {**os.environ, **_ENV, 'HOME': home.as_posix()}
 
     def run(command: str, _stdin: str | None = None) -> str:
-        done = subprocess.run([_SH, '-c', command], capture_output=True, env=env, check=False)
+        done = subprocess.run([sh, '-c', command], capture_output=True, env=env, check=False)
         assert done.returncode == 0, done.stderr.decode('utf-8', 'replace')
         return done.stdout.decode('utf-8', 'replace')
 
@@ -98,17 +98,20 @@ def account(tmp_path: Path) -> SimpleNamespace:
     return SimpleNamespace(home=home, origin=origin, shas=shas, out=tmp_path / 'out', tmp=tmp_path)
 
 
-def _reach(monkeypatch: pytest.MonkeyPatch, home: Path) -> dict[str, object]:
+def _reach(monkeypatch: pytest.MonkeyPatch, home: Path) -> Runner:
+    """The one account reached and pinned: every connect and pin answers *home*'s Runner."""
     grant = SimpleNamespace(user='u1')
     monkeypatch.setattr(salvage, 'reached_machine', lambda _users: SimpleNamespace(grants=[grant]))
     monkeypatch.setattr(salvage, 'declared_target', lambda _g, _shell: Target('login1', '/scratch/u1/lab'))
-    run = _runner(home)
-    return {'connect': lambda _g: run, 'pin': lambda _g, _host: run}
+    return _runner(home)
 
 
 def _salvaged(monkeypatch: pytest.MonkeyPatch, account: SimpleNamespace, said: list[str], *, apply: bool) -> int:
-    reach = _reach(monkeypatch, account.home)
-    return salvage.salvage('u1', 'src', apply=apply, out=account.out, carried=LIMIT, say=said.append, **reach)
+    run = _reach(monkeypatch, account.home)
+    return salvage.salvage(
+        'u1', 'src', apply=apply, out=account.out, carried=LIMIT, say=said.append,
+        connect=lambda _g: run, pin=lambda _g, _host: run,
+    )  # fmt: skip
 
 
 def _manifest(account: SimpleNamespace) -> dict:
@@ -143,7 +146,7 @@ def test_every_file_lands_in_a_declared_salvage_shape(
 
 
 def _plan(account: SimpleNamespace) -> salvageread.Plan:
-    return salvageread.parse(_runner(account.home)(salvageread.plan_command('src')))
+    return salvageread.parse(_runner(account.home)(salvageread.plan_command('src'), None))
 
 
 def test_the_salvage_counts_what_the_inventory_counts() -> None:

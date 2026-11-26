@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, cast
 
 from lab_commons import launch as _door
 from lab_commons.config import section
@@ -194,10 +194,11 @@ def _git(checkout: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _pattern(entry: object, where: str) -> Pattern:
-    if not isinstance(entry, dict) or set(entry) != {'glob', 'key'}:
+    held = cast('dict[str, object]', entry) if isinstance(entry, dict) else None
+    if held is None or set(held) != {'glob', 'key'}:
         msg = f'{where}: each root is {{ glob = "<tracked-file glob>", key = "<field>" }}, got {entry!r}'
         raise PatternRefused(msg)
-    glob, key = entry['glob'], entry['key']
+    glob, key = held['glob'], held['key']
     if not isinstance(glob, str) or not glob or '\\' in glob or glob.startswith('/') or '..' in glob.split('/'):
         msg = f'{where}: glob {glob!r} must be a relative POSIX glob inside the tree'
         raise PatternRefused(msg)
@@ -211,10 +212,12 @@ def patterns_of(table: object, where: str) -> tuple[Pattern, ...]:
     """The ``roots`` list of an ``oraclegc`` table, validated; a malformed one is :class:`PatternRefused`."""
     if table is None:
         return ()
-    if not isinstance(table, dict) or set(table) - {'roots'} or not isinstance(table.get('roots', []), list):
+    held = cast('dict[str, object]', table) if isinstance(table, dict) else None
+    roots = None if held is None else held.get('roots', [])
+    if held is None or set(held) - {'roots'} or not isinstance(roots, list):
         msg = f'{where}: the table holds only roots = [{{ glob = ..., key = ... }}, ...], got {table!r}'
         raise PatternRefused(msg)
-    return tuple(_pattern(entry, where) for entry in table.get('roots', []))
+    return tuple(_pattern(entry, where) for entry in cast('list[object]', roots))
 
 
 def family_patterns(section: Mapping[str, Any]) -> dict[str, tuple[Pattern, ...]]:
@@ -295,7 +298,8 @@ def collect_roots(
 
 
 def _listed(rows: Iterable[Mapping[str, Any]]) -> tuple[list[Stored], list[str]]:
-    stored, foreign = [], []
+    stored: list[Stored] = []
+    foreign: list[str] = []
     for row in rows:
         parts = PurePosixPath(row['Path']).parts
         if len(parts) == _SHARDED and _SHA256.fullmatch(parts[1]) and parts[0] == parts[1][:2]:
@@ -381,7 +385,7 @@ class _RunStore:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``report [--lock NAME ...]``: write the report; exit 1 naming the unread repos when the roots are partial."""
-    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.oraclegc', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.oraclegc', description=(__doc__ or '').splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     verb = verbs.add_parser('report', help='write the report-only GC report; never deletes')
     verb.add_argument('--lock', action='append', help=f'a lock basename (default {", ".join(LOCK_NAMES)})')

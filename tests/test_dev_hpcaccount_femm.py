@@ -44,7 +44,7 @@ if 'cmake --build' in command:
 """
 
 ENVIRONMENT: Final = 'PATH=/x; export LAB_ROOT=/r'
-DECLARED: Final = {'capabilities': {'femm': {}}}
+DECLARED: Final[dict[str, object]] = {'capabilities': {'femm': {}}}
 
 
 @pytest.fixture
