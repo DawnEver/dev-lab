@@ -125,8 +125,9 @@ from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
-from dev_lab.dev import forgerun, forgerunstate, forgesubmit, retention
+from dev_lab.dev import forgerunstate, forgesubmit, retention
 from dev_lab.dev._forgebackends import FORGE_SERVE, NotWired, require_producer
+from dev_lab.dev._forgeserve_advance import advance_runs
 from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgealarm import (
     AUTH,
@@ -137,7 +138,7 @@ from dev_lab.dev.forgealarm import (
     Alarm,
     sound,
 )
-from dev_lab.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
+from dev_lab.dev.forgeclaim import DEFAULT_LEASE, this_machine, this_seat
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -166,12 +167,11 @@ from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.hpcaccount.spec import schedule_tick
-from dev_lab.dev.platformparts import origin_url, run_tag
+from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.testcost import read_budget
 from dev_lab.dev.tickholder import phase
 from dev_lab.dev.worktreeplace import work_root
-from dev_lab.supervise.notice import Context
 
 __all__ = ['ServeReport', 'main', 'serve']
 
@@ -282,7 +282,7 @@ def serve(
     runs, card, ticked = host_rounds.runs, host_rounds.card, rounds[-1]
     claimed = [item for one in rounds for item in one.claimed]
     runs_from = clock()  # the runs get a period of their own: rounds that ran long never starve them to one
-    left = _advance(
+    left = advance_runs(
         root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm,
         beat=lambda: card(claimed), spent=lambda: clock() >= runs_from + timedelta(seconds=beat_s), submit=submit,
     )  # fmt: skip
@@ -305,82 +305,6 @@ def serve(
     published = tuple(flush(root, client=client))
     lines = tuple(line for one in rounds for line in one.lines)
     return ServeReport(lines, tuple(produced), tuple(left), published, broken)
-
-
-def _advance(
-    root: Path,
-    runs: Sequence[forgerunstate.Run],
-    *,
-    client: Callable[[Path], Client],
-    machine: str,
-    seat: ClusterAccount | None,
-    lease: timedelta,
-    slurm: forgerunstate.Cluster | None,
-    why: str,
-    say: Callable[[str], None],
-    alarm: Callable[[Alarm], object],
-    beat: Callable[[], None] = lambda: None,
-    spent: Callable[[], bool] = lambda: False,
-    submit: Callable[[forgerunstate.Run], str] | None = None,
-) -> list[str]:
-    """Advance every run one tick; the shas still in flight. A run that cannot advance waits and alarms.
-
-    A run's step can be slow (a gather, the routing and the post of a 55k-test record, a submit's prep), so
-    the host card is published (*beat*) before each, and once the runs' own period is *spent* (counted from
-    the first run, so the rounds before cannot spend it) the runs not yet reached wait for the next tick. A
-    tick always advances at least one, and *runs* arrive least recently advanced first
-    (:func:`forgerunstate.live`), so the runs one tick leaves are the first the next reaches: every run is
-    reached within as many ticks as there are runs. The runs are bounded by one period plus one step, and
-    ``forge queue``'s STALE keeps meaning down.
-
-    RESULTS BEFORE SUBMITS (Ada 2026-11-07): a submit builds and collects on the login node -- over an hour
-    cold -- so a finished run never waits behind a collection in its own tick (:func:`forgesubmit.hand_off`).
-    """
-    if not runs:
-        return []
-    built = client(root)
-    me = Claim(machine, built.whoami(), forge_now(built) + lease, str(seat) if seat else '')
-    if slurm is None:  # not on a cluster, or no grant for this account
-        for run in runs:
-            alarm(
-                Alarm(
-                    RUN,
-                    run.repo_url,
-                    f'the cluster run of {run.sha[:12]} cannot advance',
-                    why,
-                    context=Context(sha=run.sha),
-                )
-            )
-        say(f'[serve] no cluster to advance {len(runs)} run(s) on: {why}')
-        return [run.sha for run in runs]
-    runs, left = forgesubmit.hand_off(runs, submit, say)
-    for at, run in enumerate(runs):
-        if at and spent():
-            waiting = [one.sha for one in runs[at:]]
-            say(f'[serve] the tick ran past its period: {" ".join(sha[:12] for sha in waiting)} wait for the next')
-            return left + waiting
-        beat()
-        phase(f'advancing the cluster run of {run.sha[:12]} ({run.phase})')
-        try:
-            after = forgerun.advance(
-                root, run, client=built, me=me, lease=lease, cluster=slurm, say=say, alarm=alarm,
-            )  # fmt: skip
-        except (RuntimeError, OSError, ValueError) as stuck:  # Slurm or the build refused: the run waits
-            alarm(
-                Alarm(
-                    RUN,
-                    run.repo_url,
-                    f'the cluster run of {run.sha[:12]} cannot advance',
-                    str(stuck),
-                    context=Context(sha=run.sha),
-                )
-            )
-            say(f'{run_tag(run.platform, run.sha)}: cannot advance: {stuck}')
-            after = run
-        if after is not None:
-            forgerunstate.touch(after)
-            left.append(after.sha)
-    return left
 
 
 def main(
@@ -411,7 +335,7 @@ def main(
     machine = this_machine()
     if args.submit:
         slurm, _standing, why = standing_of(lambda: slurm_cluster(root, seat))
-        tick = functools.partial(_advance, root, client=build, machine=machine, seat=seat, slurm=slurm, why=why,
+        tick = functools.partial(advance_runs, root, client=build, machine=machine, seat=seat, slurm=slurm, why=why,
                                  lease=timedelta(hours=args.lease_hours), say=emit, alarm=sound)  # fmt: skip
         return forgesubmit.submit_one(origin_url(root), args.submit, lambda run: tick([run]), emit)
     try:
