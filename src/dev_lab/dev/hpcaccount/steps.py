@@ -202,8 +202,8 @@ def update(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
     """Clone *repo*, or converge its checkout on the declared ref; then its submodules at their pinned commits.
 
     An existing checkout is made the ref whatever an interrupted deploy left (:func:`.checkout.converge`); one that
-    holds a commit or a tracked change of its own is refused by name. A product consumes its components by path
-    (:mod:`dev_lab.dev.components`), so a checkout without its submodules builds a venv that cannot resolve them.
+    holds a commit or a tracked change of its own is refused by name. A path dependency into a submodule
+    cannot resolve in a checkout without its submodules.
     """
     checkout, git = checkout_of(spec, repo), step.tools.git
     rc = converge(step, checkout, repo) if (checkout / '.git').exists() else clone(step, checkout, repo)

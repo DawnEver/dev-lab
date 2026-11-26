@@ -55,8 +55,8 @@ class Derived:
     """A DERIVED machine branch: its producer regenerates its WHOLE content (decision D23, 2026-11-17).
 
     Deleting one loses nothing (:func:`dev_lab.dev.deletejudge.judge`). Declared with the producer that regenerates
-    it, never inferred from a name: ``derived = [{ branch = "pr/components-bump", producer =
-    "dev_lab.dev.componentbump" }]``.
+    it, never inferred from a name: ``derived = [{ branch = "pr/relock", producer =
+    "dev_lab.dev.relock" }]``.
     """
 
     branch: str

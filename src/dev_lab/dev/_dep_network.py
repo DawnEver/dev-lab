@@ -86,7 +86,7 @@ def _is_local(url: str) -> bool:
 def init_submodules(root: Path, *, dry_run: bool = False) -> str | None:
     """Initialize every submodule *root*'s commit records, through the network door; why it failed, else ``None``.
 
-    A path dependency may point INTO a submodule (a product's engine under ``components/``, plan C5), so a
+    A path dependency may point INTO a submodule (a vendored checkout), so a
     checkout whose submodules were never initialized cannot be resolved: ``uv`` reports the path as not
     existing. MEASURED 2026-10-19 on a serve checkout of a consumer, which bootstrapped only after a
     manual ``git submodule update --init``. Every sync, bootstrap and lock therefore does this first.

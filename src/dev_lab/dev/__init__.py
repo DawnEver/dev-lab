@@ -447,8 +447,6 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgescope` -- what a head runs: the full suite on the integration tip, else what its diff reaches.
 * :mod:`dev_lab.dev.forgerunpost` -- a cluster run's forge posts (progress, release), saved steps and alarms.
 * :mod:`dev_lab.dev.forgerunstate` -- a cluster run's state file, its schema upgrades, and the Slurm protocol.
-* :mod:`dev_lab.dev.components` -- the engines a product mounts under ``components/``, declared once.
-* :mod:`dev_lab.dev.componentbump` -- one forge-green engine commit at a time becomes a one-pointer lane.
 * :mod:`dev_lab.dev.shatree` -- a local part judged in a tree AT the claimed sha, its own env, removed after.
 * :mod:`dev_lab.dev.forgeoom` -- an OOM-killed task floors every file it ran at its ask, in the folded record.
 * :mod:`dev_lab.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.

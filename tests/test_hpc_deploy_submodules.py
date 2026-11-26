@@ -1,7 +1,6 @@
-"""A SERVED CHECKOUT CARRIES ITS COMPONENTS: the deploy's clone and update initialize its submodules.
+"""A SERVED CHECKOUT CARRIES ITS SUBMODULES: the deploy's clone and update initialize them.
 
-A product consumes its engines by path from ``components/<name>`` (:mod:`dev_lab.dev.components`),
-so a served checkout without its submodules builds a venv that cannot resolve them. Driven over REAL
+A path dependency into a submodule cannot resolve in a served checkout without its submodules. Driven over REAL
 local repositories: an engine, and a product mounting it, both reached by ``file://`` urls.
 """
 

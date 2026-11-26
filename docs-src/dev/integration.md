@@ -326,7 +326,7 @@ nothing (D22). A machine branch its producer regenerates whole is declared DERIV
 
 ```toml
 [tool.dev_lab.integrator]
-derived = [{ branch = "pr/components-bump", producer = "dev_lab.dev.componentbump" }]
+derived = [{ branch = "pr/relock", producer = "dev_lab.dev.relock" }]
 ```
 
 The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) WARNS on a `pr/*` push whose tip
