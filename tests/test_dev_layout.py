@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import codeplace, floors, layout
+from dev_lab.dev import codeplace, datedlog, floors, layout
 from dev_lab.dev._layout_table import REQUIRED, LayoutNotDeclared, declared_layout
 from dev_lab.dev.codeplace import main
 from dev_lab.dev.famtests.layout import assert_layout_holds
@@ -460,3 +460,98 @@ def test_a_tool_cache_entry_that_is_not_one_named_tool_is_refused(tmp_path, entr
     root = _checkout(tmp_path, body)
     with pytest.raises(LayoutNotDeclared, match='tool_caches'):
         declared_layout(root)
+
+
+#: The family homes with nothing under ``output/`` but the home itself (and the ``rust/`` :func:`_checkout` makes).
+_HOMES_ONLY_OUTPUT = _HOMES.split("'output/logs' = []", 1)[0] + 'rust = []\n'
+#: A repo that declares its dated tree down to the day and then only its OWN kinds -- a CLOSED list like v1's.
+_CLOSED = f"""[layout]
+{_HOMES_ONLY_OUTPUT}'output/logs' = []
+'output/logs/[0-9][0-9]' = []
+'output/logs/[0-9][0-9]/[0-9][0-9]' = []
+'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]' = []
+'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/run' = ['.jsonl', '.csv']
+"""
+#: One file of every family kind's every sub-shape, each a format its writer writes.
+_FAMILY_FILES = (
+    'verify/verify-20261125T000000Z.log',
+    'verify/verify-20261125T000000Z.outcome.json',
+    'verify/verify-20261125T000000Z.outcomes/parallel/cells-gw0.jsonl',
+    'coverage/verify-20261125T000000Z.coverage.md',
+    'coverage/verify-20261125T000000Z.coverage',
+    'durations/durations-gw0.json',
+    'parts/abc123/run-abc123-linux-1.json.gz',
+    'measurement/0f0f/receipt.json',
+    'metrics/refusal.jsonl',
+    'walls/walls.jsonl',
+    'consent/admit-ws.plan.json',
+)
+
+
+def test_every_family_kind_is_admitted_in_a_repo_that_declares_nothing_for_it(tmp_path) -> None:
+    """The family's kinds are declared ONCE (``datedlog.FAMILY_KINDS``): a repo admits them under ``output = []``."""
+    root = _checkout(tmp_path, f'[layout]\n{_HOMES_ONLY_OUTPUT}')
+    (root / 'output/logs/26/11/23/run').rmdir()  # a repo kind, which this repo does not declare
+    for rel in _FAMILY_FILES:
+        _plant(root, f'output/logs/26/11/25/{rel}')
+    assert layout_violations(root)[1] == []
+    assert set(datedlog.FAMILY_KINDS) >= {rel.split('/', 1)[0] for rel in _FAMILY_FILES}
+
+
+def test_a_family_kind_admits_only_its_own_formats_and_shapes_PLANTED(tmp_path) -> None:
+    """THE PLANTED CONTROL for the admission above: a family kind is no open door."""
+    root = _checkout(tmp_path, _CLOSED)
+    _plant(root, 'output/logs/26/11/25/verify/plot.png')
+    _plant(root, 'output/logs/26/11/25/verify/stray/x.log')
+    _plant(root, 'output/logs/26/11/25/parts/loose.gz')
+    found = layout_violations(root)[1]
+    assert [line.split(':', 1)[0] for line in found] == [
+        'output/logs/26/11/25/parts/loose.gz',
+        'output/logs/26/11/25/verify/plot.png',
+        'output/logs/26/11/25/verify/stray/',
+    ], found
+
+
+def test_an_undeclared_non_family_kind_in_a_closed_list_is_still_refused(tmp_path) -> None:
+    root = _checkout(tmp_path, _CLOSED)
+    _plant(root, 'output/logs/26/11/25/run/run.jsonl')
+    _plant(root, 'output/logs/26/11/25/verify/verify-x.log')
+    assert layout_violations(root)[1] == []
+    _plant(root, 'output/logs/26/11/25/census/census.log')
+    assert layout_violations(root)[1] == [
+        f'output/logs/26/11/25/census/: {layout._undeclared("output/logs/26/11/25/census")}'
+    ]
+
+
+@pytest.mark.parametrize(
+    'row',
+    [
+        "'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/verify' = ['.log', '.json', '.png']",
+        "'output/logs/*/*/*/coverage' = ['.md', '.coverage']",
+        "'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/verify/*.outcomes/*' = ['.jsonl', '.csv']",
+    ],
+)
+def test_a_repo_row_naming_a_family_kind_is_REFUSED_by_name(tmp_path, row) -> None:
+    """A repo never re-declares a family kind -- widened, equal or narrowed, it would be a second copy of the fact."""
+    root = _checkout(tmp_path, f'{_CLOSED}{row}\n')
+    with pytest.raises(LayoutNotDeclared, match=r'family kind .*FAMILY_KINDS'):
+        declared_layout(root)
+
+
+def test_a_repo_glob_row_cannot_widen_a_family_kind(tmp_path) -> None:
+    """A repo's open rows (``<day>/*``, ``<day>/*/*``) judge its own kinds; in a family kind, only the family."""
+    body = (
+        f"{_CLOSED}'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/*' = ['.png', '.jsonl']\n"
+        "'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/*/*' = ['.png']\n"
+    )
+    root = _checkout(tmp_path, body)
+    _plant(root, 'output/logs/26/11/25/report/plot.png')
+    _plant(root, 'output/logs/26/11/25/report/figs/plot.png')
+    assert layout_violations(root)[1] == []
+    _plant(root, 'output/logs/26/11/25/verify/plot.png')
+    _plant(root, 'output/logs/26/11/25/verify/figs/plot.png')
+    found = layout_violations(root)[1]
+    assert [line.split(':', 1)[0] for line in found] == [
+        'output/logs/26/11/25/verify/figs/',
+        'output/logs/26/11/25/verify/plot.png',
+    ], found

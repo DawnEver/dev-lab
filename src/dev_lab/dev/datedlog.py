@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     pass
 
 __all__ = [
+    'FAMILY_KINDS',
     'OUTPUT_KEY',
     'UndeclaredOutput',
     'date_parts',
@@ -55,6 +56,33 @@ __all__ = [
 
 #: The one key a repo answers "where does dated output live" with.
 OUTPUT_KEY: Final = '[tool.dev_lab.parts] output'
+
+#: THE FAMILY'S DATED KINDS, declared ONCE: every ``<output>/<yy>/<mm>/<dd>/<kind>/`` a dev-lab mechanism writes, ->
+#: its shapes (``'.'`` the kind directory itself, else a per-segment glob below it) -> the suffixes a file there may
+#: have (an empty set: directories only). Every adopter's layout (:mod:`dev_lab.dev.layout`) admits these without
+#: listing them and refuses a row of its own naming one; a repo lists only its own kinds. A writer of a kind absent
+#: here reds ``tests/test_arch_family_kinds_are_declared_once.py``.
+FAMILY_KINDS: Final[dict[str, dict[str, frozenset[str]]]] = {
+    # verifysteps: the run log, its box outcome records, the serial-pass marker; test_outcomes: each stage's cells.
+    'verify': {
+        '.': frozenset({'.log', '.json', '.serial-seen'}),
+        '*.outcomes': frozenset(),
+        '*.outcomes/*': frozenset({'.jsonl'}),
+    },
+    'coverage': {'.': frozenset({'.md', '.coverage'})},  # _verify_coverage: the table and its data file
+    'durations': {'.': frozenset({'.json', '.tmp'})},  # durations: one ledger per process, staged by durable_text
+    'measurement': {'.': frozenset(), '*': frozenset({'.json', '.log'})},  # jobmeasure: receipt and logs per run
+    'parts': {'.': frozenset(), '*': frozenset({'.gz', '.tmp'})},  # platformparts: run records per head, durable
+    'metrics': {'.': frozenset({'.jsonl'})},  # metrics: one line per event, by event kind
+    'walls': {'.': frozenset({'.jsonl'})},  # walls: one line per wall an agent hit
+    'consent': {'.': frozenset({'.json'})},  # devhostadmit, forgeenroll, frozen, ops.secretplace: requests
+    'units': {'.': frozenset({'.json'})},  # unit_slices: the slice table
+    'purge': {'.': frozenset({'.jsonl'})},  # purge: one line per removed directory
+    'merge-check': {'.': frozenset({'.jsonl'})},  # purge reads: one classification per parked path
+    'prune': {'.': frozenset({'.log'})},  # branchprune --log
+    'reclaim': {'.': frozenset({'.log'})},  # reclaimrun
+    'reaper': {'.': frozenset({'.log'})},  # shellreaper
+}
 
 
 class UndeclaredOutput(ValueError):

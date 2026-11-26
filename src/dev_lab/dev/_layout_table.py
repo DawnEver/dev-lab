@@ -14,12 +14,14 @@ from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev._deny_outputcode_row import CODE_SUFFIXES
 from dev_lab.dev.codeplace import FAMILY_HOMES, LAYOUT_FILE, PlacementNotDeclared, placement_table
+from dev_lab.dev.datedlog import FAMILY_KINDS
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 __all__ = [
     'ANY',
+    'FAMILY_ROWS',
     'OTHER_CONFIG_SUFFIXES',
     'REQUIRED',
     'RULE_ID',
@@ -46,6 +48,43 @@ _TOOL: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*')
 OTHER_CONFIG_SUFFIXES: Final = frozenset({'.yaml', '.yml', '.ini', '.cfg'})
 _FORMAT_RULE: Final = 'ONE-FORMAT-PER-NEED'
 _FORGE_DIRS: Final = frozenset({'.github', '.gitea', 'output'})
+#: The family's dated tree under its ``artifacts`` home, down to the day: ``output/logs/<yy>/<mm>/<dd>``.
+_DATED: Final = tuple(FAMILY_HOMES['artifacts'].strip('/').split('/'))
+_DAY_GLOB: Final = '[0-9][0-9]'
+_DAY: Final = (*_DATED, _DAY_GLOB, _DAY_GLOB, _DAY_GLOB)
+#: The dated tree's own levels, declared for a repo that declares nothing under its output home.
+_DATED_LEVELS: Final = tuple('/'.join(_DAY[:depth]) for depth in range(len(_DATED), len(_DAY) + 1))
+#: THE FAMILY'S ROWS (:data:`dev_lab.dev.datedlog.FAMILY_KINDS` as layout rows): every adopter's, never its own.
+FAMILY_ROWS: Final = {
+    '/'.join((*_DAY, kind, *([] if shape == '.' else [shape]))): suffixes
+    for kind, shapes in FAMILY_KINDS.items()
+    for shape, suffixes in shapes.items()
+}
+
+
+def _family_kind(parts: list[str]) -> str | None:
+    """The family kind a directory (or row pattern) *parts* is at or below, else ``None``.
+
+    Inside a family kind only :data:`FAMILY_ROWS` judge: a repo's open row (``<day>/*``) never widens one.
+    """
+    day = len(_DAY)
+    if len(parts) <= day or tuple(parts[: len(_DATED)]) != _DATED or parts[day] not in FAMILY_KINDS:
+        return None
+    return parts[day]
+
+
+def _with_family_rows(manifest: Path, rows: dict[str, frozenset[str]]) -> dict[str, frozenset[str]]:
+    """*rows* with the dated levels (where undeclared) and :data:`FAMILY_ROWS`; a repo row naming a family kind reds."""
+    for key in rows:
+        if (kind := _family_kind(key.split('/'))) is not None:
+            shapes = {shape: sorted(suffixes) for shape, suffixes in FAMILY_KINDS[kind].items()}
+            raise _refuse(
+                manifest,
+                f'{key} declares the family kind {kind!r}, which dev-lab declares ONCE for every repo '
+                f'(dev_lab.dev.datedlog.FAMILY_KINDS: {shapes}); drop the row -- a repo lists only its own kinds, '
+                f'and a family kind that needs another format changes in dev-lab',
+            )
+    return {**dict.fromkeys(_DATED_LEVELS, frozenset()), **rows, **FAMILY_ROWS}
 
 
 class LayoutNotDeclared(LookupError):
@@ -70,6 +109,10 @@ class Layout:
         mirrors = sorted((k, v[0], list(v[1]), v[2]) for k, v in self.mirrors.items())
         text = json.dumps([rows, self.pruned_paths, self.read_only, self.tool_caches, mirrors])
         return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+    def judging(self, parts: list[str]) -> dict[str, frozenset[str]]:
+        """The rows that may judge the directory *parts*: inside a family kind :data:`FAMILY_ROWS` alone, else all."""
+        return FAMILY_ROWS if _family_kind(parts) is not None else self.rows
 
 
 def _refuse(manifest: Path, what: str) -> LayoutNotDeclared:
@@ -97,6 +140,7 @@ def declared_layout(root: Path) -> Layout:
         msg = f'{root} declares no {TABLE}; declare the whole tree there ({RULE_ID})'
         raise LayoutNotDeclared(msg)
     rows, mirrors = _declared_rows(manifest, table)
+    rows = _with_family_rows(manifest, rows)
     missing = sorted(REQUIRED - set(rows))
     if missing:
         raise _refuse(manifest, f'the family home(s) {missing} are not declared')
