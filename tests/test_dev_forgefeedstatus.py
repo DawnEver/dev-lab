@@ -22,7 +22,7 @@ import pytest
 from _forge_fake import run_git
 from _forge_state import FORGE, StateForge
 
-from dev_lab.dev import forgecli, forgefeed, forgefeedstatus
+from dev_lab.dev import _forgefeed_inbox, forgecli, forgefeed, forgefeedstatus
 from dev_lab.dev.forge import Transport
 from dev_lab.dev.forgefeedstatus import NoStableInterpreter, stable_python, status, unheard_notice
 from dev_lab.dev.forgework import Client
@@ -130,7 +130,7 @@ def test_task_pending_takes_its_slug_and_an_empty_queue_says_so(capsys: pytest.C
     """v1 #2 (e): ``task-pending v1-migration`` printed only the usage line -- the verb matched one word."""
     assert forgefeed.main(['task-pending', 'v1']) == 0
     assert 'task v1: no events kept' in capsys.readouterr().out
-    forgefeed._keep('v1', 'thread changed')
+    _forgefeed_inbox.keep('v1', 'thread changed')
     assert forgefeed.main(['task-pending', 'v1']) == 0
     assert capsys.readouterr().out.strip() == 'thread changed'
     assert forgefeed.main(['task-pending']) == 2, 'PLANTED CONTROL: no slug is refused'

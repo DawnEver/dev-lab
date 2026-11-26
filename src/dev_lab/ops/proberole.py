@@ -29,7 +29,7 @@ class Probe(Placement):
     schedule: str
     state: str
     repos: tuple[str, ...] = ()
-    tokens: Mapping[str, str] = field(default_factory=dict)
+    tokens: Mapping[str, str] = field(default_factory=dict[str, str])
 
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see :func:`~dev_lab.ops.served.served`)."""

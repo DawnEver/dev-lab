@@ -35,7 +35,7 @@ from typing import Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import taskauthority, taskjournal, taskledger
+from dev_lab.dev import taskauthority, taskjournal
 from dev_lab.dev._task_io import (
     Branches,
     Forge,
@@ -47,15 +47,13 @@ from dev_lab.dev._task_io import (
     locked,
     today,
 )
+from dev_lab.dev._task_read import bound, listing, shown
 from dev_lab.dev._task_record import (
     ARCHIVE,
     append_line,
-    archived,
-    current,
     one_line,
     open_record,
     slug_of,
-    status,
     task_head,
 )
 from dev_lab.dev.taskjournal import LINE
@@ -279,18 +277,6 @@ def close(
     return root / rel
 
 
-def _bound(cwd: Path, named: str | None) -> str:
-    if named:
-        return slug_of(named)
-    if (slug := current(cwd)) is not None:
-        return slug
-    branch = taskledger.branch_of(cwd)
-    msg = (
-        f'the branch {branch or "(detached HEAD)"} names no open task.\nDoor: {taskledger.DOOR} (or pass --task <slug>)'
-    )
-    raise TaskRefused(msg)
-
-
 def _usage(verb: str) -> TaskRefused:
     args = next(a for v, _, a, _ in VERBS if v == verb)
     return TaskRefused(f'usage: python -m dev_lab.dev.task {verb} {args}')
@@ -314,7 +300,7 @@ def _dry(said: str, dry: bool) -> str:  # noqa: FBT001 -- the one flag every wri
 def _run(args: argparse.Namespace, cwd: Path) -> str:  # noqa: C901, PLR0911, PLR0912 -- one branch per verb
     verb, words, dry = args.verb, args.words, args.dry_run
     if verb in JOURNAL_VERBS:
-        slug = _bound(cwd, args.task)
+        slug = bound(cwd, args.task)
         if verb == 'close-item':
             if not words or not re.fullmatch(r'O?\d+', words[0]):
                 raise _usage(verb)
@@ -324,7 +310,7 @@ def _run(args: argparse.Namespace, cwd: Path) -> str:  # noqa: C901, PLR0911, PL
     if verb == 'amend':
         if args.line is None or len(words) != 1 or not args.reason:
             raise _usage(verb)
-        return _dry(amend(_bound(cwd, args.task), args.line, words[0], reason=args.reason, dry_run=dry), dry)
+        return _dry(amend(bound(cwd, args.task), args.line, words[0], reason=args.reason, dry_run=dry), dry)
     if verb == 'open':
         if len(words) < _SLUG_AND_GOAL:
             raise _usage(verb)
@@ -350,28 +336,9 @@ def _run(args: argparse.Namespace, cwd: Path) -> str:  # noqa: C901, PLR0911, PL
             f'[task] ask the user to reply `approve {code}`; then run python -m dev_lab.dev.task {words[0]} {words[1]}'
         )
     if verb == 'list':
-        root = ledger()
-        found = [taskjournal.record(d, strict=False) for d in sorted(root.iterdir()) if d.is_dir()
-                 and not d.name.startswith('.') and d.name != ARCHIVE]  # fmt: skip
-        return '\n'.join(
-            f'{r.slug}\t{r.status}\t{len(r.open_items)} open\t{len(r.journal.decisions)} decisions\t{r.goal}'
-            for r in found
-            if r is not None
-        )
+        return listing()
     if verb in {'status', 'show'}:
-        slug = slug_of(words[0]) if words else _bound(cwd, args.task)
-        folder = ledger() / slug if (ledger() / slug / 'TASK.md').is_file() else archived(slug)
-        if folder is None:
-            msg = f'no task {slug} in the ledger or its archive.\nDoor: python -m dev_lab.dev.task list'
-            raise TaskRefused(msg)
-        if verb == 'show':
-            journal = folder / 'JOURNAL.md'
-            return (
-                (folder / 'TASK.md').read_text(encoding='utf-8')
-                + '\n'
-                + (journal.read_text(encoding='utf-8') if journal.is_file() else '')
-            )
-        return status(taskjournal.record(folder))  # type: ignore[arg-type]
+        return shown(verb, slug_of(words[0]) if words else bound(cwd, args.task))
     if verb == 'migrate':
         if not words:
             raise _usage(verb)

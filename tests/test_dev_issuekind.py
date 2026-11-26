@@ -7,7 +7,7 @@ import json
 import pytest
 from _forge_state import StateForge
 
-from dev_lab.dev import forgecli, issuekind
+from dev_lab.dev import _forgecli_args, forgecli, issuekind
 from dev_lab.dev.forgerequesthost import DONE_LABEL
 from dev_lab.dev.issuekind import KINDS, MOVED, SETTLED, create, retire_notices
 
@@ -29,7 +29,7 @@ def test_a_kind_outside_the_three_is_refused_before_any_write() -> None:
 
 
 def test_the_cli_door_refuses_an_issue_without_a_kind_naming_the_three(capsys) -> None:
-    parser = forgecli._parser()
+    parser = _forgecli_args.parser()
     with pytest.raises(SystemExit):
         parser.parse_args(['issue', 'create', '--title', 'x'])
     assert '--kind' in capsys.readouterr().err
@@ -82,7 +82,7 @@ def test_the_cli_lists_by_label_as_json_and_closes_as_json(monkeypatch, capsys, 
 def test_the_cli_creates_with_repeated_labels(monkeypatch, tmp_path) -> None:
     forge = StateForge()
     monkeypatch.setattr(forgecli, 'client_for', lambda *_a, **_k: forge)
-    monkeypatch.setattr(forgecli, '_refused', lambda *_a: None)  # the private-marker scan is tested elsewhere
+    monkeypatch.setattr(_forgecli_args, 'refused', lambda *_a: None)  # the private-marker scan is tested elsewhere
     argv = ['issue', 'create', '--title', 't', '--kind', 'need', '--label', 'a', '--label', 'b']
     assert forgecli.issue_and_pr(argv, cwd=tmp_path, env={}) == 0
     assert [name for _n, name in forge.labeled] == ['kind:need', 'a', 'b']
