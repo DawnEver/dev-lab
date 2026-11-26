@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from lab_commons.config import config_path
 from lab_commons.home import HOME_ENV
+from lab_commons.launch import run
 
 from dev_lab.dev import agenthooks, familyrepos
 from dev_lab.dev.hook_adoption import HookAdoption, render
@@ -169,3 +170,33 @@ def test_clone_places_a_missing_repo_at_its_declared_path_and_never_touches_one_
     assert booted == [tmp_path / 'a']
     assert not ok  # planted control: c has no declared place, so the run says no
     assert any(line.startswith('family repo c: no [repos] path') for line in lines)
+
+
+def test_a_checkout_whose_origin_is_not_its_family_remote_is_named_with_its_door(tmp_path: Path) -> None:
+    """dev-lab#46: a clone left on a retired forge is named at session start, never read as a missing credential.
+
+    PLANTED CONTROL: the same remote spelled another way (ssh against https, a ``.git`` suffix) is the same origin.
+    """
+    live = _live(tmp_path)
+    alpha = live['repos']['alpha']
+    retired = {alpha: 'https://old-forge.example/o/alpha.git'}
+    said = familyrepos.stale_origins(live, origin_of=lambda path: retired.get(path.as_posix()))
+    assert said == [
+        (
+            f'family repo alpha at {alpha}: its origin is https://old-forge.example/o/alpha.git, '
+            'but the family declares https://forge.example/o/alpha.git -- a forge call there reaches the wrong forge, '
+            f'not a missing credential; re-point it: git -C {alpha} remote set-url origin https://forge.example/o/alpha.git'
+        )
+    ]
+    same = {alpha: 'git@forge.example:o/alpha'}
+    assert familyrepos.stale_origins(live, origin_of=lambda path: same.get(path.as_posix())) == []
+
+
+def test_the_origin_is_read_from_a_real_checkout(tmp_path: Path) -> None:
+    live = _live(tmp_path)
+    alpha = Path(live['repos']['alpha'])
+    run(['git', 'init', '-q', str(alpha)], check=True, timeout=60)
+    run(['git', '-C', str(alpha), 'remote', 'add', 'origin', 'https://old.example/o/alpha'], check=True, timeout=60)
+    said = familyrepos.stale_origins(live)
+    assert len(said) == 1, said
+    assert 'its origin is https://old.example/o/alpha,' in said[0]

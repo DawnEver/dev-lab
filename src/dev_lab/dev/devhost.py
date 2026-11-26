@@ -70,6 +70,7 @@ from dev_lab.dev import (
     forgeenroll,
     tomlleaves,
     vendordetect,
+    volumefloor,
 )
 from dev_lab.dev._devhost_layers import family_facts_stay_home
 from dev_lab.dev._machinefile import dumps, merged
@@ -378,6 +379,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.verb == 'session-start':
         if where := familyrepos.notice():
             emit(where)  # every session starts knowing where the family's checkouts live
+        if low := volumefloor.notice(Path.cwd()):
+            emit(low)  # and whether its volume is under the [storage] floor (dev-lab#46)
         if said := notice(live):
             emit(said)
         return 0

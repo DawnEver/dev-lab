@@ -13,6 +13,9 @@ module holds no list; it only compares the two:
   the ``SessionStart`` hook (:mod:`dev_lab.dev.venvfollow`);
 * :func:`census` -- a family repo with no path and a path naming no family repo, each with its door; read by
   :func:`dev_lab.dev.devhost.drift`, so the drift notice and ``devhost drift`` both say it;
+* :func:`stale_origins` -- a checkout whose ``origin`` is not the remote the family declares for it (dev-lab#46: two
+  clones still pointed at a retired forge for 9 days, and the forge door blamed a missing credential), named with
+  the ``remote set-url`` door; said at session start beside the listing;
 * :func:`clone_refusal` -- the agent guard's ``when: 'declared-repo'`` row asks ``python -m dev_lab.dev.familyrepos
   clone-check`` (the command on stdin): a clone whose url is a family repo's remote and whose name ``[repos]``
   already maps is refused, naming the registered path. A url no family repo declares passes.
@@ -57,6 +60,7 @@ __all__ = [
     'listing',
     'main',
     'notice',
+    'stale_origins',
 ]
 
 RULE_ID: Final = 'FAMILY-REPO-IS-CHECKED-OUT'
@@ -121,6 +125,30 @@ def census(live: Mapping[str, Any]) -> list[str]:
     return found
 
 
+def _origin(path: Path) -> str | None:
+    """The ``origin`` url of the checkout at *path*; ``None`` when it is no checkout or has no origin."""
+    if not path.is_dir():
+        return None
+    answer = _door.run(['git', '-C', str(path), 'remote', 'get-url', 'origin'],
+                       capture_output=True, text=True, check=False, timeout=30)  # fmt: skip
+    return answer.stdout.strip() or None if answer.returncode == 0 else None
+
+
+def stale_origins(live: Mapping[str, Any], *, origin_of: Callable[[Path], str | None] = _origin) -> list[str]:
+    """Each ``[repos]`` checkout whose ``origin`` is not its family remote, with the door re-pointing it."""
+    family, found = _family(live), []
+    for name, path in sorted(_local(live).items()):
+        declared = str(family.get(name, {}).get('remote', ''))
+        origin = origin_of(Path(path)) if declared else None
+        if origin is not None and _key(origin) != _key(declared):
+            found.append(
+                f'family repo {name} at {path}: its origin is {origin}, but the family declares {declared} -- a '
+                f'forge call there reaches the wrong forge, not a missing credential; re-point it: '
+                f'git -C {path} remote set-url origin {declared}'
+            )
+    return found
+
+
 def clone_refusal(command: str, live: Mapping[str, Any]) -> str | None:
     """The refusal for *command* cloning a family repo ``[repos]`` already maps; ``None`` otherwise."""
     remotes = {_key(str(row.get('remote', ''))): name for name, row in _family(live).items()}
@@ -178,9 +206,10 @@ def _bootstrap(dest: Path) -> bool:
 
 
 def notice(live: Mapping[str, Any] | None = None) -> str | None:
-    """The ``SessionStart`` lines: :func:`listing` of this machine's file; ``None`` when it maps no repo."""
+    """The ``SessionStart`` lines: :func:`listing` and :func:`stale_origins` of this machine's file, or ``None``."""
     try:
-        lines = listing(_live(None) if live is None else live)
+        read = _live(None) if live is None else live
+        lines = listing(read) + stale_origins(read)
     except (OSError, ValueError):
         return None
     return '\n'.join(lines) or None
