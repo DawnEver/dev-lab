@@ -100,7 +100,8 @@ _HOOK_RULE_LINE: Final = re.compile(r'(?m)^\s*(?:REFUSED:\s*)?([A-Z][A-Z0-9]+(?:
 CAUSE_CHARS: Final = 240
 #: Masked in a cause line: address-shaped and token-shaped runs (crude by design: a precise redactor misses).
 _ADDRESS: Final = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
-_TOKEN: Final = re.compile(r'\b(?:Bearer\s+)?[A-Za-z0-9_-]{24,}\b')
+#: A token carries a digit and a lower-case letter; an upper-case RULE-ID of any length is never one.
+_TOKEN: Final = re.compile(r'\b(?:Bearer\s+)?(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[a-z])[A-Za-z0-9_-]{24,}\b')
 
 
 def ledger(root: Path, day: tuple[str, str, str] | None = None) -> Path:

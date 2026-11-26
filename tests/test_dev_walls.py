@@ -215,6 +215,12 @@ def test_a_wall_line_keeps_its_redacted_cause_line(tmp_path: Path) -> None:
     assert 's3cr3t' not in walls.ledger(tmp_path).read_text(encoding='utf-8'), 'PLANTED: the command stays a digest'
 
 
+def test_a_long_rule_id_in_a_cause_line_is_never_masked_as_a_token() -> None:
+    """PLANTED CONTROL for the mask: an upper-case RULE-ID of 24+ characters is the cause, not a secret."""
+    said = 'REFUSED: BASE-HOLDS-THE-MILESTONE: pr/x lacks v1.0.0'
+    assert walls.cause_line(said) == said
+
+
 def test_a_cause_line_is_capped() -> None:
     assert len(walls.cause_line('X' * 1000 + ' tail')) <= walls.CAUSE_CHARS
 
