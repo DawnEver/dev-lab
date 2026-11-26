@@ -61,7 +61,7 @@ BUILD_JOBS: Final = 4
 
 #: The OS the deploy runs on: a cluster account is Linux, where FEMM's version is its version file.
 _PLATFORM: Final = 'linux'
-_BINARY: Final = FEMM_HEADLESS[_PLATFORM][0]
+_BINARY: Final = FEMM_HEADLESS[_PLATFORM]
 
 #: An install directory's name: a dotted version.
 _VERSION: Final = re.compile(r'\d+(\.\d+)+')
