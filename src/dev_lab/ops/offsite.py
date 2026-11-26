@@ -5,7 +5,7 @@ What Oracle Object Storage measured, encoded as the rule for EVERY store:
 * the bucket's retention rule forbids overwrite -- so no key is ever written twice: every key is
   ``<label>/<stamp>/<name>-<sha256[:16]>.<ext>`` (:func:`key_for`), unique by content and time;
 * the credential cannot create multipart uploads -- so every file goes up as ONE ``PutObject``, and a file above the
-  single-PUT limit (``max_put_bytes``, 5 GB on S3) is refused before anything is sent;
+  single-PUT limit (``max_put``, 5 GB on S3) is refused before anything is sent;
 * path-style addressing -- the AWS CLI config file must say ``s3 = addressing_style = path``;
 * the remote size is read back after each PUT and must equal the local size.
 
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
@@ -26,6 +25,7 @@ from typing import Protocol
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.harness import child_env
 from dev_lab.ops.backup import BackupRefused
 from dev_lab.ops.backuprole import Offsite
 
@@ -61,11 +61,11 @@ def upload(site: Offsite, store: Store, stamp: str, files: Sequence[Path]) -> li
     """Put every file (each checked against the single-PUT limit first), verifying each remote size; the keys.
 
     Raises:
-        BackupRefused: a file above ``max_put_bytes`` (before any PUT), or a remote size that differs.
+        BackupRefused: a file above ``max_put`` (before any PUT), or a remote size that differs.
 
     """
-    if big := [f'{path.name} ({path.stat().st_size} B)' for path in files if path.stat().st_size > site.max_put_bytes]:
-        msg = f'above the single-PUT limit of {site.max_put_bytes} B: {big}'
+    if big := [f'{path.name} ({path.stat().st_size} B)' for path in files if path.stat().st_size > site.max_put]:
+        msg = f'above the single-PUT limit of {site.max_put:.0f} B: {big}'
         raise BackupRefused(msg)
     keys = []
     for path in files:
@@ -97,7 +97,7 @@ class AwsCli:
         argv = [self._aws, 's3api', *args, '--bucket', site.bucket, '--endpoint-url', site.endpoint, '--output', 'json']
         argv += ['--region', site.region] if site.region else []
         argv += ['--profile', site.profile] if site.profile else []
-        env = {**os.environ, 'AWS_CONFIG_FILE': site.config_file}
+        env = child_env({'AWS_CONFIG_FILE': site.config_file})
         env |= {'AWS_SHARED_CREDENTIALS_FILE': site.credentials_file} if site.credentials_file else {}
         done = _door.run(argv, capture_output=True, text=True, encoding='utf-8', check=False, timeout=3600, env=env)
         if done.returncode != 0:

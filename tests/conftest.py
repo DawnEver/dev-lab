@@ -23,7 +23,7 @@ from _box_fake import TEST_MACHINE
 from _roles_fixtures import EVERY_CI, carry
 from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 
 from dev_lab.dev import _dep_project, forgeserve, metrics, reviewruntime, uvfollow
 from dev_lab.dev.lockcheck import uv_version

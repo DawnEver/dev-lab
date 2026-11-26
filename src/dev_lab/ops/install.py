@@ -137,7 +137,7 @@ def _https_door(config: OpsConfig, name: str, role: HttpsDoor, account: str) -> 
     relay = shlex.join([
         config.python, '-m', 'dev_lab.ops.httpsdoor', '--port', str(role.https_port), '--role', name,
         '--keys', keys_file(account), '--attempts', str(role.https_attempts),
-        '--window-minutes', f'{role.https_window_minutes:g}', '--lock-minutes', f'{role.https_lock_minutes:g}',
+        '--window-minutes', f'{role.https_window / 60:g}', '--lock-minutes', f'{role.https_lock / 60:g}',
         '--', 'sudo', '-n', *shlex.split(door(config, name, 'serve')),
     ])  # fmt: skip
     unit = (

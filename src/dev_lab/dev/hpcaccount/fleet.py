@@ -55,7 +55,7 @@ from typing import IO, Any, Final
 from urllib.parse import urlsplit
 
 from lab_commons import config as machineconfig
-from lab_commons import home as _home
+from lab_commons import hostenv
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
@@ -90,7 +90,7 @@ _MACHINE_HOME, _CONFIG_UNDER_HOME = default_layout()
 
 #: The account's machine file as ITS python resolves it (:func:`lab_commons.config.config_path`): the override, else
 #: the machine home's file. Prints ``# <path>`` first, so a refusal names the file it looked in.
-_MACHINE_FILE: Final = f'"${{{CONFIG_ENV}:-${{{_home.HOME_ENV}:-$HOME/{_MACHINE_HOME}}}/{_CONFIG_UNDER_HOME}}}"'
+_MACHINE_FILE: Final = f'"${{{CONFIG_ENV}:-${{{hostenv.HOME_ENV}:-$HOME/{_MACHINE_HOME}}}/{_CONFIG_UNDER_HOME}}}"'
 _READ_DEPLOY: Final = f'f={_MACHINE_FILE}; echo "# $f"; ' + 'sed -n \'/^\\[deploy\\]/,/^\\[/p\' "$f" 2>/dev/null; true'
 
 #: Runs one deploy on a dest: ``(dest, command, log) -> object`` (:func:`dev_lab.dev.hpcaccount.transport.start`).
@@ -279,7 +279,8 @@ def grant_slice(grant: Grant) -> dict[str, Any]:
     """*grant* as the ``[hpc]`` slice its account's own machine file holds: its cluster, its grant, its role reached."""
     account: dict[str, Any] = {'billed': grant.billed}
     if grant.budget is not None:
-        account['budget'] = {'core_hours': grant.budget.core_hours, 'since': grant.budget.since}
+        hours = grant.budget.core_time / 3600
+        account['budget'] = {'core_time': f'{hours:g} h', 'since': grant.budget.since, 'until': grant.budget.until}
     cluster: dict[str, Any] = {'hosts': list(grant.hosts), 'slurm_accounts': {grant.slurm_account: account}}
     optional = {
         'partitions': list(grant.partitions), 'qos': dict(grant.qos), 'setup': list(grant.setup),

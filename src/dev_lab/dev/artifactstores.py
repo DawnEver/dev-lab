@@ -7,7 +7,6 @@ this module is what a remote backend DOES: ``forge`` (:class:`ForgeStore`) and `
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -23,6 +22,7 @@ from typing import Any, Final, Protocol
 
 import lab_commons.launch as _door
 from lab_commons.compute.store import Ref
+from lab_commons.objects import SCRATCH_PREFIX, file_sha256
 from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.forgerecords import Attachment, attach, listing, records_issue
@@ -49,7 +49,6 @@ __all__ = [
     'Ref',
     'check_key',
     'check_rclone_config',
-    'file_sha256',
     'landed_already',
     'manifest_of',
     'object_key',
@@ -63,9 +62,6 @@ __all__ = [
     'sorted_refs',
     'verified_copy',
 ]
-
-#: The first key segment a remote may age out (a lifecycle rule deletes it): never a durable result's place.
-SCRATCH_PREFIX: Final = 'scratch'
 
 FORGE: Final = 'forge'
 RCLONE: Final = 'rclone'
@@ -205,15 +201,6 @@ class ArtifactStore(Protocol):
 
     def delete(self, ref: Ref) -> None:
         """Delete *ref*'s archive and manifest; emptied folders go too."""
-
-
-def file_sha256(path: Path) -> str:
-    """The sha256 of the file *path*, read in MB blocks."""
-    sha = hashlib.sha256()
-    with path.open('rb') as handle:
-        for block in iter(lambda: handle.read(MB), b''):
-            sha.update(block)
-    return sha.hexdigest()
 
 
 def ref_of(backend: str, key: str, path: Path) -> Ref:

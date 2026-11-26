@@ -69,8 +69,8 @@ issues only through `python -m dev_lab.dev.forge issue ...` ([the forge](forge.m
 [tool.dev_lab.forge.issue_hygiene]
 host_duplicates = true       # DELETE every machine-made `forge hosts` issue but the oldest (the one home)
 green_areas = true           # close an `area:*` issue with no `- [ ]` row
-request_max_age_days = 14    # close a `forge:request` issue older than this
-work_max_idle_days = 14      # close a WORK issue not updated for longer than this
+request_max_age = "14 d"     # close a `forge:request` issue older than this
+work_max_idle = "14 d"       # close a WORK issue not updated for longer than this
 ```
 
 - A WORK issue is one no machinery keeps: not the hosts issue, not `area:*`, not a request, and with no hidden marker in

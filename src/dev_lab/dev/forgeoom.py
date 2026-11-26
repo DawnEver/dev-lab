@@ -92,7 +92,7 @@ def floor_record(path: Path, floors: Mapping[str, float]) -> None:
 
 def learn_floors(repo: str, floors: Mapping[str, float], record: Path | None) -> None:
     """Raise *repo*'s learned peaks to *floors* here, and in *record* (when given) for every host's fold."""
-    learned.learn_peaks(repo, raised(learned.learned(repo).get('peaks_mb', {}), floors))
+    learned.learn_peaks(repo, raised(learned.learned(repo).get('peaks_mb', {}), floors), learned.ASKED)
     if record is not None:
         floor_record(record, floors)
 

@@ -25,13 +25,13 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import os
 from collections.abc import Sequence
 from pathlib import Path
 
 from lab_commons.config import config_path
 from lab_commons.log import emit
 
+from dev_lab.dev import harness
 from dev_lab.dev.hpcaccount import cicron, deploy
 from dev_lab.dev.hpcaccount.cimark import RESUME_DOOR, marker
 from dev_lab.dev.hpcaccount.drift import DISCARD, account_drift, unrenderable
@@ -119,7 +119,7 @@ def ci_pause(
     if step.dry:
         emit(f'[dry-run] would mark CI-PAUSED and remove {marked} marked line(s); {discarded}')
         return 0
-    who = os.environ.get('USER') or os.environ.get('USERNAME', '?')
+    who = harness.context().user or '?'
     marker(spec.root).parent.mkdir(parents=True, exist_ok=True)
     marker(spec.root).write_text(f'by {who} at {dt.datetime.now(dt.UTC):%Y-%m-%dT%H:%M:%SZ}; {discarded}\n', 'utf-8')
     if rc := crontab(step, []):

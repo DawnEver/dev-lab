@@ -9,13 +9,14 @@ requires-python = ">=3.12"
 # dev-lab IS the development system, so what lab-commons shipped as its `dev` extra is this package's base
 # install: the lab-commons runtime it is built on (logging, paths, config, units for the duration/quantity
 # parsers) plus the tools it DRIVES as executables (pytest, ruff, `cz check` for the base commit-msg hook).
-# Floor: lab-commons 87ca03d2 (hatch-vcs 0.3.1.dev1579), the first carrying lab_commons.storage, which dev-lab
-# imports at load (2026-11-20: a relock moving dev-lab alone left kits on an older lab-commons that died importing
-# it); a floor any dev-lab import needs is raised here, so `--upgrade-package dev-lab` pulls lab-commons along.
+# Floor: lab-commons 8c79d039 (hatch-vcs 0.3.1.dev1763), the wave-#254 merge carrying lab_commons.quantity,
+# .objects and .hostenv, which dev-lab imports at load (a relock moving dev-lab alone would leave kits on an older
+# lab-commons that dies importing them); a floor any dev-lab import needs is raised here, so `--upgrade-package
+# dev-lab` pulls lab-commons along.
 # One bare git URL graph-wide, as the
 # consumers spell it, so uv.lock pins its tip -- never a machine-local path.
 dependencies = [
-    "lab-commons[units,paths,io,structured]>=0.3.1.dev1715",
+    "lab-commons[units,paths,io,structured]>=0.3.1.dev1763",
     "pytest",
     # The verify door runs a selection on every core its claim admits (verifybox.selection_workers); without the
     # plugin xdist_installed() answers False and every part ran serially -- this repo's hosted part measured 483 s
@@ -191,11 +192,11 @@ always_run = true
 trunk = 'main'
 sessions = ['integrate/main']
 # User ruling 2026-10-13 ("origin should not carry this junk"): every serving host (idempotently) deletes
-# merged undeclared origin branches idle >= max_idle_hours (dev_lab.dev.branchprune).
+# merged undeclared origin branches idle >= max_idle (dev_lab.dev.branchprune).
 prune_merged = true
 # Branch limits (user ruling 2026-11-20): land or retire a head past them (dev_lab.dev.branchpolicy).
 max_ahead = 10
-max_idle_hours = 12
+max_idle = "12 h"
 ephemeral = ['pr/*']
 
 [tool.dev_lab.doors]
@@ -328,6 +329,16 @@ judge_app = 5619495
 [tool.dev_lab.cjk]
 declared = []
 
+[tool.pyright]
+# The family type-check base (dev_lab.dev._famconfig_pyproject_rows): src strict, tests basic.
+include = ["src", "tests"]
+strict = ["src"]
+typeCheckingMode = "basic"
+
+# TYPES-RATCHET (dev_lab.dev.typecheck): pyright errors per owner, only ever lowered (measured 2026-11-25).
+[tool.dev_lab.typecheck]
+errors = { dev = 4353, dev_lab = 2, ops = 604, supervise = 193, tests = 1146 }
+
 [tool.coverage.html]
 # Every tool cache and report under output/ (user ruling 2026-11-24): never htmlcov/ at the root.
 directory = "output/cache/coverage/html"
@@ -337,4 +348,73 @@ directory = "output/cache/coverage/html"
 [tool.dev_lab.testleaks]
 declared = [
   "tests/test_dev_commandpart.py", "tests/test_dev_liverun.py", "tests/test_dev_testtemp.py", "tests/test_dev_writeroots.py",
+]
+
+# ENV-IS-READ-ONCE (dev_lab.dev.envreads, family policy 2026-11-25): the environment is read only in `entry`;
+# `pending` is the census of reads not yet migrated (A -> configuration, B -> the entry, C -> a pytest option) and only shrinks.
+[tool.dev_lab.env]
+entry = ["src/dev_lab/dev/harness.py"]
+pending = [
+    "src/dev_lab/dev/_task_io.py",
+    "src/dev_lab/dev/branchnotices.py",
+    "src/dev_lab/dev/branchprune.py",
+    "src/dev_lab/dev/commandpart.py",
+    "src/dev_lab/dev/datadeps.py",
+    "src/dev_lab/dev/doorcensus.py",
+    "src/dev_lab/dev/durations.py",
+    "src/dev_lab/dev/forgecli.py",
+    "src/dev_lab/dev/forgeclient.py",
+    "src/dev_lab/dev/forgecred.py",
+    "src/dev_lab/dev/forgeoutbox.py",
+    "src/dev_lab/dev/forgepublish.py",
+    "src/dev_lab/dev/forgequeue.py",
+    "src/dev_lab/dev/forgereview_bundle.py",
+    "src/dev_lab/dev/forgereview_claim.py",
+    "src/dev_lab/dev/forgereview_identity.py",
+    "src/dev_lab/dev/forgesync.py",
+    "src/dev_lab/dev/forgetry.py",
+    "src/dev_lab/dev/gitdirs.py",
+    "src/dev_lab/dev/githooks/inprocess.py",
+    "src/dev_lab/dev/githooks/runner.py",
+    "src/dev_lab/dev/hpcaccount/deploy.py",
+    "src/dev_lab/dev/integrate.py",
+    "src/dev_lab/dev/jobmeasure.py",
+    "src/dev_lab/dev/jobparts.py",
+    "src/dev_lab/dev/labsession.py",
+    "src/dev_lab/dev/machinehome.py",
+    "src/dev_lab/dev/metrics.py",
+    "src/dev_lab/dev/milestonebase.py",
+    "src/dev_lab/dev/msyspath.py",
+    "src/dev_lab/dev/native_session.py",
+    "src/dev_lab/dev/netverb.py",
+    "src/dev_lab/dev/privatemarkers.py",
+    "src/dev_lab/dev/prlanded.py",
+    "src/dev_lab/dev/producer.py",
+    "src/dev_lab/dev/profile.py",
+    "src/dev_lab/dev/prsuperseded.py",
+    "src/dev_lab/dev/relock.py",
+    "src/dev_lab/dev/reviewbudget.py",
+    "src/dev_lab/dev/reviewcode.py",
+    "src/dev_lab/dev/reviewgate.py",
+    "src/dev_lab/dev/reviewgitauth.py",
+    "src/dev_lab/dev/reviewturn.py",
+    "src/dev_lab/dev/roles.py",
+    "src/dev_lab/dev/serialpass.py",
+    "src/dev_lab/dev/servelock.py",
+    "src/dev_lab/dev/sessionbranch.py",
+    "src/dev_lab/dev/shadow_build.py",
+    "src/dev_lab/dev/storage.py",
+    "src/dev_lab/dev/taskgate.py",
+    "src/dev_lab/dev/taskkeys.py",
+    "src/dev_lab/dev/tickholder.py",
+    "src/dev_lab/dev/verify.py",
+    "src/dev_lab/dev/verifybox.py",
+    "src/dev_lab/dev/workstationregistry.py",
+    "src/dev_lab/dev/writeroots.py",
+    "src/dev_lab/ops/config.py",
+    "src/dev_lab/ops/hostverbs.py",
+    "src/dev_lab/ops/httpsdoor.py",
+    "src/dev_lab/supervise/config.py",
+    "src/dev_lab/supervise/notify.py",
+    "src/dev_lab/supervise/process/systemd.py",
 ]

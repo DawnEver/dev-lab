@@ -81,7 +81,7 @@ def test_retention_removes_only_stamped_backups_past_the_declared_days(tmp_path:
     for days in (20, 15, 13):
         (tmp_path / (NOW - timedelta(days=days)).strftime('%Y%m%dT%H%M%SZ')).mkdir()
     (tmp_path / 'notes').mkdir()
-    pull(Backup(source='x@y', dest=str(tmp_path), retention_days=14), NOW, fetch=_tar({'a.zip': b'zip'}))
+    pull(Backup(source='x@y', dest=str(tmp_path), retention=14 * 86400.0), NOW, fetch=_tar({'a.zip': b'zip'}))
     left = sorted(path.name for path in tmp_path.iterdir())
     assert left == sorted([(NOW - timedelta(days=13)).strftime('%Y%m%dT%H%M%SZ'), STAMP, 'notes'])
 
@@ -99,7 +99,7 @@ class FakeStore:
         return self.objects.get(key)
 
 
-_SITE = Offsite(endpoint='https://s3.example', bucket='b', label='host-a', max_put_bytes=100)
+_SITE = Offsite(endpoint='https://s3.example', bucket='b', label='host-a', max_put=100)
 
 
 def test_keys_carry_the_label_the_stamp_and_the_content_hash(tmp_path: Path) -> None:
