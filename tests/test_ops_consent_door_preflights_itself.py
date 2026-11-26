@@ -1,9 +1,10 @@
-"""THE DOOR THAT TAKES THE CODE RUNS THE PREFLIGHT ITSELF: a recorded green is a backstop, never the verdict.
+"""THE DOOR THAT TAKES A PROMPTED CODE RUNS THE PREFLIGHT ITSELF; a code GIVEN IN ADVANCE is never made to wait.
 
 User ruling 2026-11-22, five codes lost that day. ``sshhold open --plan --code C`` refused a stale plan preflight
 only AFTER the code was given (its 30 s window then gone); ``consent grant --code C`` refused a lone request's
-receipt older than 300 s the same way. Now each door runs the no-code preflight right before it uses the code: a
-record of any age inside the 24 h backstop admits the ask, and what the host answers NOW decides.
+receipt older than 300 s the same way. A code asked at the PROMPT is asked only after the door ran the no-code
+preflight itself, and what the host answers NOW decides. A code given IN ADVANCE is the first request on a fresh
+green, else it is refused unspent naming the preflight door (incident 2026-11-26; tests/test_ops_consent_code_first.py).
 
 Every refusal has its PLANTED control: the same call with the one fault removed uses the code.
 """
@@ -25,9 +26,10 @@ from test_ops_consent_door import WAVE, Wire, issuer
 
 from dev_lab.dev import planrunoffer, sshhold, sshholdplan
 from dev_lab.ops.consent.client import grant, preflight
-from dev_lab.ops.consent.credential import ConsentRefused, public_text
+from dev_lab.ops.consent.credential import public_text
 from dev_lab.ops.consent.door import (
     CODE_PREFLIGHT_FRESH_S,
+    PLAN_PREFLIGHT_DOOR,
     PREFLIGHT_FRESH_S,
     RECEIPT_FRESH_S,
     preflighted_steps,
@@ -68,11 +70,37 @@ def _door(monkeypatch: pytest.MonkeyPatch, issuer: Issuer, host: FakeHost) -> li
     monkeypatch.setattr(
         sshholdplan, 'open_planned', lambda _hours, given, *_a, **_k: spent.append(given) or (True, ['granted'])
     )
+    monkeypatch.setattr(sshhold, 'given_code', lambda given: code(0) if given is None else given)  # the prompt's answer
     return spent
 
 
 def _open(plan: Path, *more: str) -> int:
-    return sshhold.main(['open', '--hours', '1', '--code', code(0), '--plan', str(plan), '--digest', 'abc', *more])
+    """``sshhold open --plan`` with the code asked at its PROMPT: asked only after the door's own preflight."""
+    return sshhold.main(['open', '--hours', '1', '--plan', str(plan), '--digest', 'abc', *more])
+
+
+def test_a_code_given_in_advance_on_a_stale_green_is_refused_unspent_not_re_run(
+    issuer: Issuer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A re-run before a given code spent its 30 s step (incident 2026-11-26): the door refuses it instead.
+
+    PLANTED CONTROL: a green recorded inside the code window sends the given code with no re-run.
+    """
+    monkeypatch.setenv(HOME_ENV, str(tmp_path / 'home'))
+    plan, steps = _files(tmp_path)
+    record_preflight(STEPPED, steps=steps, now=time.time() - RERUN_AGE_S)
+    host = FakeHost()
+    spent = _door(monkeypatch, issuer, host)
+    assert _open(plan, '--code', code(0)) == 2
+    said = capsys.readouterr().err
+    assert 'no code used' in said
+    assert PLAN_PREFLIGHT_DOOR in said
+    assert spent == []
+    assert host.commands == [], 'nothing ran before the refusal'
+    record_preflight(STEPPED, steps=steps, now=time.time() - 1)
+    assert _open(plan, '--code', code(0)) == 0
+    assert spent == [code(0)]
+    assert host.commands == []
 
 
 def test_a_plan_whose_host_blocks_now_refuses_before_the_code_is_used(
@@ -145,21 +173,4 @@ def test_a_lone_code_given_past_the_old_five_minutes_is_used_when_the_issuer_is_
     written = grant(_request(tmp_path), table=table, code=code(0), tty=False, send=wire, home=tmp_path,
                     now=lambda: NOW)  # fmt: skip
     assert json.loads(written.read_text(encoding='utf-8'))['action'] == 'breakglass.wave'
-    assert wire.sent == ['hello', 'hello', 'issue']  # the preflight's, the door's own, then the code
-
-
-def test_a_lone_code_is_not_sent_when_the_doors_own_preflight_is_blocked_now(issuer: Issuer, tmp_path: Path) -> None:
-    """The receipt is fresh; the issuer has since been replaced by one this client cannot redeem with.
-
-    PLANTED CONTROL: the test above -- the same grant with the issuer answering is issued.
-    """
-    table = _table(issuer)
-    preflight(WAVE, table=table, send=Wire(issuer), home=tmp_path, now=NOW)
-    skewed = Wire(issuer, old=True)
-    read: list[str] = []
-    with pytest.raises(ConsentRefused, match='no code used -- the preflight is not green now') as refused:
-        grant(_request(tmp_path), table=table, tty=False, read=lambda: read.append('read') or code(0), send=skewed,
-              home=tmp_path, now=lambda: NOW)  # fmt: skip
-    assert 'no code asked' not in str(refused.value)
-    assert skewed.sent == ['hello']
-    assert read == [], 'the code was never read off stdin'
+    assert wire.sent == ['hello', 'issue']  # the preflight's, then the code first: no re-run before it

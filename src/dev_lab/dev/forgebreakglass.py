@@ -5,7 +5,8 @@ granted. ``open --code <code> --hours H --max-merges N`` grants it AND opens in 
 TOTP step, so a second command would spend its window) -- and ONLY after ``open --preflight --hours H --max-merges N``
 was green: it proves, with no code, that the consent issuer and this server answer (a host key never enrolled is named
 with its ``devhost enroll`` door) and writes the receipt the ``--code`` call needs
-(:func:`dev_lab.ops.consent.client.preflight`). ``open --credential <id>`` opens on one already granted
+(:func:`dev_lab.ops.consent.client.preflight`); on it ``--code`` sends the code FIRST, and without one for the same
+hours and max-merges it is refused unspent. ``open --credential <id>`` opens on one already granted
 (``python -m dev_lab.ops.consent grant <request.json>``) from the consent state directory. Inside the wave
 ``pr breakglass`` merges with no code -- the server sends ONE summary of what actually merged when the wave ends.
 ``close`` ends the wave early;
@@ -105,8 +106,8 @@ def _preflight(args: argparse.Namespace, config: Mapping[str, Any], send: Send, 
         return 2
     emit(f'[breakglass] preflight green: ask the user for the code now, then run '
          f'python -m dev_lab.dev.forge breakglass open --code <code> --hours {args.hours:g} '
-         f'--max-merges {args.max_merges} (it re-runs the issuer preflight itself and uses the code only if green '
-         f'then; this receipt admits the ask for {RECEIPT_FRESH_S:.0f} s)')  # fmt: skip
+         f'--max-merges {args.max_merges} -- the same bounds: it sends the code first, with no round trip before '
+         f'it, on this receipt for {RECEIPT_FRESH_S:.0f} s)')  # fmt: skip
     return 0
 
 
