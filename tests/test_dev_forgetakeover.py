@@ -13,6 +13,7 @@ from test_dev_forgereview import FakeCommand, _forge, _output, _work
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgereview_claim import DUE
 from dev_lab.dev.forgereview_declared import EMPTY_COMMAND_FIX, PATHS_FIELD, RANGE_FIELD, Review
+from dev_lab.dev.forgereview_scope import landed_base
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgetakeover import LEDGER_TITLE, TakeoverRefused, ledger_of, main, pull_for, takeover
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN
@@ -273,3 +274,36 @@ def test_a_ref_name_finds_its_pr_because_the_door_resolves_it_first(
     capsys.readouterr()
     assert main(['plan', 'no-such-branch'], cwd=work, client=forge, fetch=lambda _r, _n: None) == 2
     assert 'pass its sha' in capsys.readouterr().err
+
+
+def test_an_ambiguous_sha_prefix_is_refused_naming_every_pr_it_matches() -> None:
+    """#9 F-b5ef4b76c776: two PRs whose DIFFERENT heads share the prefix are never resolved by a silent max()."""
+    forge = StateForge()
+    one = forge.add_pull('pr/x', 'integrate/main', sha='abc1234' + 'a' * 33)
+    two = forge.add_pull('pr/y', 'integrate/main', sha='abc1234' + 'b' * 33)
+    with pytest.raises(TakeoverRefused, match=rf'abc1234 is ambiguous.*#{one}.*#{two}'):
+        pull_for(forge, 'abc1234')
+    assert pull_for(forge, 'abc1234' + 'b' * 5).number == two, 'PLANTED CONTROL: a longer prefix names one head'
+
+
+def test_a_prless_head_with_no_findings_leaves_no_ledger_issue(tmp_path: Path) -> None:
+    """#9 F-0a220542e6ce: the ledger issue is opened only once there is a round to post, never for a refusal."""
+    work, _ = _work(tmp_path)
+    forge = StateForge()
+    sha = advance(work, 'integrate/main', 'hot.py', 'x = 1\n', 'fix: hot\n\nBreak-Glass: forge down')
+    dead = FakeCommand(_output(reviewers=(('correctness', 'exhausted'),)))
+    with pytest.raises(TakeoverRefused, match='no reviewer returned findings'):
+        takeover(work, forge, _WHOLE, sha, pull=None, base='integrate/main', host='box', run=dead)
+    assert forge.titled(LEDGER_TITLE.format(sha=sha)) == []
+
+
+def test_a_fast_forwarded_multi_commit_landing_is_reviewed_over_its_whole_run(tmp_path: Path) -> None:
+    """#9 F-fd3b8211a1a4: a head integration took by fast-forward is measured back to the last merge, not ``head^``."""
+    work, _, _, merged = _merged(tmp_path)
+    merge = git_out(work, 'rev-parse', 'origin/integrate/main')
+    advance(work, 'integrate/main', 'one.py', '1\n')
+    tip = advance(work, 'integrate/main', 'two.py', '2\n')
+    assert landed_base(work, 'integrate/main', tip) == merge, 'the whole fast-forwarded run, one.py included'
+    assert git_out(work, 'rev-parse', landed_base(work, 'integrate/main', merged)) == git_out(
+        work, 'rev-parse', f'{merge}^1'
+    ), 'PLANTED CONTROL: a merged head is still measured from its merge first parent'

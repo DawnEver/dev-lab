@@ -351,15 +351,28 @@ def landed_base(root: Path, base: str, head: str) -> str:
     """What *head*'s own change is measured from: integration for an unmerged head, else what it landed on.
 
     A merged PR's head is an ancestor of integration, so the merge base would read nothing: its change is measured
-    from the first parent of the merge that landed it; a commit integration took directly, from its own parent.
+    from the first parent of the merge that brought it in -- whether the head is that merge's parent or deeper in
+    the merged side. A head ON integration's first-parent line (a fast-forward, a direct commit) is measured back to
+    the last merge before it, so a multi-commit run is read whole (#9 F-fd3b8211a1a4), never only its last commit.
     """
     landed = f'origin/{base}'
-    code, _ = git(root, 'merge-base', '--is-ancestor', head, landed, ok=(0, 1))
-    if code:
+    if not _contains(root, landed, head):
         return landed
-    merges = git(root, 'log', '--first-parent', '--merges', '--format=%H %P', landed)[1]
-    for row in merges.splitlines():
-        merge, _first, *merged = row.split()
-        if head in merged:
-            return f'{merge}^1'
-    return f'{head}^'
+    line = git(root, 'rev-list', '--first-parent', landed)[1].split()
+    low, high = 0, len(line) - 1  # containment is monotone along the line: bisect for the oldest that holds head
+    while low < high:
+        middle = (low + high + 1) // 2
+        low, high = (middle, high) if _contains(root, line[middle], head) else (low, middle - 1)
+    brought = line[low]
+    if brought != head or len(git(root, 'rev-list', '--parents', '-n', '1', head)[1].split()) > _ONE_PARENT:
+        return f'{brought}^1'
+    last_merge = git(root, 'rev-list', '--first-parent', '--merges', '-n', '1', head)[1].strip()
+    return last_merge or f'{head}^'
+
+
+#: ``rev-list --parents -n 1`` of a commit with one parent: the commit and that parent.
+_ONE_PARENT: Final = 2
+
+
+def _contains(root: Path, tip: str, head: str) -> bool:
+    return git(root, 'merge-base', '--is-ancestor', head, tip, ok=(0, 1))[0] == 0
