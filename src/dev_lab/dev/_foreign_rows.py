@@ -164,6 +164,13 @@ SYNTHETIC: Final[dict[str, str]] = {
         '3 worked examples: `planted/recipe.py`, `planted/narrative.py` and a `dev_lab/dev/`'
         'spelling quoted as text rather than resolved.'
     ),
+    'src/dev_lab/dev/famtests/guardcollection.py::path': (
+        'the planted tree`s files -- `tests/test_live.py` and the dead guards -- which the control writes into a '
+        'tmp dir and collects; they name no file in any checkout.'
+    ),
+    'src/dev_lab/dev/famtests/memoryadds.py::path': (
+        'the planted memory entry the control writes into a tmp repo and edits; it names no file in any checkout.'
+    ),
     'src/dev_lab/dev/famtests/datedmemory.py::path': (
         '1 example lane note, `lanes/a-lane.md`, in the prose that explains the dated shape.'
     ),

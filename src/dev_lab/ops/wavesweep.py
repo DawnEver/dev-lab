@@ -12,6 +12,12 @@ The sweep only decides WHICH PRs to ask for:
 
 - a draft is left alone (a draft runs nothing, so it is never judged);
 - a PR whose ``tests/merge-ready`` already stands ``success`` lands by the normal path, which wins;
+- a PR the normal path has NOT YET JUDGED is the normal path's (W5, dev-lab#644): its newest ``tests/merge-ready``
+  absent, ``pending``, or posted before its newest test part or security status. Measured 2026-11-26: 81 of the 129
+  break-glass first-parent merges into dev-lab's integrate/main since 11-19 were this sweep, each taken 1-3 minutes
+  after ``tests/base`` went green while ``tests/merge-ready`` -- re-judged by a merge tick that a status posted by the
+  workflow token never triggers, so only its delayed cron -- said ``success`` 25-80 minutes later. The sweep lands only
+  a head the normal decision judged on its current parts and REFUSED (``failure``): the emergency it exists for;
 - a PR whose head is not current (``pr-current`` red) still lands: freshness is an ALARM (W5, dev-lab#644) and the
   forge's own merge refuses a head that does not merge cleanly;
 - a PR whose security check or test parts do not stand green (red, pending, unrun) is left alone;
@@ -85,14 +91,23 @@ def reason_of(wave: str) -> str:
 
 
 def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str, *, tests: str) -> bool:
-    """Whether *head* is green as its *producer* posts it (:func:`green_waits`) yet not already merge-ready."""
-    if _stands(posted, MERGE_READY_CONTEXT):
+    """Whether *head* is green as its *producer* posts it (:func:`green_waits`) yet REFUSED by the normal decision.
+
+    Refused means its newest ``tests/merge-ready`` is ``failure`` and was posted after every other ``tests/`` status:
+    a decision not yet taken on the current parts is the normal path's turn, never the wave's.
+    """
+    if not _refused_on_current_parts(posted):
         return False
     return not green_waits(head, posted, tests=tests)
 
 
-def _stands(posted: Sequence[CommitStatus], context: str) -> bool:
-    return any(one.context == context and one.state == 'success' for one in posted)
+def _refused_on_current_parts(posted: Sequence[CommitStatus]) -> bool:
+    ready = [one for one in posted if one.context == MERGE_READY_CONTEXT]
+    if not ready:
+        return False
+    newest = max(ready, key=lambda one: one.id)
+    parts = [one.id for one in posted if one.context != MERGE_READY_CONTEXT and one.context.startswith('tests/')]
+    return newest.state == 'failure' and all(newest.id > part for part in parts)
 
 
 def _integrates(forge: Listing, base: str, url: str) -> bool:

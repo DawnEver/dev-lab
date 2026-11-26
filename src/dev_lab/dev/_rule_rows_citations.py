@@ -15,4 +15,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_famtests_ephemeralrefs.py',),
     ),
+    (
+        'EVIDENCE-OUTLIVES-OUTPUT',
+        (
+            'A recorded number, verdict, golden or decision in a tracked file names a tracked home for its evidence '
+            '(a dated memory entry, a tracked fixture); a path under the output tree, or any ignored path, is never '
+            'provenance -- every Python literal, a literal joined onto the repo root, and TOML/YAML/JSON values are '
+            'judged; code may still WRITE there, and escapes are a declared set under a falling ceiling.'
+        ),
+        ('tests/test_famtests_evidencerefs.py',),
+    ),
 )

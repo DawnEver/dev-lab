@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev.devdocs import CANONICAL_TREE, slugs
+from dev_lab.dev.devdocs import CANONICAL_TREE, pinned_base, slugs
 from dev_lab.dev.famtests.devdocs import (
     COPY_CEILING,
     assert_local_dev_pages_are_residues,
@@ -22,6 +22,8 @@ from dev_lab.dev.famtests.devdocs import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+#: The family pages at one pinned commit (dev_lab.dev.devdocs.pinned_base): never a sibling clone.
+_PINNED = f'https://forge.example/o/dev-lab/blob/{"b" * 40}/{CANONICAL_TREE}'
 
 #: A family page long enough to clear the shingle floor, distinct per slug.
 _BODY = ' '.join(f'word{i} sits in sentence number {i} of the family page' for i in range(40))
@@ -32,7 +34,7 @@ def _family() -> dict[str, str]:
 
 
 def _residue(slug: str) -> str:
-    return f'# {slug} here\n\n- Read [it](../../../dev-lab/{CANONICAL_TREE}/{slug}.md) first.\n- Local delta.\n'
+    return f'# {slug} here\n\n- Read [it]({_PINNED}/{slug}.md) first.\n- Local delta.\n'
 
 
 def test_shingles_are_wrapping_and_case_blind() -> None:
@@ -117,3 +119,26 @@ def test_an_absent_tree_refuses_rather_than_passing(tmp_path: Path) -> None:
     (tree / 'motors.md').write_text('# Motors\n', encoding='utf-8')
     with pytest.raises(AssertionError, match='clone dev-lab'):
         assert_local_dev_pages_are_residues(tmp_path, family_root=tmp_path / 'nowhere', subject_allowlist={})
+
+
+def test_a_sibling_clone_link_is_refused_and_the_pinned_link_is_not() -> None:
+    """dev-lab#647: a relative link into a sibling clone reads whatever that clone holds, stale or not.
+
+    PLANTED CONTROL: the same residue linking the pinned forge URL reads clean.
+    """
+    slug = slugs()[0]
+    sibling = f'# {slug}\n\n- Read [it](../../../dev-lab/{CANONICAL_TREE}/{slug}.md) first.\n'
+    problems = residue_problems({slug: sibling}, _family(), subject_allowlist={})
+    assert any('does not link the pinned' in p for p in problems), problems
+    assert any(f'{slug}.md:3: links a sibling clone' in p for p in problems), problems
+    assert residue_problems({slug: _residue(slug)}, _family(), subject_allowlist={}) == ()
+
+
+def test_the_pinned_base_is_the_forge_url_at_the_locked_commit() -> None:
+    sha = 'c' * 40
+    lock = f'[[package]]\nname = "dev-lab"\nsource = {{ git = "https://github.com/o/dev-lab.git#{sha}" }}\n'
+    assert pinned_base(lock) == f'https://github.com/o/dev-lab/blob/{sha}/{CANONICAL_TREE}'
+    gitea = lock.replace('https://github.com/', 'https://forge.example/')
+    assert pinned_base(gitea) == f'https://forge.example/o/dev-lab/src/commit/{sha}/{CANONICAL_TREE}'
+    with pytest.raises(ValueError, match='pins no git commit of dev-lab'):
+        pinned_base('[[package]]\nname = "dev-lab"\nsource = { editable = "." }\n')

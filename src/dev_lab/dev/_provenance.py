@@ -57,6 +57,7 @@ ORIGINAL_ROWS = (
     '_original_rows_remote.py',
     '_original_rows_memory.py',
     '_original_rows_ir.py',
+    '_original_rows_guards.py',
     '_original_rows_machine.py',
     '_original_rows_checks.py',
 )
