@@ -594,6 +594,15 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.ownercov` -- OWNER-COVERAGE: each declared owner meets the family line/branch bar (a repo may
   only raise it) and a floor that ratchets up; :mod:`dev_lab.dev.covreports` reads coverage.py's and
   ``cargo llvm-cov``'s JSON reports per file.
+* :mod:`dev_lab.dev.depcites` -- OWNER-DAG over ``dependencies.toml`` itself: a name a row's reason cites has a row
+  granting it.
+* :mod:`dev_lab.dev.typecheck` -- TYPES-RATCHET: pyright's error counts per owner, a ratchet that only falls.
+* :mod:`dev_lab.dev.cargolints` -- RUST-LINTS: every Rust workspace holds the family ``[workspace.lints]`` base and
+  every member inherits it.
+* :mod:`dev_lab.dev.sectionrender` -- renders a family section base into a TOML file, other keys left alone.
+* :mod:`dev_lab.dev.configkeys` -- CONFIG-VALUES-CARRY-UNITS: a config key never spells its unit; its value carries it.
+* :mod:`dev_lab.dev.tablequantity` -- a table schema's quantity fields, parsed by one reader.
+* :mod:`dev_lab.dev.oraclegc` -- the run-store objects no lock on any family branch names (ruling D86).
 * :mod:`dev_lab.dev.envreads` -- ENV-IS-READ-ONCE: the environment is read only in a repo's declared entry modules;
   the pending ledger of existing reads only shrinks; a test switch is refused in every mode.
 * :mod:`dev_lab.dev.harness` -- dev-lab's ENV-IS-READ-ONCE entry: the harness context as a typed record, and the
