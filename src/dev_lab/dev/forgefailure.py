@@ -287,7 +287,8 @@ def retried(
         try:
             answer = once()
         except BudgetSpent as spent:
-            msg = f'{" ".join(label)}: {spent}'
+            measured = '; '.join(f'attempt {one.index}: {_reason(one.output) or one.diagnosis.value}' for one in made)
+            msg = f'{" ".join(label)}: {spent}' + (f' (the forge did not answer -- {measured})' if made else '')
             raise BudgetSpent(msg) from spent
         except OSError as exc:
             answer = Answer(0, str(exc).encode())

@@ -21,5 +21,13 @@ A task hears what it subscribes to without anyone relaying it (`TASK-HEARS-ITS-F
   it once, through its own cursor. A PR a session pushed belongs to the task its branch names. A comment this
   machine posted is not news.
 
+- **One stable hearer, and a question that answers it.** `forgefeed start` and the session-start hook run the
+  hearer from the MAIN checkout's current environment, never a worktree's (which is republished or pruned under
+  it); with none there the start is refused naming the bootstrap and `forgefeed start`. A `task:<slug>` label
+  written while no hearer runs says so with that door. `python -m dev_lab.dev.forgefeed status [<slug>]` answers
+  whether the hearer runs (pid, interpreter, last tick) and which open issues carry `task:<slug>`.
+- **A forge read is bounded.** `forge issue ...` and `forge pr view` end within 45 s, naming what each attempt
+  measured, instead of sitting through the retry loop's 96 s in silence.
+
 Detail: the module doc of `dev_lab.dev.forgefeed`; the PR record is `dev_lab.dev.sessionprs`; the task of a checkout
 is `dev_lab.dev.taskledger.task_of`.

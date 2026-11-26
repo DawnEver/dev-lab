@@ -25,7 +25,11 @@ How a task hears the forge (docs-src/dev/forgefeed.md):
   :func:`dev_lab.dev.branchpolicy.run_here` over its declared checkouts -- one fetch and one branch survey per repo
   per interval: close landed PRs, sweep, prune merged heads, observe the branch policy (D46).
 
-``python -m dev_lab.dev.forgefeed run | start | session-start | inbox | task-pending <slug>``; hooks always exit 0.
+* ONE STABLE HEARER: ``start`` and the session-start hook run it from the MAIN checkout's current environment
+  (:func:`dev_lab.dev.forgefeedstatus.stable_python`), never a worktree's; ``status [<slug>]`` answers whether it
+  runs and what the task is subscribed to (:mod:`dev_lab.dev.forgefeedstatus`).
+
+``python -m dev_lab.dev.forgefeed`` + :data:`USAGE`; hooks always exit 0.
 """
 
 from __future__ import annotations
@@ -41,12 +45,22 @@ from typing import TYPE_CHECKING, Final, TextIO
 
 from lab_commons import home as _home
 from lab_commons.config import section
-from lab_commons.liveness import creation_stamp, still_the_same_process
+from lab_commons.liveness import creation_stamp
 from lab_commons.log import emit
 
 from dev_lab.dev import branchpolicy, forgewaves, native_session, sessionprs, taskledger
 from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.forge import Forge, forge_from_remote
+from dev_lab.dev.forgefeedstatus import (
+    RULE,
+    NoStableInterpreter,
+    alive,
+    beat_path,
+    lock_path,
+    running,
+    stable_python,
+    status,
+)
 from dev_lab.dev.forgethreads import (
     Thread,
     declared_seconds,
@@ -96,8 +110,10 @@ POLL_S: Final = SESSION_EVERY_S
 FRESH_S: Final = 2 * max(POLL_S, DEFAULT_TICK_S)
 #: The directory, under the machine home, holding the hearer's lock, beat, cursors and task queues.
 WATCHER: Final = 'forgefeed'
-#: The rule this hearer serves.
-RULE: Final = 'TASK-HEARS-ITS-FORGE-EVENTS'
+#: Every verb and its argument: what a call matching none of them is answered with.
+USAGE: Final = (
+    'usage: python -m dev_lab.dev.forgefeed run | start | status [<slug>] | session-start | inbox | task-pending <slug>'
+)
 
 
 def tick_s(table: object = None) -> float:
@@ -114,37 +130,17 @@ def _dir() -> Path:
     return feed_dir()
 
 
-def _lock() -> Path:
-    return _dir() / 'lock.json'
-
-
-def _beat() -> Path:
-    return _dir() / 'beat.json'
-
-
-def _alive(held_by: dict) -> bool:
-    try:
-        return still_the_same_process(int(held_by['pid']), held_by.get('created'))
-    except (KeyError, TypeError, ValueError):
-        return False
-
-
-def running() -> bool:
-    """Whether a live watcher holds the machine lock (a recycled pid reads as gone)."""
-    return _alive(read_json(_lock()))
-
-
 @contextlib.contextmanager
 def held() -> Iterator[bool]:
     """Hold the machine lock for the block; ``False`` (holding nothing) while a live watcher has it."""
-    lock = _lock()
+    lock = lock_path()
     lock.parent.mkdir(parents=True, exist_ok=True)
-    me = {'pid': os.getpid(), 'created': creation_stamp(os.getpid())}
+    me = {'pid': os.getpid(), 'created': creation_stamp(os.getpid()), 'python': sys.executable}
     for _ in range(2):
         try:
             fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
-            if _alive(read_json(lock)):
+            if alive(read_json(lock)):
                 yield False
                 return
             lock.unlink(missing_ok=True)  # a crashed watcher's: taken over
@@ -312,21 +308,21 @@ def poll_once(
         'pid': os.getpid(), 'created': creation_stamp(os.getpid()), 'at': started, 'covers': sorted(covers),
         'hosts': sorted(hosts),
     }  # fmt: skip
-    _beat().parent.mkdir(parents=True, exist_ok=True)
-    _beat().write_text(json.dumps(beat), encoding='utf-8')
+    beat_path().parent.mkdir(parents=True, exist_ok=True)
+    beat_path().write_text(json.dumps(beat), encoding='utf-8')
     return tuple(covers)
 
 
 def heard(session: str, *, now: float | None = None) -> bool:
     """Whether a live watcher's beat is younger than :data:`FRESH_S` and covers every open PR of *session*."""
-    beat = read_json(_beat())
+    beat = read_json(beat_path())
     clock = time.time() if now is None else now
     try:
         fresh = clock - float(beat['at']) <= FRESH_S
         covers = {str(key) for key in beat['covers']}
     except (KeyError, TypeError, ValueError):
         return False
-    return fresh and _alive(beat) and {row.key for row in sessionprs.open_rows(session)} <= covers
+    return fresh and alive(beat) and {row.key for row in sessionprs.open_rows(session)} <= covers
 
 
 def run(
@@ -352,10 +348,16 @@ def run(
 
 
 def ensure(root: Path) -> bool:
-    """Detach a watcher from *root* unless one runs; whether one was started."""
+    """Detach a hearer unless one runs -- from *root*'s MAIN checkout and its stable interpreter; whether one started.
+
+    Raises:
+        NoStableInterpreter: the main checkout has no environment; never started from a worktree's instead.
+
+    """
     if running():
         return False
-    detach_argv(root, ['-m', 'dev_lab.dev.forgefeed', 'run'])
+    main, python = stable_python(root)
+    detach_argv(main, ['-m', 'dev_lab.dev.forgefeed', 'run'], python=python)
     return True
 
 
@@ -367,45 +369,72 @@ def _payload(stdin: TextIO) -> dict:
     return found if isinstance(found, dict) else {}
 
 
+def _task_here(root: Path) -> str | None:
+    """The slug of the task *root*'s checkout works on (its branch), else ``None``."""
+    with contextlib.suppress(OSError, ValueError, LookupError):
+        task = taskledger.task_of(root)
+        if task is not None:
+            return taskledger.slug_of(task)
+    return None
+
+
+def _session_start(stdin: TextIO) -> None:
+    """The SessionStart hook: start the hearer unless one runs; a hearer it cannot start is said with the door."""
+    try:
+        ensure(Path(_payload(stdin).get('cwd') or Path.cwd()))
+    except NoStableInterpreter as refused:
+        emit(str(refused))
+    except OSError as failed:
+        emit(f'{RULE}: the hearer could not be started ({failed}); start it: python -m dev_lab.dev.forgefeed start')
+
+
+def _inbox_hook(stdin: TextIO) -> None:
+    """The UserPromptSubmit hook: this session's unread events and its task's, once."""
+    payload = _payload(stdin)
+    session = str(payload.get('session_id') or '')
+    lines = take_unread(session)
+    if native_session.valid(session):
+        lines += forgewaves.news(session)
+    if (slug := _task_here(Path(payload.get('cwd') or Path.cwd()))) is not None:
+        lines += take_task_unread(session, slug)
+    if lines:
+        said = f"{RULE}: news on this session's task:\n" + '\n'.join(lines)
+        emit(json.dumps({'hookSpecificOutput': {'hookEventName': 'UserPromptSubmit', 'additionalContext': said}}))
+
+
+def _start() -> int:
+    """``start``: the hearer from the stable interpreter, unless one runs; 1 when there is none to run it from."""
+    try:
+        emit('forgefeed: started' if ensure(Path.cwd()) else 'forgefeed: already running')
+    except NoStableInterpreter as refused:
+        emit(str(refused), err=True)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """``run`` the hearer, ``start`` it, the ``session-start`` / ``inbox`` hook, or a task's kept events."""
+    """``run`` the hearer, ``start`` it, its ``status``, the ``session-start`` / ``inbox`` hook, or a task's events."""
     args = list(sys.argv[1:] if argv is None else argv)
-    match args[:1]:
+    match args:
         case ['run']:
             return run(clients=clients_at(Path.cwd()))
         case ['start']:
-            emit('forgefeed: started' if ensure(Path.cwd()) else 'forgefeed: already running')
-            return 0
-        case ['session-start']:
-            with contextlib.suppress(OSError):
-                ensure(Path(_payload(stdin or sys.stdin).get('cwd') or Path.cwd()))
-            return 0
-        case ['inbox']:
-            payload = _payload(stdin or sys.stdin)
-            session = str(payload.get('session_id') or '')
-            lines = take_unread(session)
-            if native_session.valid(session):
-                lines += forgewaves.news(session)
-            with contextlib.suppress(OSError, ValueError, LookupError):
-                task = taskledger.task_of(Path(payload.get('cwd') or Path.cwd()))
-                if task is not None:
-                    lines += take_task_unread(session, taskledger.slug_of(task))
-            if lines:
-                said = f"{RULE}: news on this session's task:\n" + '\n'.join(lines)
-                emit(
-                    json.dumps({'hookSpecificOutput': {'hookEventName': 'UserPromptSubmit', 'additionalContext': said}})
-                )
-            return 0
+            return _start()
+        case ['status'] | ['status', _]:
+            root = Path.cwd()
+            slug = args[1] if len(args) > 1 else _task_here(root)
+            emit('\n'.join(status(root, slug, clients=clients_at(root), forges=_forges(), pending=task_pending)))
+        case ['session-start', *_]:
+            _session_start(stdin or sys.stdin)
+        case ['inbox', *_]:
+            _inbox_hook(stdin or sys.stdin)
         case ['task-pending', slug]:
-            for line in task_pending(slug):
-                emit(line)
-            return 0
+            kept = task_pending(slug)
+            emit('\n'.join(kept) if kept else f'task {slug}: no events kept ({_queue(slug)})')
         case _:
-            emit(
-                'usage: python -m dev_lab.dev.forgefeed run | start | session-start | inbox | task-pending <slug>',
-                err=True,
-            )
+            emit(USAGE, err=True)
             return 2
+    return 0
 
 
 if __name__ == '__main__':
