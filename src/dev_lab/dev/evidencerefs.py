@@ -54,7 +54,7 @@ ROOT_CALLS: Final = frozenset({'repo_root', 'find_repo_root', 'project_root', 'g
 ROOT_NAMES: Final = frozenset({'REPO', 'REPO_ROOT', 'ROOT', 'PROJECT_ROOT', '_REPO', '_ROOT', '_REPO_ROOT'})
 
 #: CONTENT, not a place: a dated run segment (``26/01/01``) or a last segment with a file suffix. A place a tool
-#: writes (``output/cache/pytest``) is configuration, and a machine-local path is the code tier's, not evidence.
+#: writes (``output/cache/<tool>``) is configuration, and a machine-local path is the code tier's, not evidence.
 CONTENT: Final = re.compile(r'(?:^|/)\d{2}/\d{2}/\d{2}(?:/|$)|\.[A-Za-z0-9]{1,8}/?$')
 _DATA_HASH: Final = frozenset({'.toml', '.yaml', '.yml'})
 _RAW = re.compile(r'[^\s`\'"()\[\]{}|,;=]+')

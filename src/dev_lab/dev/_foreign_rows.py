@@ -160,9 +160,6 @@ SYNTHETIC: Final[dict[str, str]] = {
         '3 worked examples: `planted/recipe.py`, `planted/narrative.py` and a `dev_lab/dev/`'
         'spelling quoted as text rather than resolved.'
     ),
-    'src/dev_lab/dev/_rule_rows_citations.py::path': (
-        'the EVIDENCE-OUTLIVES-OUTPUT statement`s own example shapes; they name no file in any checkout.'
-    ),
     'src/dev_lab/dev/famtests/guardcollection.py::path': (
         'the planted tree`s files -- `tests/test_live.py` and the dead guards -- which the control writes into a '
         'tmp dir and collects; they name no file in any checkout.'
