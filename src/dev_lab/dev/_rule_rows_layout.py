@@ -62,6 +62,33 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_nativefirst.py',),
     ),
     (
+        'OWNER-DAG',
+        (
+            # Why: user-approved 2026-11-25 (principles `everything-in-its-place`, `no-detour`; v1 D67/D68).
+            'In a repo holding a root `dependencies.toml` (opt-in; undeclared is not judged), actual imports match '
+            'the declared graph: `[python.owners]` and `[python.siblings."<package>"]` (explicit acyclic DAGs at '
+            'every level, default none), `[python.importers]` (the only importers of a path), `[python.native]`, '
+            '`[python.packages]`/`[python.stdlib]` (a package no row names is refused; std is restricted by row), '
+            '`[rust.crates]`/`[rust.external]`/`[rust.std]` (Cargo dependencies by kind and feature, std paths and '
+            'tokens). A cycle, an undeclared edge and a path no layout.toml row declares (rows, never the disk) are '
+            'refused by name; test files are judged too. The always-on check and every `verify` '
+            '(`dev_lab.dev.ownerdag`, `dev_lab.dev.rustdeps`).'
+        ),
+        ('tests/test_dev_ownerdag.py', 'tests/test_dev_rustdeps.py', 'tests/test_dev_deptable.py'),
+    ),
+    (
+        'NO-DETOUR',
+        (
+            # Why: user-approved 2026-11-25 (principle `no-detour`: every hop must add something).
+            'In a repo holding a root `dependencies.toml`, a Python module or Rust file whose every public function '
+            'only forwards its own parameters unchanged to another owner, sibling or crate (and has no other public '
+            'item) is refused unless that edge names what the hop adds: `{ name = "<target>", adds = "translation" | '
+            '"policy" | "control" }`. A forward that changes an argument, wraps the result or is decorated adds '
+            'something. The always-on check and every `verify` (`dev_lab.dev.passthrough`).'
+        ),
+        ('tests/test_dev_passthrough.py',),
+    ),
+    (
         'ONE-FORMAT-PER-NEED',
         (
             # Why: user ruling R3 -- one format per need, so no reader ever parses a second shape of one fact.

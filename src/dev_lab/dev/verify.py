@@ -49,7 +49,7 @@ from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
-from dev_lab.dev import depneeds, verifiedby
+from dev_lab.dev import depneeds, ownerdag, passthrough, verifiedby
 from dev_lab.dev._verify_address import tree_address
 from dev_lab.dev.changeselect import changed_paths, select
 from dev_lab.dev.footprint import Footprints
@@ -219,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
     refused = refused or _needs_refusal(root, parsed.part)
     refused = refused or scan_refusal(root)  # DECLARED-LAYOUT / NO-BACKUP-COPIES: the incremental scan, every run
     refused = refused or stale_refusal(root)  # IR-STALE-GENERATED / IR-VERSION-NOT-BUMPED (dev.irschema)
+    refused = refused or ownerdag.refusal(root) or passthrough.refusal(root)  # OWNER-DAG / NO-DETOUR, when declared
     early = chosen if isinstance(chosen, int) else _early(root, refused, producer=outside is None)
     if early is not None:
         return early
