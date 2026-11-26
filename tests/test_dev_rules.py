@@ -148,6 +148,7 @@ _IDS = frozenset(
         'NATIVE-FIRST',
         'OWNER-DAG',
         'NO-DETOUR',
+        'ENV-IS-READ-ONCE',
         'MACHINES-MEET-ONLY-THROUGH-THE-FORGE',
         'CONFIG-VALUES-CARRY-UNITS',
     }

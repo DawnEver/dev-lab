@@ -260,6 +260,8 @@ _ENFORCED = {
     'NEVER-LOG-SECRETS': (guard('tests/test_dev_secretlog.py'),),
     # 2026-11-25 (family policy, v1-migration D67/D68): the environment is read in the declared entry only.
     'ENV-IS-READ-ONCE': (guard('tests/test_dev_envreads.py'),),
+    # 2026-11-25 (tests-by-need, H2): a rewritten baseline quotes both its old and new deviation.
+    'BASELINE-REWRITE-QUOTED': (guard('tests/test_dev_baselines.py'),),
     # 2026-11-23 (user ruling): origin holds only family version tags; pre-push refuses any other tag.
     'ONLY-VERSION-TAGS': (guard('tests/test_dev_milestonebase.py'),),
     # User 2026-11-20: a research deploy called crontab on a cluster forbidding it; steps derive from `serves`.
