@@ -19,6 +19,12 @@ mis = "mis"
 writeable = "writeable"
 # A cited author (Mak-Morton-Wood), not a misspelling of make.
 Mak = "Mak"
+# Model order reduction, an acronym -- not a misspelling of MORE.
+MOR = "MOR"
+# Commutated drives (current switched between phases), not a misspelling of commuted.
+commutated = "commutated"
+# Rotordynamics: the critical speeds a rotor passes, as a noun plural -- not a misspelling of critical.
+criticals = "criticals"
 
 [default.extend-identifiers]
 # numpy.typing.NDArray: a foreign API name, split by typos into "ND" + "Array".
