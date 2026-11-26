@@ -55,7 +55,7 @@ def test_a_dry_run_prints_and_runs_nothing() -> None:
 
 def test_disk_and_clean_run_the_servers_ops_door_with_its_declared_retention() -> None:
     server = declared_servers(
-        {'server': [{'name': 'forge', 'target': 'ops@f', 'gitea_data': '/srv/gitea/data', 'journal_max_mb': 300}]}
+        {'server': [{'name': 'forge', 'target': 'ops@f', 'gitea_data': '/srv/gitea/data', 'journal_max': '300 MiB'}]}
     )['forge']
     door = 'sudo /opt/dev-lab/.venv/bin/python -m dev_lab.ops --config /etc/dev-lab/supervise.toml'
     assert remote_line(server, 'disk', None) == f'{door} disk --gitea-data /srv/gitea/data --journal-max-mb 300'
@@ -74,9 +74,11 @@ def test_the_retention_defaults_are_documented_values() -> None:
         ('gitea_data', '/var/lib/gitea;rm -rf /'),
         ('gitea_data', 'relative'),
         ('gitea_data', '/a/../b'),
-        ('journal_max_mb', 10),
-        ('journal_max_mb', '500'),
-        ('journal_max_mb', True),
+        ('journal_max', '10 MiB'),
+        ('journal_max', '500'),
+        ('journal_max', 500),
+        ('journal_max', True),
+        ('journal_max', '500 min'),
     ],
 )
 def test_a_retention_value_that_widens_the_line_is_refused(field: str, value: object) -> None:
@@ -84,6 +86,13 @@ def test_a_retention_value_that_widens_the_line_is_refused(field: str, value: ob
     row = {'name': 'forge', 'target': 'ops@f', field: value}
     with pytest.raises(ValueError, match=field):
         remote_line(declared_servers({'server': [row]})['forge'], 'clean', None)
+
+
+def test_the_retired_journal_max_mb_is_refused_with_its_new_line() -> None:
+    """FORMATS-MIGRATE-ONCE (user ruling 2026-11-25): the unit-suffixed key is never read."""
+    row = {'name': 'forge', 'target': 'ops@f', 'journal_max_mb': 300}
+    with pytest.raises(ValueError, match=r'journal_max_mb = 300 is retired.*write journal_max = "300 MiB"'):
+        declared_servers({'server': [row]})
 
 
 def test_a_server_table_without_a_target_is_refused() -> None:

@@ -1,6 +1,7 @@
 """THE VERIFY STEPS, run under one root into one log and folded into one verdict.
 
-:func:`run_verify` runs ruff check, ruff format --check, typos (:mod:`dev_lab.dev.spelling`) and pytest (in
+:func:`run_verify` runs ruff check, ruff format --check, typos (:mod:`dev_lab.dev.spelling`), pyright
+(:mod:`dev_lab.dev.typecheck`), the Rust lint base (:mod:`dev_lab.dev.cargolints`) and pytest (in
 the box, :mod:`dev_lab.dev.verifybox`),
 each streamed through :func:`_tee` into a fresh log, and :func:`build_verdict` folds their reports. The command
 around it -- the run cache, the box-wide single run, the producer's post -- is :mod:`dev_lab.dev.verify`.
@@ -15,7 +16,6 @@ drag the verdict to INCONCLUSIVE, so all three run and the verdict names the one
 from __future__ import annotations
 
 import functools
-import os
 import shutil
 import subprocess
 import sys
@@ -31,15 +31,17 @@ from lab_commons.box import POLL_S
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev import durations
+from dev_lab.dev import baselines, cargostep, durations
 from dev_lab.dev._logdistil import distil_log
-from dev_lab.dev._verify_address import tree_address
+from dev_lab.dev._verify_address import _git_z, tree_address
 from dev_lab.dev._verify_coverage import cache_env, coverage_args, coverage_env, coverage_report, coverage_total
 from dev_lab.dev.commandtests import declared_command, script_paths, selected_command
 from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.envseat import EnvironmentSeat
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.jsrun import NoEngine, node_path
+from dev_lab.dev.lanepolicy import declares_no_test_roots
 from dev_lab.dev.logref import LogRef
 from dev_lab.dev.pytestout import strip_ansi
 from dev_lab.dev.reports import StepReport, read_lint, read_stages
@@ -85,11 +87,14 @@ LOG_KIND: Final = 'verify'
 #: so the checker that judges is the one installed in the interpreter that will run the suite -- a
 #: bare ``ruff`` on ``PATH`` can be a different version from the one the ``test`` extra resolved,
 #: and a verdict carrying an env key must have been earned under that env. ``typos`` is the
-#: US-SPELLING-IS-CHECKED step (user ruling 2026-11-24).
+#: US-SPELLING-IS-CHECKED step (user ruling 2026-11-24). ``pyright`` is TYPES-RATCHET (:mod:`dev_lab.dev.typecheck`)
+#: and ``cargo lints`` RUST-LINTS (:mod:`dev_lab.dev.cargolints`), both family mechanisms (consumer v1 D107).
 LINT_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ('ruff check .', ('ruff', 'check', '.')),
     ('ruff format --check .', ('ruff', 'format', '--check', '.')),
     ('typos', ('dev_lab.dev.spelling',)),
+    ('pyright', ('dev_lab.dev.typecheck',)),
+    ('cargo lints', ('dev_lab.dev.cargolints',)),
 )
 
 #: What pytest is always given, before anything the caller forwards. None of these three letters is
@@ -210,7 +215,7 @@ def _tee(
     """
     handle.write(f'$ {" ".join(command)}\n')
     handle.flush()
-    env = os.environ | {'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'} | (extra_env or {})
+    env = child_env({'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'}, extra_env or {})
     with _door.popen(
         command,
         cwd=cwd,
@@ -274,6 +279,27 @@ def script_step(root: Path, paths: tuple[str, ...], *, handle: IO[str]) -> StepR
     except (OSError, NoEngine) as cannot:
         return StepReport(name=name, truncated=(f'{name}: cannot start {command[0]!r} here: {cannot}',))
     return StepReport(name=name, reported=(name, *paths), failures=() if code == 0 else paths)
+
+
+def _native_steps(
+    root: Path, pytest_args: tuple[str, ...], scripts: tuple[str, ...], *, handle: IO[str], cargo: bool
+) -> list[StepReport]:
+    """The steps beside pytest: script tests, then on an untargeted run ``baselines verify`` and cargo.
+
+    ``baselines verify`` is H2's; each cargo workspace's own step (T8) runs only outside a producer, whose part
+    hands it to ``tests/cargo``.
+    """
+    steps = [script_step(root, scripts, handle=handle)] if scripts else []
+    if scripts or is_targeted(root, pytest_args):  # a selection (pytest or script) judges itself, not the tree
+        return steps
+    steps.append(baselines.step(root))
+    if not cargo:
+        return steps
+    tracked = _git_z(root, 'ls-files', '-z') or ()
+    return [
+        *steps,
+        *(cargostep.step(root, one, handle=handle, tee=_tee) for one in cargostep.workspaces(root, tracked)),
+    ]
 
 
 def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec: str, log: LogRef) -> Verdict:
@@ -346,6 +372,7 @@ def run_verify(
     wait_s: float = WAIT_S,
     poll_s: float = POLL_S,
     hooks: bool = True,
+    cargo: bool = True,
 ) -> Verdict:
     """Run the three steps under *root*, tee them into a fresh log, and return the verdict.
 
@@ -388,7 +415,10 @@ def run_verify(
     """
     selection = pytest_args
     pytest_args, scripts = script_paths(root, pytest_args)
-    only_scripts = bool(scripts) and not is_targeted(root, pytest_args)
+    # No pytest step for a script-only selection, nor in a repo declaring no Python test tree (`test_roots = []`):
+    # there an empty collection is the declaration, not a shortfall. A repo WITH test roots collecting none stays
+    # INCONCLUSIVE.
+    no_pytest = (bool(scripts) and not is_targeted(root, pytest_args)) or declares_no_test_roots(root)
     allowed = declared_skips(root)
     vanished = vanished_shortfall(stale_declarations(root, allowed))
     path = output_dir(root, LOG_KIND) / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
@@ -404,9 +434,8 @@ def run_verify(
                 reports.append(read_hooks(root, handle=handle))
             for name, arguments in LINT_STEPS:
                 reports.append(read_lint(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
-            if scripts:
-                reports.append(script_step(root, scripts, handle=handle))
-            if not only_scripts:
+            reports.extend(_native_steps(root, pytest_args, scripts, handle=handle, cargo=cargo))
+            if not no_pytest:
                 handle.write(_PYTEST_BANNER)
                 stamp = {
                     durations.LEDGER_TREE_VAR: tree_address(root),
@@ -457,7 +486,7 @@ def run_verify(
                     cut += ended_in_the_box(record)
     finally:
         _land(live, outcomes_dir(path))
-    if only_scripts:
+    if no_pytest:
         return build_verdict(
             tuple(reports),
             tree=tree_address(root),

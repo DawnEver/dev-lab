@@ -40,7 +40,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box.providers import account_seats
 from lab_commons.compute import learned
 from lab_commons.compute.measured import Measured
 from lab_commons.compute.presence import cached
@@ -71,6 +70,7 @@ from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_files, task_item
 from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgescope import ReachedFiles
+from dev_lab.dev.forgeservedeclared import account_tool_seats
 from dev_lab.dev.forgestuck import parse_duration, remote_path
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import needs_of_row
@@ -399,7 +399,7 @@ class SlurmCluster:
         usage = self.quota()
         left = quotawatch.admitted_files(usage, policy := quotawatch.declared_lines())
         account = SlurmAccount(read, files=math.inf if left is None else left)
-        supply = Engine({self.scope: [account, account_seats(cached())]}).available(self.scope)
+        supply = Engine({self.scope: [account, account_tool_seats(cached())]}).available(self.scope)
         snapshot, qos = read[0]
         shell = self.connect(self.machine.grants[0])
         facts: dict[str, object] = {

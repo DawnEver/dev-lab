@@ -104,7 +104,7 @@ def test_a_cycle_the_box_refuses_outright_is_not_called_a_held_seat(
 
     The machine here declares a free-space floor no volume keeps, which is the refusal the hosted runner gave.
     """
-    Path(os.environ[CONFIG_ENV]).write_text('[storage]\nfree_floor_gb = 1e12\n', encoding='utf-8')
+    Path(os.environ[CONFIG_ENV]).write_text('[storage]\nfree_floor = "1e12 GiB"\n', encoding='utf-8')
     probe = _Probe()
     assert _loop(tmp_path, probe).once(_CLOCK) is None
     said = capsys.readouterr().out

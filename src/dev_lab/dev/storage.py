@@ -10,6 +10,8 @@ module is dev-lab's ONE adapter onto it (:func:`kind_root`, :func:`output_path`)
   hand-edits an rclone config; the secret never reaches argv, a log or this module's output.
 * ``check <remote> [--to P]`` renders, then lists the remote's top level through the pinned rclone: the one proof a
   placed secret reaches it (rclone absent names :func:`dev_lab.dev.toolrelease.door`).
+* :func:`run_objects` is that proof for the family's run store (``[storage] runs``): it returns the
+  :class:`lab_commons.objects.RcloneObjects` every run's oversize results travel through, or refuses by name.
 * ``publish [--to P]`` writes the bound roots as JSON (:func:`publish`) for the agent-guard engine, which reads no
   TOML: a worktree under a bound ``worktrees`` root is admitted by WORKTREES-STAY-INSIDE only through it.
 * ``migrate <kind>`` moves the in-tree default of a bound kind to its bound root ONCE and leaves a marker; a
@@ -32,6 +34,7 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons import launch as _door
+from lab_commons import objects as _objects
 from lab_commons import storage as _storage
 from lab_commons.config import config_path
 from lab_commons.log import emit
@@ -40,11 +43,11 @@ from dev_lab.dev.gitdirs import common_dir
 from dev_lab.dev.hpcaccount.grantslice import read_machine
 
 __all__ = [
-    'DEFAULT_RCLONE',
     'MARKER',
     'ROOTS_ENV',
     'Run',
     'StaleTree',
+    'StoreUnreached',
     'check',
     'checkout_output_path',
     'kind_root',
@@ -57,14 +60,13 @@ __all__ = [
     'render',
     'rendered',
     'roots_file',
+    'run_objects',
     'worktrees_root',
 ]
 
 #: The file a migration leaves at the bound root, naming the tree it came from.
 MARKER: Final = '.storage-migrated'
 
-#: Where ``render`` writes when no ``--to`` is given: outside every repo, beside the machine's config.
-DEFAULT_RCLONE: Final = Path('~/.config/lab-commons/rclone.conf')
 #: A check answers in seconds or says why: rclone's default retries made a refused key look like a hung terminal
 #: (measured 2026-11-20).
 CHECK_BOUNDS: Final = ('--contimeout', '15s', '--timeout', '30s', '--retries', '1', '--low-level-retries', '1')
@@ -76,6 +78,10 @@ ROOTS_ENV: Final = 'LAB_COMMONS_STORAGE_ROOTS'
 
 class StaleTree(RuntimeError):
     """A bound kind still has an in-tree copy: migrate it once, or delete the leftover."""
+
+
+class StoreUnreached(_storage.StorageError):
+    """The family declares a run store this machine does not reach: the message names the store and its door."""
 
 
 def main_of(tree: Path) -> Path:
@@ -224,7 +230,7 @@ def render(to: Path, *, repo: Path, declared: _storage.Storage | None = None) ->
 
     declared = _storage.declared() if declared is None else declared
     if (to := to.expanduser()).resolve().is_relative_to(repo.resolve()):
-        msg = f'the rclone config is never in a repo: render it outside {repo} (e.g. {DEFAULT_RCLONE})'
+        msg = f'the rclone config is never in a repo: render it outside {repo} (e.g. {_objects.RCLONE_CONFIG})'
         raise ArtifactRefused(msg)
     to.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(to, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -259,7 +265,7 @@ type Run = Callable[..., subprocess.CompletedProcess[str]]
 
 
 def check(
-    remote: str, *, repo: Path, to: Path = DEFAULT_RCLONE, declared: _storage.Storage | None = None,
+    remote: str, *, repo: Path, to: Path = _objects.RCLONE_CONFIG, declared: _storage.Storage | None = None,
     run: Run = _door.run, rclone: Sequence[str] = (),
 ) -> str:  # fmt: skip
     """Render, then list *remote*'s top level through rclone; what was reached, value-free.
@@ -286,6 +292,37 @@ def check(
     return f'{remote}: reached ({len(done.stdout.splitlines())} top-level entr(y/ies)) through {written}'
 
 
+def run_objects(
+    repo: Path, *, declared: _storage.Storage | None = None, rclone: Sequence[str] = (), run: Run = _door.run,
+    to: Path = _objects.RCLONE_CONFIG,
+) -> _objects.RcloneObjects | None:  # fmt: skip
+    """The object store every run on this machine uses: the family's ``[storage] runs``, proven reached.
+
+    THE ONE CALL a dev-lab consumer needs: it hands its checkout (*repo*, which the rendered rclone config stays
+    outside) and never reads hosts-config. ``None`` when the family declares no run store.
+
+    Raises:
+        StoreUnreached: the store is declared but this machine does not reach it -- no reach, no placed secret, or
+            the listing refused -- naming the store and the door that places its secret.
+
+    """
+    declared = _storage.declared() if declared is None else declared
+    if declared.runs is None or declared.runs_remote is None:
+        return None
+    name = declared.runs_remote
+    try:
+        check(name, repo=repo, to=to, declared=declared, run=run, rclone=rclone)
+    except _storage.StorageError as cause:
+        msg = (
+            f'the family declares run store {declared.runs!r} and this machine does not reach {name!r}: {cause} -- '
+            f'on a workstation `python -m dev_lab.ops.secretplace enter --remote {name}`, for an HPC account '
+            f'`python -m dev_lab.ops.secretplace distribute --remote {name}`; then '
+            f'`python -m dev_lab.dev.storage check {name}`'
+        )
+        raise StoreUnreached(msg) from cause
+    return _objects.declared_objects(declared, rclone=tuple(rclone) or (rclone_exe(),), config=to)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run one door; 2 on a refusal (named on stderr)."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.storage', description=__doc__.split('\n')[0])
@@ -293,10 +330,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     where = sub.add_parser('where', help='print each kind root of this checkout')
     where.add_argument('kinds', nargs='*')
     out = sub.add_parser('render', help='write the reached rclone remotes, owner-only, outside every repo')
-    out.add_argument('--to', type=Path, default=DEFAULT_RCLONE)
+    out.add_argument('--to', type=Path, default=_objects.RCLONE_CONFIG)
     probe = sub.add_parser('check', help='render, then list one reached remote through rclone')
     probe.add_argument('remote')
-    probe.add_argument('--to', type=Path, default=DEFAULT_RCLONE)
+    probe.add_argument('--to', type=Path, default=_objects.RCLONE_CONFIG)
     move = sub.add_parser('migrate', help='move a bound kind out of the checkout once')
     move.add_argument('kind')
     shown = sub.add_parser('publish', help='write the bound roots for the agent-guard engine')

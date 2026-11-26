@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from lab_commons.config import config_path
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 
 from dev_lab.dev import agenthooks, familyrepos
 from dev_lab.dev.hook_adoption import HookAdoption, render

@@ -219,7 +219,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/hpcaccount/__init__.py',
         'PLC0415',
-        'from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL_MINUTES',
+        'from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL',
     ): 'spec imports the package (division, grantslice) and the roles table; only the tick verb needs its default',
     (
         'src/dev_lab/dev/servelock.py',
@@ -742,7 +742,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'rows = {path: frozen.index_object(root, path)[1] for path in (_SETTINGS, _DOCS)}',
     ): 'index_object returns None for an untracked path; the fixture tracked both',
     (
-        'tests/test_dev_large_objects.py',
+        'tests/test_dev_storage_run_objects.py',
         'arg-type',
         "assert forgeunit.main(['unit=x'], cwd=_checkout(tmp_path), client=object()) == 2",
     ): 'planted control: a client that is not one, to prove the refusal happens before any call',

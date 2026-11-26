@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 
 _PRINT = 'from dev_lab.dev import _deny_machinefile_row as r; print("/".join(r._PARTS))'
 

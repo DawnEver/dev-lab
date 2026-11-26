@@ -20,7 +20,7 @@ from dev_lab.dev.locklag import LAG_WINDOW, Lag
 from dev_lab.ops.consent.door import hello
 
 KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA1dtjiBuQjg+mT4+rUmSfSrdgiwtUSw9TlircWVvVC0'
-FAMILY = '[dev]\nref = "integrate/main"\nbridge = { hpc = { cadence_hours = 6 } }\n[consent]\nendpoint = "c@i"\n'
+FAMILY = '[dev]\nref = "integrate/main"\nbridge = { hpc = { cadence = "6 h" } }\n[consent]\nendpoint = "c@i"\n'
 
 
 def _machine(tmp_path: Path, *, declared: bool = True, keyed: bool = True) -> dict[str, Any]:

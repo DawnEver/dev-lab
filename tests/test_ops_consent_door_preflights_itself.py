@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 from _ops_fixtures import NOW, code
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 from test_dev_planrun import CANDIDATE, CONF, LOCAL, PY, FakeHost, secret_here
 from test_dev_planrun import PLAN as STEPPED
 from test_ops_consent_door import WAVE, Wire, issuer

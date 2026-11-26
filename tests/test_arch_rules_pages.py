@@ -35,7 +35,8 @@ from dev_lab.dev.rules import RULES
 #: Raised 60 -> 70 (2026-10-27), 70 -> 73 and 73 -> 76 (2026-11-13) for the principles page, by user ruling.
 #: Raised 75 -> 79 (2026-11-22, user ruling): images-by-absolute-path and worktree-names-its-task, two lines each.
 #: Raised 141 -> 145 (2026-11-25, user ruling D51 L2): the native-first principle, four lines.
-RULES_LINE_CEILING = 145  # 2026-11-24: AGENTS.md is the one entry; the rule pages and the family section moved in
+#: Raised 145 -> 149 (2026-11-25, user-approved v1 D67/D68): everything-in-its-place and no-detour, two lines each.
+RULES_LINE_CEILING = 149  # 2026-11-24: AGENTS.md is the one entry; the rule pages and the family section moved in
 
 #: This repo's pages, MEASURED 2026-09-17, to the line count each may not exceed. TWO-SIDED in all
 #: four directions -- grew, shrank, arrived unpinned, pinned and gone -- and the reason the total
@@ -43,7 +44,7 @@ RULES_LINE_CEILING = 145  # 2026-11-24: AGENTS.md is the one entry; the rule pag
 #: page; raising one is a claim that a new hard constraint could not be expressed inside the budget,
 #: and that claim belongs in the commit message where a reader can refuse it.
 RULES_PAGE_PINS: dict[str, int] = {
-    'AGENTS.md': 145,  # the two former rule pages plus the rendered family section (2026-11-24); native-first
+    'AGENTS.md': 149,  # the two former rule pages plus the rendered family section (2026-11-24); native-first; D67/D68
 }
 
 #: A rules page must exist at all: a ceiling over an empty directory is a check that cannot fail.

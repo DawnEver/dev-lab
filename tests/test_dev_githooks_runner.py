@@ -70,6 +70,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'task-bound',
         'memory-adds',
         'zero-core-change',
+        'env-pending-shrinks',
         'session-branch',
         'milestone-base',
         'closed-pr',
@@ -79,6 +80,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'session-prs',
     }
     assert {hook.id for hook in table['commit-msg']} == {
+        'baseline-rewrite-quoted',
         'conventional-commit',
         'forge-host',
         'issue-ref',
@@ -158,6 +160,7 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
         'task-bound',
         'memory-adds',
         'zero-core-change',
+        'env-pending-shrinks',
         'session-branch',
         'milestone-base',
         'closed-pr',
