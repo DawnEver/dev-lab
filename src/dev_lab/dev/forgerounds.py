@@ -31,12 +31,13 @@ from lab_commons.compute.presence import cached
 from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import forgerun, forgerunstate
+from dev_lab.dev._forgeproduce_box import box_claim
 from dev_lab.dev.forgealarm import AUTH, Alarm
 from dev_lab.dev.forgeclaim import Work
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgefleet import watch as fleet_watch
 from dev_lab.dev.forgehosts import HostCard, card_host, publish_card
-from dev_lab.dev.forgeproduce import Produced, box_claim
+from dev_lab.dev.forgeproduce import Produced
 from dev_lab.dev.forgetick import TickReport, tick
 from dev_lab.dev.forgewait import Box
 from dev_lab.dev.partrows import needs_of_row
@@ -176,7 +177,7 @@ def reserve(
 ) -> int | str:
     """TAKE *item*'s box claim now, at exactly what its producer declares: its ledger row.
 
-    The demand is :func:`~dev_lab.dev.forgeproduce.box_claim`'s. The tick calls this before it claims the
+    The demand is :func:`~dev_lab.dev._forgeproduce_box.box_claim`'s. The tick calls this before it claims the
     part and the producer's box run adopts the row, so the one admission is the tick's. A box with no room
     returns why (nothing held, nothing to post).
     """

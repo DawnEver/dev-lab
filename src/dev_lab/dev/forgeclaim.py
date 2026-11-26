@@ -177,7 +177,7 @@ class Work:
     ``tests/<part>`` for a part (the default), *request* -- ``request/<n>`` -- for a request. A claimed job
     carries what produces it: a local *argv* -- as the sha declares it, run by the interpreter of the
     producer's tree at the sha -- or a *cluster* part advanced by serve. *demand* is what a claim was admitted
-    at: a local producer declares exactly that to the box (:func:`dev_lab.dev.forgeproduce.boxed`).
+    at: a local producer declares exactly that to the box (:func:`dev_lab.dev._forgeproduce_box.boxed`).
     """
 
     ref: str

@@ -20,7 +20,7 @@ from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
 from lab_commons.hpc.declared import OutdatedKit
 from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _origin, _tick
 
-from dev_lab.dev import forgeclaim, forgeproduce, forgerequesthost
+from dev_lab.dev import _forgeproduce_box, forgeclaim, forgeproduce, forgerequesthost
 from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
 from dev_lab.dev.forgepublish import RequestRefused, publish
@@ -168,7 +168,8 @@ def test_a_request_is_admitted_at_the_size_its_row_declares_never_the_whole_host
     (claimed,) = _tick(repo, server, supply=FEMM_HOST).claimed
     assert dict(claimed.demand) == {'cpu': 2, 'mem_gb': 3.5, 'femm': 1.0, 'windows': 1.0}
     assert claimed.wall_s == 72 * 3600, 'S5: the wall its row declares, not the 24 h every box part gets'
-    held = forgeproduce.boxed(claimed, ['py'], Capacity(cpu=8, mem_bytes=32 * 1024**3, seats={}), tmp_path / 'o.json')
+    size = Capacity(cpu=8, mem_bytes=32 * 1024**3, seats={})
+    held = _forgeproduce_box.boxed(claimed, ['py'], size, tmp_path / 'o.json')
     assert held[held.index('--wall') + 1] == str(72 * 3600)
 
 
@@ -314,7 +315,7 @@ def test_a_request_run_is_learned_under_its_producer_name(tmp_path: Path) -> Non
     """S1: what a request's run measured sizes ITS next run, never the test part of its need-set."""
     item = Work('issue/9', 'a' * 40, 'femm+windows', MINE, ME, argv=ARGV, request='request/9', producer='femm_goldens')
     repo, _tips = _origin(tmp_path)
-    forgeproduce.learn_box_run(repo, item, Run(peak_mem_gb=4.0, cpu_s=7200.0, wall_s=3600.0), ended='exit')
+    _forgeproduce_box.learn_box_run(repo, item, Run(peak_mem_gb=4.0, cpu_s=7200.0, wall_s=3600.0), ended='exit')
     url = origin_url(repo)
     assert run_of(url, 'femm_goldens', {'femm', 'windows'}) == Run(4.0, 7200.0, 3600.0)
     assert run_of(url, LOCAL, {'femm', 'windows'}) is None
@@ -324,7 +325,7 @@ def test_planted_a_request_run_the_wall_cut_is_never_learned(tmp_path: Path) -> 
     """O53: only a run that ended by itself (or a memory kill) is a price; a wall-cut run teaches nothing."""
     item = Work('issue/9', 'a' * 40, 'femm+windows', MINE, ME, argv=ARGV, request='request/9', producer='femm_goldens')
     repo, _tips = _origin(tmp_path)
-    forgeproduce.learn_box_run(repo, item, Run(peak_mem_gb=40.0, cpu_s=7200.0, wall_s=3600.0), ended='wall')
+    _forgeproduce_box.learn_box_run(repo, item, Run(peak_mem_gb=40.0, cpu_s=7200.0, wall_s=3600.0), ended='wall')
     assert run_of(origin_url(repo), 'femm_goldens', {'femm', 'windows'}) is None
 
 

@@ -29,6 +29,7 @@ from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev import (
+    _forgeproduce_box,
     branchpolicy,
     forgeclaim,
     forgehosts,
@@ -227,7 +228,7 @@ def _serve(
     monkeypatch.setattr(forgerounds, 'tick', tick)
     monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgehosts, 'origin_url', lambda _root: 'https://f/o/r.git')
-    monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
+    monkeypatch.setattr(_forgeproduce_box, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/windows=failure'])
     forge.route(monkeypatch)
     monkeypatch.setattr(forgehosts, 'publish', lambda _client, card: cards.append(card) or 'updated')
@@ -513,7 +514,7 @@ def test_a_beat_shorter_than_the_renewal_renews_only_when_the_renewal_is_due(mon
     forge.route(monkeypatch)
     monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
-    monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
+    monkeypatch.setattr(_forgeproduce_box, 'origin_url', lambda _root: 'https://f/o/r.git')
     waits: list[float | None] = []
     proc = _Proc(0, beats=6)
     inner = proc.wait
@@ -1223,7 +1224,7 @@ def _produce_one(monkeypatch, tmp_path: Path, proc: _Proc, **kwargs: object) -> 
     monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda _pid: False)
-    monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
+    monkeypatch.setattr(_forgeproduce_box, 'origin_url', lambda _root: 'https://f/o/r.git')
     kwargs.setdefault('spawn', lambda *_a, **_k: proc)
     return forgeproduce.produce(
         tmp_path, item, client=_client, say=lambda _l: None,
@@ -1278,7 +1279,7 @@ def test_a_part_the_box_killed_for_memory_learns_the_limit_it_died_at(monkeypatc
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     learned: list = []
     _killed_for_memory(monkeypatch, tmp_path, learn=lambda *a, **k: learned.append((a, k)))
-    declared = forgeproduce.box_claim(Work('integrate/main', SHA, 'windows', 'mine', ME), BOX, root=tmp_path)
+    declared = _forgeproduce_box.box_claim(Work('integrate/main', SHA, 'windows', 'mine', ME), BOX, root=tmp_path)
     ((_root, _item, run), how) = learned[0]
     assert (run.peak_mem_gb, how) == (declared['mem_gb'], {'ended': 'memory'})
 
@@ -1286,11 +1287,11 @@ def test_a_part_the_box_killed_for_memory_learns_the_limit_it_died_at(monkeypatc
 def test_a_killed_part_is_reclaimed_at_a_grown_figure(monkeypatch, tmp_path: Path) -> None:
     """End to end on the real learn path: claimed, killed for memory, re-claimed at OOM_GROWTH x the limit."""
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
-    monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
+    monkeypatch.setattr(_forgeproduce_box, 'origin_url', lambda _root: 'https://f/o/r.git')
     item = Work('integrate/main', SHA, 'windows', 'mine', ME)
-    first = forgeproduce.box_claim(item, BOX, root=tmp_path)['mem_gb']
+    first = _forgeproduce_box.box_claim(item, BOX, root=tmp_path)['mem_gb']
     _killed_for_memory(monkeypatch, tmp_path)
-    again = forgeproduce.box_claim(item, BOX, root=tmp_path)['mem_gb']
+    again = _forgeproduce_box.box_claim(item, BOX, root=tmp_path)['mem_gb']
     assert again == min(first * learned.OOM_GROWTH * learned.BOX_HEADROOM, BOX.mem_bytes / GB) > first
 
 
@@ -1786,9 +1787,9 @@ def test_an_os_row_reaching_the_producer_is_read_as_its_part(monkeypatch, tmp_pa
     PLANTED CONTROL: the bare part claims the same box figure, and its row is never refused as a part name.
     """
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
-    monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
+    monkeypatch.setattr(_forgeproduce_box, 'origin_url', lambda _root: 'https://f/o/r.git')
     bare, row = (
-        forgeproduce.box_claim(Work('integrate/main', SHA, part, 'mine', ME), BOX, root=tmp_path)
+        _forgeproduce_box.box_claim(Work('integrate/main', SHA, part, 'mine', ME), BOX, root=tmp_path)
         for part in ('base', 'base@windows')
     )
     assert row == bare
