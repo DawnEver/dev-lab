@@ -64,8 +64,8 @@ THE REVIEW TOOLING IS PINNED ONCE, BY LOCKS: the ``door`` steps install the dev-
 never a floating branch, and never the PR head's own lock (F-76c85dbc4b77).
 
 NATIVE WHEELS ARE OPT-IN (dev-lab #981): a repo declaring ``[tool.dev_lab.wheels]`` renders
-:data:`~dev_lab.dev.nativewheels.WORKFLOW` (:mod:`dev_lab.dev.nativewheels`), and its promote job dispatches it; a repo
-that does not renders nothing of it. GitHub-hosted runners build them, so a Gitea repo declaring it is refused.
+:data:`~dev_lab.dev.nativewheels.WORKFLOW` (:mod:`dev_lab.dev.nativewheeljobs`), and its promote job dispatches it;
+a repo that does not renders nothing of it. GitHub-hosted runners build them, so a Gitea repo declaring it is refused.
 
 ``python -m dev_lab.dev.ciworkflows render`` writes; ``check`` exits 1 naming every drift -- a base workflow
 missing from disk among them.
@@ -83,7 +83,7 @@ from typing import Any, Final, cast
 from lab_commons import extras
 from lab_commons.log import emit
 
-from dev_lab.dev import hostedjobs, hostedparts, nativewheels
+from dev_lab.dev import hostedjobs, hostedparts, nativewheeljobs, nativewheels
 from dev_lab.dev._forgebackends import BACKENDS, JUDGE_HOST, backend_for, require_producer
 from dev_lab.dev.ciworkflowshape import (
     BASE_PATH,
@@ -281,8 +281,8 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
     if wheels is not None:
         if 'ci.yml' in out:
             where, ci = out['ci.yml']
-            out['ci.yml'] = (where, nativewheels.dispatched(ci, wheels.trunk))
-        out[nativewheels.WORKFLOW] = (WORKFLOW_DIRS['github'], nativewheels.workflow(wheels))
+            out['ci.yml'] = (where, nativewheeljobs.dispatched(ci, wheels.trunk))
+        out[nativewheels.WORKFLOW] = (WORKFLOW_DIRS['github'], nativewheeljobs.workflow(wheels))
     return follow_checks(out)
 
 

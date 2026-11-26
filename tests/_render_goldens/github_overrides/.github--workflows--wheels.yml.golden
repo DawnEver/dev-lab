@@ -101,6 +101,52 @@
         }
       ]
     },
+    "sdist": {
+      "runs-on": "ubuntu-latest",
+      "permissions": {
+        "contents": "read",
+        "id-token": "write",
+        "attestations": "write",
+        "artifact-metadata": "write"
+      },
+      "outputs": {
+        "version": "${{ steps.version.outputs.version }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4"
+        },
+        {
+          "name": "Build the sdist",
+          "uses": "PyO3/maturin-action@v1",
+          "with": {
+            "command": "sdist",
+            "args": "--out dist"
+          }
+        },
+        {
+          "name": "Read the version the sdist carries",
+          "id": "version",
+          "shell": "bash",
+          "run": "sdist=$(ls dist/*.tar.gz)\nversion=$(tar -xzOf \"$sdist\" \"$(basename \"$sdist\" .tar.gz)/PKG-INFO\" | sed -n \"s/^Version: //p\")\ntest -n \"$version\" || { echo \"::error::$sdist carries no Version in its PKG-INFO\"; exit 1; }\necho \"version=$version\" >> \"$GITHUB_OUTPUT\""
+        },
+        {
+          "name": "Attest the build provenance of the sdist",
+          "uses": "actions/attest-build-provenance@v4",
+          "with": {
+            "subject-path": "dist/*.tar.gz"
+          }
+        },
+        {
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "sdist",
+            "path": "dist/*.tar.gz",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
     "test": {
       "name": "test ${{ matrix.target }} (${{ matrix.python }})",
       "needs": "build",
@@ -174,8 +220,47 @@
         }
       ]
     },
+    "test-sdist": {
+      "name": "test the sdist (3.12)",
+      "needs": "sdist",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Install the family Rust toolchain 1.100.0",
+          "shell": "bash",
+          "run": "rustup toolchain install 1.100.0 --profile minimal\nrustup default 1.100.0"
+        },
+        {
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "name": "sdist",
+            "path": "dist"
+          }
+        },
+        {
+          "name": "Install the sdist",
+          "shell": "bash",
+          "run": "python -m pip install dist/*.tar.gz"
+        },
+        {
+          "name": "Import the extension",
+          "shell": "bash",
+          "run": "python -c \"import overrides._native\""
+        }
+      ]
+    },
     "release": {
-      "needs": "test",
+      "needs": [
+        "sdist",
+        "test",
+        "test-sdist"
+      ],
       "if": "${{ github.ref == 'refs/heads/main' }}",
       "runs-on": "ubuntu-latest",
       "permissions": {
@@ -183,7 +268,8 @@
       },
       "env": {
         "GH_TOKEN": "${{ github.token }}",
-        "RELEASE": "wheels"
+        "VERSION": "${{ needs.sdist.outputs.version }}",
+        "TAG": "v${{ needs.sdist.outputs.version }}"
       },
       "steps": [
         {
@@ -195,8 +281,53 @@
           }
         },
         {
-          "name": "Replace the release with this commit's wheels",
-          "run": "gh release delete \"$RELEASE\" --repo \"$GITHUB_REPOSITORY\" --yes --cleanup-tag || true\ngh release create \"$RELEASE\" dist/*.whl --repo \"$GITHUB_REPOSITORY\" --target \"$GITHUB_SHA\" --title \"Native wheels ($RELEASE)\" --notes \"The native wheels of $GITHUB_SHA, built and tested by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID.\""
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "name": "sdist",
+            "path": "dist"
+          }
+        },
+        {
+          "name": "Publish v<version> unless it is released",
+          "run": "at=$(gh api \"repos/$GITHUB_REPOSITORY/commits/$TAG\" --jq .sha 2>/dev/null) || at=\"\"\nif [ -n \"$at\" ] && [ \"$at\" != \"$GITHUB_SHA\" ]; then echo \"::error::$TAG is released from $at, and this trunk build $GITHUB_SHA carries the same version $VERSION: bump the version where the repo declares it, or declare [tool.dev_lab.wheels.release] existing = \\\"keep\\\"\"; exit 1; fi\nif gh release view \"$TAG\" --repo \"$GITHUB_REPOSITORY\" >/dev/null 2>&1; then\n  echo \"::notice::$TAG is released from this commit already; its assets are never overwritten\"; exit 0\nfi\ngh release create \"$TAG\" dist/* --repo \"$GITHUB_REPOSITORY\" --target \"$GITHUB_SHA\" --latest --title \"$TAG\" --notes \"The native wheels and sdist of version $VERSION, built from $GITHUB_SHA and tested by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID.\""
+        }
+      ]
+    },
+    "prerelease": {
+      "needs": [
+        "sdist",
+        "test",
+        "test-sdist"
+      ],
+      "if": "${{ github.ref == 'refs/heads/main' }}",
+      "runs-on": "ubuntu-latest",
+      "permissions": {
+        "contents": "write"
+      },
+      "env": {
+        "GH_TOKEN": "${{ github.token }}",
+        "VERSION": "${{ needs.sdist.outputs.version }}",
+        "ROLLING": "wheels"
+      },
+      "steps": [
+        {
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "pattern": "wheel-*",
+            "path": "dist",
+            "merge-multiple": true
+          }
+        },
+        {
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "name": "sdist",
+            "path": "dist"
+          }
+        },
+        {
+          "name": "Replace the prerelease with this commit's wheels and sdist",
+          "run": "if gh release view \"$ROLLING\" --repo \"$GITHUB_REPOSITORY\" >/dev/null 2>&1; then\n  gh release delete \"$ROLLING\" --repo \"$GITHUB_REPOSITORY\" --yes --cleanup-tag\nfi\ngh release create \"$ROLLING\" dist/* --repo \"$GITHUB_REPOSITORY\" --target \"$GITHUB_SHA\" --prerelease --title \"$ROLLING (prerelease of $VERSION)\" --notes \"The native wheels and sdist of $GITHUB_SHA (version $VERSION), built and tested by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID; recreated at every trunk build.\""
         }
       ]
     }

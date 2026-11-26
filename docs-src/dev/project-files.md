@@ -65,16 +65,18 @@ re-render; never hand-edit a rendered file.
 
 ## Native wheels (opt-in)
 
-A family repo builds its Rust extension from source; an EXTERNAL user installs a prebuilt wheel. A GitHub repo
-whose build backend is maturin opts in with one table, and `python -m dev_lab.dev.ciworkflows render` then writes
-`.github/workflows/wheels.yml` (`dev_lab.dev.nativewheels`). A repo without the table renders nothing of it.
+A family repo builds its Rust extension from source; an EXTERNAL user installs a prebuilt wheel, or builds the sdist
+with Rust. A GitHub repo whose build backend is maturin opts in with one table, and `python -m
+dev_lab.dev.ciworkflows render` then writes `.github/workflows/wheels.yml` (declared and refused by
+`dev_lab.dev.nativewheels`, rendered by `dev_lab.dev.nativewheeljobs`). A repo without the table renders nothing of
+it.
 
 ```toml
 [tool.dev_lab.wheels]
 targets = ["linux-x86_64", "windows-x86_64", "macos-universal2"]
 python = ["3.12", "3.13", "3.14", "3.15"]   # every wheel is tested on each
 abi3 = "3.12"                               # the minimum Python of the cp312-abi3 tag; false: one wheel per version
-release = "wheels"                          # optional: the GitHub Release the trunk's wheels replace
+release = { rolling = "wheels", versioned = true }   # optional: where the trunk's wheels and sdist are published
 # manylinux = "2_28"                        # optional: the Linux platform policy (2_28 when omitted)
 ```
 
@@ -86,15 +88,26 @@ release = "wheels"                          # optional: the GitHub Release the t
 - **Targets** are the keys of `nativewheels.TARGETS` (the refusal of a wrong one lists them): each names its
   GitHub-hosted runner, where its wheel is built and tested, and its Rust target.
 - **The import tested** is `[tool.maturin] module-name`; a declaration without it is refused.
+- **Releases** (user ruling D34; GitHub Releases only, never PyPI: D19), each optional, at least one when `release`
+  is declared:
+  - `versioned = true`: `v<version>` is created once per package version, as the latest release. The version is
+    the one maturin writes into the sdist, read from the repo's single declared source (a Cargo
+    `[workspace.package] version` maturin reads, or the pyproject's). Its assets are never overwritten: a re-run on
+    its own commit leaves it as it is, and a trunk build of an already released version from ANOTHER commit fails
+    naming both commits -- bump the version, or declare `existing = "keep"` to leave the release as it is.
+  - `rolling = "<tag>"`: a PRERELEASE deleted and created again at every trunk build, so GitHub never shows it as
+    the latest. A `v<digit>...` tag is refused: those are the versioned release's.
 - **When it runs**: a push to the trunk (`[tool.dev_lab.integrator] trunk`), or a dispatch. The promote job pushes
   the trunk with the job token, which starts no workflow, so the render adds a step to `ci.yml`'s promote job that
-  dispatches `wheels.yml` once the promote step passed.
-- **What it produces**: `build` (maturin through `PyO3/maturin-action`, one artifact per wheel, each with GitHub's
-  build provenance attestation -- `gh attestation verify <wheel> --repo <owner>/<repo>`), `test` (a fresh runner
-  per target and version, no checkout: `pip install` the wheel with its dependencies, then import the module) and,
-  with `release`, `release`: on the trunk only, after every test passed, the release is deleted and created again
-  at the built commit with every wheel. The family publishes to GitHub Releases, never PyPI (D19). An external user
-  installs with `pip install <package> --find-links https://github.com/<owner>/<repo>/releases/expanded_assets/<release>`.
+  dispatches `wheels.yml` once the promote step passed. A dispatch on another branch builds and tests only.
+- **What it produces**: `build` (maturin through `PyO3/maturin-action`, one artifact per wheel), `sdist` (one
+  `maturin sdist`, its version the job's output), `test` (a fresh runner per target and version, no checkout:
+  `pip install` the wheel with its dependencies, then import the module), `test-sdist` (a fresh Linux runner on the
+  oldest `python` with the family's pinned Rust toolchain, `rusttoolchain.CHANNEL`: the sdist built, installed and
+  imported), then, on the trunk once every test passed, `release` and `prerelease` as declared, each carrying every
+  wheel and the sdist. Every wheel and the sdist carry GitHub's build provenance attestation: `gh attestation verify
+  <file> --repo <owner>/<repo>`. An external user installs with `pip install <package> --find-links
+  https://github.com/<owner>/<repo>/releases/expanded_assets/<tag>` (`v<version>`, or the rolling tag).
 - **Refused**: a malformed table (the refusal names the shape), a Gitea repo (no hosted Linux, Windows and macOS
   runners), and a `[tool.dev_lab.ci."wheels.yml"]` table beside it.
 

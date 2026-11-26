@@ -20,7 +20,7 @@ issues = "read"
 targets = ["linux-x86_64", "windows-x86_64", "macos-universal2"]
 python = ["3.12", "3.15"]
 abi3 = "3.12"
-release = "wheels"
+release = { rolling = "wheels", versioned = true }
 """
 #: The executor kind each role binds, as :data:`~dev_lab.dev.roles.ROLES_ENV` carries them.
 ROLES = {'merge': 'ci', 'promote': 'ci', 'prune': 'ci', 'review': 'ci', 'tests': 'ci'}
