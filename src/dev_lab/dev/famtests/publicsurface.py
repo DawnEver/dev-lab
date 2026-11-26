@@ -44,7 +44,7 @@ def bound_names(body: list[ast.stmt]) -> set[str]:
             names.update(t.id for t in node.targets if isinstance(t, ast.Name))
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             names.add(node.target.id)
-        elif isinstance(node, ast.TypeAlias) and isinstance(node.name, ast.Name):
+        elif isinstance(node, ast.TypeAlias):
             names.add(node.name.id)
         elif isinstance(node, ast.If | ast.Try | ast.With):
             names |= bound_names(_branch_bodies(node))
@@ -65,15 +65,15 @@ def _declared(tree: ast.Module) -> list[str] | None:
     """The module's ``__all__`` entries, annotated or plain (an EMPTY annotated one is a declaration), else None."""
     declared: list[str] | None = None
     for node in tree.body:
-        targets: list[ast.expr] = []
         if isinstance(node, ast.Assign):
-            targets = list(node.targets)
+            targets, value = list(node.targets), node.value
         elif isinstance(node, ast.AnnAssign):
-            targets = [node.target]
+            targets, value = [node.target], node.value
+        else:
+            continue
         if any(isinstance(t, ast.Name) and t.id == '__all__' for t in targets):
-            value = node.value
             elts = value.elts if isinstance(value, ast.List | ast.Tuple) else []
-            declared = [e.value for e in elts if isinstance(e, ast.Constant)]
+            declared = [e.value for e in elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
     return declared
 
 

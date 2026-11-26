@@ -61,6 +61,7 @@ import tomllib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import cast
 
 from lab_commons.log import emit
 
@@ -132,6 +133,17 @@ def _known_keys(raw: Mapping[str, object], known: frozenset[str], where: str) ->
         raise ValueError(msg)
 
 
+def _mapping(value: object, refusal: str) -> dict[str, object]:
+    """*value* as a string-keyed table; ValueError(*refusal*) when it is not one."""
+    if isinstance(value, dict):
+        return {str(key): one for key, one in cast('dict[object, object]', value).items()}
+    raise ValueError(refusal)
+
+
+def _optional(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
 def adoption_from_table(table: Mapping[str, object], *, app_name: str) -> HookAdoption:
     """The :class:`HookAdoption` a ``[tool.dev_lab.hook_adoption]`` table declares, *app_name* its default name.
 
@@ -145,30 +157,25 @@ def adoption_from_table(table: Mapping[str, object], *, app_name: str) -> HookAd
     """
     _known_keys(table, _TABLE_KEYS, ADOPTION_TABLE)
     absent = table.get('declared_absent', [])
-    if not isinstance(absent, list) or not all(isinstance(one, str) for one in absent):
+    if not isinstance(absent, list) or not all(isinstance(one, str) for one in cast('list[object]', absent)):
         msg = f'[{ADOPTION_TABLE}] declared_absent is a list of rule IDs, got {absent!r}'
         raise ValueError(msg)
-    raw_remedies = table.get('remedies', {})
-    severities = table.get('severities', {})
-    tables = isinstance(raw_remedies, dict) and isinstance(severities, dict)
-    if not tables:
-        msg = f'[{ADOPTION_TABLE}] remedies and severities are tables keyed by rule ID'
-        raise ValueError(msg)
+    raw_remedies = _mapping(table.get('remedies', {}), f'[{ADOPTION_TABLE}] remedies is a table keyed by rule ID')
+    severities = _mapping(table.get('severities', {}), f'[{ADOPTION_TABLE}] severities is a table keyed by rule ID')
     python = venv_interpreter(os_name=current_os_name())
     remedies: dict[str, Remedy] = {}
-    for rule_id, raw in raw_remedies.items():
+    for rule_id, value in raw_remedies.items():
         where = f'{ADOPTION_TABLE}.remedies.{rule_id}'
-        table_shaped = isinstance(raw, dict)
-        if not table_shaped:
-            msg = f'[{where}] is a table {{ kind, command, allow?, path? }}, got {raw!r}'
-            raise ValueError(msg)
+        raw = _mapping(value, f'[{where}] is a table {{ kind, command, allow?, path? }}, got {value!r}')
         _known_keys(raw, _REMEDY_KEYS, where)
         command = str(raw.get('command', '')).replace('{python}', python)
-        remedies[rule_id] = Remedy(str(raw.get('kind', '')), command, raw.get('allow'), raw.get('path'))
+        remedies[rule_id] = Remedy(
+            str(raw.get('kind', '')), command, _optional(raw.get('allow')), _optional(raw.get('path'))
+        )
     return HookAdoption(
         app_name=str(table.get('app_name', app_name)),
         remedies=remedies,
-        declared_absent=frozenset(absent),
+        declared_absent=frozenset(str(one) for one in cast('list[object]', absent)),
         severities={str(key): str(value) for key, value in severities.items()},
     )
 
