@@ -38,6 +38,8 @@ _CARRIED_KINDS: Final = frozenset({'regular file', 'regular empty file', 'symbol
 _LINK: Final = 'symbolic link'
 #: An ``N`` row's fields: kind, bytes and the path.
 _N_FIELDS: Final = 3
+#: An ``R`` row's fields (a remote's name and its url) and a ``D`` row's (changed paths and the diff's bytes).
+_PAIR: Final = 2
 
 _RECORD: Final = (
     'd=${g%/.git}; r=${d#"$h"/}; [ "$d" = "$h" ] && r=.; '
@@ -170,11 +172,11 @@ def _row(last: Checkout, tag: str, rest: list[str]) -> bool:
         last.stash = text
     elif tag == 'U':
         last.unpushed = text
-    elif tag == 'R' and len(rest) == 2:  # noqa: PLR2004 -- a remote's name and its url
+    elif tag == 'R' and len(rest) == _PAIR:
         last.remotes.append((rest[0], rest[1]))
     elif tag == 'L':
         last.bundle_bytes = _number(rest[0])
-    elif tag == 'D' and len(rest) == 2:  # noqa: PLR2004 -- changed paths and the diff's bytes
+    elif tag == 'D' and len(rest) == _PAIR:
         last.changed, last.diff_bytes = _number(rest[0]), _number(rest[1])
     elif tag == 'N' and len(rest) >= _N_FIELDS and rest[1].isdigit():
         last.untracked.append(Untracked('\t'.join(rest[2:]), int(rest[1]), rest[0]))
@@ -194,7 +196,7 @@ def parse(text: str) -> Plan:
             found.path, found.absent = tail, tag == 'A'
         elif tag == 'G' and _safe(tail):
             found.checkouts.append(Checkout(tail))
-        elif tag == 'X' and len(rest) >= 2 and _safe(rest[0]):  # noqa: PLR2004 -- the checkout and git's words
+        elif tag == 'X' and len(rest) >= _PAIR and _safe(rest[0]):  # the checkout and git's words
             found.refused.append((rest[0], '\t'.join(rest[1:])))
         elif (last is None or not _row(last, tag, rest)) and raw.strip():
             found.unread.append(raw)

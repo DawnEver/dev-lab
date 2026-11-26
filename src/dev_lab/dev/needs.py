@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from lab_commons.compute.presence import declared_versions, probe
 from lab_commons.compute.probe import OS_NAMES
 from lab_commons.compute.toolchecks import CHECKS
 
@@ -173,8 +174,6 @@ def of_item(item: pytest.Item, *, root: Path) -> tuple[Need, ...]:
 
 
 def _tool_present(tool: str) -> bool:
-    from lab_commons.compute.presence import declared_versions, probe  # noqa: PLC0415 -- probed only when needed
-
     return probe(tool, CHECKS[tool], declared_versions(Path.cwd()).get(tool), now=datetime.now(UTC)).present
 
 

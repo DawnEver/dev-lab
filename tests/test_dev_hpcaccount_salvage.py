@@ -21,6 +21,7 @@ from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 import pytest
+from lab_commons.hpc.cluster import Runner
 
 from dev_lab.dev.datedlog import FAMILY_KINDS
 from dev_lab.dev.hpcaccount import inventory, salvage, salvagefetch, salvageread
@@ -52,7 +53,7 @@ def _commit(repo: Path, name: str, text: str, message: str) -> str:
     return _git(repo, 'rev-parse', 'HEAD').strip()
 
 
-def _runner(home: Path):  # noqa: ANN202 -- a Runner
+def _runner(home: Path) -> Runner:
     """The account's Runner: the fixed line in a real POSIX shell with *home* as ``$HOME``."""
     assert _SH is not None, 'no sh on PATH: every runner (Linux, Git for Windows) carries one'
     env = {**os.environ, **_ENV, 'HOME': home.as_posix()}
@@ -235,7 +236,9 @@ def test_an_untracked_file_lands_and_a_large_or_ignored_one_does_not(
     tar = (_landed(account, 'loose') / salvage.FILES['untracked']).read_bytes()
     with tarfile.open(fileobj=io.BytesIO(tar)) as held:
         assert {m.name.removeprefix('./') for m in held.getmembers()} == {'notes.md'}
-        assert held.extractfile('./notes.md').read() == b'a note\n'  # type: ignore[union-attr]
+        note = held.extractfile('./notes.md')
+        assert note is not None
+        assert note.read() == b'a note\n'
     entry = next(c for c in _manifest(account)['checkouts'] if c['path'] == 'src/loose')
     assert entry['untracked_listed'] == [{'path': 'big.bin', 'bytes': LIMIT + 1}], 'listed by name and size'
     assert f'    listed only (over {LIMIT}B): big.bin {LIMIT + 1}B' in said

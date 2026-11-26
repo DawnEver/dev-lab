@@ -42,8 +42,13 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Final, Protocol
 
 from lab_commons import launch as _door
+from lab_commons.config import section
+from lab_commons.home import repos
 
+from dev_lab.dev.artifactstores import RcloneStore
+from dev_lab.dev.datedlog import dated_log, declared_output
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.storage import run_objects
 
 __all__ = [
     'FAMILY_TABLE',
@@ -72,6 +77,8 @@ LOCK_NAMES: Final = ('references.lock',)
 #: The report's kind: its leaf directory under the dated output tree.
 KIND: Final = 'oraclegc'
 
+#: A stored object's key: ``<sha[:2]>/<sha>``, two segments.
+_SHARDED: Final = 2
 _SHA256: Final = re.compile(r'(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])')
 _HEAD: Final = re.compile(r'^([0-9a-f]{40})\trefs/heads/(\S+)$', re.MULTILINE)
 _GIT: Final = 'git'
@@ -291,7 +298,7 @@ def _listed(rows: Iterable[Mapping[str, Any]]) -> tuple[list[Stored], list[str]]
     stored, foreign = [], []
     for row in rows:
         parts = PurePosixPath(row['Path']).parts
-        if len(parts) == 2 and _SHA256.fullmatch(parts[1]) and parts[0] == parts[1][:2]:  # noqa: PLR2004 -- <sha[:2]>/<sha>
+        if len(parts) == _SHARDED and _SHA256.fullmatch(parts[1]) and parts[0] == parts[1][:2]:
             when = datetime.fromisoformat(str(row['ModTime']))
             stored.append(Stored(parts[1], int(row['Size']), when))
         else:
@@ -365,9 +372,6 @@ class _RunStore:
     tree: Path
 
     def files(self) -> list[dict[str, Any]]:
-        from dev_lab.dev.artifactstores import RcloneStore  # noqa: PLC0415 -- the real store only on the real run
-        from dev_lab.dev.storage import run_objects  # noqa: PLC0415
-
         objects = run_objects(self.tree)
         if objects is None:
             msg = 'the family declares no run store ([storage] runs): there is nothing to collect'
@@ -377,11 +381,6 @@ class _RunStore:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``report [--lock NAME ...]``: write the report; exit 1 naming the unread repos when the roots are partial."""
-    from lab_commons.config import section  # noqa: PLC0415
-    from lab_commons.home import repos  # noqa: PLC0415
-
-    from dev_lab.dev.datedlog import dated_log, declared_output  # noqa: PLC0415
-
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.oraclegc', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     verb = verbs.add_parser('report', help='write the report-only GC report; never deletes')
