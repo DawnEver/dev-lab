@@ -481,6 +481,11 @@ RETIRED_SPELLINGS: Final = {
         '2026-11-24 fold: two guards of one ledger became one',
         'renamed',
     ),
+    'secret_names': (
+        'dev_lab.dev.forgesecretnames.read: the one GET and parser of a forge answer of secret names',
+        '2026-11-26 fold: two parsers and two GETs of one answer became one',
+        'renamed',
+    ),
     'tick.RERENDER': (
         'dev_lab.dev.hpcaccount.grantslice.RERENDER, beside the grant refusal it completes',
         '2026-11-22: the grant slice owns its refusal and its remedy',
