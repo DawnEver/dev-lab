@@ -403,7 +403,6 @@ pending = [
     "src/dev_lab/dev/taskgate.py",
     "src/dev_lab/dev/taskkeys.py",
     "src/dev_lab/dev/tickholder.py",
-    "src/dev_lab/dev/toolrelease.py",
     "src/dev_lab/dev/verify.py",
     "src/dev_lab/dev/verifybox.py",
     "src/dev_lab/dev/workstationregistry.py",
