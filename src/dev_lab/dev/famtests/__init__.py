@@ -222,6 +222,9 @@ WHAT IS HERE, one module per shared body:
   one PR flow. The LIVE branch set is the forge's ``session-branch`` status (:mod:`dev_lab.dev.forgeheadgate`),
   never a test.
 
+* :mod:`dev_lab.dev.famtests.publicsurface` -- PUBLIC-SURFACE-DECLARED: every public module under the consumer's
+  source roots declares ``__all__`` and every entry resolves; private modules are exempt by filename. A planted control.
+
 * :mod:`dev_lab.dev.famtests.noreflection` -- NO-REFLECTION: no tracked Python outside attic/ and
   archived/ calls ``getattr``/``hasattr``/``setattr``/``delattr`` or defines ``__getattr__``, outside a
   two-sided allow-set keyed by path whose every entry carries its reason. Replaces one hand-written

@@ -215,7 +215,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'the same name is a defect that only the merged tree can see.'
         ),
         (
-            'tests/architecture/declarations/test_every_module_declares_its_public_surface.py',
+            'tests/test_arch_public_surface.py',
             'tests/architecture/repo/test_no_public_name_has_two_definitions.py',
         ),
     ),
