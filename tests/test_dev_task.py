@@ -369,3 +369,37 @@ def test_the_shell_row_refuses_writes_and_permits_reads() -> None:
     assert isinstance(permits, tuple | list)
     assert all(pattern.search(c) for c in refuses)
     assert not any(pattern.search(c) for c in permits)
+
+
+def test_dry_run_writes_nothing_on_any_writing_verb(
+    ledger: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """2026-11-26 (v1 #1): `--dry-run decide` WROTE a duplicate D119; every writing verb now honors it."""
+    _open(ledger)
+    task.append('toolchain', 'open-item', 'port', date=_DAY)
+    journal = ledger / 'toolchain' / 'JOURNAL.md'
+    before, commits, grants = journal.read_text(encoding='utf-8'), _log(ledger), taskauthority.events(ledger)
+    work = on_branch(tmp_path / 'work', 'pr/toolchain/door')
+    runs = (
+        ['decide', 'use A'],
+        ['log', 'progress'],
+        ['open-item', 'more'],
+        ['close-item', 'O1'],
+        ['handoff', 'next'],
+        ['amend', '--line', '2', f'- {_DAY} O1 open: ported', '--reason', 'typo'],
+        ['request', 'open', 'other', 'a goal'],
+    )
+    for argv in runs:
+        assert task.main([*argv, '--dry-run'], cwd=work) == 0, argv
+        assert 'dry-run' in capsys.readouterr().out, argv
+    assert journal.read_text(encoding='utf-8') == before
+    assert _log(ledger) == commits
+    assert taskauthority.events(ledger) == grants
+    _grant(ledger, 'open', 'other')
+    grants = taskauthority.events(ledger)
+    assert task.main(['open', 'other', 'a goal', '--dry-run'], cwd=work) == 0
+    assert not (ledger / 'other').exists()
+    assert taskauthority.events(ledger) == grants, 'a dry-run spends no grant'
+    # PLANTED CONTROL: the same verb without --dry-run writes.
+    assert task.main(['decide', 'use A'], cwd=work) == 0
+    assert journal.read_text(encoding='utf-8') != before

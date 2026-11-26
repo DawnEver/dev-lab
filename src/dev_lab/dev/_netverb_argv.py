@@ -15,6 +15,7 @@ from typing import Final
 __all__ = [
     'CARGO_NETWORK_VERBS',
     'GIT_NETWORK_VERBS',
+    'GIT_VERB_VALUED',
     'LOCAL_REPOSITORY',
     'UV_NETWORK_VERBS',
     'NotANetworkVerb',
@@ -28,14 +29,19 @@ __all__ = [
 GIT_NETWORK_VERBS: Final = ('push', 'fetch', 'pull', 'clone', 'ls-remote', 'submodule')
 
 #: The uv verbs that RESOLVE, reaching an index or a git dependency on the forge (2026-10-19: one `uv sync`
-#: of a git dependency failed on auth and the re-run passed). ``pip`` is one only as ``pip install|sync|compile``.
-UV_NETWORK_VERBS: Final = ('sync', 'lock', 'add', 'remove', 'pip')
+#: of a git dependency failed on auth and the re-run passed). ``pip`` is one only as ``pip install|sync|compile``,
+#: ``python`` only as ``python install`` (2026-11-26: it downloads an interpreter, and the door refused it).
+UV_NETWORK_VERBS: Final = ('sync', 'lock', 'add', 'remove', 'pip', 'python')
 
 #: Cargo dependency operations that can reach registries or Git. Admitting a build or a test run is not this door.
 CARGO_NETWORK_VERBS: Final = ('update', 'fetch', 'generate-lockfile')
 
 #: A verb that is a network verb only with one of these second words.
-_SUBVERBS: Final = {'submodule': frozenset({'update'}), 'pip': frozenset({'install', 'sync', 'compile'})}
+_SUBVERBS: Final = {
+    'submodule': frozenset({'update'}),
+    'pip': frozenset({'install', 'sync', 'compile'}),
+    'python': frozenset({'install'}),
+}
 
 #: Each program's global options that take a SEPARATE value (``git -C <path>``, ``uv --directory <path>``):
 #: the verb is the first word after them, so a program's own set is what finds it.
@@ -57,8 +63,8 @@ def is_network_verb(argv: Sequence[str]) -> bool:
     """Whether *argv* talks to a remote -- the ONE predicate the door, ``dep`` and the arch scan read."""
     program = _program(argv[0]) if argv else ''
     verbs = _PROGRAMS.get(program)
-    if verbs is None:
-        return False
+    if verbs is None or (program == 'uv' and '--offline' in argv):
+        return False  # `uv ... --offline` reads only the cache (2026-11-26: `uv pip compile --offline` was hinted)
     words, index = list(argv[1:]), 0
     if program == 'cargo' and words and words[0].startswith('+'):
         words = words[1:]  # rustup's explicit toolchain; preserve the original argv for execution
@@ -66,7 +72,7 @@ def is_network_verb(argv: Sequence[str]) -> bool:
         if program == 'cargo' and words[index] in {'--help', '-h', '--version', '-V', '--list'}:
             return False
         index += 2 if words[index] in _VALUED[program] else 1
-    words = [word for word in words[index:] if not word.startswith('-')]
+    words = _operands(words[index:], GIT_VERB_VALUED if program == 'git' else frozenset())
     if not words or words[0] not in verbs:
         return False
     if program == 'git' and words[0] in _GIT_REPOSITORY_VERBS and len(words) > 1 and _LOCAL_REPOSITORY.match(words[1]):
@@ -74,13 +80,34 @@ def is_network_verb(argv: Sequence[str]) -> bool:
     return words[0] not in _SUBVERBS or (len(words) > 1 and words[1] in _SUBVERBS[words[0]])
 
 
+#: Options of git's network verbs that take a SEPARATE value: ``fetch --depth 1 ../x`` names ``../x``, not ``1``.
+GIT_VERB_VALUED: Final = frozenset({
+    '--depth', '--shallow-since', '--shallow-exclude', '-o', '--server-option', '--upload-pack', '-j', '--jobs',
+    '--recurse-submodules-default', '-b', '--branch', '--origin', '--reference', '--separate-git-dir', '--filter',
+    '--receive-pack', '--repo',
+})  # fmt: skip
+
+
+def _operands(words: list[str], valued: frozenset[str]) -> list[str]:
+    """*words* without their options, and without the value of an option in *valued* that takes a separate one."""
+    kept, skip = [], False
+    for word in words:
+        if skip:
+            skip = False
+        elif word.startswith('-'):
+            skip = word in valued
+        else:
+            kept.append(word)
+    return kept
+
+
 #: The git verbs whose first operand is the repository they talk to.
 _GIT_REPOSITORY_VERBS: Final = frozenset({'push', 'fetch', 'pull', 'clone', 'ls-remote'})
 
-#: A repository named by a local path -- ``.``, ``../x``, ``/c/x``, a drive-letter path, ``file://`` -- is no remote
-#: (measured 2026-11-16: ``git -C . fetch . a:b`` was hinted as a network verb). The row's shell spelling is
+#: A repository named by a local path -- ``.``, ``../x``, ``/c/x``, ``~/x``, a drive-letter path, ``file://`` -- is
+#: no remote (measured 2026-11-16: ``git -C . fetch . a:b`` was hinted as a network verb). The row's shell spelling is
 #: :data:`dev_lab.dev._deny_rows.NETWORK_VERB_PATTERN`.
-LOCAL_REPOSITORY: Final = r'(?:\.{1,2}(?:[/\\]\S*)?|[/\\]\S*|[A-Za-z]:[/\\]\S*|file://\S*)'
+LOCAL_REPOSITORY: Final = r'(?:\.{1,2}(?:[/\\]\S*)?|~?[/\\]\S*|[A-Za-z]:[/\\]\S*|file://\S*)'
 _LOCAL_REPOSITORY: Final = re.compile(rf'^["\']?{LOCAL_REPOSITORY}["\']?$')
 
 
@@ -129,7 +156,7 @@ def spelled(command: Sequence[str]) -> list[str]:
     msg = (
         f'netverb: {first!r} is not a network verb -- spell it '
         f'`python -m dev_lab.dev.netverb -- git push ...` (or `-- {"|".join(GIT_NETWORK_VERBS)} ...`, '
-        f'`-- uv {"|".join(UV_NETWORK_VERBS)} ...`, '
+        f'`-- uv {"|".join(v for v in UV_NETWORK_VERBS if v not in _SUBVERBS)}|pip install|python install ...`, '
         f'`-- cargo {"|".join(CARGO_NETWORK_VERBS)} ...`)'
     )
     raise NotANetworkVerb(msg)

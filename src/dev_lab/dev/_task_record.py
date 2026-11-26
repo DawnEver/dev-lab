@@ -67,11 +67,13 @@ def open_record(root: Path, slug: str, *, strict: bool = True) -> Record:
     return found
 
 
-def append_line(found: Record, label: str, text: str, date: str | None) -> str:
+def append_line(found: Record, label: str, text: str, date: str | None, *, dry_run: bool = False) -> str:
     line = f'- {date or today()} {label}: {text}'
     if not LINE.match(line):
         msg = f'bad journal line {line!r}'
         raise TaskRefused(msg)
+    if dry_run:
+        return line
     with (found.dir / 'JOURNAL.md').open('a', encoding='utf-8', newline='\n') as out:
         out.write(line + '\n')
     return line

@@ -18,6 +18,9 @@ imports (:func:`dev_lab.dev.importedges.module_name`). Its three readings, all r
 Each line carries ``time``, ``event.name`` (``lab.complexity``), ``vcs.repository.url.full``,
 ``vcs.ref.head.revision`` and ``code.namespace`` (the owner), as OpenTelemetry names, and the three readings under
 ``lab.complexity.*``.
+
+``imports [MODULE ...]`` is the fourth reading, a COST rather than a shape: each module's cold import time, heaviest
+first (:mod:`dev_lab.dev.importtime`); with no module named it measures the checkout's own top-level packages.
 """
 
 from __future__ import annotations
@@ -36,6 +39,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev import importtime
 from dev_lab.dev.datedlog import date_parts
 from dev_lab.dev.importedges import import_edges, module_name
 from dev_lab.dev.metrics import checkout, repo_of
@@ -45,7 +49,7 @@ from dev_lab.dev.storage import output_path
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-__all__ = ['KIND', 'Owner', 'main', 'owners', 'read', 'record', 'trend']
+__all__ = ['KIND', 'Owner', 'main', 'owners', 'packages', 'read', 'record', 'trend']
 
 #: The output-tree kind the records live under.
 KIND: Final = 'complexity'
@@ -159,6 +163,11 @@ def owners(root: Path, files: Iterable[str]) -> tuple[Owner, ...]:
     return tuple(Owner(name, len(graph[name]), paths[name], _surface(trees[name])) for name in sorted(graph))
 
 
+def packages(root: Path, files: Iterable[str]) -> list[str]:
+    """The top-level packages *root*'s owners belong to, sorted -- what ``imports`` measures by default."""
+    return sorted({module_name(root, root / rel).split('.')[0] for rel in files if _owned(rel)})
+
+
 def _tracked(root: Path) -> frozenset[str]:
     return tracked_files(root)
 
@@ -245,10 +254,18 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     verbs.add_parser('record', help="append today's per-owner readings")
     shown = verbs.add_parser('trend', help='every run, then the top owners first -> last')
     shown.add_argument('--top', type=int, default=20, help='owners shown, by last fan-out (default 20)')
+    cost = verbs.add_parser('imports', help="each module's cold import time, heaviest first")
+    cost.add_argument('modules', nargs='*', help="modules to measure (default: the checkout's top-level packages)")
+    cost.add_argument('--python', default=sys.executable, help='the interpreter measured (default: this one)')
+    cost.add_argument('--runs', type=int, default=importtime.DEFAULT_RUNS, help='fresh interpreters per module')
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     root = cwd or Path.cwd()
     if args.verb == 'record':
         emit(str(record(root, repo=repo_of(root))))
+    elif args.verb == 'imports':
+        modules = args.modules or packages(root, _tracked(root))
+        costs = importtime.report(modules, python=args.python, runs=args.runs)
+        emit('\n'.join(cost.line() for cost in costs) or f'no package to measure under {root}')
     else:
         emit('\n'.join(trend(read(root), top=args.top)) or f'no {KIND} record under {checkout(root)}')
     return 0

@@ -177,13 +177,24 @@ def test_list_names_entries_oldest_first_and_discard_deletes_only_scratch_one_of
     assert (tmp_path / 'src/keep.py').exists()
 
 
-def test_an_undeclared_checkout_is_not_judged_by_the_row_and_a_verb_says_why(tmp_path, monkeypatch, capsys) -> None:
-    (tmp_path / '.git').mkdir()
+def test_a_checkout_with_no_layout_uses_the_family_scratch(tmp_path, monkeypatch, capsys) -> None:
+    """2026-11-26 (v1 #1): with no layout.toml every verb refused; the family default ``scratch/`` serves it."""
+    launch.run(['git', 'init', '-q', str(tmp_path)], check=True)
     monkeypatch.chdir(tmp_path)
-    assert main(['check', 'scratch/probe.py']) == 0
+    _plant(tmp_path, 'scratch/probe.py', age_days=1.0)
+    assert main(['list']) == 0
+    assert capsys.readouterr().out.split()[-1] == 'scratch/probe.py'
+    assert main(['discard', 'scratch/probe.py']) == 0
+    assert not (tmp_path / 'scratch/probe.py').exists()
+    assert main(['bogus']) == 2
+
+
+def test_a_malformed_layout_still_refuses_a_verb_naming_the_file(tmp_path, monkeypatch, capsys) -> None:
+    """PLANTED CONTROL: the default covers an ABSENT layout only; a broken one is still refused by name."""
+    _declare(tmp_path, 'scratch = 3\n')
+    monkeypatch.chdir(tmp_path)
     assert main(['list']) == 2
     assert 'layout.toml' in capsys.readouterr().out
-    assert main(['bogus']) == 2
 
 
 def _unanchored(root) -> None:

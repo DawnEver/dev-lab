@@ -75,6 +75,12 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["uv", "sync"],
+    decision = "forbidden",
+    justification = "ENVIRONMENT-THROUGH-DEP: a bare uv sync builds a checkout environment with no declared extras and no published prefix. details: docs-src/dev/refusals.md#environment-through-dep (dev-lab)",
+)
+
+prefix_rule(
     pattern = ["git", "push", ["--force", "-f", "--force-with-lease"]],
     decision = "forbidden",
     justification = "PUSH-FORCE: rewriting a shared ref invalidates every verdict taken against the old tree; --force-with-lease included. details: docs-src/dev/refusals.md#push-force (dev-lab)",

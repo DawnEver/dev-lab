@@ -89,6 +89,7 @@ __all__ = [
     'misplaced_code',
     'placement_table',
     'refuse_write',
+    'scratch_placement',
 ]
 
 #: The file suffixes that are SOURCE CODE -- a language a machine executes or compiles.
@@ -286,6 +287,17 @@ def declared_placement(root: Path) -> Placement:
         retired,
         anchor,
     )
+
+
+def scratch_placement(root: Path) -> Placement:
+    """The placement the scratch door reads: *root*'s declared one, else the family default when it has no layout.
+
+    A checkout with no :data:`LAYOUT_FILE` still has the family ``scratch/`` (2026-11-26: every scratch verb refused
+    in such a checkout); a layout that exists but is malformed still raises :class:`PlacementNotDeclared`.
+    """
+    if placement_table(root) is None:
+        return Placement(code_roots=FAMILY_CODE_ROOTS)
+    return declared_placement(root)
 
 
 def declared_misplaced(root: Path) -> list[str]:
