@@ -55,12 +55,48 @@ re-render; never hand-edit a rendered file.
   A table's `nightly = true` schedules it at the default 02:00 UTC (`nightlycron.NIGHTLY_CRON`); a repo sets its
   own time with `nightly = "<5-field cron>"` in that table (D63), and a malformed cron is refused by name. GitHub
   starts a scheduled run ~6-8 h late (measured 2026-11-18, `.claude/memory/2026/11/18/`).
+  A repo with a Rust extension may opt in to [native wheels](#native-wheels-opt-in) for external users.
 - **A relock re-renders.** Every generated row of `_famfiles_registry.PROJECT_FILES` names its renderer, and
   `_famfiles_registry.RENDERERS` is read off those rows. After a relock moves the lock, `forge sync` and the forge relock
   run each renderer whose file the tree holds, with the tree's re-synced `.venv`, and commit the output with the
   lock (`relock.rerender`); a failing renderer restores the tree and refuses. What a renderer reads from the repo
   is declared under `[tool.dev_lab.render]`: `deltas` (the famfiles delta module), `adoption` (the module
   declaring the deny-rules `ADOPTION`) and `shell_doors` (the autodoors shell doors).
+
+## Native wheels (opt-in)
+
+A family repo builds its Rust extension from source; an EXTERNAL user installs a prebuilt wheel. A GitHub repo
+whose build backend is maturin opts in with one table, and `python -m dev_lab.dev.ciworkflows render` then writes
+`.github/workflows/wheels.yml` (`dev_lab.dev.nativewheels`). A repo without the table renders nothing of it.
+
+```toml
+[tool.dev_lab.wheels]
+targets = ["linux-x86_64", "windows-x86_64", "macos-universal2"]
+python = ["3.12", "3.13", "3.14", "3.15"]   # every wheel is tested on each
+abi3 = "3.12"                               # the minimum Python of the cp312-abi3 tag; false: one wheel per version
+release = "wheels"                          # optional: the GitHub Release the trunk's wheels replace
+# manylinux = "2_28"                        # optional: the Linux platform policy (2_28 when omitted)
+```
+
+- **abi3 is the family's way** (user ruling D19): one wheel per target, built on the `abi3` floor and installable on
+  every later CPython. The extension crate enables the matching pyo3 feature
+  (`pyo3 = { ..., features = ["extension-module", "abi3-py312"] }`); a build whose wheel is not `cp312-abi3` fails
+  naming that feature. `abi3 = false` is for a crate that cannot be abi3: one wheel per (target, version). The
+  floor is never defaulted, and one above the oldest `python` is refused.
+- **Targets** are the keys of `nativewheels.TARGETS` (the refusal of a wrong one lists them): each names its
+  GitHub-hosted runner, where its wheel is built and tested, and its Rust target.
+- **The import tested** is `[tool.maturin] module-name`; a declaration without it is refused.
+- **When it runs**: a push to the trunk (`[tool.dev_lab.integrator] trunk`), or a dispatch. The promote job pushes
+  the trunk with the job token, which starts no workflow, so the render adds a step to `ci.yml`'s promote job that
+  dispatches `wheels.yml` once the promote step passed.
+- **What it produces**: `build` (maturin through `PyO3/maturin-action`, one artifact per wheel, each with GitHub's
+  build provenance attestation -- `gh attestation verify <wheel> --repo <owner>/<repo>`), `test` (a fresh runner
+  per target and version, no checkout: `pip install` the wheel with its dependencies, then import the module) and,
+  with `release`, `release`: on the trunk only, after every test passed, the release is deleted and created again
+  at the built commit with every wheel. The family publishes to GitHub Releases, never PyPI (D19). An external user
+  installs with `pip install <package> --find-links https://github.com/<owner>/<repo>/releases/expanded_assets/<release>`.
+- **Refused**: a malformed table (the refusal names the shape), a Gitea repo (no hosted Linux, Windows and macOS
+  runners), and a `[tool.dev_lab.ci."wheels.yml"]` table beside it.
 
 ## The files
 
@@ -70,7 +106,7 @@ re-render; never hand-edit a rendered file.
 | `.gitattributes` | `famconfig` RENDERED |
 | `Makefile` | `famconfig` REQUIRED: the shared target headers and the `verify` recipe; other recipes are the repo's |
 | git hooks | `[tool.dev_lab.hooks]` over `githooks/base.toml`, run by `dev_lab.dev.githooks` |
-| `.github/workflows/*.yml` | `ciworkflows` RENDERED from `[tool.dev_lab.ci]` over `ci_base.toml` |
+| `.github/workflows/*.yml` | `ciworkflows` RENDERED from `[tool.dev_lab.ci]` over `ci_base.toml`, and `wheels.yml` from `[tool.dev_lab.wheels]` |
 | `ruff.toml` / `[tool.ruff*]` | section bases `[tool.ruff]`, `[tool.ruff.lint]`, `[tool.ruff.format]` |
 | `pyproject.toml` | section bases for `[project]` and `[tool.pytest.ini_options]`; the rest declined in `PYPROJECT_DECLINED` |
 | `.claude/settings.json` | `agent_guard.wire_settings` and `allow_adoption`: one `hookdispatch` row per event, from `agent_wiring.WIRING` plus the repo's `[[tool.dev_lab.agent_hooks]]` rows (`events`, `module`, `args`, `tools`, `may_block`, `once`, `timeout`, `detached`), run in the same dispatcher; every row's `timeout` is 5 (`HOOK-UNDER-FIVE-SECONDS`) |

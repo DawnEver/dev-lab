@@ -536,6 +536,13 @@
           "run": "uv run --no-sync python -m dev_lab.dev.integrate promote --newest \"$HEAD_SHA\""
         },
         {
+          "name": "Build the native wheels of the promoted main",
+          "run": "gh workflow run wheels.yml --repo \"$GITHUB_REPOSITORY\" --ref main",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}"
+          }
+        },
+        {
           "name": "Delete the branches integration now contains",
           "if": "${{ !cancelled() }}",
           "run": "uv run --no-sync python -m dev_lab.dev.branchprune sweep"
@@ -544,7 +551,8 @@
       "permissions": {
         "contents": "write",
         "statuses": "write",
-        "pull-requests": "write"
+        "pull-requests": "write",
+        "actions": "write"
       }
     }
   }

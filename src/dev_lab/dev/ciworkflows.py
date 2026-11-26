@@ -63,6 +63,10 @@ THE REVIEW TOOLING IS PINNED ONCE, BY LOCKS: the ``door`` steps install the dev-
 (dev-lab #18), and the ``method`` steps the ai-lab commit THAT dev-lab's lock pins (its ``review`` group) --
 never a floating branch, and never the PR head's own lock (F-76c85dbc4b77).
 
+NATIVE WHEELS ARE OPT-IN (dev-lab #981): a repo declaring ``[tool.dev_lab.wheels]`` renders
+:data:`~dev_lab.dev.nativewheels.WORKFLOW` (:mod:`dev_lab.dev.nativewheels`), and its promote job dispatches it; a repo
+that does not renders nothing of it. GitHub-hosted runners build them, so a Gitea repo declaring it is refused.
+
 ``python -m dev_lab.dev.ciworkflows render`` writes; ``check`` exits 1 naming every drift -- a base workflow
 missing from disk among them.
 """
@@ -79,7 +83,7 @@ from typing import Any, Final, cast
 from lab_commons import extras
 from lab_commons.log import emit
 
-from dev_lab.dev import hostedjobs, hostedparts
+from dev_lab.dev import hostedjobs, hostedparts, nativewheels
 from dev_lab.dev._forgebackends import BACKENDS, JUDGE_HOST, backend_for, require_producer
 from dev_lab.dev.ciworkflowshape import (
     BASE_PATH,
@@ -223,6 +227,8 @@ def declared_paths(root: Path) -> frozenset[str]:
     forge = repo_forge(root)
     _, tables = _declared(root)
     names = base_names(forge) | {name for name, table in tables.items() if isinstance(table, dict)}
+    if nativewheels.declared(_declared(root)[0], str(root / 'pyproject.toml')) is not None:
+        names.add(nativewheels.WORKFLOW)
     return frozenset((WORKFLOW_DIRS[forge] / name).as_posix() for name in names)
 
 
@@ -245,6 +251,7 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
         why = '; '.join(f'{name}: {RETIRED_WORKFLOWS[name]}' for name in stale)
         msg = f'{origin}: [tool.dev_lab.ci] declares a retired workflow -- {why}; delete the table and its file'
         raise ValueError(msg)
+    wheels = _wheels(text, origin, forge, declared)
     for name in base_names(forge):
         declared.setdefault(name, {})
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
@@ -254,7 +261,7 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
     integration = _integration(text, origin)
     timeout = part_timeout_minutes(wall_of(declared_table(tomllib.loads(text), 'verify', {}), origin))
     extras_words = ''.join(f' --extra {name}' for name in extras.extras_for(tomllib.loads(text), (), origin))
-    out = {}
+    out: dict[str, tuple[Path, dict[str, Any]]] = {}
     for name, layer in sorted(declared.items()):
         merged = merge(base.get(name, {}), layer)
         forge = merged.pop(FORGE_KEY, 'github')
@@ -271,7 +278,39 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
         rendered = cast('dict[str, Any]', _named(workflow, integration, timeout, extras_words))
         refuse_everything(rendered, f'[tool.dev_lab.ci."{name}"]')
         out[name] = (WORKFLOW_DIRS[forge], rendered)
+    if wheels is not None:
+        if 'ci.yml' in out:
+            where, ci = out['ci.yml']
+            out['ci.yml'] = (where, nativewheels.dispatched(ci, wheels.trunk))
+        out[nativewheels.WORKFLOW] = (WORKFLOW_DIRS['github'], nativewheels.workflow(wheels))
     return follow_checks(out)
+
+
+def _wheels(text: str, origin: str, forge: str, tables: dict[str, Any]) -> nativewheels.Wheels | None:
+    """The ``[tool.dev_lab.wheels]`` pyproject *text* declares for a repo on *forge* declaring *tables*, if any.
+
+    Raises:
+        ValueError: it is malformed, the repo is not on GitHub (whose hosted runners build each OS), or a
+            ``[tool.dev_lab.ci]`` table declares the workflow it renders.
+
+    """
+    wheels = nativewheels.declared(text, origin)
+    if wheels is None:
+        return None
+    if forge != 'github':
+        msg = (
+            f'{origin}: [tool.dev_lab.{nativewheels.TABLE}] builds on GitHub-hosted Linux, Windows and macOS runners, '
+            f'and this repo is on {forge}, which has none: delete the table'
+        )
+        raise ValueError(msg)
+    if nativewheels.WORKFLOW in tables:
+        msg = (
+            f'{origin}: [tool.dev_lab.ci."{nativewheels.WORKFLOW}"] declares the workflow [tool.dev_lab.'
+            f'{nativewheels.TABLE}] renders: delete that table and declare what differs in [tool.dev_lab.'
+            f'{nativewheels.TABLE}]'
+        )
+        raise ValueError(msg)
+    return wheels
 
 
 def follow_checks(rendered: dict[str, tuple[Path, dict[str, Any]]]) -> dict[str, tuple[Path, dict[str, Any]]]:

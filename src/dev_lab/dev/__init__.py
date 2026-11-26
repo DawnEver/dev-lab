@@ -155,6 +155,8 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.ciworkflows` -- GitHub workflows declared in TOML (``ci_base.toml`` plus
   ``[tool.dev_lab.ci]``) and rendered to ``.github/workflows``; ``check`` refuses a hand edit.
 * :mod:`dev_lab.dev.ciworkflowshape` -- a rendered workflow's pure transforms: layers merged, jobs placed by role.
+* :mod:`dev_lab.dev.nativewheels` -- ``[tool.dev_lab.wheels]``: the opt-in workflow building, attesting, testing and
+  releasing a repo's native wheels, one per OS, from its trunk.
 * :mod:`dev_lab.dev.vscodesettings` -- the editor excludes a checkout carries, derived from the storage kinds.
 * :mod:`dev_lab.dev.nightlycron` -- a workflow's ``nightly`` declaration read as the cron it schedules.
 * :mod:`dev_lab.dev.githooks` -- the TOML hook table, its one runner (``python -m

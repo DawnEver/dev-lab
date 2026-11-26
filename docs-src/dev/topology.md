@@ -230,7 +230,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 |---|---|---|---|
 | machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`ceiling`, `idle`: durations); the session bridge's interpreter is DERIVED from `[repos] dev-lab` (its `.venv` pointer, `devprofile.bridge_python`), never set | `lab_commons.config`, `lab_commons.home` |
 | family layer | `family.toml` in the host-configuration repo | `[[hpc.grant]]`, AI spend caps, the review month -- a machine file restating a key is refused | `lab_commons.config` `[family]` |
-| repo declarations | each `pyproject.toml` | `[tool.dev_lab.integrator]`, `.review`, `.protection`, `.ci` | `dev_lab.dev.lanepolicy`, `forgeprotect`, `ciworkflows` |
+| repo declarations | each `pyproject.toml` | `[tool.dev_lab.integrator]`, `.review`, `.protection`, `.ci`, `.wheels` | `dev_lab.dev.lanepolicy`, `forgeprotect`, `ciworkflows`, `nativewheels` |
 | host file | `/etc/dev-lab/supervise.toml`, reviewed as `hosts/<server>.toml` | `[ops.*]`, `[components.*]`, `[alerts]`, `[cycle]` | `dev_lab.ops.config`, `dev_lab.supervise.config` |
 
 - A host file changes only through `config apply` (`dev_lab.ops.configdoor`): routine keys (`configdoor.ROUTINE`)
