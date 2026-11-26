@@ -51,7 +51,6 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import forgeautosync, forgeheadgate, forgenotice
-from dev_lab.dev._forgeschedule_declared import load_schedule
 from dev_lab.dev.branchprune import listing
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forge import fetch_origin
@@ -72,6 +71,7 @@ from dev_lab.dev.forgepulls import (
     pr_retarget,
 )
 from dev_lab.dev.forgescarce import unreached
+from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgesync import upstreams
 from dev_lab.dev.forgework import GITEA, Client, PullRequest

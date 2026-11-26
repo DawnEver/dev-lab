@@ -6,6 +6,8 @@ machinery that plans and runs the renders is :mod:`dev_lab.dev.famfiles`.
 
 from __future__ import annotations
 
+import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -38,6 +40,26 @@ class Renderer:
     required: frozenset[str] = frozenset()
     present_only: bool = False  # set: due only where a file it writes is present, member or not
     needs: str = ''  # set: in a family repo with no file it writes, due only where the renderer named here is
+    table: str = ''  # set: a declared [tool.dev_lab.<table>] stands in for *required* (the inputs as data)
+
+    def missing(self, text: str) -> list[str]:
+        """The *required* keys manifest *text* leaves undeclared, ``[]`` where its data table stands in."""
+        stands_in = self.table and self.table in tomllib.loads(text or '').get('tool', {}).get('dev_lab', {})
+        return [] if stands_in else sorted(self.required - set(render_table(text)))
+
+    def why_missing(self, missing: Sequence[str]) -> str:
+        """The skip reason for *missing* inputs, naming the data table that would stand in for them."""
+        return f'[{RENDER_TABLE}] {", ".join(missing)} is not declared' + (
+            f', nor [tool.dev_lab.{self.table}]' if self.table else ''
+        )
+
+
+def render_table(text: str) -> dict[str, object]:
+    """The repo's :data:`RENDER_TABLE` in manifest *text*, ``{}`` where it declares none."""
+    table: object = tomllib.loads(text) if text else {}
+    for part in RENDER_TABLE.split('.'):
+        table = table.get(part, {}) if isinstance(table, dict) else {}
+    return table if isinstance(table, dict) else {}
 
 
 #: Optional ``deltas``: a repo with no deltas module (cc-market) has no per-file overrides and adopts no base.
@@ -50,7 +72,7 @@ AGENT_GUARD: Final = Renderer('agent_guard', ('dev_lab.dev.agent_guard', '--inst
 
 HOOK_ADOPTION: Final = Renderer(
     'hook_adoption', ('dev_lab.dev.hook_adoption',), inputs=(('adoption', '--adoption'),),
-    required=frozenset({'adoption'}),
+    required=frozenset({'adoption'}), table='hook_adoption',
 )  # fmt: skip
 
 

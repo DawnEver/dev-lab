@@ -42,7 +42,6 @@ from typing import Any, Final
 from lab_commons.compute.model import Schedule
 from lab_commons.log import emit
 
-from dev_lab.dev._forgehosts_issue import HOSTS_MARKER, HOSTS_ORIGIN, is_hosts
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgeclient import client_for
@@ -51,6 +50,7 @@ from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_list, comm
 from dev_lab.dev.forgepulls import issues as list_issues
 from dev_lab.dev.forgeroute import still_red, title_of
 from dev_lab.dev.forgework import Client, Comment
+from dev_lab.dev.hostsissue import HOSTS_MARKER, HOSTS_ORIGIN, is_hosts
 from dev_lab.dev.tablequantity import quantity, values
 
 __all__ = ['Closing', 'Hygiene', 'apply', 'load_hygiene', 'main', 'plan', 'retired_markers', 'tidy']

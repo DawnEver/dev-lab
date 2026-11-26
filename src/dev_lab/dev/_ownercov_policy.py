@@ -13,7 +13,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import TYPE_CHECKING, Final, NoReturn
+from typing import TYPE_CHECKING, Final, NoReturn, cast
 
 from dev_lab.dev.family import declared_table
 
@@ -28,7 +28,7 @@ BARS: Final[Mapping[str, str]] = {'line': '95 %', 'branch': '90 %'}
 #: ``[tool.dev_lab.<TABLE>]`` of pyproject.toml.
 TABLE: Final = 'coverage'
 WHERE: Final = f'pyproject.toml [tool.dev_lab.{TABLE}'
-ROWS: Final = {'python': '[python.owners]', 'rust': '[rust.crates]'}
+ROWS: Final = {'python': '[python.owners]', 'rust': 'crate'}
 _KEYS: Final = frozenset({*BARS, 'floors'})
 _PERCENT: Final = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*%\s*$')
 _NUMBER: Final = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*$')
@@ -127,6 +127,7 @@ def policy(root: Path) -> Policy:
         for owner, row in rows.items():
             if not isinstance(row, dict) or not row:
                 _refuse(f'{where} {owner} holds no floor: {{ line = "<share> %", branch = "<share> %" }}, from record')
-            _unknown(f'{where} {owner}', row, BARS)
-            floors[language][owner] = {k: Floor(_share(f'{where} {owner} {k}', v), v) for k, v in row.items()}
+            held = cast('dict[str, object]', row)
+            _unknown(f'{where} {owner}', held, BARS)
+            floors[language][owner] = {k: Floor(_share(f'{where} {owner} {k}', v), str(v)) for k, v in held.items()}
     return Policy(bars, floors)

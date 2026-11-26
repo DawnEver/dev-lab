@@ -12,8 +12,15 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev._branchset_census import census, merge_candidates
-from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, branchset_from, declared_branchset, main
+from dev_lab.dev.branchcensus import census
+from dev_lab.dev.branchset import (
+    BranchSet,
+    BranchSetNotDeclared,
+    branchset_from,
+    declared_branchset,
+    main,
+    merge_candidates,
+)
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
 
 _GIT = shutil.which('git') or 'git'

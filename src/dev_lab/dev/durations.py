@@ -2,8 +2,8 @@
 
 WHY THIS IS FAMILY. ``pytest.mark.slow`` was a hand-maintained set and on 2026-09-19 it cost consumer-b a
 full day: an UNMARKED test ran twenty-nine minutes inside a narrowed tier and was killed by hand. The
-marker set and the two readings that ratcheted it (``unmarked_but_slow``, ``marked_but_fast``) are RETIRED
-(user ruling 2026-11-24, T3/H1): cost is no longer declared at all. The runner records every test's
+marker set and the readings that ratcheted it are RETIRED (user ruling 2026-11-24, T3/H1; registered in
+``tests/test_arch_retired_spellings.py``): cost is no longer declared at all. The runner records every test's
 wall-clock cost ONCE, from the report it already has, and :mod:`dev_lab.dev.testcost` derives what is
 heavy -- and each test's deadline -- from these rows against the host's declared budget.
 
@@ -61,33 +61,12 @@ from dev_lab.dev.datedlog import declared_output, output_dir
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
-#: RETIRED-NAMES-REGISTERED (user ruling 2026-11-24, T3/H1): the hand-kept ``slow`` marker ratchet, refused
-#: by name with what replaced it -- no alias survives.
-_RETIRED_NAMES: Final = (
-    'SLOW', 'FAST', 'NO_DATA', 'Finding', 'over', 'unmarked_but_slow', 'marked_but_fast', 'unmeasured',
-    'assert_the_readings_still_convict',
-)  # fmt: skip
-RETIRED: Final = dict.fromkeys(
-    _RETIRED_NAMES, 'retired 2026-11-24 (T3/H1): cost is derived from the ledger -- dev_lab.dev.testcost'
-)
-
-
-def __getattr__(name: str) -> object:
-    """A retired name is refused BY NAME with its replacement (:data:`RETIRED`)."""
-    if name in RETIRED:
-        msg = f'dev_lab.dev.durations.{name} is {RETIRED[name]}'
-        raise AttributeError(msg)
-    msg = f'module {__name__!r} has no attribute {name!r}'
-    raise AttributeError(msg)
-
-
 __all__ = [
     'CRASH_MARKER',
     'LEDGER_ENV_VAR',
     'LEDGER_KIND',
     'LEDGER_TREE_VAR',
     'MEASURE_DOOR',
-    'RETIRED',
     'Ledger',
     'LedgerInconclusive',
     'PhaseReport',

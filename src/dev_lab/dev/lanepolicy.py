@@ -22,6 +22,7 @@ from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.familymanifest import manifest_text
 
 __all__ = [
     'FAMILY_INTEGRATION',
@@ -54,8 +55,8 @@ class Derived:
     """A DERIVED machine branch: its producer regenerates its WHOLE content (decision D23, 2026-11-17).
 
     Deleting one loses nothing (:func:`dev_lab.dev.deletejudge.judge`). Declared with the producer that regenerates
-    it, never inferred from a name: ``derived = [{ branch = "pr/components-bump", producer =
-    "dev_lab.dev.componentbump" }]``.
+    it, never inferred from a name: ``derived = [{ branch = "pr/relock", producer =
+    "dev_lab.dev.relock" }]``.
     """
 
     branch: str
@@ -106,9 +107,8 @@ class Policy:
 
 
 def load_policy(root: Path) -> Policy:
-    """*root*'s working-tree ``[tool.dev_lab.integrator]``; a missing manifest is refused like a missing table."""
-    manifest = root / 'pyproject.toml'
-    return policy_from(manifest.read_text(encoding='utf-8') if manifest.is_file() else '', str(manifest))
+    """*root*'s working-tree ``[tool.dev_lab.integrator]``, a data repo's from its family row; neither is refused."""
+    return policy_from(*manifest_text(root))
 
 
 def declares_no_test_roots(root: Path) -> bool:

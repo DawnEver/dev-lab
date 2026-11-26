@@ -163,6 +163,8 @@ WHAT IS HERE, one module per shared body:
   SOURCE SOMEBODY WILL PASTE: what shipped ``.venv/Scripts/python.exe`` into two consuming repos was
   a ``::`` RECIPE BLOCK in a module docstring, so recipe blocks are scanned and narrative prose --
   where this family records a retirement -- is not.
+* :mod:`dev_lab.dev.famtests.renderedspelling` -- every family render passes the family spelling
+  check at the path it lands on, so a render that would red a consumer reds at its source first.
 
 
 * :mod:`dev_lab.dev.famtests.density` -- what fraction of a module's own lines name something
@@ -219,6 +221,9 @@ WHAT IS HERE, one module per shared body:
 * :mod:`dev_lab.dev.famtests.branchset` -- ONE-BRANCH-PER-SESSION, the declaration only: a repo declares the
   one PR flow. The LIVE branch set is the forge's ``session-branch`` status (:mod:`dev_lab.dev.forgeheadgate`),
   never a test.
+
+* :mod:`dev_lab.dev.famtests.publicsurface` -- PUBLIC-SURFACE-DECLARED: every public module under the consumer's
+  source roots declares ``__all__`` and every entry resolves; private modules are exempt by filename. A planted control.
 
 * :mod:`dev_lab.dev.famtests.noreflection` -- NO-REFLECTION: no tracked Python outside attic/ and
   archived/ calls ``getattr``/``hasattr``/``setattr``/``delattr`` or defines ``__getattr__``, outside a

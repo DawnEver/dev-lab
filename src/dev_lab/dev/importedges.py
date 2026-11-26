@@ -30,7 +30,17 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
     from pathlib import Path
 
-__all__ = ['Reading', 'bindings', 'cycle', 'dotted_uses', 'import_edges', 'imports_of', 'module_name', 'read']
+__all__ = [
+    'Reading',
+    'bindings',
+    'cycle',
+    'dotted_uses',
+    'import_edges',
+    'imported',
+    'imports_of',
+    'module_name',
+    'read',
+]
 
 #: The names Python provides without an import (``open``, ``print``), read as ``builtins.<name>``.
 _BUILTINS: Final = frozenset(dir(builtins))
@@ -77,6 +87,14 @@ def _scan(tree: ast.AST, package: str) -> tuple[set[str], dict[str, str], list[a
                         names.add(f'{base}.{alias.name}')
                         bound[alias.asname or alias.name] = f'{base}.{alias.name}'
     return names, bound, attributes
+
+
+def imported(nodes: Iterable[ast.AST], package: str) -> frozenset[str]:
+    """Every absolute name the imports in *nodes* (and below them) bring in, relative ones against *package*."""
+    out: set[str] = set()
+    for node in nodes:
+        out |= _scan(node, package)[0]
+    return frozenset(out)
 
 
 def import_edges(source: str, module: str, *, is_package: bool = False) -> frozenset[str]:

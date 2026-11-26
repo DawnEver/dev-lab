@@ -3,7 +3,7 @@
 NETWORK-RETRY-THEN-REPORT (2026-10-19, a consumer): a ``uv sync`` of a git dependency failed once on forge auth
 and was not retried, and a worktree's ``git submodule update`` from a LOCAL path was refused as ``transport
 'file' not allowed`` and retried as if transient. :func:`run_change` routes by
-:func:`~dev_lab.dev.netverb.is_network_verb`; :func:`init_submodules` opens the file transport for that
+:func:`~dev_lab.dev._netverb_argv.is_network_verb`; :func:`init_submodules` opens the file transport for that
 one command, only when a submodule really is local.
 """
 
@@ -17,7 +17,8 @@ from typing import Any, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.netverb import is_network_verb, run_network_verb
+from dev_lab.dev._netverb_argv import is_network_verb
+from dev_lab.dev.netverb import run_network_verb
 
 __all__ = ['CHILD_WALL_S', 'init_submodules', 'run_change']
 
@@ -85,7 +86,7 @@ def _is_local(url: str) -> bool:
 def init_submodules(root: Path, *, dry_run: bool = False) -> str | None:
     """Initialize every submodule *root*'s commit records, through the network door; why it failed, else ``None``.
 
-    A path dependency may point INTO a submodule (a product's engine under ``components/``, plan C5), so a
+    A path dependency may point INTO a submodule (a vendored checkout), so a
     checkout whose submodules were never initialized cannot be resolved: ``uv`` reports the path as not
     existing. MEASURED 2026-10-19 on a serve checkout of a consumer, which bootstrapped only after a
     manual ``git submodule update --init``. Every sync, bootstrap and lock therefore does this first.

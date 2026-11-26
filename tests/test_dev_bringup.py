@@ -11,7 +11,7 @@ import tomllib
 from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -48,7 +48,7 @@ def _walls(tmp_path: Path, live: Mapping[str, Any], **kw: object) -> dict[str, b
     kw.setdefault('exists', lambda _path: True)
     kw.setdefault('credential', lambda _dev: [])
     kw.setdefault('measure', lambda _checkout, _ref: Lag(0, timedelta(0)))
-    return {wall.name: wall for wall in bringup.walls(live, ssh_dir=tmp_path / 'ssh', **kw)}
+    return {wall.name: wall for wall in bringup.walls(live, ssh_dir=tmp_path / 'ssh', **cast('dict[str, Any]', kw))}
 
 
 def test_a_ready_workstation_is_green_on_every_wall(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -174,3 +174,16 @@ def test_the_session_start_notice_names_a_stale_kit(tmp_path: Path) -> None:
     assert stale[0].startswith('DEV-LAB-KIT STALE: 46 landings')
     assert 'git pull --ff-only' in stale[0]
     assert bringup.stale_kit(live, measure=lambda _c, _r: Lag(1, timedelta(hours=1))) == []
+
+
+def test_a_declared_opt_out_needs_no_client_key_and_an_undeclared_one_still_reds(tmp_path: Path) -> None:
+    # user ruling 2026-11-25: a machine that cannot be registered DECLARES it does not join the servers
+    live = _machine(tmp_path, keyed=False)
+    host = Path(live['devhost']['source']) / 'hosts' / 'ws.toml'
+    host.write_text(host.read_text(encoding='utf-8') + 'operates_servers = false\n', encoding='utf-8')
+    live = {**tomllib.loads(devhost.render(host.parent.parent, 'ws', live)), 'repos': live['repos']}
+    found = _walls(tmp_path, live, send=lambda *_: pytest.fail('an opted-out machine asks no issuer'))
+    assert found['client-key'].green, found['client-key'].said
+    assert 'operates_servers = false' in found['client-key'].said
+    assert found['issuer'].green
+    assert not _walls(tmp_path / 'red', _machine(tmp_path / 'red', keyed=False))['client-key'].green

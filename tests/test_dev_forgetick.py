@@ -40,8 +40,7 @@ from lab_commons.hpc.config import Cost
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev import _forgeproduce_box, _forgetick_demand, forgeproduce, forgerounds, forgetick
-from dev_lab.dev._forgeschedule_declared import load_schedule
+from dev_lab.dev import _forgeproduce_box, _tick_demand, forgeproduce, forgerounds, forgetick
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeaffinity import DEFERRED, HELD
 from dev_lab.dev.forgeclaim import (
@@ -62,7 +61,7 @@ from dev_lab.dev.forgeclaim import (
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND, behind
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
-from dev_lab.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates
+from dev_lab.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetick import tick
 from dev_lab.dev.forgewait import NEVER_FITS, Box
@@ -345,7 +344,7 @@ def test_the_cli_prints_work_and_claims_as_json(server, tmp_path: Path, capsys) 
 
 def test_the_cli_json_carries_each_claimed_producer_argv(server, tmp_path: Path, capsys, monkeypatch) -> None:
     capacity = Capacity.read()  # the CLI's box supply is measured (D3): read it quiet, as `_tick` does
-    monkeypatch.setattr(forgetick, 'whole_supply', lambda scope, **_kw: _box(scope, capacity))
+    monkeypatch.setattr(forgetick, '_whole', lambda scope, **_kw: _box(scope, capacity))
     repo, tips = _origin(tmp_path)
     sha = tips['integrate/main']
     me = Claim(this_machine(), 'alice', NOW + DEFAULT_LEASE)
@@ -761,9 +760,7 @@ def test_a_tick_claims_the_integration_tip_ahead_of_a_boosted_pr(server, tmp_pat
 
     PLANTED CONTROL: the label moved to the other PR moves that PR ahead in the queue; the head is still claimed.
     """
-    monkeypatch.setattr(
-        _forgetick_demand.Capacity, 'read', staticmethod(lambda: Capacity(cpu=4.0, mem_bytes=8 * GB, seats={}))
-    )
+    monkeypatch.setattr(Capacity, 'read', staticmethod(lambda: Capacity(cpu=4.0, mem_bytes=8 * GB, seats={})))
     repo, tips = _origin(tmp_path)
     head, lane, other = tips['integrate/main'], tips['topic/a'], tips['wip/b']
     lacking = f'{NOT_ADMITTED}: lacking cpu (4 asked, 0 free), mem_gb (8 asked, 0 free)'
@@ -1403,9 +1400,9 @@ def test_a_part_is_sized_at_the_ids_the_commits_parts_hand_it() -> None:
         CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=workstation:1,jmag:2', ''),
         CommitStatus('tests/jmag', 'success', 'scope=full ran=2 hands=workstation:5', ''),
     ]
-    assert _forgetick_demand.handed(statuses, 'workstation') == 6
-    assert _forgetick_demand.handed(statuses, 'jmag') == 2
-    assert _forgetick_demand.handed(statuses, 'base') is None
+    assert _tick_demand.handed(statuses, 'workstation') == 6
+    assert _tick_demand.handed(statuses, 'jmag') == 2
+    assert _tick_demand.handed(statuses, 'base') is None
 
 
 def _stacked(repo: Path, tips: dict[str, str], change: dict[str, str]) -> tuple[str, str]:

@@ -60,7 +60,6 @@ from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev._forge_journal import outbox_dir
-from dev_lab.dev._forgeschedule_declared import load_schedule
 from dev_lab.dev._forgeunit_pending import flush_held, hold, unread
 from dev_lab.dev.artifactpack import pack, unpack
 from dev_lab.dev.artifacts import load_config, resolve, store_for
@@ -71,6 +70,7 @@ from dev_lab.dev.forgepublish import publish
 from dev_lab.dev.forgerecordkeep import UNIT_RESULT
 from dev_lab.dev.forgerecords import attach, listing
 from dev_lab.dev.forgerequest import UNIT, Declared, UndeclaredRequest
+from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.storage import StoreUnreached, run_objects
 

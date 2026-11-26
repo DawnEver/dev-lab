@@ -12,7 +12,8 @@ stating the two exits, and nothing else under it is ever committed. It is the st
 sink (:func:`dev_lab.dev.strays.stray_files`), so a one-off there is never a stray.
 
 ONE DECLARATION, read off the repo's ``layout.toml`` by
-:func:`dev_lab.dev.codeplace.declared_placement`: ``scratch`` (the directory, the family's
+:func:`dev_lab.dev.codeplace.scratch_placement` (the family default without a layout):
+``scratch`` (the directory, the family's
 ``scratch/`` when omitted), ``max_age`` (a duration: when the notice starts naming a one-off) and
 ``scratch_anchor`` (default true: the tracked README anchors it; false, user ruling 2026-11-17 "scratch
 should hold nothing": no README, and the tracked set under scratch is EMPTY).
@@ -73,7 +74,7 @@ from dev_lab.dev._scratch_clear import (
     untracked_scratch,
 )
 from dev_lab.dev._scratch_owners import owners
-from dev_lab.dev.codeplace import PRUNED_NAMES, PlacementNotDeclared, checkout_root, declared_placement
+from dev_lab.dev.codeplace import PRUNED_NAMES, PlacementNotDeclared, checkout_root, scratch_placement
 from dev_lab.dev.native_session import session_of
 
 if TYPE_CHECKING:
@@ -147,7 +148,7 @@ def assert_scratch_never_committed(root: Path) -> None:
         ScratchCommitted: a one-off is committed, or the README's presence contradicts the declaration.
 
     """
-    placement = declared_placement(root)
+    placement = scratch_placement(root)
     scratch = placement.scratch
     done = launch.run(
         ['git', '-C', str(root), 'ls-files', '-z', '--', scratch],
@@ -178,7 +179,7 @@ def assert_scratch_never_committed(root: Path) -> None:
 def scratch_reminder(root: Path) -> str | None:
     """The SessionStart notice naming every one-off past the declared age, with both exits; ``None`` when none."""
     try:
-        placement = declared_placement(root)
+        placement = scratch_placement(root)
     except PlacementNotDeclared:
         return None
     late = overdue_scratch(root / placement.scratch, root=root, max_age_days=placement.max_age / 86400)
@@ -197,7 +198,7 @@ def discard_scratch(paths: Iterable[str], *, root: Path) -> list[str]:
         ValueError: a path is outside scratch, is its README, or is not a file.
 
     """
-    scratch = (root / declared_placement(root).scratch).resolve()
+    scratch = (root / scratch_placement(root).scratch).resolve()
     targets: list[Path] = []
     for raw in paths:
         path = Path(raw) if Path(raw).is_absolute() else root / raw
@@ -228,7 +229,7 @@ def _remind(stdin: TextIO | None) -> int:
 def _verb(mode: str, rest: list[str], root: Path) -> int:
     """``list``, ``discard <paths>``, ``clear`` and ``check <paths>`` over the checkout *root*."""
     try:
-        placement = declared_placement(root)
+        placement = scratch_placement(root)
     except PlacementNotDeclared as exc:
         if mode == 'check':
             return 0  # an undeclared checkout is not judged; its own placement test reds on the table

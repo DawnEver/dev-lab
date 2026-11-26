@@ -30,7 +30,7 @@ def test_a_part_whose_need_maps_to_an_uninstalled_extra_names_the_sync_door(tmp_
     assert refusal is not None
     assert "needs extra 'simba'" in refusal
     # the door keeps the declared selection and adds the missing extra (explicit flags narrow)
-    assert f'python -m dev_lab.dev.dep --sync {root} --extra dev --extra simba' in refusal
+    assert f'python -m dev_lab.dev.dep --root {root} --sync --extra dev --extra simba' in refusal
 
 
 def test_an_installed_extra_admits_the_part(tmp_path: Path) -> None:

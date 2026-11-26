@@ -17,11 +17,11 @@ from pathlib import Path
 import pytest
 from _venv_fake import linked_env
 
-from dev_lab.dev import venvpointer, walls
+from dev_lab.dev import milestonebase, venvpointer, walls
 from dev_lab.dev.githooks import _gitread, runner
 from dev_lab.dev.githooks import main as githooks_main
 from dev_lab.dev.githooks._gitread import ZERO_SHA, parse_push_lines
-from dev_lab.dev.githooks.runner import PUSH_URL_ENV, borrowed_interpreter, resolve, run_stage
+from dev_lab.dev.githooks.runner import IMPORT_ERROR_ENV, PUSH_URL_ENV, borrowed_interpreter, resolve, run_stage
 from dev_lab.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
 from dev_lab.dev.metrics import PUSH, REFUSAL, read
 
@@ -733,3 +733,56 @@ def test_a_failing_git_query_of_the_runner_names_its_cause_and_door(repo: Path, 
     assert 'fatal: bad object deadbeef' in said
     assert 'git diff' in said
     assert 'Traceback' not in said
+
+
+def test_a_milestone_refusal_is_recorded_as_its_rule_with_its_door(repo: Path) -> None:
+    """#870: the milestone-base row's real refusal is a wall of BASE-HOLDS-THE-MILESTONE that names its door."""
+    said = '\n' + '\n'.join(f'  REFUSED: {line}' for line in [milestonebase._behind('v1.0.0.dev0', 'pr/x', 'a' * 40)])
+
+    def fail(_argv: list[str], _cwd: Path, _stdin: str | None, _env: object) -> tuple[int, str]:
+        return 1, said
+
+    # The row's stage does not change how its wall is named; commit-msg needs no pushed objects in the planted repo.
+    row = Hook(stage='commit-msg', id='milestone-base', run=('m',))
+    assert run_stage('commit-msg', ['.git/COMMIT_EDITMSG'], root=repo, hooks=(row,), runner=fail) == 1
+    (line,) = [json.loads(one) for one in walls.ledger(repo).read_text(encoding='utf-8').splitlines()]
+    assert (line['rule'], line['remedy_present']) == ('BASE-HOLDS-THE-MILESTONE', True)
+    assert line['cause'].startswith('REFUSED: BASE-HOLDS-THE-MILESTONE')
+
+
+def test_a_lint_row_declaring_a_remedy_prints_its_rule_and_door(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """#842: a tool row prints only findings; its declared rule and remedy are printed after them and recorded."""
+
+    def fail(_argv: list[str], _cwd: Path, _stdin: str | None, _env: object) -> tuple[int, str]:
+        return 1, 'x.py:1:1: F401 `os` imported but unused'
+
+    told = Hook(
+        stage='pre-commit', id='ruff', run=('ruff',), always_run=True, pass_files=True,
+        rule='RUFF', remedy='ruff check --fix',
+    )  # fmt: skip
+    bare = Hook(stage='pre-commit', id='bare-lint', run=('lint',), always_run=True)  # PLANTED: no remedy declared
+    assert run_stage('pre-commit', root=repo, hooks=(told, bare), runner=fail) == 1
+    said = capsys.readouterr().err
+    assert 'RUFF: pre-commit row ruff failed' in said
+    assert 'Door: ruff check --fix' in said
+    lines = [json.loads(one) for one in walls.ledger(repo).read_text(encoding='utf-8').splitlines()]
+    assert [(line['rule'], line['remedy_present']) for line in lines] == [('RUFF', True), ('bare-lint', False)]
+
+
+def test_this_repos_ruff_rows_declare_their_door() -> None:
+    rows = {hook.id: hook for hook in hook_table(Path(__file__).resolve().parents[1])['pre-commit']}
+    assert (rows['ruff'].rule, rows['ruff'].remedy) == ('RUFF', 'ruff check --fix')
+    assert rows['ruff-format'].remedy == 'ruff format'
+
+
+def test_a_borrowed_refusal_prints_the_real_import_error(
+    repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#825: the shim hands the runner the failed import probe; the refusal names it, not a guess, and the door."""
+    monkeypatch.setenv(IMPORT_ERROR_ENV, "/r/.venv/bin/python: ModuleNotFoundError: No module named 'lab_commons'")
+    row = Hook(stage='pre-commit', id='task-bound', run=('python', '-m', 'x'), always_run=True)
+    assert run_stage('pre-commit', root=repo, hooks=(row,), runner=_Recorder(), borrowed=True) == 1
+    said = capsys.readouterr().err
+    assert "No module named 'lab_commons'" in said
+    assert 'missing or half-built' not in said
+    assert '-m dev_lab.dev.dep --bootstrap' in said

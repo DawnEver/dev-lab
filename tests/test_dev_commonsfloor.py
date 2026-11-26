@@ -12,7 +12,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from dev_lab.dev import _dep_project, dep
+from dev_lab.dev import _dep_project, commonsfloor, dep
+from dev_lab.dev._deny_rows import NETWORK_VERB_PATTERN
 from dev_lab.dev._dep_project import own_interpreter
 from dev_lab.dev.commonsfloor import RULE, CommonsBelowFloor, importing
 from dev_lab.dev.lockcheck import uv_version
@@ -110,12 +111,17 @@ def _dep_entry(site: Path | None) -> subprocess.CompletedProcess[str]:
 
 
 def test_a_venv_behind_its_checkout_is_refused_with_the_sync_door(tmp_path: Path) -> None:
-    """The 2026-11-22 wall: an older installed lab-commons makes the dep entry exit 2 naming `uv sync --frozen`."""
+    """The 2026-11-22 wall: an older installed lab-commons makes the dep entry exit 2 naming the dep sync door.
+
+    The door is ``dep --root <checkout> --sync`` run by ANOTHER interpreter: this one is below the floor, so its own
+    ``dep`` is refused the same way, and a raw ``uv sync`` is refused by NETWORK-VERB.
+    """
     ran = _dep_entry(_older_commons(tmp_path))
     assert ran.returncode == 2, ran.stderr
     assert 'Traceback' not in ran.stderr
     assert 'holds lab_commons 0.0.1, older than its code needs' in ran.stderr
-    assert f'run `uv sync --frozen` in {ROOT}, then this again' in ran.stderr
+    assert f'-m dev_lab.dev.dep --root {ROOT} --sync' in ran.stderr
+    assert re.search(NETWORK_VERB_PATTERN, ran.stderr) is None, ran.stderr
 
 
 def test_the_sync_door_stays_shut_on_a_current_venv() -> None:
@@ -131,3 +137,29 @@ def test_a_missing_name_in_lab_commons_is_walled_like_a_missing_module(tmp_path:
     with pytest.raises(CommonsBelowFloor) as refused, importing(tmp_path):
         raise ImportError(said, name='lab_commons')
     assert "cannot import name 'extras'" in str(refused.value)
+
+
+def test_every_door_the_wall_names_passes_the_network_verb_guard(tmp_path: Path) -> None:
+    """A remedy the NETWORK-VERB guard refuses is a wall with no door (2026-11-26): none of ours matches it."""
+    doors = (commonsfloor.sync_door(tmp_path), commonsfloor.heal(tmp_path))
+    for door in doors:
+        assert re.search(NETWORK_VERB_PATTERN, door) is None, door
+
+
+def test_the_guard_would_refuse_the_door_this_wall_used_to_name() -> None:
+    """Planted control: the old remedy ``uv sync --frozen`` IS refused, so the check above can say no."""
+    assert re.search(NETWORK_VERB_PATTERN, 'run `uv sync --frozen` in /x, then this again') is not None
+
+
+def test_the_door_is_run_by_the_first_other_interpreter_that_passes_the_floor(tmp_path: Path) -> None:
+    """Derived, not hard-coded: this kit is skipped, a candidate below the floor too, the first passing one named."""
+    own, stale, healthy = (tmp_path / name for name in ('own', 'stale', 'healthy'))
+    passing = {healthy}
+    chosen = commonsfloor.healthy_interpreter([own, stale, healthy], passes=passing.__contains__, own=own)
+    assert chosen == str(healthy)
+
+
+def test_with_no_passing_interpreter_the_door_says_what_it_needs(tmp_path: Path) -> None:
+    """Planted control: no candidate passes, so the door names the interpreter it needs instead of a wrong path."""
+    chosen = commonsfloor.healthy_interpreter([tmp_path / 'stale'], passes=lambda _python: False, own=None)
+    assert chosen == commonsfloor.ANY_HEALTHY

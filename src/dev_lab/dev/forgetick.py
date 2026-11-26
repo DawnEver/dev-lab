@@ -54,6 +54,7 @@ part waiting ``not admitted`` past the schedule's ``request_unadmitted`` is told
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import shlex
@@ -78,8 +79,7 @@ from lab_commons.config import config_path, section
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
-from dev_lab.dev._forgeschedule_declared import load_schedule
-from dev_lab.dev._forgetick_demand import demand_of, whole_supply
+from dev_lab.dev._tick_demand import box_now, demand_of
 from dev_lab.dev.artifacts import remote_problem
 from dev_lab.dev.forge import (
     NoCredential,
@@ -106,7 +106,7 @@ from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from dev_lab.dev.forgerequesthost import remind, request_authors
 from dev_lab.dev.forgescarce import unreached
-from dev_lab.dev.forgeschedule import candidates, repo_name
+from dev_lab.dev.forgeschedule import candidates, load_schedule, repo_name
 from dev_lab.dev.forgesettled import SettledHistories
 from dev_lab.dev.forgetake import ClaimPass
 from dev_lab.dev.forgeunit import ForgeResults, pending_dir
@@ -262,7 +262,7 @@ def tick(
     cores = 1 if serve.hpc else os.cpu_count() or 1
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
-    room = supply or whole_supply(machine or 'this host', cluster=bool(serve.hpc))
+    room = supply or _whole(machine or 'this host', cluster=bool(serve.hpc))
     sized = demand or demand_of(root, cluster=bool(serve.hpc), history=history, room=room)
     taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
@@ -324,6 +324,20 @@ def tick(
         taken.store_why,
         tuple(taken.pending),
     )
+
+
+def _whole(scope: str, *, cluster: bool) -> Supply:
+    """A tick given no supply: this box as its providers measure it now; an account is never guessed.
+
+    Raises:
+        ValueError: on a cluster seat -- an account's supply is its measured standing, and an unmeasured one admits
+            nothing rather than a default task.
+
+    """
+    if cluster:
+        msg = f"{scope}: a cluster tick needs the account's measured supply (forgeslurm standing); none was given"
+        raise ValueError(msg)
+    return dataclasses.replace(box_now(), scope=scope)
 
 
 def _parser() -> argparse.ArgumentParser:

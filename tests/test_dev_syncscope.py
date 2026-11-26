@@ -12,6 +12,8 @@ SELF-REFERENCE to six other extras and carries no `dev`, a `dev` extra holding t
 
 from __future__ import annotations
 
+from importlib import metadata
+
 import pytest
 
 from dev_lab.dev.syncscope import (
@@ -154,3 +156,43 @@ def test_names_are_compared_after_normalization() -> None:
     """`img_to_cad` and `img-to-cad` are one extra; comparing raw spellings reports a strand that is not there."""
     assert canon('Img_To.Cad') == 'img-to-cad'
     assert scope(_selecting('IMG_TO_CAD', 'dev'), MANIFEST) is Scope.COMPLETE
+
+
+#: A foreign kit's installed ``Requires-Dist``: its runner is a BASE requirement, its `test` extra holds a plugin.
+_KIT_REQUIRES = {
+    'kit-lab': [
+        'pytest>=8',
+        "pytest-timeout; extra == 'test'",
+        "ruff; extra == 'lint'",
+        "pywin32; sys_platform == 'win32'",
+    ],
+    'pytest': ['pluggy>=1'],
+    'pytest-timeout': ['pytest>=7'],
+}
+_KIT_MANIFEST = '[project]\nname = "consumer"\n\n[project.optional-dependencies]\ndev = ["kit-lab[test]"]\n'
+
+
+@pytest.fixture
+def _planted_kit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The installed metadata of :data:`_KIT_REQUIRES`, and nothing else installed."""
+
+    def requires(dist: str) -> list[str]:
+        if dist not in _KIT_REQUIRES:
+            raise metadata.PackageNotFoundError(dist)
+        return _KIT_REQUIRES[dist]
+
+    monkeypatch.setattr('dev_lab.dev.syncscope.metadata.requires', requires)
+
+
+@pytest.mark.usefixtures('_planted_kit')
+def test_a_foreign_extra_brings_the_foreign_packages_base_requirements() -> None:
+    """#947: `kit-lab[test]` installs kit-lab's unmarked requirements too, expanded transitively."""
+    assert {'kit-lab', 'pytest-timeout', 'pytest', 'pluggy'} <= extras(_KIT_MANIFEST)['dev']
+
+
+@pytest.mark.usefixtures('_planted_kit')
+def test_planted_control_an_unrequested_extra_and_a_platform_marker_stay_out() -> None:
+    """The control: only the requested extra and the UNMARKED lines are followed, never `lint` or a marker."""
+    table = extras(_KIT_MANIFEST)
+    assert 'ruff' not in table['dev']
+    assert 'pywin32' not in table['dev']

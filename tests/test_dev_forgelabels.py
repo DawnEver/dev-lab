@@ -19,6 +19,8 @@ class _Client:
         if path == '/r/labels':
             self.labels[body['name']] = len(self.labels) + 1
             return {'id': self.labels[body['name']]}
+        if method == 'POST':  # the issue's labels after the write, as both forges answer it
+            return [{'name': n, 'id': i} for n, i in self.labels.items() if n in body['labels'] or i in body['labels']]
         return {}
 
 
@@ -58,3 +60,23 @@ def test_relabel_with_nothing_to_do_is_refused_before_any_call() -> None:
     with pytest.raises(ValueError, match='--add or --remove'):
         relabel(client, 9, add=(), remove=())
     assert client.calls == []
+
+
+class _Dropping(_Client):
+    """Gitea's silent drop (v1 #2): the label POST answers 2xx and the issue carries none of what was sent."""
+
+    def call(self, method: str, path: str, body: dict[str, object] | None = None) -> object:
+        found = super().call(method, path, body)
+        return [] if path.endswith('/issues/9/labels') and method == 'POST' else found
+
+
+def test_a_label_the_forge_did_not_apply_is_refused_naming_it_and_the_issue() -> None:
+    """PLANTED: the forge answered the label POST without the label -- no error, no door, until now."""
+    with pytest.raises(LabelMissing, match=r'#9.*task:v1'):
+        add_label(_Dropping(GITEA, {'task:v1': 4}), 9, 'task:v1')
+
+
+@pytest.mark.parametrize('backend', [GITEA, GITHUB])
+def test_a_label_the_forge_applied_passes(backend: Backend) -> None:
+    """CONTROL beside the plant: the forge's answer lists the issue's labels, the one sent among them."""
+    add_label(_Client(backend, {'task:v1': 4}), 9, 'task:v1')

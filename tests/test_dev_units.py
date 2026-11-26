@@ -119,7 +119,7 @@ def solve(radial_gap: float, deg_phase: float, slot_count: int) -> float:
 #: there is no `Q_` anywhere in that statement's tree.
 _EXEMPT = """from pint import Quantity
 
-from lab_commons.units import Q_, ureg
+from motor.units import Q_, ureg
 
 GAP_MM = 1.2
 RING_MM = Q_(2.0, 'mm')
@@ -232,7 +232,7 @@ def test_a_narrowed_token_set_is_visible_in_the_record(tmp_path: Path) -> None:
 def test_a_domain_repo_can_opt_into_a_single_letter(tmp_path: Path) -> None:
     """The escape the exclusions point at, driven rather than described.
 
-    `_m` is excluded from the shared default because `Q_0A_per_m` in `lab_commons.em` carries a pint
+    `_m` is excluded from the shared default because `Q_0A_per_m` in consumer field-model code carries a pint
     Quantity in its value; a domain repo that wants meter adds the row, and the Scan reports it.
     """
     (tmp_path / 'planted.py').write_text('PROBE_DEPTH_M = 0.001\n', encoding='utf-8')

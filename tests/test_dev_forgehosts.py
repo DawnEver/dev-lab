@@ -19,10 +19,10 @@ from _roles_fixtures import EVERY_CI, HPC_REPO, carry, seats_family
 from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import forgeclaim, forgehosts
-from dev_lab.dev._forgehosts_issue import HOSTS_MARKER, HOSTS_TITLE, HostsIssueLost
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard, publish, read_cards
 from dev_lab.dev.forgework import is_pull
+from dev_lab.dev.hostsissue import HOSTS_MARKER, HOSTS_TITLE, HostsIssueLost
 from dev_lab.dev.roles import Unbound
 from tests._forge_state import StateForge
 

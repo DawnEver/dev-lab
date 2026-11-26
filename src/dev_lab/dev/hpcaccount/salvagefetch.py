@@ -34,7 +34,7 @@ from typing import Any, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.hpcaccount.salvage import FILES, MANIFEST
+from dev_lab.dev.hpcaccount.salvage import FILES, MANIFEST, segment
 
 __all__ = ['BRANCH', 'branch_of', 'fetch', 'main', 'repository_name']
 
@@ -69,18 +69,14 @@ def _git(repo: Path, *args: str) -> tuple[int, str]:
 
 
 def _entry(checkout: Path) -> tuple[str, dict[str, Any]]:
-    """The account and the manifest entry of salvaged *checkout*: the nearest manifest above it that lists it."""
-    for folder in (checkout, *checkout.parents):
-        manifest = folder / MANIFEST
-        if not manifest.is_file():
-            continue
+    """The account and the manifest entry of salvaged *checkout*: its run's manifest, one level up, lists it."""
+    manifest = checkout.parent / MANIFEST
+    if manifest.is_file():
         record = json.loads(manifest.read_text(encoding='utf-8'))
-        parts = PurePosixPath(record.get('path', '.')).parts if record.get('path') != '.' else ()
-        home = folder.parents[len(parts) - 1] if parts else folder
         for entry in record.get('checkouts', []):
-            if (home if entry['path'] == '.' else home.joinpath(*PurePosixPath(entry['path']).parts)) == checkout:
+            if segment(entry['path']) == checkout.name:
                 return record['account'], entry
-    msg = f'{checkout} is not a salvaged checkout: no {MANIFEST} above it lists it (hpcaccount salvage ... --apply)'
+    msg = f'{checkout} is not a salvaged checkout: no {MANIFEST} beside it lists it (hpcaccount salvage ... --apply)'
     raise _Refused(msg)
 
 
@@ -109,7 +105,7 @@ def _refspecs(repo: Path, account: str, checkout: str, bundle: Path) -> list[tup
     if code:
         msg = f'{bundle} does not read as a bundle: {said}'
         raise _Refused(msg)
-    specs = []
+    specs: list[tuple[str, str, str]] = []
     for line in said.splitlines():
         sha, _, ref = line.partition(' ')
         branch = branch_of(account, checkout, ref)
@@ -153,7 +149,7 @@ def fetch(checkout: Path, repo: Path, *, apply: bool, say: Callable[[str], None]
     except (_Refused, OSError, ValueError, KeyError) as refused:
         say(f'salvage-fetch: refused -- {refused}')
         return 2
-    landing = []
+    landing: list[str] = []
     for sha, ref, branch in specs:
         if held := _reached(repo, sha):
             say(f'salvage-fetch: {name}: {ref} {sha[:10]} skipped -- {held} already reaches it')
@@ -175,7 +171,9 @@ def fetch(checkout: Path, repo: Path, *, apply: bool, say: Callable[[str], None]
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``salvage-fetch`` and run it."""
-    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount salvage-fetch', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        prog='dev_lab.dev.hpcaccount salvage-fetch', description=(__doc__ or '').splitlines()[0]
+    )
     parser.add_argument('checkout', type=Path, help='a salvaged checkout directory (it holds commits.bundle)')
     parser.add_argument('--into', type=Path, required=True, help='the local repo whose remote names its repository')
     parser.add_argument('--apply', action='store_true', help='fetch; default: verify and print what would land')

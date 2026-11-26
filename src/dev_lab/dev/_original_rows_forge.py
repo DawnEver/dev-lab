@@ -145,6 +145,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgepages',  # ORIGINAL: split from forgework: a listing read page by page (2026-11-15)
     'forgefeed',  # ORIGINAL: one machine hearer reads declared repos' updated issues into task inboxes (D79, D81)
     'forgethreads',  # the threads read, cursor and own comments, split from forgefeed (module-size band)
+    'forgefeedstatus',  # the hearer's liveness, stable interpreter and a task's subscription (v1 #2)
     'forgewaves',  # ORIGINAL: an unacknowledged break-glass wave reaches each session once (ruling 2026-11-19)
     'prsuperseded',
     # ORIGINAL: a stale pr/* head was caught only after the push, by the forge's alarm (2026-11-07).
@@ -154,4 +155,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
     'forgepr',  # ORIGINAL: pr close and pr edit, split from forgecli at the module-size band (2026-11-25)
+    # ORIGINAL: no door removed a whole redundant clone; RECURSIVE-DELETE refused it with no exit (2026-11-19).
+    'cloneremove',
+    # ORIGINAL: no door purged the pre-generation unit results a records home still held (2026-11-17).
+    'forgerecordpurge',
+    # ORIGINAL: the read-only secret-name list (2026-11-10); no consumer listed names.
+    'forgesecretnames',
 )

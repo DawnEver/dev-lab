@@ -22,7 +22,7 @@ from typing import Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev._branchset_census import checked_out
+from dev_lab.dev.branchset import checked_out
 from dev_lab.dev.checkout import git_out
 
 __all__ = ['ALWAYS_KEPT', 'INTEGRATION', 'main', 'sweep_local']

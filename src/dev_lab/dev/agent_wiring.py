@@ -74,7 +74,7 @@ SETTINGS_REL: Final = '.claude/settings.json'
 LAUNCHER_REL: Final = '.claude/hooks/py.js'
 
 #: The hook command line, DERIVED from the two paths above rather than spelled twice -- the lesson
-#: :data:`dev_lab.dev.hook_install.INSTALL_COMMAND` records: a restatement of a path is a place
+#: :data:`dev_lab.dev._hook_shim.INSTALL_COMMAND` records: a restatement of a path is a place
 #: for the real one to move away from. ANCHORED ON ``$CLAUDE_PROJECT_DIR`` (2026-10-20): the tool runs
 #: a hook in the SESSION's cwd, and a cwd-relative engine path from a cwd holding no
 #: ``.claude/hooks/`` exits 1 on MODULE_NOT_FOUND -- a NON-BLOCKING hook error, so every command ran

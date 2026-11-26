@@ -55,6 +55,29 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         ("transport 'file' not allowed",),
     ),
     (
+        # NO INTERPRETER FITS THE PROJECT'S requires-python. Measured 2026-11-26: `dep --bootstrap` with a misfit
+        # Python gave up 3/3 as unclassified ("looks transient") and never named the interpreter to use; uv's
+        # answer is about the host's interpreters, which no attempt changes. Above the hook row: a hook may print it.
+        'python-unfit',
+        False,
+        ('no interpreter found for python', "incompatible with the project's python requirement"),
+    ),
+    (
+        # THE PROJECT HAS NO LOCK. Measured 2026-11-26: `dep --bootstrap` of a config-only repo (no uv.lock) was
+        # retried 3/3 as "transient"; a frozen sync of a lock that does not exist fails the same way every time.
+        'lock-absent',
+        False,
+        ('unable to find lockfile',),
+    ),
+    (
+        # A GIT HOOK THAT CANNOT START. Measured 2026-11-26: a push failed on a retired pre-commit framework shim
+        # (`No module named pre_commit`) and netverb called it transient 3/3; the hook file names a module its
+        # interpreter lacks, so only reinstalling the hooks changes the answer.
+        'hook-unrunnable',
+        False,
+        ('no module named pre_commit', "no module named 'pre_commit'"),
+    ),
+    (
         # A PRE-PUSH HOOK'S REFUSAL. Measured 2026-09-17 in this session: a repo's pre-push hook
         # refused a push and printed the identical refusal on all three attempts -- the same tree
         # re-judged by the same hook returns the same answer, and each re-judgment paid the hook's
@@ -81,6 +104,50 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         'ref-rejected',
         False,
         ('[rejected]', 'non-fast-forward', 'fetch first', 'updates were rejected'),
+    ),
+    (
+        # THE COMMAND WAS SPELLED WRONG. Measured 2026-11-26: deterministic refusals were
+        # retried 3x as "transient"; an argument parser answers the same argv identically every time.
+        'usage-refused',
+        False,
+        (
+            'error: unexpected argument',
+            'error: unrecognized arguments',
+            'error: unrecognized subcommand',
+            'is not a git command',
+            'error: unknown option',
+            'error: unknown switch',
+        ),
+    ),
+    (
+        # THE RESOLVER PROVED NO SOLUTION, or no artifact fits this platform. Measured 2026-11-26 (v1 #1): a missing-
+        # wheel resolution was retried 3x; the index answered, and it answers the same until the requirement moves.
+        'resolution-failed',
+        False,
+        (
+            'no solution found when resolving',
+            "doesn't have a source distribution or wheel",
+            'no matching distribution found',
+        ),
+    ),
+    (
+        # A BUILD STEP FAILED -- a compiler error, a build backend that exited non-zero. Measured 2026-11-26 (v1 #1):
+        # a C compile error was retried 3x as "transient"; the same sources compile the same way every attempt.
+        'build-failed',
+        False,
+        ('failed to build', 'subprocess-exited-with-error', 'fatal error c', 'could not compile `'),
+    ),
+    (
+        # THE NAMED REF DOES NOT EXIST on the remote or locally: no attempt creates it.
+        'ref-absent',
+        False,
+        ("couldn't find remote ref", 'error: src refspec'),
+    ),
+    (
+        # THE SERVER REFUSED THE KEY: ssh authenticated nothing, and no wait installs one.
+        'permission-refused',
+        False,
+        ('permission denied (publickey',),
     ),
     (
         # A RATE LIMIT, ABOVE THE 403 ROW BECAUSE IT IS ANSWERED AS A 403. Measured 2026-11-05: GitHub's
@@ -183,6 +250,27 @@ REMEDIES: Final[dict[str, str]] = {
         'pip install uv==<version>`); a lock never needs it moved -- dev_lab.dev.uvrelease installs the pinned '
         'release beside it as the lock writer'
     ),
+    'python-unfit': (
+        'no interpreter this command found fits the project requires-python -- name one that does with '
+        '`uv python find "<requires-python>"` (`uv python install "<requires-python>"` fetches one), then rerun '
+        'with it: `<that python> -m dev_lab.dev.dep --bootstrap <tree>`'
+    ),
+    'lock-absent': (
+        'the project has no uv.lock, so there is nothing to build -- a repo with no Python environment (config '
+        'only) needs no bootstrap; a Python project locks first (`uv lock`) and commits uv.lock'
+    ),
+    'hook-unrunnable': (
+        'a git hook could not start: it imports a module its interpreter lacks (a retired pre-commit framework '
+        'shim) -- reinstall the family hooks: `<venv python> -m dev_lab.dev.hook_install --install`, then retry'
+    ),
+    'usage-refused': 'the command line itself was refused -- fix the arguments its usage line names',
+    'resolution-failed': (
+        'the resolver proved the requirements unsatisfiable on this platform -- move the requirement or the pin it '
+        'names (`<venv python> -m dev_lab.dev.dep --lock-upgrade <tree>`), never retry it'
+    ),
+    'build-failed': 'a build step failed the same way it will fail again -- fix the error the build output names',
+    'ref-absent': 'the ref named does not exist there -- check the spelling with `git ls-remote <remote>`',
+    'permission-refused': 'the server refused this credential -- fix the key or the grant it names, then retry once',
     # A forge refusal's answer is a JSON body no reader sees unless it is quoted: ForgeCallFailed appends it.
     'forge-refused': 'the forge answered and refused this call -- fix what its answer names',
 }

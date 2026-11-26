@@ -3,7 +3,8 @@
 Read only: Pull Requests on (:func:`~dev_lab.dev.famtests.onboarding.assert_the_forge_takes_pull_requests`), each
 branch by ``GET <repo>/branches/<name>``, protection as :mod:`dev_lab.dev.forgeprotect` plans it from the manifest
 ``origin/<integration>`` holds, the Actions secrets by NAME (``GET <repo>/actions/secrets``: Gitea answers a list,
-GitHub ``{"secrets": [...]}``; no value is ever returned by either), and the open PRs' ``created_at``. A read the
+GitHub ``{"secrets": [...]}``; no value is ever returned by either; read and parsed once, by
+:func:`dev_lab.dev.forgesecretnames.read`), and the open PRs' ``created_at``. A read the
 forge refuses is named in ``unread``.
 """
 
@@ -12,7 +13,7 @@ from __future__ import annotations
 import urllib.parse
 from datetime import datetime
 
-from dev_lab.dev import forgeprotect
+from dev_lab.dev import forgeprotect, forgesecretnames
 from dev_lab.dev._forgebackends import GITHUB, backend_for
 from dev_lab.dev.family.members import Facts
 from dev_lab.dev.family.origin import Snapshot
@@ -21,13 +22,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeprotect import INTEGRATION, TRUNK
 from dev_lab.dev.forgework import Client
 
-__all__ = ['ClientFacts', 'contexts_of', 'secret_names']
-
-
-def secret_names(answer: object) -> frozenset[str]:
-    """The secret names of an Actions-secrets answer of either forge."""
-    rows = answer.get('secrets', []) if isinstance(answer, dict) else answer if isinstance(answer, list) else []
-    return frozenset(str(row.get('name', '')) for row in rows if isinstance(row, dict))
+__all__ = ['ClientFacts', 'contexts_of']
 
 
 def contexts_of(answer: object, branch: str) -> tuple[str, ...]:
@@ -54,6 +49,14 @@ class ClientFacts:
         except ForgeCallFailed as why:
             self.unread.append(f'{what} ({why})'.splitlines()[0])
             return None
+
+    def _secrets(self) -> frozenset[str]:
+        """The repo's secret names; a refusal is named in ``unread`` and reads as none held."""
+        try:
+            return frozenset(forgesecretnames.read(self.client, org=False))
+        except ForgeCallFailed as why:
+            self.unread.append(f'secrets ({why})'.splitlines()[0])
+            return frozenset()
 
     def _exists(self, branch: str) -> bool:
         try:
@@ -91,10 +94,9 @@ class ClientFacts:
         except OnboardingViolation:
             pulls = False
         missing = tuple(branch for branch in (trunk, integration) if not self._exists(branch))
-        secrets = self._get('/actions/secrets', 'secrets')
         opened = self._get('/pulls?state=open', 'pulls')
         ages = [(int(p['number']), datetime.fromisoformat(str(p['created_at']))) for p in opened or ()]
         contexts = self._contexts({INTEGRATION: integration, TRUNK: trunk})
-        return Facts(pulls, missing, self._drift(held), secret_names(secrets),
+        return Facts(pulls, missing, self._drift(held), self._secrets(),
                      min(ages, key=lambda pair: pair[1]) if ages else None, tuple(self.unread), contexts,
                      self.client.forge.host)  # fmt: skip

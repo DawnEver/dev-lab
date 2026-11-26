@@ -46,7 +46,8 @@ def repos(tmp_path: Path) -> tuple[Path, Path, Path]:
     return session, bare, rules
 
 
-@pytest.mark.parametrize('command', ['git fetch origin', 'git pull --rebase', 'uv sync'])
+# A bare `uv sync` is ENVIRONMENT-THROUGH-DEP's (refused toward dep), so the third shape is `uv lock`.
+@pytest.mark.parametrize('command', ['git fetch origin', 'git pull --rebase', 'uv lock'])
 def test_a_repo_declaring_no_door_is_sent_to_the_family_retry_door(
     repos: tuple[Path, Path, Path], command: str
 ) -> None:

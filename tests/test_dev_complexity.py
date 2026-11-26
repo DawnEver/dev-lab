@@ -8,11 +8,12 @@ records is a trend in the code and not in the reader.
 from __future__ import annotations
 
 import json
+import sys
 from typing import TYPE_CHECKING
 
 import pytest
 
-from dev_lab.dev import complexity
+from dev_lab.dev import complexity, importtime
 from dev_lab.dev.complexity import Owner
 
 if TYPE_CHECKING:
@@ -102,3 +103,48 @@ def test_the_cli_records_and_shows_the_trend(
     out = capsys.readouterr().out
     assert 'owners.jsonl' in out
     assert 'run ' in out
+
+
+def test_an_owner_reads_out_every_reading_by_its_record_name() -> None:
+    """The record's columns are the owner's readings, named once (no attribute looked up by a string)."""
+    owner = Owner('m', fan_out=1, call_path=2, surface=3)
+    assert owner.readings() == {'fan_out': 1, 'call_path': 2, 'surface': 3}
+    assert tuple(owner.readings()) == complexity._READINGS, "the record's column order"
+
+
+def _plant_modules(root: Path) -> None:
+    _write(root, 'heavy.py', 'import time\ntime.sleep(0.3)\n')
+    _write(root, 'light.py', 'X = 1\n')
+    _write(root, 'broken.py', 'raise ImportError("planted")\n')
+
+
+def test_the_import_time_report_ranks_a_planted_heavy_module_first(tmp_path: Path, monkeypatch) -> None:
+    """F9 (v1 #1): each module's cold import cost, heaviest first; a failure is reported, never read as fast."""
+    _plant_modules(tmp_path)
+    monkeypatch.setenv('PYTHONPATH', str(tmp_path))
+    costs = importtime.report(['light', 'broken', 'heavy'], python=sys.executable, runs=2)
+    assert [c.module for c in costs] == ['heavy', 'light', 'broken']
+    heavy, light, broken = costs
+    assert heavy.seconds is not None
+    assert heavy.seconds >= 0.25
+    assert light.seconds is not None
+    assert light.seconds < heavy.seconds
+    assert broken.seconds is None
+    assert 'planted' in broken.error
+
+
+def test_the_parser_reads_cumulative_microseconds_per_module() -> None:
+    table = (
+        'import time: self [us] | cumulative | imported package\n'
+        'import time:       120 |        120 |   json.decoder\n'
+        'import time:      2000 |    9700000 | optimi_lab\n'
+    )
+    assert importtime.parse(table) == {'json.decoder': 120e-6, 'optimi_lab': 9.7}
+    assert importtime.parse('no table here') == {}  # PLANTED CONTROL: nothing read from nothing
+
+
+def test_imports_defaults_to_the_checkouts_top_level_packages(tmp_path: Path) -> None:
+    assert complexity.packages(tmp_path, ['src/pkg/a.py', 'src/other/__init__.py', 'tests/test_a.py']) == [
+        'other',
+        'pkg',
+    ]

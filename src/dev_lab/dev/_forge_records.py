@@ -5,7 +5,6 @@ Re-exported by :mod:`dev_lab.dev.forgework`, the client that reads them off the 
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final
@@ -33,6 +32,8 @@ class Issue:
     body: str
     url: str
     author: str
+    #: The labels on it, as the forge returns them inline -- where a task's subscription (``task:<slug>``) is read.
+    labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -92,9 +93,19 @@ def ready_title(title: str) -> str:
     return title
 
 
+def _labels(raw: Mapping[str, Any]) -> tuple[str, ...]:
+    return tuple(str(label['name']) for label in raw.get('labels') or ())
+
+
 def _issue(raw: Mapping[str, Any]) -> Issue:
     return Issue(
-        raw['number'], raw['title'], raw['state'], raw.get('body') or '', raw['html_url'], raw['user']['login']
+        raw['number'],
+        raw['title'],
+        raw['state'],
+        raw.get('body') or '',
+        raw['html_url'],
+        raw['user']['login'],
+        _labels(raw),
     )
 
 
@@ -102,11 +113,16 @@ def pull_of(raw: Mapping[str, Any]) -> PullRequest:
     """A forge's pull-request JSON as a :class:`PullRequest`."""
     issue = _issue(raw)
     return PullRequest(
-        *dataclasses.astuple(issue),
+        issue.number,
+        issue.title,
+        issue.state,
+        issue.body,
+        issue.url,
+        issue.author,
         raw['head']['ref'],
         raw['base']['ref'],
         raw['head'].get('sha') or '',
-        tuple(str(label['name']) for label in raw.get('labels') or ()),
+        issue.labels,
         bool(raw.get('draft')) or issue.title.upper().startswith(WIP_PREFIXES),
         bool(raw.get('merged') or raw.get('merged_at')),
         fork=_forked(raw),

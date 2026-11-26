@@ -17,7 +17,7 @@ max_idle = "24 h"              # default "24 h": idle time before a branch is pr
 max_ahead = 10                 # default unjudged: unlanded commits a branch may hold
 ```
 
-`grace_hours` is retired: renamed `max_idle` (D46), refused by name; so is `max_idle` (user ruling
+`grace_hours` is retired: renamed `max_idle` (D46), refused by name; so is `max_idle_hours` (user ruling
 2026-11-25: a value carries its unit), refused with its replacement line.
 
 Read by `dev_lab.dev.branchset.declared_branchset(root)`; a missing or malformed table, or an unknown key,
@@ -27,7 +27,7 @@ A branch in an `ephemeral` namespace is the head of ONE pull request: the push h
 without a row, and the forge deletes it once it is MERGED, no open PR has it as head and it has sat idle
 `max_idle` (`branchprune`'s `ephemeral-done` rule, no `prune_merged` needed). A forge merge deletes it at once.
 An UNMERGED one is never deleted by the survey (D30): it is listed and alarmed with its two doors -- MERGE it
-through a PR, or LAND it with a declared `git merge -s ours` PR, then `branchprune delete`.
+through a PR, or show the user what dropping it discards and, only on their words, `branchprune discard <branch> --approved "<their words>"`; else leave it -- never `git merge -s ours`, which keeps the commits as ancestors and loses their content (#611).
 Registering a branch in `sessions` to get it pushed is never the remedy; push it under `pr/` instead.
 
 ## The branch policy (D46)
@@ -38,12 +38,13 @@ The `prune` role's executor (`dev_lab.dev.roles`: an hpc tick, or the forge feed
 | row | when | doors |
 |---|---|---|
 | `over-ahead` | the branch holds more than `max_ahead` commits integration lacks | land it now, and record why it ran past the limit (no test producer, nobody integrating, lane withheld finished work) -- never split it |
-| `stale` | its tip is idle `max_idle` | land it through a PR, or retire it |
+| `stale` | idle `max_idle` since its last push or PR activity (`branchactivity`; UNKNOWN when the forge records neither, and then no row) | land it through a PR, or retire it |
 
 Each row is an `integration` ALARM on the host card and the session feed, never an issue (user ruling 2026-11-19:
 issues neither record events nor fan out), keyed `<kind> <branch>` -- no sha, so a moved branch repeats as the same
-alarm; a cleared row simply stops being raised, since nothing is stored. Retiring is the user's call: LAND the branch with a
-declared `git merge -s ours` PR, then `branchprune delete`. A merged branch is never a row; the prune owns it, and
+alarm; a cleared row simply stops being raised, since nothing is stored. Retiring is the user's call: the row lists what
+dropping the branch discards; show the user what dropping it discards and, only on their words, `branchprune discard <branch> --approved "<their words>"`; else leave it -- never `git merge -s ours`, which keeps the commits as ancestors and loses their content (#611). A LANDED branch -- an ancestor whose landing merge kept its content
+(`deletejudge.landed`) -- is never a row; the prune owns it, and
 re-checks at DELETE time, after a fresh fetch, that integration or the trunk still holds the judged sha.
 
 ## The census and the candidates
@@ -52,7 +53,7 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
 
 | call | answers |
 |---|---|
-| `census(root, branchset)` | `undeclared_origin` (debt), `local_debt`, `unpushed` (undeclared, holding commits no origin ref has) |
+| `branchcensus.census(root, branchset)` | `undeclared_origin` (debt), `local_debt`, `unpushed` (undeclared, holding commits no origin ref has) |
 | `merge_candidates(root, branchset)` | every undeclared branch and parked tag, `deletable` when its tip is in the trunk's authority or a session branch; anything else is merged first |
 | `python -m dev_lab.dev.branchset [--root R]` | prints the candidates as `delete` / `merge` rows; deletes nothing |
 | `python -m dev_lab.dev.branchset --apply` | deletes merged LOCAL branches and tags, re-checking ancestry at the moment of deletion; lists landed origin ones with the `branchprune delete` door |
@@ -85,7 +86,7 @@ door. A human push and the forge's own status are not judged; `pr/*` admits the 
 `pr/<task>`, which git cannot hold beside `pr/<task>/<x>`. Agent fan-out (`lane/` `feat/` `fix/`) is local by construction. Deletions are judged by
 SESSION-HISTORY-ONLY-GROWS alone, and tags are not branches, so an existing undeclared origin branch takes no new
 push and is deleted by a human. The machine pushers all land: relock (`pr/relock`), forge autosync (`pr/*`
-heads only), the component bump (`pr/components-bump`), and the declared trunk and integration branch.
+heads only), and the declared trunk and integration branch.
 
 The forge judges the same set after the push: every open PR head into integration carries a `branchset` status
 (`dev_lab.dev.forgeheadgate`), `failure` when its branch is not admitted by the set its own commit declares, and

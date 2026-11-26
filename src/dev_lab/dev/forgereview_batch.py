@@ -31,8 +31,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.quantity import parse
 from lab_commons.temp import TEMP_PREFIX
-from lab_commons.units import Q_
 
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
 
@@ -99,15 +99,7 @@ def check_expiry(value: str) -> None:
 
 def wait_of(review: Review) -> timedelta:
     """*review*'s ``batch_wait``; a bare number or a non-duration is refused naming it."""
-    try:
-        quantity = Q_(review.batch_wait)
-    except Exception as bad:
-        msg = f'batch_wait {review.batch_wait!r} is not a duration; write one such as "20 min"'
-        raise ValueError(msg) from bad
-    if not isinstance(quantity, Q_) or not quantity.check('[time]'):
-        msg = f'batch_wait {review.batch_wait!r} is not a duration (it needs a unit); write one such as "20 min"'
-        raise ValueError(msg)
-    return timedelta(seconds=float(quantity.m_as('s')))
+    return timedelta(seconds=parse('batch_wait', review.batch_wait, 'duration'))
 
 
 def batch_args(review: Review, state: Path) -> tuple[str, ...]:
@@ -143,9 +135,13 @@ def _stored(client: Client, number: int, head: str, trusted: Iterable[str]) -> s
 
 
 @contextlib.contextmanager
-def held_state(client: Client, number: int, head: str, trusted: Iterable[str]) -> Iterator[Path]:
-    """A state file for *head*'s review commands, seeded from the PR and written back to it when they changed it."""
-    before = _stored(client, number, head, trusted)
+def held_state(client: Client, number: int | Callable[[], int], head: str, trusted: Iterable[str]) -> Iterator[Path]:
+    """A state file for *head*'s review commands, seeded from the PR and written back to it when they changed it.
+
+    *number* may be a thread not opened yet (a callable that opens it): nothing is seeded, and it is opened only when
+    there is state to write back (#9 F-0a220542e6ce: a refused review leaves no empty ledger issue behind).
+    """
+    before = '' if callable(number) else _stored(client, number, head, trusted)
     if before:
         json.loads(before)  # a stored state that is not JSON is refused here, never handed to a command
     with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-batch-') as scratch:
@@ -157,5 +153,5 @@ def held_state(client: Client, number: int, head: str, trusted: Iterable[str]) -
         finally:
             after = path.read_text(encoding='utf-8').strip() if path.is_file() else ''
             if after and after != before.strip():
-                comment_upsert(client, number, kind=Marker.REVIEW_BATCH, key=head,
+                comment_upsert(client, number() if callable(number) else number, kind=Marker.REVIEW_BATCH, key=head,
                                text=f'{_SAID}\n\n```json\n{after}\n```')  # fmt: skip

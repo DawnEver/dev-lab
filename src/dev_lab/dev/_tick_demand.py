@@ -1,46 +1,33 @@
-"""WHAT A TICK SIZES BY: the supply it admits against and the demand each candidate asks of it.
+"""A tick's candidate DEMAND: what a part or request will ask of this box, or of a cluster account.
 
-A box tick measures this box now; a cluster tick is handed its account's measured standing and never guesses it.
-The tick that admits with these is :mod:`dev_lab.dev.forgetick`.
+:mod:`dev_lab.dev.forgetick` ranks candidates against a supply; this module sizes each one -- a box part at the
+ids its commit's parts hand it, a box request by its own row, a cluster part by its measured ask.
 """
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Callable, Mapping, Sequence
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from lab_commons.box import GB, Capacity
 from lab_commons.box.providers import box_engine
 from lab_commons.compute.learned import box_demand, request_demand
-from lab_commons.compute.model import (
-    REQUEST,
-    Candidate,
-    Supply,
-)
+from lab_commons.compute.model import REQUEST, Candidate, Supply
 from lab_commons.compute.presence import cached
 
 from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgerequest import declared_request
-from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.platformparts import origin_url, parts_of
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-def whole_supply(scope: str, *, cluster: bool) -> Supply:
-    """A tick given no supply: this box as its providers measure it now; an account is never guessed.
+    from dev_lab.dev.forgestatus import CommitStatus
 
-    Raises:
-        ValueError: on a cluster seat -- an account's supply is its measured standing, and an unmeasured one admits
-            nothing rather than a default task.
-
-    """
-    if cluster:
-        msg = f"{scope}: a cluster tick needs the account's measured supply (forgeslurm standing); none was given"
-        raise ValueError(msg)
-    return dataclasses.replace(free_box_supply(), scope=scope)
+__all__ = ['box_now', 'demand_of', 'handed']
 
 
-def free_box_supply() -> Supply:
+def box_now() -> Supply:
     """What lies outside this box ledger's claims now (:func:`lab_commons.box.providers.box_engine`)."""
     return box_engine(capacity=Capacity.read(), presence=cached()).available('box')
 
@@ -68,7 +55,7 @@ def demand_of(
     if cluster:
         asked = part_demand(repo_url, ceiling_gb=None)
         return lambda _wanted, needed: asked(needed)
-    free = (room or free_box_supply()).resources
+    free = (room or box_now()).resources
 
     def sized(wanted: Candidate, needed: frozenset[str]) -> Mapping[str, float]:
         if wanted.kind == REQUEST:

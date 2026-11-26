@@ -79,7 +79,7 @@ def missing_for_part(root: Path, part: str, *, installed: Callable[[str], bool] 
     need_list = ', '.join(repr(extra) for extra in missing)
     return (
         f'verify: refused -- part {part} needs extra {need_list}, not installed in this environment '
-        f'(D78: extras are installed on demand); add it: python -m dev_lab.dev.dep --sync {root} {flags}'
+        f'(D78: extras are installed on demand); add it: python -m dev_lab.dev.dep --root {root} --sync {flags}'
     )
 
 
@@ -123,7 +123,7 @@ def flags(root: Path, part: str) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``python -m dev_lab.dev.depneeds flags --root R --part P``: print the part's extra flags (CI's sync)."""
-    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.depneeds', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.depneeds', description=(__doc__ or '').splitlines()[0])
     sub = parser.add_subparsers(dest='verb', required=True)
     flag = sub.add_parser('flags', help="the part's `--extra` flags: the declared extras plus its needs' extras")
     flag.add_argument('--root', type=Path, default=Path.cwd())

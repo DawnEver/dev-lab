@@ -17,7 +17,7 @@ consults. It is strictly weaker than "these hooks pass".
 
 IT NEVER REPAIRS. A hooks directory is shared by every worktree of a checkout, so an install is a
 mutation another party learns about by accident; the remedy is reported
-(:data:`dev_lab.dev.hook_install.INSTALL_COMMAND`).
+(:data:`dev_lab.dev._hook_shim.INSTALL_COMMAND`).
 """
 
 from __future__ import annotations
@@ -27,9 +27,9 @@ from pathlib import Path
 
 import lab_commons.launch as _door
 
+from dev_lab.dev._hook_shim import INSTALL_COMMAND
 from dev_lab.dev.hook_install import (
     FOREIGN,
-    INSTALL_COMMAND,
     PROTECTED,
     STALE,
     hook_installation,

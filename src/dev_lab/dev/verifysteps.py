@@ -38,6 +38,7 @@ from dev_lab.dev._verify_coverage import cache_env, coverage_args, coverage_env,
 from dev_lab.dev.commandtests import declared_command, script_paths, selected_command
 from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.envseat import EnvironmentSeat
+from dev_lab.dev.gitdirs import run_owner
 from dev_lab.dev.harness import child_env
 from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.jsrun import NoEngine, node_path
@@ -423,7 +424,7 @@ def run_verify(
     vanished = vanished_shortfall(stale_declarations(root, allowed))
     path = output_dir(root, LOG_KIND) / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
     reports: list[StepReport] = []
-    seat = EnvironmentSeat(sys.prefix, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
+    seat = EnvironmentSeat(sys.prefix, f'verify:{run_owner(root)}', wait_s=wait_s, poll_s=poll_s)
     # THE CELLS ARE WRITTEN OUTSIDE THE CHECKOUT WHILE THE SESSION RUNS and land beside the log once it ends: a
     # consumer's session may guard its live output tree against every write it makes, and verify's own evidence
     # is not that session's litter. Moved in a `finally`, so a cut run's cells still land.

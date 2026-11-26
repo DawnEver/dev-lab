@@ -1,0 +1,259 @@
+# Who may depend on what (D63). Versions live in pyproject.toml / Cargo.toml and their locks; this file names
+# only permission. Paths are layout.toml rows; a row here naming no layout row is refused. Every row says why.
+# Python: a third-party or family package no row names is refused everywhere; a standard-library module is
+# allowed unless a row restricts it. Rust: an external crate no row names is refused.
+
+# ---------------------------------------------------------------------------------------------------------
+# Python: internal layers
+# ---------------------------------------------------------------------------------------------------------
+[python.owners]
+# The owner DAG: each top-level owner lists exactly the owners it may import (least privilege, no implied
+# order). The table must be acyclic. Inside an owner, children import each other only along the edges its
+# [python.siblings.<owner>] table declares (default: none); what two siblings share otherwise moves to their parent or to contracts (D69).
+# A child may import its parent; a parent never imports its children (D112 C6). Every sibling table lists ALL children,
+# an empty list meaning no edge, so the table is also the closed list of the owner's children.
+contracts = []                                   # the dependency-free leaf every layer talks through (D13)
+models = ["contracts"]                           # declares physics, laws, signals, geometry (D22)
+compile = ["contracts", "models"]                # lowers declarations to IR; transforms only declare (D38, D107)
+runtime = ["contracts", "models", "compile"]     # executes IR: one entry, native or external (D111)
+presentation = ["contracts", "models"]           # generic: results -> display units, view descriptions, reports
+ingest = ["contracts", "models"]                 # generic input boundary: foreign inputs -> typed objects (D71)
+applications = ["contracts", "models", "compile", "runtime", "presentation", "ingest"]   # the only domain knowledge composes everything below (D71, D106)
+benchmarks = ["contracts", "models", "compile", "runtime", "presentation", "applications"]   # never parses vendor files: references arrive as result records (D71, D72)
+agent = ["contracts", "models", "compile", "runtime", "presentation", "ingest", "applications", "benchmarks"]   # tools derive from the verb table + the owners' typed action entry points (D104 E1, D107)
+cli = ["contracts", "models", "compile", "runtime", "presentation", "ingest", "applications", "benchmarks"]   # the thin entry point: parse, call a typed entry, render (D104 E1)
+
+[python.siblings.applications]
+# Edges BETWEEN the children of one owner (default: none). Applications follow product containment (D71):
+# a part used by two or more applications is its own application (D47) and its users import it directly.
+electric_machine = []
+magnetic_component = []
+power_converter = ["magnetic_component"]
+drive_unit = ["electric_machine", "power_converter"]
+vehicle = ["drive_unit"]
+
+[python.siblings.compile]
+# elaborate, transform and emit exchange only contracts IR; runtime/execution chains them (D112 C1).
+# discretize, analyze_structure and assemble are Rust-owned children (no Python folder, D36); they join the ONE
+# graph so their crate edges have Python edges to be a subset of (D121, D123).
+elaborate = []
+transform = []
+emit = []
+discretize = []
+analyze_structure = []
+assemble = ["discretize"]
+
+[python.siblings."compile/transform"]
+# transforms chain by declared pre/post conditions, never by import (D112 C2).
+formulation = []
+symmetry_reduction = []
+dimension_reduction = []
+coordinate_change = []
+frequency_domain = []
+linearization = []
+sensitivity = []
+model_order_reduction = []
+asymptotic_limits = []
+switching_averaging = []
+coupling_simplification = []
+
+[python.siblings."compile/emit"]
+# real nesting of generated content only (D112 C4).
+c_code = []
+fmi = ["c_code"]
+spice = []
+jmag = []
+aedt = []
+femm = []
+fluent = []
+openfoam = []
+plecs = ["c_code"]
+matlab = []
+simba = []
+mapdl = []
+lsdyna = []
+smtlib = []
+
+[python.siblings.presentation]
+views = []
+tables = []
+reports = ["views", "tables"]
+
+[python.siblings."models/geometry"]
+# assembly composes construction trees; reconstruction fits emit the same tree (D77, D112 M1/M2); exchange writes it.
+construction = []
+assembly = ["construction"]
+reconstruction = ["construction"]
+exchange = ["construction"]
+
+[python.siblings.contracts]
+# generated holds the types built from schema; serialization and foreign_formats read them (D38, D108).
+serialization = ["generated"]
+foreign_formats = ["generated"]
+generated = []
+
+[python.siblings.models]
+geometry = []
+governing_equations = []
+constitutive_relations = []
+signal = []
+
+[python.siblings.benchmarks]
+accuracy = ["references"]   # verdicts read the reference rung (D30, D54)
+references = []
+performance = []
+strategies = []
+
+[python.importers]
+# A child whose importers are narrower than its owner's: only these may import it (D72).
+"contracts/foreign_formats" = ["compile/emit", "ingest", "runtime/external", "tests"]
+
+[python.siblings.runtime]
+# execution dispatches every problem class; outer classes go to nested_problems with execution passed in as the
+# inner evaluator (recursion by callback, adds = control), so no child imports execution (D106, D111).
+execution = ["nested_problems", "external", "result_cache"]
+nested_problems = []
+external = ["result_cache"]
+result_cache = []
+
+# ---------------------------------------------------------------------------------------------------------
+# Python: third-party and family packages (refused unless listed)
+# ---------------------------------------------------------------------------------------------------------
+[python.packages]
+numpy = { owners = ["*"], reason = "the array format of every contract and of the FFI buffers (D49)" }
+scipy = { owners = ["src/product/benchmarks/references", "tests/unit"], load = "deferred", reason = "1.1-7.5 s import; analytic reference solutions (the top rung, D76) and independent checks; solves are Rust (D51)" }
+"lab_commons.log" = { owners = ["*"], reason = "the one structured log (JSONL, OpenTelemetry names)" }
+"lab_commons.hostenv" = { owners = ["tests"], reason = "tests isolate the family home via its HOME_ENV constant (monkeypatch) or home(Host()); src never reads env (D65, env-is-read-once)" }
+"lab_commons.quantity" = { owners = ["src/product/contracts/generated", "src/product/contracts/serialization", "src/product/presentation"], reason = "the family unit door: values with units parsed once to SI, to_si/from_si for the IR codec incl. affine, gauge and dB, display conversion (D126 F1)" }
+"lab_commons.units" = { owners = [], reason = "retired family-wide (pint<->pydantic; v1 has no pydantic, D40, D125)" }
+"lab_commons.em" = { owners = [], reason = "a domain vocabulary beside v1's layered term vocabulary (D100, D125)" }
+"lab_commons.viz" = { owners = ["src/product/presentation"], reason = "figure DESCRIPTIONS as data; presentation imports no plotting library (D64)" }
+"lab_commons.viz.mpl" = { owners = ["src/product/cli"], load = "deferred", reason = "2.6 s import; the entry point picks the renderer" }
+"lab_commons.viz.bokeh" = { owners = ["src/product/cli"], load = "deferred", reason = "8.8 s import; the entry point picks the renderer" }
+"lab_commons.html" = { owners = ["src/product/presentation"], reason = "HTML reports" }
+"lab_commons.graph_layout" = { owners = ["src/product/presentation/views", "src/product/compile/emit"], reason = "the one schematic placement and orthogonal routing engine (lab-commons pr/toolchain/graph-layout d9190d62); v1 adapters keep the circuit domain: component -> Node/Net, pins, symbols, ladder layout, vendor writers (D83, D112 R1)" }
+"lab_commons.compute" = { owners = ["src/product/runtime"], reason = "the result store is compute.unit + compute.store (D125 M1); vendor presence/version checks are compute.presence (M2); parallel jobs; free-space floor (M7)" }
+"lab_commons.outcomes" = { owners = ["src/product/runtime", "src/product/benchmarks"], reason = "every execution yields one outcomes Cell; action records are outcomes Records (D125 M3, D126)" }
+"lab_commons.storage" = { owners = ["src/product/runtime/result_cache"], reason = "where output/store lives on this machine (D125 M7)" }
+"lab_commons.headroom" = { owners = ["src/product/runtime/result_cache"], reason = "what the store may still write (D125 M7)" }
+"lab_commons.objects" = { owners = ["src/product/runtime/result_cache"], reason = "Oracle objects named by `references.lock`: fetch by sha256 (refused unless locked), write-once verified upload; the one owner touching the remote, case pack lives here (lab-commons pr/toolchain/objects 580e44e1; D76, D86, D112 O2)" }
+"lab_commons.launch" = { owners = ["src/product/runtime/external"], reason = "the one process-launch door (D125 M4)" }
+"lab_commons.box" = { owners = ["src/product/runtime/external", "src/product/runtime/execution"], reason = "machine resource ledger: vendor license seats, local parallel runs (D125 M5)" }
+"lab_commons.liveness" = { owners = ["src/product/runtime/external"], reason = "is a recorded job pid still that job (status/stop, D125 M6)" }
+"lab_commons.proccpu" = { owners = ["src/product/runtime/external"], reason = "cpu-seconds of a vendor job tree (D125 M6)" }
+"lab_commons.census" = { owners = ["src/product/runtime/external"], reason = "the live process census for status/stop (D125 M6)" }
+"lab_commons.proc" = { owners = ["src/product/runtime"], reason = "memory, process trees, ending a process tree (D125 M6)" }
+"lab_commons.hpc" = { owners = ["src/product/runtime"], reason = "cluster submission" }
+"lab_commons.temp" = { owners = ["src/product/runtime"], reason = "the family temp tree (replaces tempfile)" }
+"lab_commons.paths" = { owners = ["src/product/cli", "src/product/runtime"], reason = "the family path roots" }
+"lab_commons.file_io" = { owners = ["src/product/cli", "src/product/runtime"], reason = "atomic file writes" }
+"lab_commons.config" = { owners = ["src/product/cli"], reason = "machine facts (threads, cache limits, retention, user data roots, vendor homes) come from hosts-config through the family config, read at the entry point; v1 has no config/ root (D112)" }
+"lab_commons.credentials" = { owners = ["src/product/runtime/external"], reason = "vendor licenses" }
+"lab_commons.desktop" = { owners = ["src/product/runtime/external"], reason = "reading and operating vendor windows (D80, D83)" }
+learn_lab = { owners = ["src/product/runtime/nested_problems"], reason = "fitting is an outer problem (D19, D61, D64 R1)" }
+optimi_lab = { owners = ["src/product/runtime/nested_problems"], load = "deferred", reason = "9.7 s import (measured 2026-11-26, a family defect to fix); optimization AND sampling/sensitivity are outer problems (D19, D64 R1, D125)" }
+numerics_lab = { owners = ["src/product/runtime/nested_problems"], reason = "basic numerical methods only, e.g. enclosure for certify (D83, D125); the Rust numerics crate is the crates' direct dependency (D79, D107)" }
+ai_lab = { owners = ["src/product/benchmarks/strategies"], reason = "the AI-strategy campaign's spend and usage ledger; strategies call ai-lab inside optimizer-lab (D50)" }
+winding_lab = { owners = ["src/product/applications/electric_machine"], reason = "the machine winding layout; its topology diagrams come from winding-lab itself (D52, D97)" }
+gmsh = { owners = ["tests/unit"], reason = "a reference mesher only, in tests: GPLv2+ never enters shipped src; benchmarks/performance measures it live as a separate program via runtime/external/gmsh (D78, D86, D107)" }
+OCP = { owners = ["src/product/models/geometry/exchange", "tests/unit"], load = "deferred", reason = "2.3-2.9 s import; STEP/CAD exchange, and the geometry kernel's test oracle (D52)" }
+ezdxf = { owners = ["src/product/models/geometry/exchange"], load = "deferred", reason = "3.6 s import; DXF in and out is CAD exchange" }
+openpyxl = { owners = ["src/product/presentation"], load = "deferred", reason = "2.5 s import; result tables to .xlsx in display units (convert/xlsx, D95); MIT" }
+meshio = { owners = ["src/product/contracts/foreign_formats"], reason = "mesh syntax used by both ingest and emit lives once (a syntax with two or more users goes to foreign_formats, D107); adoption waits on the O8 round-trip measurement" }
+PIL = { owners = ["src/product/models/geometry/reconstruction"], reason = "photos to geometry" }
+cv2 = { owners = ["src/product/models/geometry/reconstruction"], load = "deferred", reason = "1.4 s import; photo and drawing to geometry" }
+pdfminer = { owners = ["src/product/models/geometry/reconstruction"], load = "deferred", reason = "1.4 s import; vector paths of CAD-exported PDF drawings" }
+sympy = { owners = ["src/product/compile/transform"], load = "deferred", reason = "4.9 s import; symbolic small-signal models (D51)" }
+tomlkit = { owners = ["src/product/contracts/serialization", "migration/converters"], reason = "only serialization writes TOML (incl. the pack manifest.toml); ingest returns typed records" }
+win32com = { owners = ["src/product/runtime/external"], reason = "COM automation of JMAG, FEMM, AEDT" }
+pythoncom = { owners = ["src/product/runtime/external"], reason = "COM automation (pywin32)" }
+pywintypes = { owners = ["src/product/runtime/external"], reason = "COM automation (pywin32)" }
+aesim = { owners = ["src/product/runtime/external"], reason = "SIMBA's Python API (the simba extra, D104 P2)" }
+pytest = { owners = ["tests", "migration/equivalence"], reason = "the test runner; migration has its own test root, archived with it (D44)" }
+dev_lab = { owners = ["tests"], reason = "family test helpers: famtests.configrender, famtests.cratepin (toolchain family-bases)" }
+hypothesis = { owners = ["tests"], reason = "property tests" }
+
+# ---------------------------------------------------------------------------------------------------------
+# Python: restricted standard-library modules ([] = nowhere)
+# ---------------------------------------------------------------------------------------------------------
+[python.stdlib]
+hashlib = { owners = ["src/product/contracts", "src/product/runtime/result_cache"], reason = "one hashing rule: generated content_hash + the result cache (D61)" }
+logging = { owners = [], reason = "logs go through lab_commons.log" }
+tomllib = { owners = ["src/product/contracts/serialization", "tests", "migration/converters"], reason = "only serialization parses TOML; every other owner receives typed records" }
+zipfile = { owners = ["src/product/contracts/foreign_formats", "src/product/runtime/result_cache", "src/product/runtime/external"], reason = "container syntax (FMU, vendor projects) once in foreign_formats; case pack in runtime/result_cache (D112 O2); vendor job archives" }
+shutil = { owners = ["src/product/runtime/external", "src/product/runtime/result_cache"], reason = "vendor work directories and the cache store" }
+tempfile = { owners = [], reason = "lab_commons.temp" }
+importlib = { owners = ["src/product/cli", "src/product/contracts/serialization"], reason = "cli: the ONE declared deferred import -- dispatch imports only the chosen verb's entry, nouns are parsed from the verb-table data (D126); serialization: importlib.resources for packaged TOML" }
+subprocess = { owners = [], reason = "programs are launched only through lab_commons.launch (D125 M4)" }
+"os.system" = { owners = [], reason = "programs are launched only through lab_commons.launch (D125)" }
+"os.popen" = { owners = [], reason = "programs are launched only through lab_commons.launch (D125)" }
+_thread = { owners = [], reason = "parallel jobs go through lab_commons.compute" }
+"builtins.open" = { owners = ["src/product/contracts/serialization", "src/product/contracts/foreign_formats", "src/product/runtime/external", "src/product/runtime/result_cache", "tests", "migration"], reason = "files are read and written only at the format boundaries and the store; everything else receives typed records" }
+threading = { owners = [], reason = "parallel jobs go through lab_commons.compute" }
+concurrent = { owners = [], reason = "parallel jobs go through lab_commons.compute" }
+multiprocessing = { owners = [], reason = "parallel jobs go through lab_commons.compute" }
+asyncio = { owners = [], reason = "parallel jobs go through lab_commons.compute" }
+signal = { owners = [], reason = "cancellation goes through lab_commons.supervise" }
+uuid = { owners = [], reason = "job ids are lab_commons.compute; result ids are content hashes" }
+socket = { owners = ["src/product/runtime/external"], reason = "vendor servers" }
+winreg = { owners = ["src/product/runtime/external"], reason = "locate ONLY: first-use detection that proposes explicit configuration for the user to confirm; runs never read it (D80, D107)" }
+platform = { owners = [], reason = "vendor platform facts come from explicit configuration (D65)" }
+ctypes = { owners = [], reason = "FFI is Rust's (D51)" }
+mmap = { owners = [], reason = "FFI and shared memory are Rust's" }
+pickle = { owners = [], reason = "not portable, executes on load; TOML/JSONL/npz only" }
+secrets = { owners = [], reason = "no secrets in this repo" }
+urllib = { owners = [], reason = "network only through family doors" }
+"http.client" = { owners = [], reason = "network only through family doors" }
+ftplib = { owners = [], reason = "network only through family doors" }
+runpy = { owners = [], reason = "no code run by path" }
+"os.environ" = { owners = [], reason = "explicit configuration files only (D65); src, rust and tests alike" }
+"os.getenv" = { owners = [], reason = "explicit configuration files only (D65)" }
+"os.putenv" = { owners = [], reason = "explicit configuration files only (D65)" }
+"nt.environ" = { owners = [], reason = "explicit configuration files only (D65); the Windows spelling of os.environ" }
+"posix.environ" = { owners = [], reason = "explicit configuration files only (D65)" }
+
+# ---------------------------------------------------------------------------------------------------------
+# Rust: crate graph and external crates
+# ---------------------------------------------------------------------------------------------------------
+# There is no [rust.crates] table (D121, D123): a crate lives at rust/crates/<owner>/<child>, the path of the Python
+# owner it belongs to, and its Cargo dependencies must be a subset of the [python.owners] + [python.siblings.*] edges
+# between those owners -- one graph, derived and checked. product_native (rust/pybind) is the one Python exit and
+# may depend on every crate; its submodules derive from the crate paths.
+
+[rust.external]
+numerics = { crates = ["models_geometry", "compile_discretize", "compile_assemble", "runtime_execution", "models_signal", "models_constitutive_relations"], reason = "the family solver library, depended on directly (no door crate, D64); discretize: dense ops, condensation (D79); geometry: dual numbers and bit-reproducible transcendentals (D107)" }
+rayon = { crates = ["models_geometry", "compile_discretize", "compile_assemble", "models_constitutive_relations", "runtime_execution"], reason = "the one data-parallel mechanism; thread count from configuration, reductions independent of it" }
+robust = { crates = ["models_geometry", "compile_discretize"], reason = "exact geometric predicates (Shewchuk)" }
+libm = { crates = ["models_geometry"], reason = "bit-identical math across platforms (rust-lang)" }
+pyo3 = { crates = ["product_native", "contracts"], reason = "Python binding; moves with numpy (pins live in Cargo.toml)" }
+numpy = { crates = ["product_native", "contracts"], reason = "numpy buffers; tracks pyo3's minor" }
+ndarray = { crates = ["*"], reason = "the array type of generated IR records (ArrayD) and numpy's buffers; pyo3/numpy in contracts only behind its pyo3 feature (dev-lab irrust)" }
+serde = { crates = ["contracts"], features = ["derive"], reason = "generated IR records derive (de)serialization (dev-lab irrust)" }
+cc = { crates = ["runtime_external_jmag"], kind = "build", reason = "compiles the C++ shim (rust-lang)" }
+serde_json = { crates = ["contracts"], dev_crates = ["*"], features = ["float_roundtrip"], reason = "generated IR record encoding in `contracts` (dev-lab irrust); every crate's tests read .jsonl goldens; float_roundtrip is mandatory (1-ulp misreads measured)" }
+sha2 = { crates = ["contracts"], kind = "dev", reason = "cross-checks the generated content_hash against Python" }
+tract-onnx = { crates = ["runtime_execution"], reason = "pure-Rust ONNX inference of learned field operators (U-Net/FNO measured 3e-7..9e-7 rel L2 vs torch f32); constitutive laws never go through ONNX (D82)" }
+num-complex = { crates = ["compile_discretize", "compile_assemble", "runtime_execution", "models_constitutive_relations"], reason = "complex harmonic quantities; MIT/Apache (D99 recording correction)" }
+libloading = { crates = ["runtime_external_c_compiler"], reason = "loads a compiled C-Script library in process (D85)" }
+memmap2 = { crates = ["runtime_external_c_compiler"], reason = "buffers shared with the isolated host process (D85)" }
+windows-sys = { crates = ["runtime_external_c_compiler"], reason = "named-event doorbell and PE section table for static-image checkpoints on Windows (D85)" }
+libc = { crates = ["runtime_external_c_compiler"], reason = "the stable line only, never an alpha; futex doorbell and dl_iterate_phdr for static-image checkpoints on Linux (D85)" }
+num-rational = { crates = ["models_geometry"], reason = "exact rational arithmetic for the certified NURBS offset (D79); MIT OR Apache-2.0" }
+num-bigint = { crates = ["models_geometry"], reason = "arbitrary-precision integers under num-rational (D79); MIT OR Apache-2.0" }
+faer = { crates = [], reason = "linear algebra is numerics-lab's" }
+
+[rust.std]
+# std items restricted by crate; anything unlisted is allowed. Tests may use std::fs.
+"std::sync::Arc" = { crates = ["*"], reason = "shared read-only data, no side effect" }
+"std::sync::atomic" = { crates = ["runtime_execution"], reason = "cancellation flags and progress counters" }
+"std::sync::Mutex" = { crates = ["runtime_external_jmag", "runtime_external_c_compiler"], reason = "a DLL loads once per process; no shared mutable state elsewhere (D64)" }
+"std::sync::RwLock" = { crates = [], reason = "no shared mutable state" }
+"std::sync::OnceLock" = { crates = ["runtime_external_jmag"], reason = "the one process-wide jbdll handle; C-Script blocks load one copy per instance (D85); no global caches" }
+"std::sync::LazyLock" = { crates = [], reason = "no global caches" }
+"std::env" = { crates = [], reason = "explicit configuration only (D65)" }
+"std::fs" = { crates = ["runtime_external_jmag", "runtime_external_c_compiler"], reason = "IO is Python's; tests read goldens" }
+"std::process" = { crates = ["runtime_external_jmag", "runtime_external_c_compiler"], reason = "the guard process" }
+"std::net" = { crates = [], reason = "no network" }
+"std::thread" = { crates = ["runtime_execution"], reason = "real-time loop and co-simulation pacing only; parallel computation is rayon" }
+unsafe = { crates = ["runtime_external_jmag", "runtime_external_jmag_guard", "runtime_external_c_compiler"], reason = "the JMAG jbdll FFI and the PLECS block ABI (D85); elsewhere only by receipt with a benchmark" }
+'extern "C"' = { crates = ["runtime_external_jmag", "runtime_external_jmag_guard", "runtime_external_c_compiler"], reason = "the JMAG jbdll FFI and the PLECS block ABI (D85)" }

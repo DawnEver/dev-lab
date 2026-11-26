@@ -140,7 +140,7 @@ def thresholds(table: Mapping[str, Any]) -> dict[str, float]:
 
     """
     refuse_renamed('[pressure]', table, RENAMED)
-    found = {}
+    found: dict[str, float] = {}
     for name, default in THRESHOLDS.items():
         if name not in table:
             found[name] = default
@@ -176,9 +176,9 @@ class Declared:
 class Measured:
     """The findings, every reading (``None`` = unmeasurable here), and the memo the next reading compares to."""
 
-    findings: list[Finding] = field(default_factory=list)
-    readings: dict[str, float | None] = field(default_factory=dict)
-    memo: dict[str, Any] = field(default_factory=dict)
+    findings: list[Finding] = field(default_factory=list[Finding])
+    readings: dict[str, float | None] = field(default_factory=dict[str, float | None])
+    memo: dict[str, Any] = field(default_factory=dict[str, Any])
     interval_s: float = THRESHOLDS['interval']
 
 

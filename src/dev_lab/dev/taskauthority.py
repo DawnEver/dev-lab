@@ -199,8 +199,11 @@ def grant_from_prompt(ledger: Path, prompt: str, session: str = '', *, now: floa
     return grant
 
 
-def consume(ledger: Path, verb: str, slug: str, *, now: float | None = None) -> str:
-    """Spend the newest live unspent grant for exactly *verb* and *slug*; its id. :class:`AuthorityRefused` else."""
+def consume(ledger: Path, verb: str, slug: str, *, now: float | None = None, dry_run: bool = False) -> str:
+    """Spend the newest live unspent grant for exactly *verb* and *slug*; its id. :class:`AuthorityRefused` else.
+
+    *dry_run* finds the grant and refuses the same way, but spends nothing.
+    """
     at, file = time.time() if now is None else now, store(ledger)
     with _locked(file):
         history = events(ledger)
@@ -215,6 +218,8 @@ def consume(ledger: Path, verb: str, slug: str, *, now: float | None = None) -> 
             )
             raise AuthorityRefused(msg)
         hit = max(live, key=lambda e: float(e.get('at', 0)))
+        if dry_run:
+            return str(hit['id'])
         _append(file, {'event': 'consumed', 'id': hit['id'], 'verb': verb, 'slug': slug, 'at': at})
     return str(hit['id'])
 

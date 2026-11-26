@@ -21,12 +21,12 @@ imports them. Every constraint below follows from that one fact.
 - **A consumer inherits every runtime dependency**, including the ones it never uses. A new entry
   in `[project].dependencies` is a decision typed into the named set in
   `tests/test_arch_dependencies.py`, not a line that appears. Heavier or optional machinery ships
-  behind an extra and an opt-in subpackage, as `dev_lab.dev`, `lab_commons.em` and `lab_commons.viz` do.
+  behind an extra and an opt-in subpackage, as `dev_lab.dev` and `lab_commons.viz` do.
 - **An upper bound here is a resolver constraint imposed on four trees.** A floor states what this
   code needs; a ceiling is somebody's bad afternoon, inherited. Fix the incompatibility, or pin it
   in the consumer that actually has the problem.
-- **Importing the top level must not drag in a tier it did not ask for.** `dev_lab.dev`,
-  `lab_commons.em` and `lab_commons.viz` are opt-in IMPORTS, each pinned against a fresh interpreter
+- **Importing the top level must not drag in a tier it did not ask for.** `dev_lab.dev`
+  and `lab_commons.viz` are opt-in IMPORTS, each pinned against a fresh interpreter
   (`test_dev_gate.py`, `test_viz_gate.py`) — a convenience re-export would silently repeal that.
 - **`__all__` is the contract, and there is no second place a consumer learns it was wrong.**
   A public module declares its surface, and every declared name resolves.
@@ -42,10 +42,9 @@ Cites, from the shared registry: `LATEST-DEPENDENCIES`, `PUBLIC-SURFACE-DECLARED
 
 ## A rule is shared; the thing that refuses one is not
 
-This repo AUTHORS the family's development rules (`dev_lab.dev.rules`). These are the
-constraints that come with owning that file. Universal rules are not restated here — they are
-cited by ID, and `tests/test_the_adoption_accounts_for_every_rule.py` is what makes the citation
-a check.
+This repo AUTHORS the family's development rules (`dev_lab.dev.rules`). These are the constraints that come with
+owning that file. Universal rules are not restated here — they are cited by ID, and
+`tests/test_the_adoption_accounts_for_every_rule.py` is what makes the citation a check.
 
 - **A STATEMENT is universal; a MECHANISM is a path in ONE tree. Never conflate them.** A row in
   `_rule_rows.py` carries the statement plus the EXISTENCE PROOF that the rule is enforceable at
@@ -87,7 +86,8 @@ _Rendered by `dev_lab.dev.agentsection` from `dev_lab.dev.principles`; a hand ed
   detail; no duplication across levels.
 - **Keep every valuable parameter and option** (`keep-valuable-options`): Generality is a requirement: keep every
   parameter and option a real case uses or plausibly needs. A reference match ADDS a selectable option and never
-  replaces or deletes the alternative; numerical method choices are options even with no current caller.
+  replaces or deletes the alternative; numerical method choices are options even with no current caller. Every
+  retirement is classified (renamed, baggage, or capability-dropped) and only a user ruling drops a capability.
 - **Every wall teaches** (`every-wall-teaches`): Every refusal or failure an agent hits names its cause and its door;
   one that does not is a mechanism gap, and closing it (a hook row, a remedy, a test) comes before the task. Never route
   around a wall or hand the user a command. The loop: docs-src/dev/feedback.md.

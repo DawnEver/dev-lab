@@ -36,10 +36,10 @@ from dev_lab.dev.lanepolicy import Derived, policy_from
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 ROOT = Path(__file__).resolve().parents[1]
-#: The planted repo's integrator table declaring the component bump lane DERIVED (decision D23).
+#: The planted repo's integrator table declaring a planted derived lane DERIVED (decision D23).
 _DERIVED = (
     "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
-    "derived = [{ branch = 'pr/components-bump', producer = 'dev_lab.dev.componentbump' }]\n"
+    "derived = [{ branch = 'pr/planted-derived', producer = 'dev_lab.dev.relock' }]\n"
 )
 TESTS = Path(__file__).resolve().parent
 SH = shutil.which('sh')
@@ -126,7 +126,7 @@ def _shell_delete(
 
 
 def _bump(work: Path, branch: str) -> str:
-    """A component bump as ``componentbump`` opens one -- one gitlink commit on integration's tip -- on *branch*."""
+    """A derived bump as its producer opens one -- one gitlink commit on integration's tip -- on *branch*."""
     run_git(work, 'checkout', '-q', '-B', 'tmp-bump', 'origin/integrate/main')
     engine = git_out(work, 'rev-parse', 'HEAD')
     run_git(work, 'update-index', '--add', '--cacheinfo', f'160000,{engine},engines/core')
@@ -156,7 +156,7 @@ def test_a_shell_assembled_delete_of_an_unlanded_branch_is_refused_and_the_ref_s
     assert done.returncode != 0, done.stderr
     assert _on_origin(work, 'pr/mine'), 'the unlanded branch survives on origin'
     assert f'{pushdelete.RULE}: pr/mine: refused -- 1 commit(s) exist on it alone ({unique[:12]})' in done.stderr
-    assert '-m dev_lab.dev.branchprune delete pr/mine' in done.stderr
+    assert '-m dev_lab.dev.branchprune discard pr/mine --approved' in done.stderr
 
 
 def test_the_same_shell_assembled_delete_of_a_landed_branch_goes(tmp_path: Path) -> None:
@@ -200,17 +200,17 @@ def test_a_tag_on_origin_holds_no_delete_whatever_the_env_says(tmp_path: Path) -
     assert done.returncode != 0, done.stderr
     assert _on_origin(work, 'lane/old')
     assert 'lane/old: refused -- 1 commit(s) exist on it alone' in done.stderr
-    assert '`git merge -s ours`' in done.stderr, 'the door names MERGE or LAND, never a tag'
+    assert 'branchprune discard lane/old --approved' in done.stderr, 'the door names MERGE or the discard, never a tag'
 
 
 def test_a_held_red_bump_on_a_declared_derived_branch_deletes_through_the_hook(tmp_path: Path) -> None:
-    """D23: ``pr/components-bump`` is declared derived with its producer, so its held gitlink commit goes.
+    """D23: ``pr/planted-derived`` is declared derived with its producer, so its held gitlink commit goes.
 
     PLANTED CONTROL: the very same commit on ``pr/relock``, machine-looking but undeclared, is refused -- and the
     derived branch, which may go any time, holds nothing for it.
     """
     work, _ = _hooked(tmp_path)
-    tip = _bump(work, 'pr/components-bump')
+    tip = _bump(work, 'pr/planted-derived')
     run_git(work, 'push', '-q', '--no-verify', 'origin', f'{tip}:refs/heads/pr/relock')
     run_git(work, 'fetch', '-q', 'origin')
     (work / 'pyproject.toml').write_text(_DERIVED, encoding='utf-8')
@@ -218,9 +218,9 @@ def test_a_held_red_bump_on_a_declared_derived_branch_deletes_through_the_hook(t
     assert undeclared.returncode != 0, undeclared.stderr
     assert _on_origin(work, 'pr/relock')
     assert 'pr/relock: refused -- 1 commit(s) exist on it alone' in undeclared.stderr
-    derived = _shell_delete(work, 'pr/components-bump')
+    derived = _shell_delete(work, 'pr/planted-derived')
     assert derived.returncode == 0, derived.stderr
-    assert not _on_origin(work, 'pr/components-bump')
+    assert not _on_origin(work, 'pr/planted-derived')
     assert _on_origin(work, 'pr/relock'), 'the undeclared twin still stands'
 
 
@@ -277,11 +277,11 @@ def test_a_deleted_sha_this_clone_never_fetched_is_refused(tmp_path: Path) -> No
 @pytest.mark.parametrize(
     'row',
     [
-        "{ branch = 'pr/components-bump' }",
-        "{ branch = 'pr/components-bump', producer = '' }",
-        "{ producer = 'dev_lab.dev.componentbump' }",
-        "{ branch = 'pr/components-bump', producer = 'dev_lab.dev.componentbump', why = 'x' }",
-        "'pr/components-bump'",
+        "{ branch = 'pr/planted-derived' }",
+        "{ branch = 'pr/planted-derived', producer = '' }",
+        "{ producer = 'dev_lab.dev.relock' }",
+        "{ branch = 'pr/planted-derived', producer = 'dev_lab.dev.relock', why = 'x' }",
+        "'pr/planted-derived'",
     ],
 )
 def test_a_derived_row_naming_no_producer_is_refused_at_policy_load(row: str) -> None:
@@ -292,14 +292,12 @@ def test_a_derived_row_naming_no_producer_is_refused_at_policy_load(row: str) ->
 
 def test_a_derived_row_with_its_producer_is_read_and_a_malformed_one_refuses_the_delete(tmp_path: Path) -> None:
     """PLANTED CONTROL for the refusals above: the full row parses; the hook refuses a delete under a malformed one."""
-    assert policy_from(_DERIVED, 'pyproject.toml').derived == (
-        Derived('pr/components-bump', 'dev_lab.dev.componentbump'),
-    )
+    assert policy_from(_DERIVED, 'pyproject.toml').derived == (Derived('pr/planted-derived', 'dev_lab.dev.relock'),)
     _, work = clone_pair(tmp_path)
-    tip = _bump(work, 'pr/components-bump')
-    malformed = _DERIVED.replace(", producer = 'dev_lab.dev.componentbump'", '')
+    tip = _bump(work, 'pr/planted-derived')
+    malformed = _DERIVED.replace(", producer = 'dev_lab.dev.relock'", '')
     (work / 'pyproject.toml').write_text(malformed, encoding='utf-8')
-    found = _judged(work, _line('pr/components-bump', tip))
+    found = _judged(work, _line('pr/planted-derived', tip))
     assert len(found) == 1
     assert found[0].startswith(f'{pushdelete.UNJUDGED}:')
 

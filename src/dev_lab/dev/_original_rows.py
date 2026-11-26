@@ -97,13 +97,12 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'integrate',
     'trialmerge',
     'labsession',
-    'components',
-    'componentbump',
     'shatree',
     'branchprune',
     'branchpolicy',  # ORIGINAL: the branch policy observed and the prune role's one duty (D46, 2026-11-19)
     'branchdelete',
     'deletejudge',  # LOSSLESS-DELETE's judgment, split from branchdelete for the pre-push row (2026-11-17)
+    'branchactivity',  # ORIGINAL: idle is push or PR activity, UNKNOWN when unrecorded (#611, 2026-11-26)
     'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
     'partrows',
     'slurmkilled',
@@ -360,15 +359,12 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'headroom',  # ORIGINAL: a deploy refuses by name what the file quota cannot fit (2026-11-22)
     'selfclean',  # ORIGINAL: a failed deploy step removes its own half-built output (2026-11-22)
     'accountsweep',  # ORIGINAL: the caller's retention rules streamed to an account too full to update (2026-11-22)
-    'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
-    'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
-    'devschema',
-    'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrollment (2026-11-16)
     'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)
     'liverun',
     'codexdeny',  # ORIGINAL: the deny registry rendered as Codex execpolicy rules, and its gaps (2026-11-16)
     'trackedrender',  # ORIGINAL: split from agent_guard: a tracked render needs the checkout's kit (2026-11-17)
     'retiredfiles',  # ORIGINAL: split from codeplace: a checkout's own declared retired-file rows (2026-11-17)
+    'retirementclass',  # ORIGINAL: keep-valuable-options -- each retirement classified (O55, 2026-11-20)
     'strays',  # ORIGINAL: split from codeplace: the STRAY-FILE-REFUSED census and its hooks (2026-11-17)
     'metrics',
     'metrics_compute',
@@ -388,6 +384,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'frozen',  # USER-FROZEN-FILES: the user's frozen files and closed tracked inventory (2026-11-24), new here
     'machineguard',  # MACHINE-FILE-IS-RENDERED: the machine file is written by its doors alone, new here
     'familyrepos',  # FAMILY-REPO-IS-CHECKED-OUT: [repos] against the family's repos, listed and enforced, new here
+    'familymanifest',  # a repo's manifest text or its family row's declaration (split from familyrepos)
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
     'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
     'purge',  # one door deletes one git-ignored, untracked named path (rulings 2026-11-23), new here

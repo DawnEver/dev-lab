@@ -72,23 +72,35 @@ class TakeoverRefused(ValueError):
 def pull_for(client: Client, sha: str) -> PullRequest | None:
     """The PR whose head starts with *sha*: an open one first, else the highest-numbered; ``None``: a plain commit.
 
-    Open PRs are listed first; the whole history only when no open PR carries it.
+    Open PRs are listed first; the whole history only when no open PR carries it. Several PRs of ONE head (a reopened
+    or continued branch) pick by that rule; a prefix matching DIFFERENT heads is refused naming them (#9
+    F-b5ef4b76c776), never resolved by a silent ``max``.
     """
     for state in ('open', 'all'):
         found = [pull for pull in pr_list(client, state=state) if pull.head_sha and pull.head_sha.startswith(sha)]
+        if len({pull.head_sha for pull in found}) > 1:
+            named = ', '.join(f'#{pull.number} ({pull.head_sha[:12]})' for pull in sorted(found, key=_number))
+            msg = f'{sha} is ambiguous: it prefixes the heads of {named}; pass a longer sha'
+            raise TakeoverRefused(msg)
         if found:
-            return max(found, key=lambda pull: pull.number)
+            return max(found, key=_number)
     return None
+
+
+def _number(pull: PullRequest) -> int:
+    return pull.number
 
 
 #: The title of the issue that holds a PR-less head's review comment; ``{sha}`` is the full head.
 LEDGER_TITLE: Final = 'review of commit {sha}'
 
 
-def ledger_of(client: Client, head: str, base: str) -> PullRequest:
+def ledger_of(client: Client, head: str, base: str, *, create: bool = True) -> PullRequest:
     """Where a PR-less *head*'s review comment lives: its one issue (made on first use), as the thread a PR would be.
 
-    A Break-Glass commit has no PR, so its findings comment goes to this issue, keyed by the issue number.
+    A Break-Glass commit has no PR, so its findings comment goes to this issue, keyed by the issue number. With
+    *create* false an issue not opened yet is the thread numbered ``0``: what a review reads before it has a round to
+    post (#9 F-0a220542e6ce), whose body is the same empty one.
 
     Only an issue the FORGE opened is the ledger (F-7fbe6eafaadf, security): its own login, or its workflow job's
     Actions login -- never a squatter's issue of the same title, and never a PR (GitHub's issues API lists PRs too).
@@ -100,7 +112,10 @@ def ledger_of(client: Client, head: str, base: str) -> PullRequest:
         for one in pages(client, f'{client.repo}/issues', {'state': 'all'})
         if one.get('title') == title and not one.get('pull_request') and (one.get('user') or {}).get('login') in mine
     ]
-    number, url = (found[0]['number'], found[0].get('html_url', '')) if found else _opened(client, title, head)
+    if found:
+        number, url = found[0]['number'], found[0].get('html_url', '')
+    else:
+        number, url = _opened(client, title, head) if create else (0, '')
     return PullRequest(number, title, 'open', '', url, '', '', base, head_sha=head)
 
 
@@ -178,11 +193,19 @@ def takeover(
         msg = f'{head[:12]} is already reviewed by the forge: nothing to take over'
         raise TakeoverRefused(msg)
     scope = scope_of(root, review, head, base=base)
-    thread = pull if pull is not None else ledger_of(client, head, base)
-    with held_state(client, thread.number, head, trusted_logins(client)) as state:
+    thread = pull if pull is not None else ledger_of(client, head, base, create=False)
+    opened: list[PullRequest] = [thread] if thread.number else []
+
+    def posted_on() -> PullRequest:  # the ledger issue is opened only once there is something to post on it
+        if not opened:
+            opened.append(ledger_of(client, head, base))
+        return opened[0]
+
+    number = thread.number or (lambda: posted_on().number)
+    with held_state(client, number, head, trusted_logins(client)) as state:
         try:
-            said = _taken(root, client, review, head, scope=scope, thread=thread, base=base, host=host,
-                          run=within(run, datetime.now(UTC) + wait_of(review)), runtimes=runtimes,
+            said = _taken(root, client, review, head, scope=scope, thread=thread, posted_on=posted_on, base=base,
+                          host=host, run=within(run, datetime.now(UTC) + wait_of(review)), runtimes=runtimes,
                           batching=batch_args(review, state))  # fmt: skip
         except ReviewPending as waiting:  # nothing is posted: the same takeover, run again, resumes the batch
             msg = f'{BATCH_PENDING} {waiting}; run the takeover again to resume it'
@@ -191,11 +214,11 @@ def takeover(
 
 
 def _taken(
-    root: Path, client: Client, review: Review, head: str, *, scope: Scope, thread: PullRequest, base: str,
-    host: str, run: Callable[[Sequence[str], Path], str], runtimes: Mapping[str, Mapping[str, Any]],
-    batching: Sequence[str],
+    root: Path, client: Client, review: Review, head: str, *, scope: Scope, thread: PullRequest,
+    posted_on: Callable[[], PullRequest], base: str, host: str, run: Callable[[Sequence[str], Path], str],
+    runtimes: Mapping[str, Mapping[str, Any]], batching: Sequence[str],
 ) -> str:  # fmt: skip
-    """The takeover's review over *scope*, posted on *thread* as advice; the line said."""
+    """The takeover's review over *scope*, read with *thread*'s body and posted as advice on *posted_on*; the line."""
     argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens, batching=batching)
              for s in scope.slices]  # fmt: skip
     synth = command_for(review, scope.range, runtimes, synthesis=True, batching=batching)
@@ -205,7 +228,7 @@ def _taken(
         msg = f'no reviewer returned findings ({kinds}); nothing is posted'
         raise TakeoverRefused(msg)
     return post_review_comment(
-        root, client, thread, scope.range, found=found, by='integrator takeover', outside=scope.outside,
+        root, client, posted_on(), scope.range, found=found, by='integrator takeover', outside=scope.outside,
         unread=scope.unread, reviewer=identity(client, host), authors=sessions(root, landed_base(root, base, head),
         head), advisory=True,
     )  # fmt: skip

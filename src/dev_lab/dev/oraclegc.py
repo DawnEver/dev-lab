@@ -39,11 +39,16 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, cast
 
 from lab_commons import launch as _door
+from lab_commons.config import section
+from lab_commons.home import repos
 
+from dev_lab.dev.artifactstores import RcloneStore
+from dev_lab.dev.datedlog import dated_log, declared_output
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.storage import run_objects
 
 __all__ = [
     'FAMILY_TABLE',
@@ -72,6 +77,8 @@ LOCK_NAMES: Final = ('references.lock',)
 #: The report's kind: its leaf directory under the dated output tree.
 KIND: Final = 'oraclegc'
 
+#: A stored object's key: ``<sha[:2]>/<sha>``, two segments.
+_SHARDED: Final = 2
 _SHA256: Final = re.compile(r'(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])')
 _HEAD: Final = re.compile(r'^([0-9a-f]{40})\trefs/heads/(\S+)$', re.MULTILINE)
 _GIT: Final = 'git'
@@ -187,10 +194,11 @@ def _git(checkout: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _pattern(entry: object, where: str) -> Pattern:
-    if not isinstance(entry, dict) or set(entry) != {'glob', 'key'}:
+    held = cast('dict[str, object]', entry) if isinstance(entry, dict) else None
+    if held is None or set(held) != {'glob', 'key'}:
         msg = f'{where}: each root is {{ glob = "<tracked-file glob>", key = "<field>" }}, got {entry!r}'
         raise PatternRefused(msg)
-    glob, key = entry['glob'], entry['key']
+    glob, key = held['glob'], held['key']
     if not isinstance(glob, str) or not glob or '\\' in glob or glob.startswith('/') or '..' in glob.split('/'):
         msg = f'{where}: glob {glob!r} must be a relative POSIX glob inside the tree'
         raise PatternRefused(msg)
@@ -204,10 +212,12 @@ def patterns_of(table: object, where: str) -> tuple[Pattern, ...]:
     """The ``roots`` list of an ``oraclegc`` table, validated; a malformed one is :class:`PatternRefused`."""
     if table is None:
         return ()
-    if not isinstance(table, dict) or set(table) - {'roots'} or not isinstance(table.get('roots', []), list):
+    held = cast('dict[str, object]', table) if isinstance(table, dict) else None
+    roots = None if held is None else held.get('roots', [])
+    if held is None or set(held) - {'roots'} or not isinstance(roots, list):
         msg = f'{where}: the table holds only roots = [{{ glob = ..., key = ... }}, ...], got {table!r}'
         raise PatternRefused(msg)
-    return tuple(_pattern(entry, where) for entry in table.get('roots', []))
+    return tuple(_pattern(entry, where) for entry in cast('list[object]', roots))
 
 
 def family_patterns(section: Mapping[str, Any]) -> dict[str, tuple[Pattern, ...]]:
@@ -288,10 +298,11 @@ def collect_roots(
 
 
 def _listed(rows: Iterable[Mapping[str, Any]]) -> tuple[list[Stored], list[str]]:
-    stored, foreign = [], []
+    stored: list[Stored] = []
+    foreign: list[str] = []
     for row in rows:
         parts = PurePosixPath(row['Path']).parts
-        if len(parts) == 2 and _SHA256.fullmatch(parts[1]) and parts[0] == parts[1][:2]:  # noqa: PLR2004 -- <sha[:2]>/<sha>
+        if len(parts) == _SHARDED and _SHA256.fullmatch(parts[1]) and parts[0] == parts[1][:2]:
             when = datetime.fromisoformat(str(row['ModTime']))
             stored.append(Stored(parts[1], int(row['Size']), when))
         else:
@@ -365,9 +376,6 @@ class _RunStore:
     tree: Path
 
     def files(self) -> list[dict[str, Any]]:
-        from dev_lab.dev.artifactstores import RcloneStore  # noqa: PLC0415 -- the real store only on the real run
-        from dev_lab.dev.storage import run_objects  # noqa: PLC0415
-
         objects = run_objects(self.tree)
         if objects is None:
             msg = 'the family declares no run store ([storage] runs): there is nothing to collect'
@@ -377,12 +385,7 @@ class _RunStore:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``report [--lock NAME ...]``: write the report; exit 1 naming the unread repos when the roots are partial."""
-    from lab_commons.config import section  # noqa: PLC0415
-    from lab_commons.home import repos  # noqa: PLC0415
-
-    from dev_lab.dev.datedlog import dated_log, declared_output  # noqa: PLC0415
-
-    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.oraclegc', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.oraclegc', description=(__doc__ or '').splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     verb = verbs.add_parser('report', help='write the report-only GC report; never deletes')
     verb.add_argument('--lock', action='append', help=f'a lock basename (default {", ".join(LOCK_NAMES)})')

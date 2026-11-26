@@ -19,6 +19,14 @@ from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath
 from typing import IO, Final
 
+import lab_commons.launch as _door
+from lab_commons.hpc.shell import FULL
+from lab_commons.hpc.testcells import upgraded
+from lab_commons.log import emit
+
+from dev_lab.dev.harness import child_env
+from dev_lab.dev.platformparts import part_context, record_directory
+from dev_lab.dev.producer import Owner, ProducerExit, full_suite_refusal, unreachable
 from dev_lab.dev.reports import StepReport
 
 __all__ = ['BANNER', 'PART', 'argv', 'handed', 'node', 'produce', 'step', 'workspaces']
@@ -41,7 +49,7 @@ def handed(root: Path, tracked: Iterable[str]) -> dict[str, str]:
 def workspaces(root: Path, tracked: Iterable[str]) -> tuple[str, ...]:
     """The tracked manifests under *root* declaring a ``[workspace]``; else a root package manifest; else none."""
     manifests = sorted(path for path in tracked if PurePosixPath(path).name == 'Cargo.toml')
-    found = []
+    found: list[str] = []
     for manifest in manifests:
         try:
             table = tomllib.loads((root / manifest).read_text(encoding='utf-8'))
@@ -84,15 +92,7 @@ def produce(root: Path, *, run: Callable[..., int] | None = None, cargo: str | N
     cargo part (USAGE); no cargo on the host is UNREACHABLE -- it says nothing about the code. Outside the
     producer ``forge serve`` spawned for the part it is refused, as verify's full suite is.
     """
-    import lab_commons.launch as _door  # noqa: PLC0415 -- the producer half is imported only by verify --part cargo
-    from lab_commons.hpc.shell import FULL  # noqa: PLC0415
-    from lab_commons.hpc.testcells import upgraded  # noqa: PLC0415
-    from lab_commons.log import emit  # noqa: PLC0415
-
-    from dev_lab.dev.harness import child_env  # noqa: PLC0415
-    from dev_lab.dev.localpart import local_record, post_local  # noqa: PLC0415
-    from dev_lab.dev.platformparts import part_context, record_directory  # noqa: PLC0415
-    from dev_lab.dev.producer import Owner, ProducerExit, full_suite_refusal, unreachable  # noqa: PLC0415
+    from dev_lab.dev.localpart import local_record, post_local  # noqa: PLC0415 -- localpart imports this module
 
     if (refused := full_suite_refusal('verify', child_env(), part_context(PART))) is not None:
         emit(refused, err=True)
@@ -106,12 +106,17 @@ def produce(root: Path, *, run: Callable[..., int] | None = None, cargo: str | N
     cargo = cargo or shutil.which('cargo')
     if cargo is None:
         return unreachable('no cargo on this host -- install the toolchain rust-toolchain.toml pins', Owner.ENVIRONMENT)
-    launch = run or (lambda command: _door.run(command, cwd=root, check=False).returncode)
+
+    def spawn(command: list[str]) -> int:
+        return _door.run(command, cwd=root, check=False).returncode
+
+    launch = run or spawn
     codes = {node(one): launch(argv(cargo, one)) for one in found}
     sha = _door.run([git, '-C', str(root), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True)
     cells = {
-        name: upgraded('passed') if code == 0 else upgraded('failed', f'{name} exited {code}')
+        name: cell
         for name, code in codes.items()
+        if (cell := upgraded('passed') if code == 0 else upgraded('failed', f'{name} exited {code}')) is not None
     }
     head = sha.stdout.strip()
     record = local_record(

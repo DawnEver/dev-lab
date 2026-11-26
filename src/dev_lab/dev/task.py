@@ -108,8 +108,13 @@ _CITE: Final = 'tasks/{slug}/JOURNAL.md#D'
 _DISTILL_HOMES: Final = (('.claude', 'memory'), ('.claude', 'rules'), ('docs-src',))
 
 
-def append(slug: str, verb: str, text: str, *, item: int | None = None, date: str | None = None) -> str:
-    """Append ONE line of *verb* (:data:`JOURNAL_VERBS`) to *slug*'s journal and commit it; the line."""
+def append(
+    slug: str, verb: str, text: str, *, item: int | None = None, date: str | None = None, dry_run: bool = False
+) -> str:
+    """Append ONE line of *verb* (:data:`JOURNAL_VERBS`) to *slug*'s journal and commit it; the line.
+
+    *dry_run* validates and returns the line it would write, writing nothing.
+    """
     if verb not in JOURNAL_VERBS:
         msg = f'{verb!r} is no journal verb; the verbs: {", ".join(JOURNAL_VERBS)}'
         raise TaskRefused(msg)
@@ -129,12 +134,15 @@ def append(slug: str, verb: str, text: str, *, item: int | None = None, date: st
             label = f'O{item} closed'
         else:
             label = JOURNAL_VERBS[verb]
-        line = append_line(found, label, text, date)
-        commit(root, f'chore(tasks): {slug} {label.split()[0]}', f'{slug}/JOURNAL.md')
+        line = append_line(found, label, text, date, dry_run=dry_run)
+        if not dry_run:
+            commit(root, f'chore(tasks): {slug} {label.split()[0]}', f'{slug}/JOURNAL.md')
     return line
 
 
-def amend(slug: str, number: int, replacement: str, *, reason: str, date: str | None = None) -> str:
+def amend(
+    slug: str, number: int, replacement: str, *, reason: str, date: str | None = None, dry_run: bool = False
+) -> str:
     """Rewrite journal line *number* of *slug*: same prefix, or a REPEATED id renumbered to the next free one.
 
     One audit line records the reason and the old line's digest. A changed mind is a new decision, never an amend.
@@ -159,16 +167,24 @@ def amend(slug: str, number: int, replacement: str, *, reason: str, date: str | 
             also = f' or renumber it to the next free id ("{renumbered}")' if renumbered else ''
             msg = f'the amendment must keep the prefix byte-identical ("{prefix}"){also} and change the line'
             raise TaskRefused(msg)
+        digest = hashlib.sha256(old.encode('utf-8')).hexdigest()[:12]
+        audit = f'line {number} amended: {reason} (was sha256:{digest})'
+        if dry_run:
+            return f'{replacement}\n' + append_line(found, 'progress', audit, date, dry_run=True)
         lines[number - 1] = replacement
         file.write_text('\n'.join(lines), encoding='utf-8', newline='\n')
-        digest = hashlib.sha256(old.encode('utf-8')).hexdigest()[:12]
-        line = append_line(found, 'progress', f'line {number} amended: {reason} (was sha256:{digest})', date)
+        line = append_line(found, 'progress', audit, date)
         commit(root, f'chore(tasks): {slug} amend line {number}', f'{slug}/JOURNAL.md')
     return line
 
 
-def open_task(slug: str, goal: str, *, forge: Forge | None = None, date: str | None = None) -> Path:
-    """Open task *slug*: spend the user's grant, open its issue, write TASK.md and the opened line, commit."""
+def open_task(
+    slug: str, goal: str, *, forge: Forge | None = None, date: str | None = None, dry_run: bool = False
+) -> Path:
+    """Open task *slug*: spend the user's grant, open its issue, write TASK.md and the opened line, commit.
+
+    *dry_run* checks the slug, the goal and the grant, and reaches neither the forge nor the ledger.
+    """
     root, day = ledger(), date or today()
     slug_of(slug)
     one_line(goal, 'the task goal')
@@ -179,6 +195,9 @@ def open_task(slug: str, goal: str, *, forge: Forge | None = None, date: str | N
         if (root / slug).exists():
             msg = f'task {slug} exists in the ledger {root.as_posix()}; a closed one is under {ARCHIVE}/'
             raise TaskRefused(msg)
+        if dry_run:
+            taskauthority.consume(root, 'open', slug, dry_run=True)
+            return root / slug
         identity = forge or ForgeIssues(root)  # the forge is reached BEFORE the grant is spent
         authority = taskauthority.consume(root, 'open', slug)
         issue = identity.open(slug, goal)
@@ -204,12 +223,13 @@ def _cited(cwd: Path, slug: str) -> set[int]:
 
 def close(
     slug: str, reason: str = '', *, cwd: Path, journal_only: Sequence[int] = (), forge: Forge | None = None,
-    date: str | None = None, branches: Branches | None = None, say: Callable[[str], None] = emit,
+    date: str | None = None, branches: Branches | None = None, say: Callable[[str], None] = emit, dry_run: bool = False,
 ) -> Path:  # fmt: skip
     """Close task *slug*: EVERYTHING is validated before the first write, then archive it, commit, prune its branches.
 
     An unmerged ``pr/<slug>/*`` head (local or on origin) refuses the close, each named with its doors (user ruling
     2026-11-24); once closed, every merged head is deleted through LOSSLESS-DELETE, each deletion *say*-ed.
+    *dry_run* runs every check (the grant included) and returns the archive path, writing and pruning nothing.
     """
     root, day = ledger(), date or today()
     with locked(root):
@@ -239,6 +259,9 @@ def close(
         if (root / rel).exists():
             msg = f'{(root / rel).as_posix()} exists: the task stays open'
             raise TaskRefused(msg)
+        if dry_run:
+            taskauthority.consume(root, 'close', slug, dry_run=True)
+            return root / rel
         issue = found.fields.get('issue', '')
         identity = (forge or ForgeIssues(root)) if issue else None
         authority = taskauthority.consume(root, 'close', slug)
@@ -276,36 +299,52 @@ def _usage(verb: str) -> TaskRefused:
 def _help() -> str:
     width = max(len(f'{v} {a}'.strip()) for v, _, a, _ in VERBS)
     rows = [f'  {f"{v} {a}".strip():<{width}}  [{who}] {does}' for v, who, a, does in VERBS]
-    return '\n'.join(['python -m dev_lab.dev.task <verb> -- branch: the task pr/<slug>/<feature> names', *rows])
+    head = (
+        'python -m dev_lab.dev.task <verb> [--dry-run: a writing verb validates and writes nothing] -- branch: the '
+        'task pr/<slug>/<feature> names'
+    )
+    return '\n'.join([head, *rows])
+
+
+def _dry(said: str, dry: bool) -> str:  # noqa: FBT001 -- the one flag every writing verb threads
+    """*said*, marked as a dry run when nothing was written."""
+    return f'[task] dry-run, nothing written:\n{said}' if dry else said
 
 
 def _run(args: argparse.Namespace, cwd: Path) -> str:  # noqa: C901, PLR0911, PLR0912 -- one branch per verb
-    verb, words = args.verb, args.words
+    verb, words, dry = args.verb, args.words, args.dry_run
     if verb in JOURNAL_VERBS:
         slug = _bound(cwd, args.task)
         if verb == 'close-item':
             if not words or not re.fullmatch(r'O?\d+', words[0]):
                 raise _usage(verb)
-            return append(slug, verb, ' '.join(words[1:]) or 'done', item=int(words[0].lstrip('O')))
-        return append(slug, verb, ' '.join(words))
+            line = append(slug, verb, ' '.join(words[1:]) or 'done', item=int(words[0].lstrip('O')), dry_run=dry)
+            return _dry(line, dry)
+        return _dry(append(slug, verb, ' '.join(words), dry_run=dry), dry)
     if verb == 'amend':
         if args.line is None or len(words) != 1 or not args.reason:
             raise _usage(verb)
-        return amend(_bound(cwd, args.task), args.line, words[0], reason=args.reason)
+        return _dry(amend(_bound(cwd, args.task), args.line, words[0], reason=args.reason, dry_run=dry), dry)
     if verb == 'open':
         if len(words) < _SLUG_AND_GOAL:
             raise _usage(verb)
-        where = open_task(words[0], ' '.join(words[1:]))
+        where = open_task(words[0], ' '.join(words[1:]), dry_run=dry)
+        if dry:
+            return _dry(f'[task] would open {words[0]} at {where.as_posix()} (the grant is live)', dry)
         return f'[task] opened {words[0]} at {where.as_posix()}; work on it on a branch pr/{words[0]}/<feature>'
     if verb == 'close':
         if not words:
             raise _usage(verb)
         only = [int(n.strip().lstrip('D')) for n in (args.journal_only or '').split(',') if n.strip()]
-        where = close(words[0], ' '.join(words[1:]), cwd=cwd, journal_only=only)
+        where = close(words[0], ' '.join(words[1:]), cwd=cwd, journal_only=only, dry_run=dry)
+        if dry:
+            return _dry(f'[task] would close {words[0]} and archive it to {where.as_posix()}', dry)
         return f'[task] closed {words[0]}; archived to {where.as_posix()}'
     if verb == 'request':
         if len(words) < _SLUG_AND_GOAL or words[0] not in {'open', 'close'}:
             raise _usage(verb)
+        if dry:
+            return _dry(f'[task] would record a request to {words[0]} {slug_of(words[1])}', dry)
         code = taskauthority.request(ledger(), words[0], slug_of(words[1]), ' '.join(words[2:]))
         return (
             f'[task] ask the user to reply `approve {code}`; then run python -m dev_lab.dev.task {words[0]} {words[1]}'

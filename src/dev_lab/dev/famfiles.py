@@ -30,7 +30,6 @@ license, its architecture, its release history) is owned, and the row says which
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import re
 import sys
 import tomllib
@@ -45,14 +44,15 @@ from dev_lab.dev._famfiles_registry import (
     CIWORKFLOWS,
     OWNED,
     PROJECT_FILES,
-    RENDER_TABLE,
     RENDERERS,
     RETIRED_PROJECT_FILES,
     WORKFLOW_FILES,
     ProjectFile,
     Renderer,
+    render_table,
 )
 from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, ForkedDelta, artifact_base, inspect_file, render
+from dev_lab.dev.repodeltas import load_deltas
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
 if TYPE_CHECKING:
@@ -65,7 +65,6 @@ __all__ = [
     'delta_base',
     'due_renderers',
     'is_member',
-    'load_deltas',
     'main',
     'managed_sections',
     'plan',
@@ -96,7 +95,6 @@ def plan(root: Path) -> tuple[tuple[Renderer, str | None], ...]:
     declared.
     """
     text = _manifest(root)
-    declared = _render_table(text)
     member = is_member(text)
     present = set(_due(lambda path: (root / path).is_file()))
 
@@ -107,8 +105,8 @@ def plan(root: Path) -> tuple[tuple[Renderer, str | None], ...]:
             return 'no file it writes is present (a repo committing Rust carries rust-toolchain.toml: lockcheck)'
         if not member:
             return 'not a family repo (no dev-lab dependency, no [tool.dev_lab.*] table) and no file it writes exists'
-        if missing := sorted(renderer.required - set(declared)):
-            return f'[{RENDER_TABLE}] {", ".join(missing)} is not declared'
+        if missing := renderer.missing(text):
+            return renderer.why_missing(missing)
         if renderer.needs and (reason := why(_NAMED[renderer.needs])) is not None:
             return f'it needs {renderer.needs}, skipped: {reason}'
         return None
@@ -147,21 +145,13 @@ def _manifest(root: Path) -> str:
     return manifest.read_text(encoding='utf-8') if manifest.is_file() else ''
 
 
-def _render_table(text: str) -> dict[str, object]:
-    table: object = tomllib.loads(text) if text else {}
-    for part in RENDER_TABLE.split('.'):
-        table = table.get(part, {}) if isinstance(table, dict) else {}
-    return table if isinstance(table, dict) else {}
-
-
 def undeclared_inputs(text: str, has: Callable[[str], bool]) -> list[str]:
     """Each required input of a renderer due in a tree that manifest *text* leaves undeclared, ``"<renderer> <key>"``.
 
     A renderer is DUE where a file it writes is present (``has(path)``); without its input a relock cannot
     re-render that tree's family files, and they go stale.
     """
-    declared = _render_table(text)
-    return [f'{r.name} {key}' for r in _due(has) for key in sorted(r.required - set(declared))]
+    return [f'{r.name} {key}' for r in _due(has) for key in r.missing(text)]
 
 
 def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
@@ -169,11 +159,11 @@ def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
 
     RAISES :class:`ValueError` naming the key when a required input is not declared.
     """
-    declared = _render_table(_manifest(root))
-    if missing := sorted(renderer.required - set(declared)):
+    declared = render_table(text := _manifest(root))
+    if missing := renderer.missing(text):
         msg = (
-            f'{renderer.name} renders files {root} holds, but [{RENDER_TABLE}] {", ".join(missing)} is not '
-            'declared in its pyproject.toml: declare the path it reads'
+            f'{renderer.name} renders files {root} holds, but {renderer.why_missing(missing)} in its '
+            'pyproject.toml: declare what it reads'
         )
         raise ValueError(msg)
     argv = [python, '-m', *renderer.command, renderer.repo_flag, str(root)]
@@ -209,18 +199,6 @@ def render_repo(
 
 def _run(argv: list[str], root: Path) -> int:
     return _door.run(argv, cwd=root, check=False).returncode
-
-
-def load_deltas(path: Path) -> Mapping[str, Delta]:
-    """The ``DELTAS`` mapping a repo declares, read from the module file at *path* (its own convention)."""
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    if spec is None or spec.loader is None:
-        msg = f'cannot load a module from {path}'
-        raise ImportError(msg)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules.setdefault(path.stem, module)
-    spec.loader.exec_module(module)
-    return module.DELTAS
 
 
 def delta_base(artifact: str) -> Base:

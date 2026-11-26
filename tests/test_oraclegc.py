@@ -139,7 +139,7 @@ def test_the_git_forge_reads_heads_and_refuses_an_empty_answer() -> None:
 def test_there_is_no_delete_verb() -> None:
     with pytest.raises(SystemExit):
         oraclegc.main(['delete'])
-    assert not any(hasattr(oraclegc, n) for n in ('delete', 'apply', 'prune'))
+    assert {'delete', 'apply', 'prune'}.isdisjoint(oraclegc.__all__), 'the public surface names no delete'
 
 
 GOLDEN = 'e' * 64

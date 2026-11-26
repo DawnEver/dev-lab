@@ -1,12 +1,16 @@
 """WHO IS SERVING, READ FROM THE FORGE -- one host card per serving host, edited in place every tick.
 
-Many machines have no ssh to a cluster and still need to know whether anyone is serving linux right
-now. So every ``forge serve`` tick publishes this host's CARD as ONE comment on the repository's
-``forge hosts`` issue (:data:`~dev_lab.dev._forgehosts_issue.HOSTS_TITLE`, opened by the first host that needs
-it), found by its hidden marker and edited in place (:func:`dev_lab.dev.forgepulls.comment_upsert`) -- the same shape on
-gitea and GitHub.
+Many machines have no ssh to a cluster and still need to know whether anyone is serving linux right now. So every
+``forge serve`` tick publishes this host's CARD as ONE comment on the repository's ``forge hosts`` issue
+(:data:`~dev_lab.dev.hostsissue.HOSTS_TITLE`, opened by the first host that needs it), found by its hidden marker and
+edited in place (:func:`dev_lab.dev.forgepulls.comment_upsert`) -- the same shape on gitea and GitHub.
 
-ONE ISSUE, FOUND OR REFUSED, NEVER GUESSED: :mod:`dev_lab.dev._forgehosts_issue`.
+ONE ISSUE, FOUND OR REFUSED, NEVER GUESSED. The issue is the OLDEST one carrying
+:data:`~dev_lab.dev.hostsissue.HOSTS_MARKER` (or, for an issue opened before the marker, titled
+:data:`~dev_lab.dev.hostsissue.HOSTS_TITLE`), read off EVERY page of the listing in EVERY state -- a closed home is
+still the home. A lookup that fails raises; it is never read as "none exists", because that reading opened a fresh issue
+on every tick of every host (128 on three repos, 2026-10-12). Two hosts racing to open the first one re-read after the
+create and both write to the oldest; the loser is closed by ``forge tidy`` (:mod:`dev_lab.dev.forgetidy`).
 
 The card says who the host is (:func:`card_host`: ``<cluster>/<account>`` or the machine), the
 platform it serves, its TOOLS as probed -- each present or not with the evidence it rests on
@@ -24,9 +28,9 @@ A CARD IS READ BY ITS FIELDS: a key this version does not declare is not read, s
 before a field was renamed reads as that field empty -- never as a crash of every reader.
 
 A PUBLIC REPOSITORY CARRIES NO IDENTIFYING CARD (user ruling 2026-10-19). Read from the forge's ``private``
-flag (:func:`~dev_lab.dev._forgehosts_issue.is_private`, one field on both gitea and GitHub; an answer without it
-is read as PUBLIC), a public repo gets :meth:`HostCard.redacted`: the host under an opaque stable id (:func:`host_id`, a
-short hash -- never the raw ``<cluster>/<account>`` or machine), and only what scheduling reads -- platform,
+flag (:func:`is_private`, one field on both gitea and GitHub; an answer without it is read as PUBLIC), a
+public repo gets :meth:`HostCard.redacted`: the host under an opaque stable id (:func:`host_id`, a short
+hash -- never the raw ``<cluster>/<account>`` or machine), and only what scheduling reads -- platform,
 supply, tools present, parts served, holds, waits, alarm kinds and the tick. Facts (storage paths,
 partitions, quota), what else runs, alarm texts, the artifact-store reason, tool evidence and the
 ``[priority]`` subjects are dropped. A card published under the raw name before the repo turned public
@@ -65,12 +69,6 @@ from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
 from dev_lab.dev import forgerunstate, hpcusage
-from dev_lab.dev._forgehosts_issue import (
-    HostsIssueLost,
-    hosts_issue,
-    is_private,
-    open_hosts_issue,
-)
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgeclaim import Work, forge_now, serving, this_machine, this_seat
 from dev_lab.dev.forgeclient import client_for
@@ -84,6 +82,7 @@ from dev_lab.dev.forgepulls import (
     marker_kinds,
 )
 from dev_lab.dev.forgework import Client, Comment
+from dev_lab.dev.hostsissue import HostsIssueLost, hosts_issue, open_hosts_issue
 from dev_lab.dev.hpcaccount.spec import schedule_tick
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import origin_url
@@ -97,6 +96,7 @@ __all__ = [
     'card_of',
     'card_owners',
     'host_id',
+    'is_private',
     'main',
     'publish',
     'publish_card',
@@ -106,7 +106,6 @@ __all__ = [
     'serving_cards',
     'this_host',
 ]
-
 
 #: The door that deletes a host's card (:func:`main`): the remedy every reader names for a card it does not count.
 RETIRE: Final = 'python -m dev_lab.dev.forge hosts retire'
@@ -206,6 +205,25 @@ class HostCard:
 def host_id(host: str) -> str:
     """The opaque, stable name a PUBLIC repository's card carries for *host*: a short hash, never the name."""
     return 'host-' + hashlib.sha256(host.encode()).hexdigest()[:12]
+
+
+def is_private(client: Client) -> bool:
+    """Whether the forge says this repository is private; an answer without the flag is read as public."""
+    repo = client.call('GET', client.repo)
+    return isinstance(repo, Mapping) and repo.get('private') is True
+
+
+def public_siblings(client: Client) -> tuple[str, ...]:
+    """The names of this repository's owner's repos the forge says are public (dev-lab#791 wall 3); one page of 100.
+
+    Both forges answer ``/users/<owner>/repos``; a row without the flag is read as public, like :func:`is_private`.
+    """
+    owner = client.repo.strip('/').split('/')[1]  # ``/repos/<owner>/<repo>``
+    rows = client.call('GET', f'/users/{owner}/repos?per_page=100')
+    if not isinstance(rows, list):
+        return ()
+    published = (row for row in rows if isinstance(row, Mapping) and row.get('private') is not True)
+    return tuple(str(row['name']) for row in published if row.get('name'))
 
 
 def publish(client: Client, card: HostCard) -> str:

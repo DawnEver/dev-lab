@@ -26,6 +26,14 @@ _GIT = shutil.which('git') or 'git'
 
 #: Path -> why reflection IS the operation there.
 _ALLOWED = {
+    'src/dev_lab/dev/importedges.py': (
+        "_BUILTINS is the set of names Python provides without an import; the builtins module's namespace IS "
+        'that set, and no static list can follow the running interpreter'
+    ),
+    'src/dev_lab/dev/needs.py': (
+        "needs() turns a need the TEST spells (data) into its pytest marker; pytest's public way to make a "
+        'marker of a name known only at run time is the MarkGenerator attribute lookup'
+    ),
     'src/dev_lab/dev/seams.py': (
         'rebind/restore_all rebind a name handed in as DATA (a Seam path) on an arbitrary owner and put '
         'the original back; the attribute name is not known to any type, so setattr is the operation'

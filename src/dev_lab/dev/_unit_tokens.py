@@ -6,7 +6,7 @@ BARE NUMBER WHOSE UNIT LIVES IN ITS NAME INSTEAD OF IN ITS VALUE: ``--slot-pitch
 reader the unit and hands pint nothing, so the value stays a unitless float and nothing can convert
 it. While a name MAY carry a unit, spelling the unit into the VALUE stays optional; once the name is
 forbidden to carry one, the value is the only place left. THE NAMING BAN IS THEREFORE WHAT MAKES PINT
-NON-OPTIONAL, which is why this half exists: the pint half is :mod:`lab_commons.units`, and the
+NON-OPTIONAL, which is why this half exists: the pint half is :mod:`lab_commons.quantity`, and the
 machinery that reads this table is :mod:`dev_lab.dev.units`.
 
 WHAT A ROW IS. A trailing name SEGMENT -- the text after the last ``_`` or ``-`` -- that a reader
@@ -34,7 +34,7 @@ shared package: ``ns`` is nanoseconds in consumer-a (54 rows, ``_SSC_CAP_NS``) a
 (``n_sec`` x102) and a transformer SECONDARY WINDING (``l_sec``) far more often than it is seconds, so
 the plural ``secs`` -- unambiguously a duration -- is the row that stays; ``_kw`` is ``**kwargs``
 plumbing in 489 rows and a kilowatt in none; ``_m`` appears in ``Q_0A_per_m``/``Q_0Wb_per_m`` in
-:mod:`lab_commons.em`, where the unit is already in the value and the name merely says so out loud. A
+a consumer's field-model constants, where the unit is already in the value and the name merely says so out loud. A
 shared default that flagged those would red on code that already obeys the rule, and a guard that reds
 on correct code is the one that gets widened.
 
@@ -291,7 +291,7 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
     ),
     'm': (
         'meter -- the biggest real category measured (842 rows, `PROBE_DEPTH_M`, `--depth-m`) AND '
-        'the reason the default is conservative: `Q_0A_per_m`/`Q_0Wb_per_m` in `lab_commons.em` '
+        'the reason the default is conservative: `Q_0A_per_m`/`Q_0Wb_per_m` in consumer field-model code '
         'spell `m` in names whose VALUE is already a pint Quantity, so a naive `m` row reds on code '
         "that obeys the rule. Opt in per repo with tokens=UNIT_TOKENS | {'m'}."
     ),
@@ -390,7 +390,7 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
     'v': (
         'volt -- 611 rows, and in consumer-a they are volts (`BUS_V`, `LOSS_V`); excluded because '
         '`v` is also the conventional name of a validated VALUE -- `def validate(cls, v)` in '
-        '`lab_commons.units` -- where flagging it would red on every pydantic validator in the family.'
+        'pydantic quantity types -- where flagging it would red on every pydantic validator in the family.'
     ),
     'var': (
         'volt-ampere reactive -- 274 `_var` rows measured, 19 distinct, and every one a VARIABLE: '

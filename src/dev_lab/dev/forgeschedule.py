@@ -37,10 +37,9 @@ family default and a repository overrides key by key (a table key by table key):
     prior_cost = "4 h"
     request_unadmitted = "6 h"         # a request waiting unclaimed this long is told why, once
 
-Every duration is a quantity string (:mod:`lab_commons.quantity`); the loader
-(:mod:`dev_lab.dev._forgeschedule_declared`) maps it onto :class:`~lab_commons.compute.model.Schedule`'s hour fields,
-and a retired unit-suffixed key (``prior_cost_h``, ``starve_after_hours``, ...) is refused with its new line (user
-ruling 2026-11-25).
+Every duration is a quantity string (:mod:`lab_commons.quantity`); the loader maps it onto
+:class:`~lab_commons.compute.model.Schedule`'s hour fields, and a retired unit-suffixed key (``prior_cost_h``,
+``starve_after_hours``, ...) is refused with its new line (user ruling 2026-11-25).
 
 ONE RUN PER REF AND PART (D6, user ruling 2026-10-17). A ref of a ``coalesce`` class has at most one run
 of a part in flight across the fleet; its current tip waits behind that run
@@ -55,13 +54,15 @@ run in flight, no host serves its part, over its ref's budget, or not admitted h
 ``starve_after`` is STARVED and raises a ``forgealarm`` naming that reason.
 
 The pure scoring -- :class:`~lab_commons.compute.model.Schedule`, :func:`~lab_commons.compute.model.rank` -- lives
-in :mod:`lab_commons.compute.model`; this module gathers candidates (I/O), and the numbers load in its sibling.
+in :mod:`lab_commons.compute.model`; this module gathers candidates and loads the numbers (I/O).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import fnmatch
 import subprocess
+import tomllib
 import urllib.parse
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -73,16 +74,18 @@ from lab_commons.compute.model import (
     INTEGRATION,
     PR,
     REQUEST,
+    SCHEDULE_TABLE,
     Candidate,
     Ranked,
     Schedule,
     starved,
 )
 from lab_commons.hpc.needsets import scarce_parts, vocabulary_at
+from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.shell import FULL, INCREMENTAL
 
-from dev_lab.dev._forgeschedule_declared import load_schedule
 from dev_lab.dev._forgeschedule_requests import issue_labels, request_candidates
+from dev_lab.dev._schedule_durations import HOURS, SCHEDULE_RENAMED, in_hours, refuse_unit_keys
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import STARVED, Alarm
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND
@@ -111,6 +114,7 @@ __all__ = [
     'held',
     'host_weights',
     'labeled_issues',
+    'load_schedule',
     'over_budget',
     'ref_usage',
     'repo_name',
@@ -126,6 +130,49 @@ NOT_ADMITTED: Final = 'not admitted'
 NO_ROOM: Final = 'no room'
 
 _TRACKING: Final = 'refs/remotes/origin/'
+
+
+def load_schedule(root: Path) -> Schedule:
+    """*root*'s ``[tool.lab_commons.schedule]`` over the family default; an unknown key is refused."""
+    manifest = root / 'pyproject.toml'
+    declared: dict[str, Any] = {}
+    if manifest.is_file():
+        with manifest.open('rb') as handle:
+            declared = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get(SCHEDULE_TABLE, {})
+    default = Schedule()
+    where = f'[tool.lab_commons.{SCHEDULE_TABLE}] in {manifest}:'
+    refuse_unit_keys(where, declared)
+    retired = [
+        f'{key} is retired: {RETIRED[f"{SCHEDULE_TABLE}] {key}"]}'
+        for key in declared
+        if f'{SCHEDULE_TABLE}] {key}' in RETIRED
+    ]
+    if retired:
+        msg = f'[tool.lab_commons.{SCHEDULE_TABLE}] in {manifest}: ' + '; '.join(retired)
+        raise ValueError(msg)
+    known = {one.name for one in dataclasses.fields(Schedule)} - set(SCHEDULE_RENAMED) | set(HOURS)
+    unknown = sorted(set(declared) - known)
+    if unknown:
+        msg = (
+            f'[tool.lab_commons.{SCHEDULE_TABLE}] in {manifest} has unknown key(s) {unknown}; '
+            f'the keys are {sorted(known)}'
+        )
+        raise ValueError(msg)
+    merged: dict[str, Any] = {}
+    defaults = dataclasses.asdict(default)
+    for key, given in in_hours(where, declared).items():
+        current = defaults[key]
+        replaces = key == 'classes_by_ref' or not isinstance(current, Mapping)
+        merged[key] = given if replaces else {**current, **given}
+    schedule = dataclasses.replace(default, **merged)
+    undeclared = sorted(set(schedule.classes_by_ref.values()) - set(schedule.classes))
+    if undeclared:
+        msg = (
+            f'[tool.lab_commons.{SCHEDULE_TABLE}] classes_by_ref in {manifest} names class(es) {undeclared} '
+            f'that classes does not value: {sorted(schedule.classes)}'
+        )
+        raise ValueError(msg)
+    return schedule
 
 
 def host_weights(table: Mapping[str, Any]) -> dict[str, float]:

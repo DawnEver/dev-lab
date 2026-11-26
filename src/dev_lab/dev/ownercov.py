@@ -1,7 +1,8 @@
 """OWNER-COVERAGE: each owner ``dependencies.toml`` declares meets a line and branch BAR and a FLOOR ratcheting up.
 
 Requested by a consumer's v1 review. The owners are :mod:`dev_lab.dev.deptable`'s rows -- the
-child packages ``[python.owners]`` names, the crates ``[rust.crates]`` names -- and the measurement is a coverage
+child packages ``[python.owners]`` names, and every crate in the tree (a crate is the stage its path names,
+:mod:`dev_lab.dev.rustdeps`) -- and the measurement is a coverage
 tool's own report, read per file by :mod:`dev_lab.dev.covreports` and SUMMED per owner (never an average of file
 percentages). A repo without ``dependencies.toml`` is not judged.
 
@@ -15,8 +16,8 @@ THE FLOOR is a measurement above the bar, written ONLY by ``record`` into the sa
 
     [tool.dev_lab.coverage.floors.python]       # keyed like dependencies.toml: [python.owners] -> python
     contracts = { line = "98.40 %", branch = "93.12 %" }
-    [tool.dev_lab.coverage.floors.rust]         # [rust.crates] -> rust
-    assemble = { line = "96.00 %" }
+    [tool.dev_lab.coverage.floors.rust]         # each crate, by name -> rust
+    compile_assemble = { line = "96.00 %" }
 
 ``record`` writes each measured share, truncated to 0.01 %, as the owner's new floor when it is above the bar and
 above the old floor; it never lowers one, and it deletes a floor at or below the bar (a second copy of the bar). The
@@ -62,21 +63,27 @@ DOOR: Final = (
 )
 _DETAILS: Final = 'details: docs-src/dev/refusals.md#owner-coverage (dev-lab)'
 _TOOLS: Final = {'python': covreports.PYTHON_TOOL, 'rust': covreports.RUST_TOOL}
+#: Per language: what an owner is, and how the judgment says there is none / some.
+_OWNER: Final = {'python': '[python.owners] row of dependencies.toml', 'rust': 'crate in the tree'}
+_NONE: Final = {'python': 'dependencies.toml declares no [python.owners] row', 'rust': 'the tree holds no crate'}
+_SOME: Final = {'python': '[python.owners] is declared', 'rust': 'the tree holds a crate'}
 
 
 @dataclass
 class _Judgment:
     policy: Policy
-    found: list[str] = field(default_factory=list)
+    found: list[str] = field(default_factory=list[str])
     #: (language, owner) -> its summed counts, and whether its report measured branches
-    measured: dict[tuple[str, str], tuple[Counts, bool]] = field(default_factory=dict)
+    measured: dict[tuple[str, str], tuple[Counts, bool]] = field(
+        default_factory=dict[tuple[str, str], tuple[Counts, bool]]
+    )
 
 
 def _owners(root: Path, decl: Declared, files: Iterable[str], language: str) -> dict[str, str | None] | str:
     """Each declared owner of *language* -> its repo directory (``None``: not in the tree); a str is a refusal."""
     if language == 'rust':
         tree = rustdeps.crates(root, files)
-        return {name: tree[name].directory if name in tree else None for name in decl.crates}
+        return {name: crate.directory for name, crate in tree.items()}
     python = ownerdag.python_tree(root)
     if python is None:
         return '[python.owners] is declared, but pyproject.toml [project].name names no package at src/<name>'
@@ -93,15 +100,13 @@ def _owners_measured(
     judged: _Judgment, root: Path, decl: Declared, files: list[str], *, language: str, report: Measurement | None
 ) -> dict[str, str | None] | None:
     """*language*'s owners -> directories when both a declaration and a report exist; else the refusal, and None."""
-    row, tool, found = ROWS[language], _TOOLS[language], judged.found
-    if not (decl.crates if language == 'rust' else decl.owners):
+    _row, tool, found = ROWS[language], _TOOLS[language], judged.found
+    if not (rustdeps.crates(root, files) if language == 'rust' else decl.owners):
         if report is not None:
-            found.append(
-                f'a {tool} report was given but dependencies.toml declares no {row} row to own what it measured'
-            )
+            found.append(f'a {tool} report was given but {_NONE[language]} to own what it measured')
         return None
     if report is None:
-        found.append(f'{row} is declared but no {tool} report was given -- --{language} <report>')
+        found.append(f'{_SOME[language]} but no {tool} report was given -- --{language} <report>')
         return None
     owners = _owners(root, decl, files, language)
     if isinstance(owners, str):
@@ -118,8 +123,8 @@ def _stale_floors(judged: _Judgment, language: str, owners: Mapping[str, object]
     rows, bars = judged.policy.floors.get(language, {}), judged.policy.bars
     for owner in sorted(set(rows) - set(owners)):
         judged.found.append(
-            f'{WHERE}.floors.{language}] {owner}: a floor for an owner no {ROWS[language]} row of dependencies.toml '
-            'declares -- move it with the owner when it was renamed, else delete it'
+            f'{WHERE}.floors.{language}] {owner}: a floor for an owner that is no {_OWNER[language]} -- move it '
+            'with the owner when it was renamed, else delete it'
         )
     judged.found += [
         f'{WHERE}.floors.{language}] {owner} {kind} = "{floor.text}" is not above the bar {shown(bars[kind])}: '
@@ -277,7 +282,7 @@ def _report(found: list[str]) -> str:
 
 def main(argv: list[str] | None = None, *, cwd: Path | None = None) -> int:
     """``check`` or ``record`` the tracked tree against the reports; exit 1 on a refusal, 0 when clean or undeclared."""
-    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.ownercov', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.ownercov', description=(__doc__ or '').splitlines()[0])
     parser.add_argument('verb', choices=('check', 'record'))
     parser.add_argument('--python', type=Path, help=f'a {covreports.PYTHON_TOOL} JSON report')
     parser.add_argument('--rust', type=Path, help=f'a {covreports.RUST_TOOL} JSON summary report')

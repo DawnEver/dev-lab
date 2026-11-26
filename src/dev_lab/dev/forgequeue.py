@@ -38,7 +38,6 @@ from lab_commons.hpc.needsets import declared_at
 from lab_commons.log import emit
 
 from dev_lab.dev import forgerunshow
-from dev_lab.dev._forgeschedule_declared import load_schedule
 from dev_lab.dev.branchprune import listing
 from dev_lab.dev.branchset import BranchSetNotDeclared
 from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, forge_transport
@@ -52,7 +51,14 @@ from dev_lab.dev.forgephases import FETCH, Phases
 from dev_lab.dev.forgeprovides import supplied, unserved
 from dev_lab.dev.forgerequest import Declared, UndeclaredRequest, declared_request, request_context
 from dev_lab.dev.forgescarce import unreached
-from dev_lab.dev.forgeschedule import NO_HOST, NOT_ADMITTED, candidates, host_weights, repo_name
+from dev_lab.dev.forgeschedule import (
+    NO_HOST,
+    NOT_ADMITTED,
+    candidates,
+    host_weights,
+    load_schedule,
+    repo_name,
+)
 from dev_lab.dev.forgesettled import SettledHistories
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import Client

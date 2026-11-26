@@ -21,7 +21,9 @@ from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 import pytest
+from lab_commons.hpc.cluster import Runner
 
+from dev_lab.dev.datedlog import FAMILY_KINDS
 from dev_lab.dev.hpcaccount import inventory, salvage, salvagefetch, salvageread
 from dev_lab.dev.hpcaccount.fleet import Target
 
@@ -51,13 +53,13 @@ def _commit(repo: Path, name: str, text: str, message: str) -> str:
     return _git(repo, 'rev-parse', 'HEAD').strip()
 
 
-def _runner(home: Path):  # noqa: ANN202 -- a Runner
+def _runner(home: Path) -> Runner:
     """The account's Runner: the fixed line in a real POSIX shell with *home* as ``$HOME``."""
     assert _SH is not None, 'no sh on PATH: every runner (Linux, Git for Windows) carries one'
-    env = {**os.environ, **_ENV, 'HOME': home.as_posix()}
+    sh, env = _SH, {**os.environ, **_ENV, 'HOME': home.as_posix()}
 
     def run(command: str, _stdin: str | None = None) -> str:
-        done = subprocess.run([_SH, '-c', command], capture_output=True, env=env, check=False)
+        done = subprocess.run([sh, '-c', command], capture_output=True, env=env, check=False)
         assert done.returncode == 0, done.stderr.decode('utf-8', 'replace')
         return done.stdout.decode('utf-8', 'replace')
 
@@ -96,25 +98,55 @@ def account(tmp_path: Path) -> SimpleNamespace:
     return SimpleNamespace(home=home, origin=origin, shas=shas, out=tmp_path / 'out', tmp=tmp_path)
 
 
-def _reach(monkeypatch: pytest.MonkeyPatch, home: Path) -> dict[str, object]:
+def _reach(monkeypatch: pytest.MonkeyPatch, home: Path) -> Runner:
+    """The one account reached and pinned: every connect and pin answers *home*'s Runner."""
     grant = SimpleNamespace(user='u1')
     monkeypatch.setattr(salvage, 'reached_machine', lambda _users: SimpleNamespace(grants=[grant]))
     monkeypatch.setattr(salvage, 'declared_target', lambda _g, _shell: Target('login1', '/scratch/u1/lab'))
-    run = _runner(home)
-    return {'connect': lambda _g: run, 'pin': lambda _g, _host: run}
+    return _runner(home)
 
 
 def _salvaged(monkeypatch: pytest.MonkeyPatch, account: SimpleNamespace, said: list[str], *, apply: bool) -> int:
-    reach = _reach(monkeypatch, account.home)
-    return salvage.salvage('u1', 'src', apply=apply, out=account.out, carried=LIMIT, say=said.append, **reach)
+    run = _reach(monkeypatch, account.home)
+    return salvage.salvage(
+        'u1', 'src', apply=apply, out=account.out, carried=LIMIT, say=said.append,
+        connect=lambda _g: run, pin=lambda _g, _host: run,
+    )  # fmt: skip
 
 
 def _manifest(account: SimpleNamespace) -> dict:
     return json.loads((account.out / 'u1' / 'src' / salvage.MANIFEST).read_text(encoding='utf-8'))
 
 
+def _landed(account: SimpleNamespace, name: str) -> Path:
+    """Where checkout ``src/<name>`` of the ``src`` salvage lands: one segment below its run."""
+    return account.out / 'u1' / 'src' / salvage.segment(f'src/{name}')
+
+
+def test_a_path_lands_as_one_segment_no_checkout_name_can_spell() -> None:
+    """FAMILY_KINDS gives ``salvage`` a fixed depth, so a home-relative path is ONE segment, never a nested tree."""
+    assert [salvage.segment(p) for p in ('.', 'src', 'src/ahead/.claude/worktrees/wt')] == [
+        '~',
+        'src',
+        'src+ahead+.claude+worktrees+wt',
+    ]
+    assert len({salvage.segment(p) for p in ('a/b', 'a.b', 'a_b', 'a-b')}) == 4, 'distinct paths stay distinct'
+
+
+def test_every_file_lands_in_a_declared_salvage_shape(
+    monkeypatch: pytest.MonkeyPatch, account: SimpleNamespace
+) -> None:
+    assert _salvaged(monkeypatch, account, [], apply=True) == 0
+    shapes = FAMILY_KINDS[salvage.KIND]
+    written = [f.relative_to(account.out) for f in account.out.rglob('*') if f.is_file()]
+    assert written, 'the planted control: something was written'
+    for path in written:
+        shape = '/'.join(['*'] * (len(path.parts) - 1)) or '.'
+        assert path.suffix in shapes.get(shape, frozenset()), (path, shapes)
+
+
 def _plan(account: SimpleNamespace) -> salvageread.Plan:
-    return salvageread.parse(_runner(account.home)(salvageread.plan_command('src')))
+    return salvageread.parse(_runner(account.home)(salvageread.plan_command('src'), None))
 
 
 def test_the_salvage_counts_what_the_inventory_counts() -> None:
@@ -159,10 +191,10 @@ def test_a_pushed_only_checkout_carries_an_empty_bundle_and_says_so(
 ) -> None:
     said: list[str] = []
     assert _salvaged(monkeypatch, account, said, apply=True) == 0, said
-    assert not (account.out / 'u1' / 'src' / 'pushed' / salvage.FILES['bundle']).exists()
+    assert not (_landed(account, 'pushed') / salvage.FILES['bundle']).exists()
     assert 'salvage: src/pushed: nothing of its own: nothing written' in said
     assert any(row.startswith('    bundle empty: every commit is on a remote') for row in said)
-    assert (account.out / 'u1' / 'src' / 'ahead' / salvage.FILES['bundle']).is_file(), 'the planted control'
+    assert (_landed(account, 'ahead') / salvage.FILES['bundle']).is_file(), 'the planted control'
 
 
 def test_an_unpushed_commit_lands_and_fetches_into_a_matched_repo(
@@ -177,7 +209,7 @@ def test_an_unpushed_commit_lands_and_fetches_into_a_matched_repo(
     head, status = _git(local, 'rev-parse', 'HEAD'), _git(local, 'status', '--porcelain')
     said: list[str] = []
     monkeypatch.chdir(account.out)
-    checkout = Path('u1', 'src', 'ahead')  # relative, as typed: git reads the bundle from inside the repo
+    checkout = Path('u1', 'src', salvage.segment('src/ahead'))  # relative, as typed: git reads it from inside the repo
     assert salvagefetch.fetch(checkout, local, apply=True, say=said.append) == 0, said
     assert _git(local, 'rev-parse', 'salvage/u1/src/ahead/main').strip() == account.shas['ahead']
     assert (_git(local, 'rev-parse', 'HEAD'), _git(local, 'status', '--porcelain')) == (head, status), 'untouched'
@@ -190,13 +222,13 @@ def test_an_unpushed_commit_lands_and_fetches_into_a_matched_repo(
 
 def test_a_dirty_tracked_file_lands_in_the_diff(monkeypatch: pytest.MonkeyPatch, account: SimpleNamespace) -> None:
     assert _salvaged(monkeypatch, account, [], apply=True) == 0
-    diff = (account.out / 'u1' / 'src' / 'dirty' / salvage.FILES['diff']).read_text(encoding='utf-8')
+    diff = (_landed(account, 'dirty') / salvage.FILES['diff']).read_text(encoding='utf-8')
     assert '+changed' in diff, 'the unstaged change'
     assert '+staged' in diff, 'the staged new file'
     clone = account.tmp / 'replay'
     _git(account.tmp, 'clone', '-q', '-b', 'dirty', account.origin.as_posix(), str(clone))
-    _git(clone, 'apply', '--check', str(account.out / 'u1' / 'src' / 'dirty' / salvage.FILES['diff']))
-    assert not (account.out / 'u1' / 'src' / 'ahead' / salvage.FILES['diff']).exists(), 'a clean tree has no diff'
+    _git(clone, 'apply', '--check', str(_landed(account, 'dirty') / salvage.FILES['diff']))
+    assert not (_landed(account, 'ahead') / salvage.FILES['diff']).exists(), 'a clean tree has no diff'
 
 
 def test_an_untracked_file_lands_and_a_large_or_ignored_one_does_not(
@@ -204,14 +236,16 @@ def test_an_untracked_file_lands_and_a_large_or_ignored_one_does_not(
 ) -> None:
     said: list[str] = []
     assert _salvaged(monkeypatch, account, said, apply=True) == 0
-    tar = (account.out / 'u1' / 'src' / 'loose' / salvage.FILES['untracked']).read_bytes()
+    tar = (_landed(account, 'loose') / salvage.FILES['untracked']).read_bytes()
     with tarfile.open(fileobj=io.BytesIO(tar)) as held:
         assert {m.name.removeprefix('./') for m in held.getmembers()} == {'notes.md'}
-        assert held.extractfile('./notes.md').read() == b'a note\n'  # type: ignore[union-attr]
+        note = held.extractfile('./notes.md')
+        assert note is not None
+        assert note.read() == b'a note\n'
     entry = next(c for c in _manifest(account)['checkouts'] if c['path'] == 'src/loose')
     assert entry['untracked_listed'] == [{'path': 'big.bin', 'bytes': LIMIT + 1}], 'listed by name and size'
     assert f'    listed only (over {LIMIT}B): big.bin {LIMIT + 1}B' in said
-    assert not (account.out / 'u1' / 'src' / 'pushed' / salvage.FILES['untracked']).exists(), 'ignored stays'
+    assert not (_landed(account, 'pushed') / salvage.FILES['untracked']).exists(), 'ignored stays'
 
 
 def test_a_detached_head_with_unpushed_commits_lands(monkeypatch: pytest.MonkeyPatch, account: SimpleNamespace) -> None:
@@ -222,7 +256,7 @@ def test_a_detached_head_with_unpushed_commits_lands(monkeypatch: pytest.MonkeyP
     assert f'{account.shas["detached"]} HEAD' in entry['files']['commits.bundle']['holds']
     local = account.tmp / 'local'
     _git(account.tmp, 'clone', '-q', account.origin.as_posix(), str(local))
-    checkout = account.out / 'u1' / 'src' / 'detached'
+    checkout = _landed(account, 'detached')
     assert salvagefetch.fetch(checkout, local, apply=True, say=[].append) == 0
     assert _git(local, 'rev-parse', 'salvage/u1/src/detached/HEAD').strip() == account.shas['detached']
 
@@ -235,7 +269,7 @@ def test_the_manifest_holds_each_file_sha256(monkeypatch: pytest.MonkeyPatch, ac
     for entry in record['checkouts']:
         assert entry['origin'] == account.origin.as_posix()
         for name, held in entry.get('files', {}).items():
-            data = (account.out / 'u1' / entry['path'] / name).read_bytes()
+            data = (account.out / 'u1' / 'src' / salvage.segment(entry['path']) / name).read_bytes()
             assert (len(data), hashlib.sha256(data).hexdigest()) == (held['bytes'], held['sha256'])
             checked += 1
     assert checked >= 4, 'ahead and detached bundles, the dirty diff, the loose tar'
@@ -260,7 +294,7 @@ def test_a_checkout_git_cannot_read_is_refused_by_name_and_the_rest_still_land(
     refusal = next(line for line in said if line.startswith('  src/severed: REFUSED -- git cannot read it'))
     assert 'look --account u1 inventory src/severed' in refusal, 'the refusal names its door'
     assert {r['path'] for r in _manifest(account)['refused']} == {'src/severed'}
-    assert (account.out / 'u1' / 'src' / 'ahead' / salvage.FILES['bundle']).is_file()
+    assert (_landed(account, 'ahead') / salvage.FILES['bundle']).is_file()
 
 
 def test_an_unmatched_checkout_is_refused_by_name_and_nothing_is_fetched(
@@ -272,7 +306,7 @@ def test_an_unmatched_checkout_is_refused_by_name_and_nothing_is_fetched(
     _git(other, 'remote', 'set-url', 'origin', 'https://forge.example/team/another-repo.git')
     refs = _git(other, 'for-each-ref')
     said: list[str] = []
-    assert salvagefetch.fetch(account.out / 'u1' / 'src' / 'ahead', other, apply=True, say=said.append) == 2
+    assert salvagefetch.fetch(_landed(account, 'ahead'), other, apply=True, say=said.append) == 2
     assert said[0].startswith('salvage-fetch: refused -- src/ahead (origin '), said
     assert "repository 'origin'" in said[0]
     assert 'another-repo' in said[0], 'the refusal names the remotes it compared'

@@ -70,11 +70,18 @@ def _resolve(node: ast.expr, local: dict[str, str], shared: dict[str, set[str]])
     return None
 
 
+def _called(func: ast.expr) -> str:
+    """The name a call calls: ``f`` of ``f(..)`` and of ``x.f(..)``, else ``''``."""
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return func.id if isinstance(func, ast.Name) else ''
+
+
 def _is_date(node: ast.AST) -> bool:
     """Whether *node* holds a calendar date: ``date_parts()``, ``.strftime('%y..')`` or ``f'{..:%y..}'``."""
     for sub in ast.walk(node):
         if isinstance(sub, ast.Call):
-            name = sub.func.attr if isinstance(sub.func, ast.Attribute) else getattr(sub.func, 'id', '')
+            name = _called(sub.func)
             if name == 'date_parts':
                 return True
             first = sub.args[0] if sub.args else None
@@ -108,7 +115,7 @@ def _kind_nodes(tree: ast.Module, local: dict[str, str], shared: dict[str, set[s
     found: list[ast.expr] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            name = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, 'id', '')
+            name = _called(node.func)
             if name == 'output_dir' and len(node.args) > 1:
                 found.append(node.args[1])
             if name == 'dated_log' and not _base_outside_output(node, local, shared):

@@ -65,13 +65,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'OWNER-DAG',
         (
             # Why: user-approved 2026-11-25 (principles `everything-in-its-place`, `no-detour`; v1 D67/D68).
-            'In a repo holding a root `dependencies.toml` (opt-in), actual imports match the declared graph: '
-            '`[python.owners]` and `[python.siblings."<package>"]` (explicit acyclic DAGs at every level, '
-            'default none), `[python.importers]` (the only importers of a path), `[python.native]`, '
-            '`[python.packages]`/`[python.stdlib]` (a package no row names is refused; std is restricted by row), '
-            '`[rust.crates]`/`[rust.external]`/`[rust.std]` (Cargo dependencies by kind and feature, std paths and '
-            'tokens). A cycle, an undeclared edge and a path no layout.toml row declares (rows, never the disk) are '
-            'refused by name; test files are judged too. The always-on check and every `verify` '
+            'With a root `dependencies.toml` (opt-in), imports match its graph: `[python.owners]` and '
+            '`[python.siblings."<package>"]` (acyclic DAGs, default none), `[python.importers]` (sole importers), '
+            '`[python.packages]`/`[python.stdlib]` (unnamed packages refused, std by row; '
+            '`load = "deferred"` rows only, and always, inside a function), `[rust.external]`/`[rust.std]` (Cargo deps '
+            'by kind and feature, std paths, tokens). Crates are the same graph by path: '
+            '`rust/crates/<owner path>` and `<package>_native.<owner>_<child>` are that stage. Cycles, '
+            'undeclared edges and paths no layout.toml row declares are refused by name, tests too. The always-on '
+            'check and every `verify` '
             '(`dev_lab.dev.ownerdag`, `dev_lab.dev.rustdeps`).'
         ),
         ('tests/test_dev_ownerdag.py', 'tests/test_dev_rustdeps.py', 'tests/test_dev_deptable.py'),

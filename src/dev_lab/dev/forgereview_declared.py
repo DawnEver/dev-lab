@@ -49,7 +49,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
@@ -205,7 +205,8 @@ class Review:
 
     def __post_init__(self) -> None:
         """Refuse a bad ``judge_app``, a bad ``bundle`` or duration."""
-        if isinstance(self.judge_app, bool) or not isinstance(self.judge_app, int) or self.judge_app < 0:
+        app: object = self.judge_app  # read from TOML: its declared type is what this refuses
+        if isinstance(app, bool) or not isinstance(app, int) or app < 0:
             msg = f'judge_app = {self.judge_app!r} is no GitHub App id (a positive integer)'
             raise ValueError(msg)
         if self.judge_login and self.judge_app:
@@ -264,7 +265,11 @@ def review_from(text: str, origin: str) -> Review:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     try:
-        review = Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
+        fields: dict[str, Any] = {
+            key: tuple(cast('list[object]', value)) if isinstance(value, list) else value
+            for key, value in declared.items()
+        }
+        review = Review(**fields)
     except ValueError as bad:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {bad}'
         raise ValueError(msg) from bad
@@ -327,9 +332,9 @@ def forge_review(client: Client, integration: str) -> Review:
 
 
 def _default_branch(client: Client) -> str:
-    repo: Any = client.call('GET', client.repo)
-    default = repo.get('default_branch') if isinstance(repo, dict) else None
-    if not default:
+    repo: object = client.call('GET', client.repo)
+    default = cast('dict[str, object]', repo).get('default_branch') if isinstance(repo, dict) else None
+    if not isinstance(default, str) or not default:
         msg = 'the forge names no default branch: which integration branch a review trusts is undecided'
         raise DeclarationUnread(msg)
     return default

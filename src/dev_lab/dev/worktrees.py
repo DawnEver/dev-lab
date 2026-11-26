@@ -59,9 +59,8 @@ from lab_commons.census import processes
 from lab_commons.log import emit
 
 from dev_lab.dev import reclaimrun
-from dev_lab.dev._branchset_census import holders
 from dev_lab.dev.backgroundrun import repo_main
-from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset
+from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset, holders
 from dev_lab.dev.checkout import authority_for, git_out, linked, worktrees
 from dev_lab.dev.liverun import Census, describe, removal_holders
 from dev_lab.dev.reclaim import QUIET_S, blockers, reclaim, removed_approved, unlanded_work

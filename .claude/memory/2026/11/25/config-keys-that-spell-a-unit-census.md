@@ -85,8 +85,12 @@ are named by role here, never by name (this repo is public).
   `peak_mb`/`peaks_mb`, `wall_s`, card `interval_s`/`max_mb`/`current_mb`, `system_ram_percent`, the HPC usage
   report's `core_hours`/`req_mem_mb`/`max_rss_mb`, `logical_bytes`, an artifact folder manifest's `bytes`;
   lab-commons records and plans (`mem_gb`, `peak_mb`, `mem_mb`, `top_minutes`, `heavy_bar_gb`); ai-lab ledger
-  `latency_s`, `diff_bytes`, `read_bytes`; learn-lab bench `utilisation_pct`, `memory_used_mib`, `compile_s`;
+  `latency_s`, `diff_bytes`, `read_bytes`; learn-lab bench `utilization_pct`, `memory_used_mib`, `compile_s`;
   consumer-p2 timing records `*_seconds`, `cpu_hours`.
 - CLI flags that spell a unit (`--campaign-wall-seconds`, `--campaign-spill-gib`): UNITS-GO-THROUGH-PINT's CLI arm.
 - Keys with NO unit anywhere (`timeout = 10`, `max_age = 1800`, `warning = 80` in the forge host's components) are
   the opposite defect -- the unit is nowhere -- and outside this ruling.
+
+> Amended 2026-11-26: US spelling (family rule); learn-lab renames the key to utilization_pct -- approved: "<agree-to-all>"
+
+> Redacted 2026-11-26: site markers removed (public repo).

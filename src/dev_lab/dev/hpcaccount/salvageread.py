@@ -38,6 +38,8 @@ _CARRIED_KINDS: Final = frozenset({'regular file', 'regular empty file', 'symbol
 _LINK: Final = 'symbolic link'
 #: An ``N`` row's fields: kind, bytes and the path.
 _N_FIELDS: Final = 3
+#: An ``R`` row's fields (a remote's name and its url) and a ``D`` row's (changed paths and the diff's bytes).
+_PAIR: Final = 2
 
 _RECORD: Final = (
     'd=${g%/.git}; r=${d#"$h"/}; [ "$d" = "$h" ] && r=.; '
@@ -102,7 +104,7 @@ class Checkout:
     """One checkout as the plan line printed it."""
 
     path: str
-    remotes: list[tuple[str, str]] = field(default_factory=list)
+    remotes: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])
     branch: str = ''
     head: str = ''
     common: str = ''
@@ -111,7 +113,7 @@ class Checkout:
     bundle_bytes: int = 0
     changed: int = 0
     diff_bytes: int = 0
-    untracked: list[Untracked] = field(default_factory=list)
+    untracked: list[Untracked] = field(default_factory=list[Untracked])
 
     @property
     def origin(self) -> str:
@@ -142,9 +144,9 @@ class Plan:
 
     path: str = ''
     absent: bool = False
-    checkouts: list[Checkout] = field(default_factory=list)
-    refused: list[tuple[str, str]] = field(default_factory=list)
-    unread: list[str] = field(default_factory=list)
+    checkouts: list[Checkout] = field(default_factory=list[Checkout])
+    refused: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])
+    unread: list[str] = field(default_factory=list[str])
 
 
 def _safe(path: str) -> bool:
@@ -159,14 +161,22 @@ def _number(text: str) -> int:
 
 def _row(last: Checkout, tag: str, rest: list[str]) -> bool:
     """Fold one per-checkout row into *last*; ``False`` when it is not one."""
-    single = {'B': 'branch', 'H': 'head', 'C': 'common', 'T': 'stash', 'U': 'unpushed'}
-    if tag in single:
-        setattr(last, single[tag], '\t'.join(rest).strip())
-    elif tag == 'R' and len(rest) == 2:  # noqa: PLR2004 -- a remote's name and its url
+    text = '\t'.join(rest).strip()
+    if tag == 'B':
+        last.branch = text
+    elif tag == 'H':
+        last.head = text
+    elif tag == 'C':
+        last.common = text
+    elif tag == 'T':
+        last.stash = text
+    elif tag == 'U':
+        last.unpushed = text
+    elif tag == 'R' and len(rest) == _PAIR:
         last.remotes.append((rest[0], rest[1]))
     elif tag == 'L':
         last.bundle_bytes = _number(rest[0])
-    elif tag == 'D' and len(rest) == 2:  # noqa: PLR2004 -- changed paths and the diff's bytes
+    elif tag == 'D' and len(rest) == _PAIR:
         last.changed, last.diff_bytes = _number(rest[0]), _number(rest[1])
     elif tag == 'N' and len(rest) >= _N_FIELDS and rest[1].isdigit():
         last.untracked.append(Untracked('\t'.join(rest[2:]), int(rest[1]), rest[0]))
@@ -186,7 +196,7 @@ def parse(text: str) -> Plan:
             found.path, found.absent = tail, tag == 'A'
         elif tag == 'G' and _safe(tail):
             found.checkouts.append(Checkout(tail))
-        elif tag == 'X' and len(rest) >= 2 and _safe(rest[0]):  # noqa: PLR2004 -- the checkout and git's words
+        elif tag == 'X' and len(rest) >= _PAIR and _safe(rest[0]):  # the checkout and git's words
             found.refused.append((rest[0], '\t'.join(rest[1:])))
         elif (last is None or not _row(last, tag, rest)) and raw.strip():
             found.unread.append(raw)
@@ -214,7 +224,7 @@ def sections(text: str) -> tuple[dict[str, bytes], dict[str, str], list[str]]:
             current = ''
         elif tag == 'X':
             refused.append(tail.replace('\t', ': '))
-    decoded = {}
+    decoded: dict[str, bytes] = {}
     for name, lines in data.items():
         try:
             decoded[name] = base64.b64decode(''.join(lines), validate=True)
