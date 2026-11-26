@@ -29,7 +29,7 @@ def _repo(path: Path, remote: str) -> Path:
 @pytest.fixture
 def family(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'home'))
-    config_path().parent.mkdir(parents=True)
+    config_path().parent.mkdir(parents=True, exist_ok=True)
     config_path().write_text(
         f'[family_repos]\ndata = {{ remote = "{_REMOTE}", branch = "main" }}\n'
         'code = { remote = "https://forge.example/o/code.git", branch = "integrate/main" }\n',

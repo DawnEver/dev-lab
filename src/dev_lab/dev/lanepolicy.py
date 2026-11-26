@@ -22,6 +22,7 @@ from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.familyrepos import manifest_text
 
 __all__ = [
     'FAMILY_INTEGRATION',
@@ -106,8 +107,6 @@ class Policy:
 
 def load_policy(root: Path) -> Policy:
     """*root*'s working-tree ``[tool.dev_lab.integrator]``, a data repo's from its family row; neither is refused."""
-    from dev_lab.dev.familyrepos import manifest_text  # noqa: PLC0415 -- the family reader loads the machine file
-
     return policy_from(*manifest_text(root))
 
 
