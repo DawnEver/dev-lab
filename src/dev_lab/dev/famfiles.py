@@ -106,25 +106,15 @@ class Renderer:
     table: str = ''  # set: a declared [tool.dev_lab.<table>] stands in for *required* (the inputs as data)
 
     def missing(self, text: str) -> list[str]:
-        """The *required* keys manifest *text* leaves undeclared, ``[]`` where its data table stands in.
-
-        RAISES :class:`ValueError` when both the inputs and the table are declared: two sources of one fact.
-        """
-        declared = _render_table(text)
-        if not self.table or not _tool_table(text, self.table):
-            return sorted(self.required - set(declared))
-        if both := sorted(self.required & set(declared)):
-            msg = (
-                f'{self.name}: both [{RENDER_TABLE}] {", ".join(both)} and [tool.dev_lab.{self.table}] are '
-                'declared -- keep one'
-            )
-            raise ValueError(msg)
-        return []
+        """The *required* keys manifest *text* leaves undeclared, ``[]`` where its data table stands in."""
+        stands_in = self.table and self.table in tomllib.loads(text or '').get('tool', {}).get('dev_lab', {})
+        return [] if stands_in else sorted(self.required - set(_render_table(text)))
 
     def why_missing(self, missing: Sequence[str]) -> str:
         """The skip reason for *missing* inputs, naming the data table that would stand in for them."""
-        alternative = f', nor [tool.dev_lab.{self.table}]' if self.table else ''
-        return f'[{RENDER_TABLE}] {", ".join(missing)} is not declared{alternative}'
+        return f'[{RENDER_TABLE}] {", ".join(missing)} is not declared' + (
+            f', nor [tool.dev_lab.{self.table}]' if self.table else ''
+        )
 
 
 #: Optional ``deltas``: a repo with no deltas module (cc-market) has no per-file overrides and adopts no base.
@@ -326,12 +316,6 @@ def _render_table(text: str) -> dict[str, object]:
     return table if isinstance(table, dict) else {}
 
 
-def _tool_table(text: str, name: str) -> bool:
-    """Whether manifest *text* declares ``[tool.dev_lab.<name>]``."""
-    data = tomllib.loads(text) if text else {}
-    return name in data.get('tool', {}).get('dev_lab', {})
-
-
 def undeclared_inputs(text: str, has: Callable[[str], bool]) -> list[str]:
     """Each required input of a renderer due in a tree that manifest *text* leaves undeclared, ``"<renderer> <key>"``.
 
@@ -346,8 +330,7 @@ def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
 
     RAISES :class:`ValueError` naming the key when a required input is not declared.
     """
-    text = _manifest(root)
-    declared = _render_table(text)
+    declared = _render_table(text := _manifest(root))
     if missing := renderer.missing(text):
         msg = (
             f'{renderer.name} renders files {root} holds, but {renderer.why_missing(missing)} in its '

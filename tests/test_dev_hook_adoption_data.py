@@ -105,8 +105,11 @@ def test_the_one_door_renders_hook_adoption_from_the_table_alone(tmp_path: Path)
 
 
 def test_the_table_and_a_module_together_are_refused(tmp_path: Path) -> None:
-    """Two declarations of one adoption is two sources of one fact: the render refuses rather than picks one."""
-    (tmp_path / 'pyproject.toml').write_text(_TABLE + '\n[tool.dev_lab.render]\nadoption = "a.py"\n', encoding='utf-8')
-    named = {renderer.name: renderer for renderer in RENDERERS}
-    with pytest.raises(ValueError, match='both'):
-        render_argv(named['hook_adoption'], tmp_path, 'py')
+    """Two declarations of one adoption is two sources of one fact: the render refuses rather than picks one.
+
+    PLANTED CONTROL: the table alone renders (above).
+    """
+    (tmp_path / 'pyproject.toml').write_text(_TABLE, encoding='utf-8')
+    with pytest.raises(SystemExit, match='both'):
+        hook_adoption.main(['--repo', str(tmp_path), '--adoption', 'a.py'])
+    assert not (tmp_path / agent_wiring.RULES_REL).exists()

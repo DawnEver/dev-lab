@@ -354,10 +354,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--adoption', type=Path, help='a module declaring ADOPTION, from --repo; else the table')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
+    declared = _declared(root)
+    if args.adoption is not None and declared is not None:
+        msg = f'{root}: both --adoption {args.adoption.as_posix()} and [{ADOPTION_TABLE}] declare it -- keep one'
+        raise SystemExit(msg)
     if args.adoption is not None:
         module = runpy.run_path(str(root / args.adoption))
         adoption, local, source = module['ADOPTION'], module.get('LOCAL_RULES', ()), args.adoption.as_posix()
-    elif (declared := _declared(root)) is not None:
+    elif declared is not None:
         (adoption, local), source = declared, f'[{ADOPTION_TABLE}]'
     else:
         msg = (
