@@ -36,7 +36,7 @@ from dev_lab.dev._scratch_owners import (
     release,
     touched,
 )
-from dev_lab.dev.codeplace import PlacementNotDeclared, checkout_root, declared_placement
+from dev_lab.dev.codeplace import PlacementNotDeclared, checkout_root, scratch_placement
 from dev_lab.dev.native_session import session_of, valid
 
 if TYPE_CHECKING:
@@ -77,7 +77,7 @@ def untracked_scratch(root: Path) -> list[tuple[str, int, float]]:
     An entry holding any tracked file is tracked, and the README anchor is never an entry. Git decides, so a
     main checkout and a linked worktree are judged alike.
     """
-    rel = declared_placement(root).scratch.strip('/')
+    rel = scratch_placement(root).scratch.strip('/')
     scratch = root / rel
     if not scratch.is_dir():
         return []
@@ -162,7 +162,7 @@ def clear_scratch(
         ScratchInUse: an entry is another live session's, or freshly touched, and no approval names the user's words.
 
     """
-    scratch = (root / declared_placement(root).scratch).resolve()
+    scratch = (root / scratch_placement(root).scratch).resolve()
     entries = {_name(rel): rel for rel, _, _ in untracked_scratch(root)}
     wanted = list(dict.fromkeys(_name(name) for name in names))
     if missing := [name for name in wanted if name not in entries]:
@@ -233,7 +233,7 @@ def root_of(path: Path) -> tuple[Path, str] | None:
     if root is None:
         return None
     try:
-        return root, declared_placement(root).scratch.strip('/')
+        return root, scratch_placement(root).scratch.strip('/')
     except PlacementNotDeclared:
         return None
 
