@@ -163,6 +163,9 @@ SYNTHETIC: Final[dict[str, str]] = {
     'src/dev_lab/dev/_rule_rows_citations.py::path': (
         'the EVIDENCE-OUTLIVES-OUTPUT statement`s own example shapes; they name no file in any checkout.'
     ),
+    'src/dev_lab/dev/famtests/memoryadds.py::path': (
+        'the planted memory entry the control writes into a tmp repo and edits; it names no file in any checkout.'
+    ),
     'src/dev_lab/dev/famtests/datedmemory.py::path': (
         '1 example lane note, `lanes/a-lane.md`, in the prose that explains the dated shape.'
     ),
