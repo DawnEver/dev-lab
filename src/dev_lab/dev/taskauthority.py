@@ -13,7 +13,15 @@ path), holding four events:
   (:func:`grant_from_prompt`). A grant lives :data:`TTL_S` and names exactly one verb and slug;
 * ``consumed`` -- :func:`consume`, by the task door's open/close: the newest live unspent grant for exactly that verb
   and slug, under a lock; its id goes into ``TASK.md`` ``authority:`` and the opened/closed journal line;
-* ``folded`` history from the retired rem store arrives verbatim (:func:`fold`, the migration's).
+* ``folded`` history from the retired rem store arrives verbatim (:func:`fold`, the migration's), except that rem's
+  millisecond ``at`` becomes seconds: unconverted, an unspent folded grant read as live forever (measured 2026-11-25).
+  A request or grant is live only while dated no later than now and less than :data:`TTL_S` ago (:func:`_live`).
+
+EVERY ABSENT GRANT SAYS WHY (every-wall-teaches; measured 2026-11-25: ``approve 294277`` came 36 min after its request
+and its session ran a dev-lab older than this row, so nothing was written and nothing said). An ``approve`` that grants
+nothing is answered at the prompt (:func:`_unapproved`); a refusal names the request it found and whether it expired
+or no approval reached the row -- which is live only where the session repo's own ``.venv`` dev-lab carries it
+(:data:`_NOT_LIVE`).
 
 :func:`problem` is the detection: an id the history does not hold as granted and consumed is an error; no history at
 all (another machine) is only a warning.
@@ -57,6 +65,17 @@ _APPROVE: Final = re.compile(
     re.IGNORECASE,
 )
 _LOCK_WAIT_S: Final = 30.0
+#: rem dated its events in epoch MILLISECONDS: an ``at`` above this is one (epoch seconds reach it in the year 5138).
+_MS_FLOOR: Final = 1e11
+_ROW: Final = 'python -m dev_lab.dev.taskauthority hook'
+#: Why a prompt the user typed wrote no grant: the row that writes grants did not run in the session it was typed in.
+_NOT_LIVE: Final = (
+    f"the UserPromptSubmit row `{_ROW}` is not live in that session: the session repo's .claude/settings.json runs "
+    "`hookdispatch UserPromptSubmit` from that repo's own .venv, and a dev-lab older than the task door lacks the row. "
+    'Door: relock that repo onto a dev-lab holding dev_lab.dev.taskauthority (`<venv python> -m dev_lab.dev.dep '
+    "--lock-upgrade <repo>` in a lane, or take the forge's relock PR with `python -m dev_lab.dev.forge sync`), "
+    're-sync its .venv (`python -m dev_lab.dev.dep --bootstrap <repo>`), and the user types the prompt again'
+)
 
 
 class AuthorityRefused(PermissionError):
@@ -109,6 +128,42 @@ def _append(file: Path, event: dict[str, object]) -> None:
         out.write(json.dumps(event, ensure_ascii=False) + '\n')
 
 
+def _live(event: dict[str, object], at: float) -> bool:
+    """Whether *event* (a request or a grant) is alive at *at*: dated no later than then, and less than TTL_S before."""
+    return 0 <= at - float(event.get('at', 0)) < TTL_S
+
+
+def _age(event: dict[str, object], at: float) -> str:
+    return f'{(at - float(event.get("at", 0))) / 60:.0f} min old'
+
+
+def _of(history: list[dict[str, object]], event: str, **fields: object) -> list[dict[str, object]]:
+    return [e for e in history if e.get('event') == event and all(e.get(k) == v for k, v in fields.items())]
+
+
+def _unapproved(history: list[dict[str, object]], code: str, at: float) -> tuple[str, str]:
+    """``(why, asked)``: why ``approve <code>`` grants nothing at *at*, and the ``<verb> <slug>`` it asked for."""
+    if granted := _of(history, 'granted', code=code):
+        asked = f'{granted[-1]["verb"]} {granted[-1]["slug"]}'
+        return f'the code {code} already granted {asked}', asked
+    if not (requests := _of(history, 'requested', code=code)):
+        return f'no request holds the code {code}', '<open|close> <slug>'
+    asked = f'{requests[-1]["verb"]} {requests[-1]["slug"]}'
+    return f'request {code} ({asked}) is {_age(requests[-1], at)}, past its {TTL_S // 60}-min life', asked
+
+
+def _why_absent(history: list[dict[str, object]], verb: str, slug: str, at: float) -> str:
+    """Why no live grant to *verb* task *slug* exists at *at*, read off the requests and grants the store holds."""
+    if not (asked := _of(history, 'requested', verb=verb, slug=slug)):
+        return f'no request and no grant is recorded: if the user typed `/task {verb} {slug}`, {_NOT_LIVE}'
+    last, code = asked[-1], asked[-1].get('code')
+    if _of(history, 'granted', code=code):
+        return f'request {code} was approved, and its grant is spent or past its {TTL_S // 60}-min life'
+    if not _live(last, at):
+        return f'request {code} is {_age(last, at)}, past its {TTL_S // 60}-min life: `approve {code}` grants nothing'
+    return f'request {code} ({_age(last, at)}) has no grant: the user has not replied `approve {code}`, or {_NOT_LIVE}'
+
+
 def request(ledger: Path, verb: str, slug: str, goal: str = '', *, now: float | None = None) -> str:
     """Record an agent's request to *verb* task *slug*; the code the user approves with ``approve <code>``."""
     file, code = store(ledger), secrets.token_hex(3)
@@ -127,8 +182,7 @@ def grant_from_prompt(ledger: Path, prompt: str, session: str = '', *, now: floa
         code = approve[1].lower()
         history = events(ledger)
         used = {e.get('code') for e in history if e.get('event') == 'granted'}
-        asked = [e for e in history if e.get('event') == 'requested' and e.get('code') == code and code not in used
-                 and at - float(e.get('at', 0)) < TTL_S]  # fmt: skip
+        asked = [e for e in _of(history, 'requested', code=code) if code not in used and _live(e, at)]
         if not asked:
             return None
         verb, slug = str(asked[-1]['verb']), str(asked[-1]['slug'])
@@ -151,13 +205,13 @@ def consume(ledger: Path, verb: str, slug: str, *, now: float | None = None) -> 
     with _locked(file):
         history = events(ledger)
         spent = {e.get('id') for e in history if e.get('event') == 'consumed'}
-        live = [e for e in history if e.get('event') == 'granted' and e.get('id') not in spent and e.get('verb') == verb
-                and e.get('slug') == slug and at - float(e.get('at', 0)) < TTL_S]  # fmt: skip
+        live = [e for e in _of(history, 'granted', verb=verb, slug=slug) if e.get('id') not in spent and _live(e, at)]
         if not live:
             msg = (
                 f"no user authority to {verb} task {slug}: a grant comes only from the user's own prompt, live "
-                f'{TTL_S // 60} min.\nDoor: the user types `/task {verb} {slug}`, or run `python -m dev_lab.dev.task '
-                f'request {slug} "<goal>"` and the user replies `approve <code>`'
+                f'{TTL_S // 60} min; {_why_absent(history, verb, slug, at)}.\nDoor: the user types `/task {verb} '
+                f'{slug}`, or run `python -m dev_lab.dev.task request {verb} {slug} "<goal>"` and the user replies '
+                f'`approve <code>`'
             )
             raise AuthorityRefused(msg)
         hit = max(live, key=lambda e: float(e.get('at', 0)))
@@ -189,7 +243,11 @@ def fold(ledger: Path, lines: Sequence[str]) -> int:
                 event = json.loads(line)
             except ValueError:
                 continue
-            if isinstance(event, dict) and (canon := json.dumps(event, sort_keys=True)) not in have:
+            if not isinstance(event, dict):
+                continue
+            if isinstance(stamp := event.get('at'), int | float) and stamp > _MS_FLOOR:
+                event['at'] = stamp / 1000  # rem's milliseconds, migrated once here
+            if (canon := json.dumps(event, sort_keys=True)) not in have:
                 _append(file, event)
                 have.add(canon)
                 added += 1
@@ -210,6 +268,11 @@ def main(argv: Sequence[str] | None = None, *, stdin: object = None) -> int:
                 verb, slug = grant['verb'], grant['slug']
                 emit(f'[task] the user granted {verb} {slug} (authority {grant["id"]}, {TTL_S // 60} min): '
                      f'python -m dev_lab.dev.task {verb} {slug} ...')  # fmt: skip
+            elif approve := _APPROVE.match(prompt):
+                code = approve[1].lower()
+                why, asked = _unapproved(events(ledger()), code, time.time())
+                emit(f'[task] approve {code} granted nothing: {why}.\nDoor: python -m dev_lab.dev.task request '
+                     f'{asked} "<goal>", and the user approves the new code')  # fmt: skip
     except (ValueError, OSError, LedgerUnresolvedError, TimeoutError) as failed:
         emit(f'[task] the task command was not granted: {failed}')
     return 0
