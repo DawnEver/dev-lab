@@ -50,6 +50,7 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import cargostep, depneeds, ownerdag, passthrough, verifiedby
+from dev_lab.dev._hook_shim import INSTALL_COMMAND
 from dev_lab.dev._verify_address import tree_address
 from dev_lab.dev.changeselect import changed_paths, select
 from dev_lab.dev.footprint import Footprints
@@ -58,7 +59,7 @@ from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgerequest import offer_line
 from dev_lab.dev.forgestatus import head_sha, verdict_commit
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND
+from dev_lab.dev.hook_install import HOOKS_STEP
 from dev_lab.dev.inflight import RunKey, box_directory, run_once
 from dev_lab.dev.irschema import changed_reach, stale_refusal
 from dev_lab.dev.layout import scan_refusal

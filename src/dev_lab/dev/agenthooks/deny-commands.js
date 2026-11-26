@@ -1004,8 +1004,9 @@ function fileOperands(rule, cmd, cwd) {
 
 /* A refusal is a WALL (WALLS-ARE-RECORDED, dev_lab.dev.walls): one metrics line and one ledger line, appended by the
  * ONE writer in a DETACHED interpreter, so the refusal the agent sees waits for nothing. No interpreter, no line. The
- * command never leaves this process: only a sha256 prefix of it does. A reason names a door when a line beyond its
- * cause is not only the `details:` pointer or the cross-repo header -- dev_lab.dev.walls.has_remedy, the same test. */
+ * command never leaves this process: only a sha256 prefix of it does, beside the reason's cause line (#825). A
+ * reason names a door when a line beyond its cause is not only the `details:` pointer or the cross-repo header --
+ * dev_lab.dev.walls.has_remedy, the same test. */
 function hasRemedy(reason) {
   const lines = String(reason).split('\n').map((line) => line.trim()).filter(Boolean);
   return lines.filter((line) => !line.startsWith('details: ') && !/^\[targets .*\]$/.test(line)).length >= 2;
@@ -1017,7 +1018,8 @@ function logRefusal(name, where, reason) {
   try {
     const digest = crypto.createHash('sha256').update(cmd, 'utf8').digest('hex').slice(0, 16);
     const argv = ['-m', 'dev_lab.dev.walls', 'refused', '--rule', name, '--reason', 'agent-guard',
-      '--command-sha256', digest, hasRemedy(reason) ? '--remedy' : '--no-remedy'];
+      '--command-sha256', digest, '--cause', String(reason).split('\n')[0],
+      hasRemedy(reason) ? '--remedy' : '--no-remedy'];
     if (typeof input.session_id === 'string' && input.session_id) argv.push('--session', input.session_id);
     spawn(python, argv, { cwd: where, detached: true, stdio: 'ignore', windowsHide: true }).unref();
   } catch {

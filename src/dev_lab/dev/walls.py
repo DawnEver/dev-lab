@@ -18,8 +18,10 @@ that does not is a mechanism gap. A gap nobody records is met again next session
   recorded (an issue, a memory task); the line names which.
 
 A line never holds the command: only a sha256 prefix of it (:data:`DIGEST_CHARS`), because a refused command is
-exactly the one that may carry a token. WHERE: ``<checkout>/output/logs/<yy>/<mm>/<dd>/walls/walls.jsonl``,
-the main worktree's, beside the metrics, appended one whole line per ``O_APPEND`` write.
+exactly the one that may carry a token. It keeps the refusal's CAUSE line instead (:func:`cause_line`: the first line
+of what the agent was shown, token- and address-shaped runs masked, capped), so a gap can be read afterwards (#825).
+WHERE: ``<checkout>/output/logs/<yy>/<mm>/<dd>/walls/walls.jsonl``, the main worktree's, beside the
+metrics, appended one whole line per ``O_APPEND`` write.
 """
 
 from __future__ import annotations
@@ -44,14 +46,17 @@ from dev_lab.dev.storage import output_path
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
+    'CAUSE_CHARS',
     'DIGEST_CHARS',
     'HARNESS_PERMISSION',
     'LOG_KIND',
     'RULE',
     'UNNAMED',
+    'cause_line',
     'close',
     'digest',
     'has_remedy',
+    'hook_rule',
     'ledger',
     'main',
     'open_walls',
@@ -89,6 +94,14 @@ _HOOK_ERROR: Final = re.compile(r'(?m)^\w+:\w+ hook error:')
 _CAUSE_AND_DOOR: Final = 2
 #: The engine's header when a command targets another checkout: context, not the cause or the door.
 _TARGET_HEADER: Final = re.compile(r'^\[targets .*\]$')
+#: A hook's refusal line naming its rule, ``[REFUSED: ]<RULE-ID>: ...``: the rule a hook row's wall is recorded as.
+_HOOK_RULE_LINE: Final = re.compile(r'(?m)^\s*(?:REFUSED:\s*)?([A-Z][A-Z0-9]+(?:-[A-Z0-9]+)+):')
+#: The longest cause line kept; a refusal's cause is one sentence, a longer line is output.
+CAUSE_CHARS: Final = 240
+#: Masked in a cause line: address-shaped and token-shaped runs (crude by design: a precise redactor misses).
+_ADDRESS: Final = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
+#: A token carries a digit and a lower-case letter; an upper-case RULE-ID of any length is never one.
+_TOKEN: Final = re.compile(r'\b(?:Bearer\s+)?(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[a-z])[A-Za-z0-9_-]{24,}\b')
 
 
 def ledger(root: Path, day: tuple[str, str, str] | None = None) -> Path:
@@ -113,6 +126,30 @@ def has_remedy(text: str) -> bool:
     return len(lines) >= _CAUSE_AND_DOOR
 
 
+def cause_line(text: str) -> str:
+    """The first line of *text* past the harness's ``Exit code N`` and hook prefixes, redacted and capped.
+
+    What a refusal or failure SAID, kept so a wall can be read afterwards (#825); an address or a token-shaped run
+    becomes a fixed marker, never the value.
+    """
+    for raw in _EXIT_LINE.sub('', text.lstrip(), count=1).splitlines():
+        line = _HOOK_ERROR.sub('', raw).strip()
+        if line and not _TARGET_HEADER.match(line):
+            masked = _TOKEN.sub('<redacted>', _ADDRESS.sub('<address>', line))
+            return masked[:CAUSE_CHARS]
+    return ''
+
+
+def hook_rule(hook_id: str, output: str, declared: str = '') -> str:
+    """The rule a failed hook row's wall is: the rule its refusal line names, else *declared*, else *hook_id*.
+
+    A row's id is a table key (``milestone-base``), not a rule; the refusal it prints names the rule
+    (``BASE-HOLDS-THE-MILESTONE``), which is what a reader looks up (#870).
+    """
+    found = _HOOK_RULE_LINE.search(output)
+    return found.group(1) if found else (declared or hook_id)
+
+
 def _session(session: str | None) -> str:
     return session if session is not None else session_of()
 
@@ -134,9 +171,16 @@ def _now() -> str:
 
 
 def record(
-    root: Path, *, rule: str, remedy: bool, command: str = '', command_sha256: str = '', session: str | None = None
+    root: Path,
+    *,
+    rule: str,
+    remedy: bool,
+    command: str = '',
+    command_sha256: str = '',
+    cause: str = '',
+    session: str | None = None,
 ) -> Path:
-    """Append one wall *rule* (a refused *command*, or its digest) for *session* (the tool's); the ledger file."""
+    """Append one wall *rule* (a refused *command*'s digest, its *cause* line) for *session*; the ledger file."""
     return _append(
         root,
         {
@@ -144,6 +188,7 @@ def record(
             'session': _session(session),
             'rule': rule or f'{UNNAMED}-REFUSAL',
             'command_sha256': command_sha256 or (digest(command) if command else ''),
+            'cause': cause_line(cause),
             'remedy_present': remedy,
         },
     )
@@ -158,11 +203,14 @@ def refused(
     remedy: bool,
     command: str = '',
     command_sha256: str = '',
+    cause: str = '',
     session: str | None = None,
 ) -> Path:
     """THE refusal choke point: the metrics refusal line and the ledger's wall, in one call; the ledger file."""
     metrics.record(metrics.REFUSAL, root=root, repo=repo, rule=rule, reason=reason)
-    return record(root, rule=rule, remedy=remedy, command=command, command_sha256=command_sha256, session=session)
+    return record(
+        root, rule=rule, remedy=remedy, command=command, command_sha256=command_sha256, cause=cause, session=session
+    )
 
 
 def rule_of(text: str) -> str:
@@ -182,7 +230,13 @@ def refused_text(root: Path, text: str, *, reason: str, rule: str = '', session:
     """
     named = rule or rule_of(text)
     return refused(
-        root, repo=metrics.repo_of(root), rule=named, reason=reason, remedy=has_remedy(text), session=session or None
+        root,
+        repo=metrics.repo_of(root),
+        rule=named,
+        reason=reason,
+        remedy=has_remedy(text),
+        cause=text,
+        session=session or None,
     )
 
 
@@ -275,6 +329,7 @@ def _post_tool(payload: dict) -> None:
         rule=rule_of(text),
         remedy=False,
         command=str(command),
+        cause=text,
         session=str(payload.get('session_id') or ''),
     )
 
@@ -320,6 +375,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None, out: Tex
     one.add_argument('--reason', default='')
     one.add_argument('--repo', default='')
     one.add_argument('--command-sha256', default='')
+    one.add_argument('--cause', default='', help="the refusal's cause line (redacted and capped on the way in)")
     one.add_argument('--remedy', action=argparse.BooleanOptionalAction, required=True)
     one.add_argument('--session', default=None)
     shut = verbs.add_parser('close', help="record that a wall's gap is closed or recorded")
@@ -333,7 +389,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None, out: Tex
     if args.verb == 'refused':
         refused(
             root, repo=args.repo or metrics.repo_of(root), rule=args.rule, reason=args.reason, remedy=args.remedy,
-            command_sha256=args.command_sha256, session=args.session,
+            command_sha256=args.command_sha256, cause=args.cause, session=args.session,
         )  # fmt: skip
         return 0
     if args.verb == 'close':

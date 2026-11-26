@@ -143,9 +143,13 @@ def _stored(client: Client, number: int, head: str, trusted: Iterable[str]) -> s
 
 
 @contextlib.contextmanager
-def held_state(client: Client, number: int, head: str, trusted: Iterable[str]) -> Iterator[Path]:
-    """A state file for *head*'s review commands, seeded from the PR and written back to it when they changed it."""
-    before = _stored(client, number, head, trusted)
+def held_state(client: Client, number: int | Callable[[], int], head: str, trusted: Iterable[str]) -> Iterator[Path]:
+    """A state file for *head*'s review commands, seeded from the PR and written back to it when they changed it.
+
+    *number* may be a thread not opened yet (a callable that opens it): nothing is seeded, and it is opened only when
+    there is state to write back (#9 F-0a220542e6ce: a refused review leaves no empty ledger issue behind).
+    """
+    before = '' if callable(number) else _stored(client, number, head, trusted)
     if before:
         json.loads(before)  # a stored state that is not JSON is refused here, never handed to a command
     with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-batch-') as scratch:
@@ -157,5 +161,5 @@ def held_state(client: Client, number: int, head: str, trusted: Iterable[str]) -
         finally:
             after = path.read_text(encoding='utf-8').strip() if path.is_file() else ''
             if after and after != before.strip():
-                comment_upsert(client, number, kind=Marker.REVIEW_BATCH, key=head,
+                comment_upsert(client, number() if callable(number) else number, kind=Marker.REVIEW_BATCH, key=head,
                                text=f'{_SAID}\n\n```json\n{after}\n```')  # fmt: skip

@@ -17,7 +17,8 @@ from lab_commons.hpc.testcells import TestCell
 from lab_commons.outcomes import Cell, Status
 
 from dev_lab.dev import serialpass, verifysteps
-from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND, install, read_hooks
+from dev_lab.dev._hook_shim import INSTALL_COMMAND
+from dev_lab.dev.hook_install import HOOKS_STEP, install, read_hooks
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, CellRecorder
 
 _GIT = shutil.which('git') or 'git'

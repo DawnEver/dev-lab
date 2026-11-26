@@ -42,10 +42,12 @@ def missing_paths(root: Path, pytest_args: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(path for path in paths if not (root / path).exists()))
 
 
-#: The pytest options whose next argument is their value, not a selection.
-_VALUED_OPTIONS: Final = frozenset(
-    {'-k', '-m', '-p', '-o', '-c', '--deselect', '--ignore', '--rootdir', '--confcutdir'}
-)
+#: The pytest options (with its plugins') whose next argument is their value, not a selection: ``verify --serial``
+#: appends ``-n 0``, whose ``0`` was read as a missing path.
+_VALUED_OPTIONS: Final = frozenset({
+    '-k', '-m', '-p', '-o', '-c', '-n', '-r', '-W', '--deselect', '--ignore', '--rootdir', '--confcutdir',
+    '--numprocesses', '--maxprocesses', '--dist', '--durations', '--timeout', '--tb', '--maxfail', '--basetemp',
+})  # fmt: skip
 
 
 def census_scope(arguments: tuple[str, ...]) -> tuple[bool, tuple[str, ...]]:

@@ -103,7 +103,7 @@ VENV_LAYOUTS: Final[dict[str, tuple[str, ...]]] = {
 #: Both layouts as relative path parts, PROBED rather than switched on: a checkout mounted from
 #: another platform, or a venv built by a cross-tool, has the layout it has and not the one this
 #: process would have chosen. The hook shim
-#: (:func:`dev_lab.dev.hook_install.shim`) and the adoption modules consult this one row.
+#: (:func:`dev_lab.dev._hook_shim.shim`) and the adoption modules consult this one row.
 #:
 #: Windows first, and the order is load-bearing rather than alphabetical: the shim execs the
 #: first candidate that EXISTS, and on a box where both somehow exist the native one is meant.

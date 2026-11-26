@@ -16,6 +16,7 @@ from _sh_native import native
 from _venv_fake import linked_env
 
 from dev_lab.dev import hook_install, venvpointer
+from dev_lab.dev._hook_shim import INSTALL_COMMAND, SHIM_MARKER, shim
 from dev_lab.dev.famtests.hookinstall import (
     assert_declared_hooks_are_installed,
     assert_hooks_dir_is_the_one_git_consults,
@@ -24,11 +25,9 @@ from dev_lab.dev.famtests.hookinstall import (
 from dev_lab.dev.hook_install import (
     ABSENT,
     FOREIGN,
-    INSTALL_COMMAND,
     INSTALLED,
     PROTECTED,
     RETIRED_HOOKS_DIR,
-    SHIM_MARKER,
     STALE,
     UNPROTECTED,
     HookInstallError,
@@ -36,7 +35,6 @@ from dev_lab.dev.hook_install import (
     hooks_dir,
     install,
     report_installation,
-    shim,
 )
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
 from dev_lab.dev.venvpointer import shell_function
@@ -281,7 +279,11 @@ def test_a_venv_less_commit_is_refused_naming_the_bootstrap_door(repo: Path) -> 
 
 
 def test_a_half_built_venv_is_passed_over_and_the_commit_refused_naming_the_door(repo: Path) -> None:
-    """A venv whose interpreter exists but cannot import dev_lab is not exec'd into a bare ``No module named``."""
+    """A venv whose interpreter cannot import dev_lab is passed over; the refusal names the door AND the real error.
+
+    #825: the probe's own line is printed inside the refusal, never replaced by a guess; the half-built venv is never
+    exec'd into a bare crash, so the error appears once, in the refusal line.
+    """
     venv = repo / '.venv' / 'bin'
     venv.mkdir(parents=True)
     fake = venv / 'python'
@@ -291,7 +293,9 @@ def test_a_half_built_venv_is_passed_over_and_the_commit_refused_naming_the_door
     done = _commit(repo)
     assert done.returncode != 0
     assert 'dev_lab.dev.dep --bootstrap' in done.stderr
-    assert 'No module named' not in done.stderr
+    refusal = next(line for line in done.stderr.splitlines() if 'refused' in line)
+    assert 'No module named dev_lab' in refusal
+    assert done.stderr.count('No module named') == 1
 
 
 def test_no_interpreter_anywhere_refuses_the_commit_in_one_line(repo: Path, tmp_path: Path) -> None:
