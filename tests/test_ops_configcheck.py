@@ -343,3 +343,21 @@ def test_an_undeclared_account_table_names_the_declared_ones_and_where_to_open_o
     line = next(line for line in found if 'nonsense is not an account table' in line)
     assert 'test_budget' in line, line
     assert 'accounthost.TABLES' in line, line
+
+
+ORACLEGC = '[oraclegc.repos.frozen]\nroots = [{ glob = "cases/**/*.toml", key = "sha256" }]\n'
+
+
+def test_the_family_file_admits_an_oraclegc_root_declaration(tmp_path: Path) -> None:
+    """PLANTED CONTROL beside it: a malformed entry is refused by name."""
+    assert check_family(_write(tmp_path, 'family.toml', ORACLEGC)) == []
+    bad = ORACLEGC.replace(', key = "sha256"', '')
+    assert [line for line in check_family(_write(tmp_path, 'bad.toml', bad)) if '[oraclegc.repos] frozen' in line]
+    stray = '[oraclegc]\nroots = []\n'
+    assert [line for line in check_family(_write(tmp_path, 'stray.toml', stray)) if '[oraclegc]' in line]
+
+
+def test_an_oraclegc_root_declaration_is_family_only(tmp_path: Path) -> None:
+    found = check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + ORACLEGC))
+    want = 'G.toml: [oraclegc] is a family fact (the GC root set is the same on every machine); it lives in family.toml'
+    assert found == [want]
