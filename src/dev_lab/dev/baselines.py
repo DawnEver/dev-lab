@@ -2,7 +2,7 @@
 
 User ruling 2026-11-24 (H2). Every recorded data file a test compares against (a golden, a reference curve, a
 vendor export) lives in the family's run store -- the content-addressed large-object store
-(:func:`dev_lab.dev.largeobjects.run_objects`, ``[storage] runs``). The repo keeps :data:`LOCK`
+(:func:`dev_lab.dev.storage.run_objects`, ``[storage] runs``). The repo keeps :data:`LOCK`
 (``tests/baselines.lock``): one JSON row per baseline -- ``test`` (the test id comparing against it), ``sha256``
 (its content hash), ``name``, ``command`` (what produced it) and ``source_sha`` (the commit it was produced at).
 A test reads a baseline through the local cache, ``output/cache/<store>/baselines/<sha256>``, re-hashed on
@@ -41,6 +41,8 @@ from typing import TYPE_CHECKING, Final, Protocol
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
+    from lab_commons.objects import RcloneObjects
+
     from dev_lab.dev.reports import StepReport
 
 __all__ = [
@@ -203,26 +205,25 @@ def data_files(tracked: Iterable[str]) -> list[str]:
 
 @dataclass(frozen=True)
 class _RunStore:
-    """The family run store (:class:`~dev_lab.dev.largeobjects.RcloneObjects`) as a :class:`Store`."""
+    """The family run store (:class:`lab_commons.objects.RcloneObjects`) as a :class:`Store`."""
 
     name: str
-    objects: object
+    objects: RcloneObjects
 
     def put(self, path: Path) -> str:
-        return self.objects.put(path).sha256  # type: ignore[attr-defined]
+        return self.objects.put(path).sha256
 
     def get(self, sha256: str, dest: Path) -> Path:
         from lab_commons.compute.store import Ref  # noqa: PLC0415
 
         objects = self.objects
-        key = f'{objects.prefix}/{sha256[:2]}/{sha256}'  # type: ignore[attr-defined]
-        return objects.get(Ref(objects.backend, key, 0, sha256), dest)  # type: ignore[attr-defined]
+        return objects.get(Ref(objects.backend, objects.key(sha256), 0, sha256), dest)
 
 
 def _run_store(root: Path) -> Store:
     from lab_commons import storage  # noqa: PLC0415 -- the network door is reached only by get and put
 
-    from dev_lab.dev.largeobjects import run_objects  # noqa: PLC0415
+    from dev_lab.dev.storage import run_objects  # noqa: PLC0415
 
     declared = storage.declared()
     objects = run_objects(root, declared=declared)

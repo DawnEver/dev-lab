@@ -1,8 +1,8 @@
 """``python -m dev_lab.dev.oraclegc report`` -- which objects of the family's run store no lock names (ruling D86).
 
-The run store (``[storage] runs``, :mod:`dev_lab.dev.largeobjects`) is content-addressed and write-once: an object
-lives under ``<prefix>/<sha[:2]>/<sha>``, and a repo names the objects it needs by sha256 in a committed lock file
-(:data:`LOCK_NAMES`). The GC ROOTS are every lock on EVERY branch of EVERY family repo (``[repos]`` of the machine
+The run store (``[storage] runs``, :func:`dev_lab.dev.storage.run_objects`) is content-addressed and write-once: an
+object lives under ``<prefix>/<sha[:2]>/<sha>``, and a repo names the objects it needs by sha256 in a committed lock
+file (:data:`LOCK_NAMES`). The GC ROOTS are every lock on EVERY branch of EVERY family repo (``[repos]`` of the machine
 file): a branch nobody has merged yet still needs its objects.
 
 This lane is REPORT-ONLY: there is no delete verb. ``report`` writes, under
@@ -366,7 +366,7 @@ class _RunStore:
 
     def files(self) -> list[dict[str, Any]]:
         from dev_lab.dev.artifactstores import RcloneStore  # noqa: PLC0415 -- the real store only on the real run
-        from dev_lab.dev.largeobjects import run_objects  # noqa: PLC0415
+        from dev_lab.dev.storage import run_objects  # noqa: PLC0415
 
         objects = run_objects(self.tree)
         if objects is None:
