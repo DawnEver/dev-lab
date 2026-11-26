@@ -16,7 +16,7 @@ import os
 from collections.abc import Iterator
 from pathlib import Path
 
-__all__ = ['CEILING', 'ancestors', 'checkout_of', 'common_dir', 'git_dir']
+__all__ = ['CEILING', 'ancestors', 'checkout_of', 'common_dir', 'git_dir', 'run_owner', 'same_owner']
 
 #: git's own variable naming the directories its discovery never climbs into.
 CEILING = 'GIT_CEILING_DIRECTORIES'
@@ -69,3 +69,17 @@ def common_dir(cwd: Path) -> Path | None:
         return (own / pointer.read_text(encoding='utf-8').strip()).resolve() if pointer.is_file() else own
     except OSError:
         return None
+
+
+def run_owner(root: Path | str) -> str:
+    """The identity of a run's owner: its checkout's RESOLVED absolute path, never the bare worktree name.
+
+    Two repos may each hold a worktree of the same name (``.claude/worktrees/<name>``); measured 2026-11-26, a
+    queue labeled by that name let one repo's agent stop the other repo's pytest. The full path tells them apart.
+    """
+    return Path(root).resolve().as_posix()
+
+
+def same_owner(one: Path | str, other: Path | str) -> bool:
+    """Whether *one* and *other* name the same checkout (resolved, case-normalized as the filesystem compares)."""
+    return os.path.normcase(run_owner(one)) == os.path.normcase(run_owner(other))

@@ -51,6 +51,12 @@ A REFUSAL IS NEVER BARE (2026-11-13: an agent got "no signature" and nothing to 
 exit -- ask the user, or declare the run's command line as a signature when it is a run of this repo.
 ``--dry-run`` names the signature that matched.
 
+A RUN IS STOPPED ONLY BY ITS OWN CHECKOUT (2026-11-26). Two repos each held a worktree of the same name; an agent
+in one stopped the other's pytest, because the run was identified by its signature and its worktree NAME. A run
+matched by signature is now owned by the checkout its cwd sits in (:func:`dev_lab.dev.gitdirs.checkout_of`), compared
+by RESOLVED PATH (:func:`dev_lab.dev.gitdirs.same_owner`) with the caller's (``--repo`` or the cwd's). Another
+checkout's run, or one whose owner cannot be read, is refused naming the owner and the door: ask the user.
+
 No new dependency: the process table is :func:`lab_commons.census.processes` (Win32 calls on Windows,
 ``/proc`` on Linux, ``ps -ww`` on macOS) -- the one census :mod:`dev_lab.dev.liverun` reads too;
 :func:`stop` takes the table as an argument so a test can plant one.
@@ -77,7 +83,8 @@ from lab_commons.log import emit
 from lab_commons.proc import pid_alive
 
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.proctable import INIT, Proc, process_table, subtree, unstoppable, whose
+from dev_lab.dev.gitdirs import checkout_of, run_owner, same_owner
+from dev_lab.dev.proctable import INIT, Proc, process_cwds, process_table, subtree, unstoppable, whose
 from dev_lab.dev.servelock import note_stopped
 from dev_lab.dev.stopapproved import ApprovedRun, stop_approved
 from dev_lab.dev.stopsignatures import (
@@ -90,7 +97,7 @@ from dev_lab.dev.stopsignatures import (
     why_stoppable,
 )
 
-__all__ = ['SERVE_GRACE_S', 'main', 'repo_root', 'stop', 'stop_subtree']
+__all__ = ['SERVE_GRACE_S', 'main', 'owner_refusal', 'repo_root', 'stop', 'stop_subtree']
 
 #: How long a serve whose producers were stopped may take to release its claim and exit, in seconds.
 SERVE_GRACE_S: Final = 60.0
@@ -153,6 +160,20 @@ def _refusal(table: Mapping[int, Proc], pid: int, why: str, me: int, manifest: s
     ]
 
 
+def owner_refusal(pid: int, table: Mapping[int, Proc], cwds: Mapping[int, str | None], checkout: Path) -> list[str]:
+    """Why *pid* is not *checkout*'s run to stop (its owner is another checkout, or unreadable); empty when it is."""
+    cwd = cwds.get(pid)
+    owner = checkout_of(Path(cwd)) if cwd else None
+    if owner is not None and same_owner(owner, checkout):
+        return []
+    named = run_owner(owner) if owner is not None else f'unknown (cwd {cwd!r} is in no checkout)'
+    return [
+        f'refused: {pid} is not a run of this checkout -- its owner is {named}, the caller is {run_owner(checkout)}',
+        f'what: {table[pid][1][:200]!r}',
+        'exit: ask the user to stop it; a run of another checkout is never stopped from here',
+    ]
+
+
 def _kill(pid: int) -> None:
     if os.name == 'nt':
         _door.run(
@@ -192,8 +213,13 @@ def stop(
     manifest: str = 'the repo`s pyproject.toml',
     approved: ApprovedRun | None = None,
     fresh: Callable[[], Mapping[int, Proc]] = process_table,
+    checkout: Path | None = None,
+    cwds: Mapping[int, str | None] | None = None,
 ) -> tuple[int, list[str]]:
-    """Stop *pid*'s subtree if it is an identifiable run or a stoppable orphan. ``(exit code, lines)``; 3 refused."""
+    """Stop *pid*'s subtree if it is an identifiable run or a stoppable orphan. ``(exit code, lines)``; 3 refused.
+
+    With *checkout*, a run matched by signature must be that checkout's (its cwd per *cwds*), else it is refused.
+    """
     if never := unstoppable(pid, table):
         return 3, [f'refused: {never}']
     if approved is not None:
@@ -215,6 +241,8 @@ def stop(
             return 3, _refusal(table, pid, why, os.getpid() if me is None else me, manifest)
         lines = [f'an orphan: its parent is gone and it holds no box claim: {table[pid][1][:120]!r}']
     else:
+        if checkout is not None and (foreign := owner_refusal(pid, table, cwds or {}, checkout)):
+            return 3, foreign
         lines = [f'matched signature {matched!r}']
     return stop_subtree(pid, table, matched, lines, dry_run=dry_run, kill=kill, gone=gone, notes=notes, born=born)
 
@@ -285,6 +313,8 @@ def main(argv: list[str] | None = None) -> int:
         orphans=declared_orphans(root),
         manifest=str(root / 'pyproject.toml'),
         approved=approved,
+        checkout=root,
+        cwds=process_cwds(),
     )
     for line in lines:
         emit(f'[stoprun] {line}', err=bool(code))

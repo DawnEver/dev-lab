@@ -15,7 +15,7 @@ from lab_commons.census import processes
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ['INIT', 'Proc', 'ancestors', 'chain', 'process_table', 'subtree', 'unstoppable', 'whose']
+__all__ = ['INIT', 'Proc', 'ancestors', 'chain', 'process_cwds', 'process_table', 'subtree', 'unstoppable', 'whose']
 
 #: The pid POSIX reparents an orphan to; a ppid at or below it names no live creator.
 INIT: Final = 1
@@ -26,6 +26,11 @@ Proc = tuple[int, str]  # (parent pid, command line)
 def process_table() -> dict[int, Proc]:
     """``{pid: (ppid, cmdline)}`` for every process, from the one census (:mod:`lab_commons.census`)."""
     return {one.pid: (one.ppid, one.command_line) for one in processes()}
+
+
+def process_cwds() -> dict[int, str | None]:
+    """``{pid: cwd}`` for every process (``None`` where the census cannot read it): where each run's owner sits."""
+    return {one.pid: one.cwd for one in processes()}
 
 
 def subtree(table: Mapping[int, Proc], pid: int) -> list[int]:
