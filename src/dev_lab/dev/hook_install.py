@@ -49,6 +49,7 @@ from typing import IO, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev.githooks.runner import IMPORT_ERROR_ENV
 from dev_lab.dev.githooks.table import ADVISORY, hook_table
 from dev_lab.dev.reports import StepReport
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
@@ -249,10 +250,14 @@ def shim(stage: str, fallback: str | None = None) -> str:
         'main=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")\n'
         f'{shell_function()}\n'
         f'fallback={_fallback_word(recorded)}\n'
+        'why=\n'
         f'for found in {found} "$fallback"; do\n'
-        '  if [ -x "$found" ] && "$found" -c "import dev_lab.dev.githooks" >/dev/null 2>&1; then\n'
+        '  [ -x "$found" ] || continue\n'
+        '  if said=$("$found" -c "import dev_lab.dev.githooks" 2>&1); then\n'
+        f'    export {IMPORT_ERROR_ENV}="$why"\n'
         f'    exec "$found" -m dev_lab.dev.githooks run {stage} "$@"\n'
         '  fi\n'
+        '  [ -n "$why" ] || why="$found: $(echo "$said" | tail -n 1)"\n'
         'done\n'
         f'{_no_interpreter(stage)}'
     )
@@ -262,6 +267,8 @@ def shim(stage: str, fallback: str | None = None) -> str:
 _BOOTSTRAP: Final = (
     'python -m dev_lab.dev.dep --bootstrap $top (with any interpreter that imports dev_lab, e.g. a sibling venv)'
 )
+#: The real cause, when a candidate interpreter existed and its import probe failed.
+_PROBE_SAID: Final = '${why:+ The import probe said: $why}'
 
 
 def _no_interpreter(stage: str) -> str:
@@ -269,13 +276,13 @@ def _no_interpreter(stage: str) -> str:
     if stage in ADVISORY:
         return (
             f'echo "[githooks] {stage}: no venv in $top or $main, no interpreter that imports dev_lab; nothing ran.'
-            f' This checkout needs its own venv: {_BOOTSTRAP}, then {INSTALL_COMMAND}." >&2\n'
+            f' This checkout needs its own venv: {_BOOTSTRAP}, then {INSTALL_COMMAND}.{_PROBE_SAID}" >&2\n'
             'exit 0\n'
         )
     return (
         f'echo "[githooks] {stage}: no venv in $top or $main, no interpreter that imports dev_lab; refused --'
         f' no hook would judge it. Bootstrap the venv ({_BOOTSTRAP}), install the hooks ({INSTALL_COMMAND}),'
-        ' then try again." >&2\n'
+        f' then try again.{_PROBE_SAID}" >&2\n'
         'exit 1\n'
     )
 

@@ -56,6 +56,7 @@ from dev_lab.dev.githooks.gitfailure import git_failed
 from dev_lab.dev.githooks.table import ADVISORY, STAGES, Hook, hook_table
 
 __all__ = [
+    'IMPORT_ERROR_ENV',
     'PUSH_URL_ENV',
     'borrowed_interpreter',
     'door_lines',
@@ -67,6 +68,11 @@ __all__ = [
 
 #: How many characters of path arguments one invocation carries -- under Windows' 32k command line.
 _ARG_BUDGET: Final = 24_000
+
+#: What the shim (:func:`dev_lab.dev.hook_install.shim`) hands the runner: the FIRST candidate whose import probe
+#: failed, ``<python>: <its last stderr line>`` -- the real ImportError (#825), so a refusal under a borrowed
+#: interpreter says why the checkout's own venv was passed over instead of guessing "missing or half-built".
+IMPORT_ERROR_ENV: Final = 'DEV_LAB_HOOK_IMPORT_ERROR'
 
 #: Set to ``1`` to report every pass and skip as well as the failures.
 VERBOSE_ENV: Final = 'LAB_HOOKS_VERBOSE'
@@ -201,9 +207,15 @@ def _selected(
         )
     )
     if stage not in ADVISORY:
+        probe = os.environ.get(IMPORT_ERROR_ENV, '').strip()
+        cause = (
+            f'has an interpreter that cannot import dev_lab ({probe})'
+            if probe
+            else 'has no venv of its own that imports dev_lab (missing or half-built)'
+        )
         emit(
-            f'[githooks] {stage}: refused -- {root.as_posix()} has no venv of its own that imports dev_lab '
-            f'(missing or half-built), and its rows run only there. Bootstrap it: {door}',
+            f'[githooks] {stage}: refused -- {root.as_posix()} {cause}, and its rows run only there. '
+            f'Bootstrap it: {door}',
             err=True,
         )
         return None
@@ -348,7 +360,8 @@ def _log(
 
     A refusal goes through :func:`dev_lab.dev.walls.refused`, so it is this session's wall too: the failed hook's
     *failed* output (``hook id -> output``) is what says whether it named a door, which rule it is (the rule its
-    refusal line names, else the row's *declared* rule, else its id: :func:`dev_lab.dev.walls.hook_rule`).
+    refusal line names, else the row's *declared* rule, else its id: :func:`dev_lab.dev.walls.hook_rule`), and its
+    cause line.
 
     A push line names the branch and tip it publishes (the first ref it does not delete): a branch's first push
     is where its edit starts.
@@ -369,7 +382,7 @@ def _log(
         )
     for hook_id, output in refused.items():
         rule = walls.hook_rule(hook_id, output, (declared or {}).get(hook_id, ''))
-        walls.refused(root, repo=repo, rule=rule, reason=stage, remedy=walls.has_remedy(output))
+        walls.refused(root, repo=repo, rule=rule, reason=stage, remedy=walls.has_remedy(output), cause=output)
 
 
 def _verdict(stage: str, failed: Sequence[str]) -> int:

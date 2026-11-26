@@ -130,12 +130,15 @@ function carriesDevLab(python) {
   return probe.status !== 3;
 }
 
-// What kept the child from starting -- a missing module, or argparse refusing its argv (exit 2 with its usage or an
-// `error: argument` line) -- else null: a decision, passed through.
+// What kept the child from starting -- a missing module, any other ImportError (its own line, the real cause: #825), or
+// argparse refusing its argv (exit 2 with its usage or an `error: argument` line) -- else null: a decision, passed
+// through.
 function wiringFault(status, text) {
   if (status === 0 || status === null) return null;
   const module = /No module named '?([\w.]+)/.exec(text);
   if (module) return module[1];
+  const failed = /^ImportError: .+$/m.exec(text);
+  if (failed) return failed[0];
   const usage = status === 2 && /^usage: |error: (?:argument |unrecognized arguments|the following arguments)/m;
   if (!usage || !usage.test(text)) return null;
   const verb = /(?:invalid choice|unrecognized arguments): '?([\w-]+)/.exec(text);

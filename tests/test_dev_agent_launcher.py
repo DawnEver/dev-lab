@@ -68,3 +68,11 @@ def test_a_deliberate_refusal_still_blocks_with_its_own_words(project: Path) -> 
     assert done.returncode == 2
     assert 'TASK-BOUND' in done.stderr
     assert '[hook]' not in done.stderr
+
+
+def test_an_import_error_lets_the_prompt_through_naming_the_real_error_and_the_door(project: Path) -> None:
+    """#825: an ImportError other than a missing module is a wiring fault too; its own line is printed."""
+    done = _launch(project, 'from json import no_such_name_in_json')
+    assert done.returncode == 0, done.stderr
+    assert "cannot import name 'no_such_name_in_json'" in done.stderr
+    assert 'dev_lab.dev.dep --bootstrap' in done.stderr

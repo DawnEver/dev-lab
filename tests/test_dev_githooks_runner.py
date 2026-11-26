@@ -21,7 +21,7 @@ from dev_lab.dev import milestonebase, venvpointer, walls
 from dev_lab.dev.githooks import _gitread, runner
 from dev_lab.dev.githooks import main as githooks_main
 from dev_lab.dev.githooks._gitread import ZERO_SHA, parse_push_lines
-from dev_lab.dev.githooks.runner import PUSH_URL_ENV, borrowed_interpreter, resolve, run_stage
+from dev_lab.dev.githooks.runner import IMPORT_ERROR_ENV, PUSH_URL_ENV, borrowed_interpreter, resolve, run_stage
 from dev_lab.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
 from dev_lab.dev.metrics import PUSH, REFUSAL, read
 
@@ -744,6 +744,8 @@ def test_a_milestone_refusal_is_recorded_as_its_rule_with_its_door(repo: Path) -
     assert run_stage('commit-msg', ['.git/COMMIT_EDITMSG'], root=repo, hooks=(row,), runner=fail) == 1
     (line,) = [json.loads(one) for one in walls.ledger(repo).read_text(encoding='utf-8').splitlines()]
     assert (line['rule'], line['remedy_present']) == ('BASE-HOLDS-THE-MILESTONE', True)
+    assert line['cause'].startswith('REFUSED: BASE-HOLDS-THE-MILESTONE')
+
 
 def test_a_lint_row_declaring_a_remedy_prints_its_rule_and_door(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """#842: a tool row prints only findings; its declared rule and remedy are printed after them and recorded."""
@@ -769,3 +771,15 @@ def test_this_repos_ruff_rows_declare_their_door() -> None:
     assert (rows['ruff'].rule, rows['ruff'].remedy) == ('RUFF', 'ruff check --fix')
     assert rows['ruff-format'].remedy == 'ruff format'
 
+
+def test_a_borrowed_refusal_prints_the_real_import_error(
+    repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#825: the shim hands the runner the failed import probe; the refusal names it, not a guess, and the door."""
+    monkeypatch.setenv(IMPORT_ERROR_ENV, "/r/.venv/bin/python: ModuleNotFoundError: No module named 'lab_commons'")
+    row = Hook(stage='pre-commit', id='task-bound', run=('python', '-m', 'x'), always_run=True)
+    assert run_stage('pre-commit', root=repo, hooks=(row,), runner=_Recorder(), borrowed=True) == 1
+    said = capsys.readouterr().err
+    assert "No module named 'lab_commons'" in said
+    assert 'missing or half-built' not in said
+    assert '-m dev_lab.dev.dep --bootstrap' in said
