@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, NoReturn
 
-from lab_commons.units import ureg
+from lab_commons.quantity import registry
 
 __all__ = [
     'DTYPES',
@@ -283,6 +283,7 @@ def _catalogue(source: str) -> tuple[dict[str, Quantity], dict[str, tuple[str, s
     for name, row in data.get('quantity', {}).items():
         where = f'quantity.{name}'
         try:
+            ureg = registry()
             unit = ureg.Unit(row['unit'])
             base = ureg.Quantity(1.0, unit).to_base_units()
         except Exception:  # noqa: BLE001 -- pint's refusals share no base; every one means "not coherent SI"

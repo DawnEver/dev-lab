@@ -45,8 +45,8 @@ and :attr:`ValueScan.keys_seen` exist to make impossible.
 
 TOML FIRST BECAUSE TOML IS WHERE THE UNIT HAS NOWHERE ELSE TO LIVE: the value is a float and the
 document is untyped, so a manifest key is the one surface where the name was genuinely the only
-record. A Python parameter can be TYPED instead (``LengthType`` via
-:func:`lab_commons.units.get_quantity_type`), which is a different repair with a different
+record. A Python parameter can be TYPED instead (``LengthType``, a pydantic
+quantity type), which is a different repair with a different
 mechanism, and folding the two together would let progress on the easy one hide the hard one.
 """
 
@@ -58,7 +58,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from lab_commons.units import Q_, ureg
+from lab_commons.quantity import registry
 from pint import Quantity
 
 __all__ = [
@@ -126,7 +126,7 @@ def parse_quantity(text: str) -> Quantity | bool:
     reporting that manifest.
     """
     try:
-        return Q_(text)
+        return registry().Quantity(text)
     # Broad on purpose: pint raises from several unrelated hierarchies.
     except Exception:  # noqa: BLE001 -- folding every pint failure into one answer is the point
         return None
@@ -160,7 +160,7 @@ def _converts_to(text: str, reference: str) -> bool:
     if quantity is None:
         return False
     try:
-        return bool(quantity.is_compatible_with(ureg.Unit(reference)))
+        return bool(quantity.is_compatible_with(registry().Unit(reference)))
     # Broad on purpose: an undefined reference unit is a caller bug, reported here as a mismatch.
     except Exception:  # noqa: BLE001 -- folding every pint failure into one answer is the point
         return False

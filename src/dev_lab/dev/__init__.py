@@ -4,7 +4,7 @@ Tier 3, and the tier boundary is a real one. ``lab_commons``'s own pyproject sta
 posture in its own words -- "*Tier 1 core deps only … a consumer that wants only logging installs
 nothing heavier than this*" -- so a runtime consumer must not acquire a development system by
 importing the package it already had. ``lab_commons/__init__.py`` does not import this subpackage,
-in the same way and for the same reason that it does not import ``lab_commons.em``: importing
+in the same way and for the same reason that it does not import ``lab_commons.viz``: importing
 ``lab_commons`` never pulls this in, and a consumer opts in explicitly, by the full path:
 ``from dev_lab.dev.verdict import Verdict``.
 
@@ -93,7 +93,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   supplies (three of nine live rows, 2026-09-18), and only a road answering no rule is DECLARED.
 * :mod:`dev_lab.dev.units` — the naming half of the units rule: a scan that refuses an
   identifier whose trailing segment spells a unit, because the unit belongs in the VALUE (see
-  :func:`lab_commons.units.quantity_parser`). It reports the token set it searched for, so finding
+  :func:`lab_commons.quantity.parse_si`). It reports the token set it searched for, so finding
   nothing is distinguishable from searching for nothing.
 * :mod:`dev_lab.dev.unit_slices` -- the unit-in-name gap that scan does NOT see, measured as
   named slices (locals, attributes, output keys, Rust identifiers, comment units, absolute

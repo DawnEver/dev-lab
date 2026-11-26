@@ -2,8 +2,8 @@
 
 THE RULE. A name never carries a unit; the unit lives in the VALUE. `gap_mm = 12.5` teaches the
 reader the unit and hands pint nothing, so every conversion downstream is a convention nobody
-checks. `src/dev_lab/dev/units.py` is the scan that refuses it, and `quantity_parser` in
-`lab_commons.units` is the other half -- where the unit goes instead.
+checks. `src/dev_lab/dev/units.py` is the scan that refuses it, and `parse_si` in
+`lab_commons.quantity` is the other half -- where the unit goes instead.
 
 WHY THIS FILE EXISTS SEPARATELY FROM THE SCANNER'S OWN TESTS. `tests/test_dev_units.py` proves the
 scanner WORKS, over planted trees it builds itself. This one proves the tree it ships in is CLEAN,
