@@ -10,7 +10,7 @@ through `dev_lab.dev.storage` (`kind_root`, `output_path`), so a writer, a clean
 - **Remotes**: the family file declares `[storage.remotes.<name>]` once, no secret; a machine declares
   `reach` and `secrets` (the directory `ops secret place` fills, one `<name>.toml` per remote).
 - **The run store**: the family file's `[storage] runs = "<remote>:<path>"` is where every run's result files
-  too large for the forge go. `dev_lab.dev.largeobjects.run_objects(repo)` derives it, proves the reach
+  too large for the forge go. `dev_lab.dev.storage.run_objects(repo)` derives it, proves the reach
   (`storage check`) and returns the store; undeclared it is `None` (an oversize result stays local, `TooLarge`);
   declared but unreached is refused naming `secretplace enter|distribute --remote <name>`. The compute-unit
   runner (`forgeunit`) takes no flag for it; a downstream repo pairs it with `forgeunit.shared_tier(repo)`.

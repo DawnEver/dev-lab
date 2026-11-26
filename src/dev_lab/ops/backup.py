@@ -11,7 +11,7 @@
   database is one more entry, never a new role.
 * ``ops backup pull`` -- the backup host's timer: ssh with the dedicated key to the export account, unpack into
   ``<dest>/<UTC stamp>/`` (a partial directory until every file is there and non-empty), drop stamped backups older
-  than ``retention_days``, then the optional off-site copy (:mod:`dev_lab.ops.offsite`).
+  than ``retention``, then the optional off-site copy (:mod:`dev_lab.ops.offsite`).
 
 Any refusal or failure is alerted through ``[alerts]`` by the door (:mod:`dev_lab.ops.__main__`).
 """
@@ -192,11 +192,11 @@ def _fetch(role: Backup, target: Path) -> None:
                   role.source], stdout=out)  # fmt: skip
 
 
-def _retain(dest: Path, now: datetime, days: int) -> None:
+def _retain(dest: Path, now: datetime, seconds: float) -> None:
     for path in dest.iterdir():
         if path.is_dir() and _STAMPED.match(path.name):
             taken = datetime.strptime(path.name, STAMP).replace(tzinfo=UTC)
-            if now - taken > timedelta(days=days):
+            if now - taken > timedelta(seconds=seconds):
                 shutil.rmtree(path)
 
 
@@ -235,5 +235,5 @@ def pull(role: Backup, now: datetime, *, fetch: Fetch = _fetch) -> Path:
     except BackupRefused:
         shutil.rmtree(partial, ignore_errors=True)
         raise
-    _retain(dest, now, role.retention_days)
+    _retain(dest, now, role.retention)
     return kept

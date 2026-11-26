@@ -11,7 +11,7 @@ import tomllib
 from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -20,7 +20,7 @@ from dev_lab.dev.locklag import LAG_WINDOW, Lag
 from dev_lab.ops.consent.door import hello
 
 KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA1dtjiBuQjg+mT4+rUmSfSrdgiwtUSw9TlircWVvVC0'
-FAMILY = '[dev]\nref = "integrate/main"\nbridge = { hpc = { cadence_hours = 6 } }\n[consent]\nendpoint = "c@i"\n'
+FAMILY = '[dev]\nref = "integrate/main"\nbridge = { hpc = { cadence = "6 h" } }\n[consent]\nendpoint = "c@i"\n'
 
 
 def _machine(tmp_path: Path, *, declared: bool = True, keyed: bool = True) -> dict[str, Any]:
@@ -48,7 +48,7 @@ def _walls(tmp_path: Path, live: Mapping[str, Any], **kw: object) -> dict[str, b
     kw.setdefault('exists', lambda _path: True)
     kw.setdefault('credential', lambda _dev: [])
     kw.setdefault('measure', lambda _checkout, _ref: Lag(0, timedelta(0)))
-    return {wall.name: wall for wall in bringup.walls(live, ssh_dir=tmp_path / 'ssh', **kw)}
+    return {wall.name: wall for wall in bringup.walls(live, ssh_dir=tmp_path / 'ssh', **cast('dict[str, Any]', kw))}
 
 
 def test_a_ready_workstation_is_green_on_every_wall(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -18,7 +18,7 @@ from __future__ import annotations
 import tomllib
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from dev_lab.ops.caddy import Status
 
@@ -42,9 +42,10 @@ def defects(servers: object, where: str = f'[dev].{KEY}') -> list[str]:
     if not isinstance(servers, dict):
         return [f'{where} must be a table of <server> = {{ address = "<host>" }}']
     found: list[str] = []
-    for name, entry in servers.items():
-        address = entry.get('address') if isinstance(entry, dict) else None
-        if not isinstance(entry, dict) or set(entry) != {'address'}:
+    table = cast('dict[str, object]', servers)
+    for name, entry in table.items():
+        address = cast('dict[str, object]', entry).get('address') if isinstance(entry, dict) else None
+        if not isinstance(entry, dict) or set(cast('dict[str, object]', entry)) != {'address'}:
             found.append(f'{where}.{name} must be {{ address = "<host>" }} only: the rest is hosts/{name}.toml')
         elif not isinstance(address, str) or not address or any(c in address for c in '@ \t/'):
             found.append(f'{where}.{name}.address must be a bare host (no "@", "/" or space), got {address!r}')
@@ -68,14 +69,16 @@ def rows(clone: Path, servers: Mapping[str, Any]) -> list[dict[str, str]]:
     out: list[dict[str, str]] = []
     for name in sorted(servers):
         card = clone / 'hosts' / f'{name}.toml'
-        ops = tomllib.loads(card.read_text(encoding='utf-8')).get('ops', {}) if card.is_file() else {}
-        account = ops.get('access', {}).get('account')
+        ops: dict[str, Any] = tomllib.loads(card.read_text(encoding='utf-8')).get('ops', {}) if card.is_file() else {}
+        access: dict[str, Any] = ops.get('access', {})
+        account: object = access.get('account')
         if not account:
             msg = (f'{_WHERE} names {name!r}, but hosts/{name}.toml declares no [ops.access] account: declare the '
                    f'server card there, or drop {name!r} from {_WHERE}')  # fmt: skip
             raise ValueError(msg)
         row = {'name': name, 'target': f'{account}@{servers[name]["address"]}'}
-        if status := ops.get('status'):
+        status: dict[str, Any] = ops.get('status', {})
+        if status:
             card_status = Status(**{key: status[key] for key in ('file', 'site', 'path') if key in status})
             row['status'] = f'https://{card_status.site}{card_status.path}'
         out.append(row)

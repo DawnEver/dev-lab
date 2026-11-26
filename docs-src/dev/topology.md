@@ -216,7 +216,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
   Its merge ASKS the forge to override the branch's unmet required checks: Gitea does so only on `force_merge` from
   a login the protection admits (`dev_lab.dev.forgemergecall.merge`, `force`); GitHub's ruleset names the actor.
 - It runs only inside a WAVE the user opened with a `breakglass.wave` credential whose params are the window
-  (`hours`) and the cap (`max_merges`), each up to the host's `[ops.breakglass] wave_hours_max` / `max_merges_max`
+  (`hours`) and the cap (`max_merges`), each up to the host's `[ops.breakglass] wave_ceiling` / `max_merges_max`
   -- above a ceiling it is refused, never clamped. The merge that reaches the cap ends the wave.
 - While a wave is open, the host's `tick` sweeps it: each green, non-draft PR (`pr-current` is an alarm, never a condition) in
   `[ops.breakglass] repos` lands; a refused one is skipped with its reason (`dev_lab.ops.wavesweep`).
@@ -228,7 +228,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 
 | file | where | owns | reader |
 |---|---|---|---|
-| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`max_hours`, `idle_minutes`); the session bridge's interpreter is DERIVED from `[repos] dev-lab` (its `.venv` pointer, `devprofile.bridge_python`), never set | `lab_commons.config`, `lab_commons.home` |
+| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`ceiling`, `idle`: durations); the session bridge's interpreter is DERIVED from `[repos] dev-lab` (its `.venv` pointer, `devprofile.bridge_python`), never set | `lab_commons.config`, `lab_commons.home` |
 | family layer | `family.toml` in the host-configuration repo | `[[hpc.grant]]`, AI spend caps, the review month -- a machine file restating a key is refused | `lab_commons.config` `[family]` |
 | repo declarations | each `pyproject.toml` | `[tool.dev_lab.integrator]`, `.review`, `.protection`, `.ci` | `dev_lab.dev.lanepolicy`, `forgeprotect`, `ciworkflows` |
 | host file | `/etc/dev-lab/supervise.toml`, reviewed as `hosts/<server>.toml` | `[ops.*]`, `[components.*]`, `[alerts]`, `[cycle]` | `dev_lab.ops.config`, `dev_lab.supervise.config` |
@@ -267,7 +267,7 @@ the key files. No server lists a workstation key by hand.
 5. Install the hooks: `python -m dev_lab.dev.hook_install --install`.
 6. To declare its capabilities: `python -m dev_lab.dev.workstation template --role light`, then the deploy
    ([adding a workstation](adding-a-workstation.md)). A workstation never serves a merge's parts.
-7. For hosts behind a TOTP: optionally set `[ssh.hold] max_hours` / `idle_minutes` in the machine file.
+7. For hosts behind a TOTP: optionally set `[ssh.hold] ceiling` / `idle` (durations, `"24 h"` / `"30 min"`) in the machine file.
 
 ### A forge host
 

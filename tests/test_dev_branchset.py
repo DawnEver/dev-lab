@@ -12,11 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev.branchcensus import census
 from dev_lab.dev.branchset import (
     BranchSet,
     BranchSetNotDeclared,
     branchset_from,
-    census,
     declared_branchset,
     main,
     merge_candidates,

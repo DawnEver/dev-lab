@@ -141,8 +141,12 @@ def test_a_refused_delete_of_a_second_root_names_the_discard_door(tmp_path: Path
     assert 'branchprune discard pr/private --approved' in hooked.stderr, 'the pre-push refusal names it too'
 
 
-def test_a_refused_delete_on_the_shared_root_never_offers_discard(tmp_path: Path) -> None:
-    """PLANTED CONTROL for the hint: an ordinary unlanded branch is told MERGE or LAND only."""
+def test_a_refused_shared_root_delete_gates_discard_on_the_user(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the hint: an ordinary unlanded branch is told MERGE, or discard only on the user's words.
+
+    Never a ``git merge -s ours`` landing (dev-lab #611: it kept the commits as ancestors and lost their content),
+    and the second-root clause shows only on a second root.
+    """
     work, _ = _hooked(tmp_path)
     advance(work, 'pr/mine', 'm.txt', 'm\n')
     said: list[str] = []
@@ -152,5 +156,7 @@ def test_a_refused_delete_on_the_shared_root_never_offers_discard(tmp_path: Path
         )
         == 1
     )
-    assert 'discard' not in said[0]
-    assert 'discard' not in _shell_delete(work, 'pr/mine').stderr
+    for told in (said[0], _shell_delete(work, 'pr/mine').stderr):
+        assert 'on their words' in told
+        assert 'a root of its own' not in told
+        assert '--approved' in told

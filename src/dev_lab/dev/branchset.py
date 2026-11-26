@@ -11,14 +11,14 @@ and read by :func:`declared_branchset`::
     ephemeral = ['pr/*']           # the DEFAULT, so omit it; PR-head globs, deleted once the PR goes; [] opts out
     task_heads = 'pr/<task>/<feature>'  # the DEFAULT: the head an agent session bound to a task pushes; '' opts out
     prune_merged = true            # the ``prune`` role's executor DELETES merged idle origin branches (idempotent)
-    max_idle_hours = 24            # how long a branch's tip sits idle before it is pruned (merged) or STALE (unmerged)
+    max_idle = "24 h"              # how long a branch's tip sits idle before it is pruned (merged) or STALE (unmerged)
     max_ahead = 10                 # how many unlanded commits a branch may hold before it is OVER_AHEAD
 
 Three questions are asked of it, all through local refs (fetch first; the remote is the authority):
 
-* :func:`census` -- which ORIGIN branches are undeclared (debt), which LOCAL branches are undeclared
-  and hold nothing origin lacks (debt), and which local ones hold UNPUSHED work (reported, never
-  deleted: unpushed work exists nowhere else).
+* :func:`~dev_lab.dev.branchcensus.census` -- which ORIGIN branches are undeclared (debt), which LOCAL
+  branches are undeclared and hold nothing origin lacks (debt), and which local ones hold UNPUSHED work
+  (reported, never deleted: unpushed work exists nowhere else).
 * :func:`merge_candidates` -- every undeclared branch, local and on origin, and every branch PARKED as an
   ``archive/*`` tag (MERGE-OR-DELETE: a tag nobody reads is not a place to keep work), and whether it may be
   DELETED now: its tip is an ancestor of the trunk or of a session branch. Anything else is merged
@@ -46,10 +46,13 @@ from typing import Final
 from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
+from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
+from dev_lab.dev.branchcensus import short_refs, unpushed_count
 from dev_lab.dev.branchfate import discard, settle
 from dev_lab.dev.checkout import authority_for, git_out, origin_branches
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.familymanifest import manifest_text
 from dev_lab.dev.reclaim import QUIET_S, reclaim
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -63,12 +66,10 @@ __all__ = [
     'BranchSetKeyRetired',
     'BranchSetNotDeclared',
     'Candidate',
-    'Census',
     'KitOlderThanCheckout',
     'apply_local',
     'branchset_at',
     'branchset_from',
-    'census',
     'checked_out',
     'declared_branchset',
     'holders',
@@ -77,9 +78,13 @@ __all__ = [
 ]
 
 _TABLE = '[tool.dev_lab.branchset]'
-_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'max_idle_hours', 'max_ahead', 'task_heads'})
+_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'max_idle', 'max_ahead', 'task_heads'})
 #: RETIRED-NAMES-REGISTERED: a key this module renamed, refused by name with its replacement (D46, 2026-11-19).
-_RENAMED: Final = {'grace_hours': 'renamed max_idle_hours (one idle bound for prune and STALE, D46)'}
+_RENAMED: Final = {'grace_hours': 'renamed max_idle (one idle bound for prune and STALE, D46)'}
+#: Unit-suffixed keys retired by the 2026-11-25 ruling (a value carries its unit), refused with their new line.
+_UNIT_RENAMED: Final = {'max_idle_hours': Renamed('max_idle', 'h')}
+#: The idle bound when undeclared, in seconds.
+DEFAULT_MAX_IDLE: Final = 24 * 3600.0
 
 #: The family's PR-head namespace (user ruling 2026-10-19, made the default 2026-10-23): ruled ONCE here, so a
 #: manifest that omits ``ephemeral`` carries it and one that means none writes ``ephemeral = []``.
@@ -122,8 +127,8 @@ class BranchSet:
     sessions: frozenset[str]
     #: Whether the ``prune`` role's executor deletes merged, idle origin branches; off, it only lists them.
     prune_merged: bool = False
-    #: How long a branch tip sits idle before it is pruned (merged) or STALE (unmerged).
-    max_idle_hours: float = 24.0
+    #: How long a branch tip sits idle, in seconds, before it is pruned (merged) or STALE (unmerged).
+    max_idle: float = DEFAULT_MAX_IDLE
     #: How many commits a branch may hold that integration lacks before it is OVER_AHEAD; ``None``: unjudged.
     max_ahead: int | None = None
     #: Glob namespaces (``pr/*``) of SHORT-LIVED branches: pushable undeclared, each the head of one pull
@@ -161,15 +166,6 @@ class BranchSet:
 
 
 @dataclasses.dataclass(frozen=True)
-class Census:
-    """What a checkout carries beyond its declared set. Every field is sorted branch names."""
-
-    undeclared_origin: tuple[str, ...]
-    local_debt: tuple[str, ...]
-    unpushed: tuple[str, ...]
-
-
-@dataclasses.dataclass(frozen=True)
 class Candidate:
     """One undeclared branch and whether it may be deleted without losing a commit."""
 
@@ -185,13 +181,12 @@ def declared_branchset(root: Path) -> BranchSet:
         BranchSetNotDeclared: no readable manifest, no table, no trunk, or sessions not a list of names.
 
     """
-    manifest = root / 'pyproject.toml'
     try:
-        text = manifest.read_text(encoding='utf-8')
+        text, origin = manifest_text(root)
     except OSError as exc:
-        msg = f'{manifest} is not a readable TOML manifest: {exc}'
+        msg = f'{root / "pyproject.toml"} is not a readable TOML manifest: {exc}'
         raise BranchSetNotDeclared(msg) from exc
-    return branchset_from(text, str(manifest))
+    return branchset_from(text, origin)  # no manifest and no family row: '' refuses naming both doors
 
 
 def branchset_at(root: Path, rev: str) -> BranchSet:
@@ -220,6 +215,10 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
     if not isinstance(sessions, list) or not all(isinstance(name, str) and name for name in sessions):
         msg = f'{_TABLE} sessions in {manifest} is {sessions!r}; it must be a list of branch names'
         raise BranchSetNotDeclared(msg)
+    try:
+        refuse_renamed(f'{_TABLE} in {manifest}:', table, _UNIT_RENAMED)
+    except QuantityRefused as retired_unit:
+        raise BranchSetKeyRetired(str(retired_unit)) from retired_unit
     if retired := [
         f'{key} is retired: {RETIRED[f"branchset.{key}"]}' for key in table if f'branchset.{key}' in RETIRED
     ] + [f'{key} is retired: {_RENAMED[key]}' for key in table if key in _RENAMED]:
@@ -249,7 +248,7 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
         trunk,
         frozenset(sessions),
         prune_merged=prune,
-        max_idle_hours=idle,
+        max_idle=idle,
         max_ahead=ahead,
         ephemeral=tuple(ephemeral),
         task_heads=heads,
@@ -257,48 +256,25 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
 
 
 def _bounds(table: dict, manifest: str) -> tuple[bool, float, int | None]:
-    """``prune_merged``, ``max_idle_hours`` and ``max_ahead`` of *table*, each refused by name when malformed."""
+    """``prune_merged``, ``max_idle`` (seconds) and ``max_ahead`` of *table*, each refused by name when malformed."""
     if not isinstance(prune := table.get('prune_merged', False), bool):
         msg = f'{_TABLE} prune_merged in {manifest} is {prune!r}; it must be true or false'
         raise BranchSetNotDeclared(msg)
-    if isinstance(idle := table.get('max_idle_hours', 24.0), bool) or not isinstance(idle, int | float) or idle < 0:
-        msg = f'{_TABLE} max_idle_hours in {manifest} is {idle!r}; it must be a non-negative number of hours'
-        raise BranchSetNotDeclared(msg)
+    idle = DEFAULT_MAX_IDLE
+    if 'max_idle' in table:
+        try:
+            idle = parse(f'{_TABLE} in {manifest}: max_idle', table['max_idle'], 'duration')
+        except QuantityRefused as bad:
+            raise BranchSetNotDeclared(str(bad)) from bad
+        if idle < 0:
+            msg = f'{_TABLE} max_idle in {manifest} is {table["max_idle"]!r}; it must be a non-negative duration'
+            raise BranchSetNotDeclared(msg)
     if (ahead := table.get('max_ahead')) is not None and (
         isinstance(ahead, bool) or not isinstance(ahead, int) or ahead < 0
     ):
         msg = f'{_TABLE} max_ahead in {manifest} is {ahead!r}; it must be a non-negative whole number of commits'
         raise BranchSetNotDeclared(msg)
     return prune, float(idle), ahead
-
-
-def _short_refs(root: Path, prefix: str) -> tuple[str, ...] | None:
-    """The sorted short names of the refs under *prefix*, or ``None`` when git could not answer."""
-    out = git_out(root, 'for-each-ref', '--format=%(refname:short)', prefix)
-    return None if out is None else tuple(sorted(n for n in out.splitlines() if n))
-
-
-def _unpushed(root: Path, branch: str) -> int | None:
-    out = git_out(root, 'rev-list', '--count', f'refs/heads/{branch}', '--not', '--remotes=origin')
-    return None if out is None else int(out.strip())
-
-
-def census(root: Path, branchset: BranchSet) -> Census | None:
-    """The undeclared branches of *root*, or ``None`` when git could not answer -- never a clean read."""
-    remote = origin_branches(root, protected=frozenset({'HEAD'}))
-    local = _short_refs(root, 'refs/heads/')
-    if remote is None or local is None:
-        return None
-    debt: list[str] = []
-    unpushed: list[str] = []
-    for name in local:
-        if branchset.admits(name):
-            continue
-        ahead = _unpushed(root, name)
-        if ahead is None:
-            return None
-        (unpushed if ahead else debt).append(name)
-    return Census(tuple(n for n in remote if not branchset.admits(n)), tuple(debt), tuple(unpushed))
 
 
 def holders(root: Path, branchset: BranchSet) -> tuple[str, ...]:
@@ -320,8 +296,8 @@ ORIGIN_DOOR: Final = 'python -m dev_lab.dev.branchprune delete'
 def merge_candidates(root: Path, branchset: BranchSet) -> tuple[Candidate, ...] | None:
     """Every undeclared branch (local, origin) and parked tag, and whether its tip is held by a declared one."""
     remote = origin_branches(root, protected=frozenset({'HEAD'}))
-    local = _short_refs(root, 'refs/heads/')
-    parked = _short_refs(root, f'refs/tags/{ARCHIVE_PREFIX}')
+    local = short_refs(root, 'refs/heads/')
+    parked = short_refs(root, f'refs/tags/{ARCHIVE_PREFIX}')
     if remote is None or local is None or parked is None:
         return None
     held_by = holders(root, branchset)
@@ -390,7 +366,7 @@ def apply_local(
         sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
         if not row.deletable or row.name in branchset.declared or not sha:
             out.append(f'kept     local   {row.name}  (not held by a declared branch)')
-        elif row.name in busy or _unpushed(root, row.name) != 0:
+        elif row.name in busy or unpushed_count(root, row.name) != 0:
             out.append(f'kept     local   {row.name}  (checked out in a worktree, or holds commits origin lacks)')
         elif not any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in held_by):
             out.append(f'kept     local   {row.name}  (ancestry re-check failed)')

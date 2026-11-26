@@ -116,7 +116,7 @@ is refused by name with its remedy (`lab_commons.hpc.retired`). To migrate:
   served nor a child. Starvation bounds take a `feature` row (default 18 h).
 - **Who is prompted to integrate**: nobody is configured. Every host's serve tick keeps one forge issue per
   integration row; the host that creates or changes one raises the `integration` alarm.
-- **How often an alarm repeats** is the receiver's: `[alerts] repeat_hours` in the machine file (absent: 6).
+- **How often an alarm repeats** is the receiver's: `[alerts] repeat` (a duration such as `"6 h"`) in the machine file (absent: 6).
 
 ## Migrating a repo to need-set parts
 
@@ -209,8 +209,8 @@ Upgrading lab-commons brings two changes to every repo that opts into the base h
 [tool.dev_lab.branchset]
 trunk = 'main'
 sessions = ['integrate/main']  # every long-lived branch: exactly what the pre-push hook allows
-prune_merged = true            # every serving host deletes (idempotently) merged branches idle >= max_idle_hours
-max_idle_hours = 24
+prune_merged = true            # every serving host deletes (idempotently) merged branches idle >= max_idle
+max_idle = "24 h"
 
 [tool.dev_lab.integrator]
 merges_only_since = '<the integration tip sha when you adopt>'

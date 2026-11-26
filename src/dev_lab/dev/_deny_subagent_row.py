@@ -69,7 +69,7 @@ def _main_doors(*, publishing: bool) -> str:
 
     *publishing* picks the half: the doors of :data:`PUBLISHING_MODULES`, or every other one.
     """
-    alternatives = []
+    alternatives: list[str] = []
     for module, verbs in module_verbs(MAIN).items():
         if (module in PUBLISHING_MODULES) is not publishing:
             continue

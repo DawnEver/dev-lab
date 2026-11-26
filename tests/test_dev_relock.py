@@ -262,7 +262,7 @@ def test_the_cadence_is_declared_once_in_the_repo_default_daily() -> None:
     assert cadence('[tool.dev_lab.relock]\nthird_party_every = "12 h"\n') == timedelta(hours=12)
     with pytest.raises(ValueError, match='unknown key'):
         cadence('[tool.dev_lab.relock]\nevery = "1 d"\n')
-    with pytest.raises(ValueError, match='needs a unit'):
+    with pytest.raises(ValueError, match='is a bare number'):
         cadence('[tool.dev_lab.relock]\nthird_party_every = "24"\n')
 
 

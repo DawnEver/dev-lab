@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from _ops_fixtures import NOW, RFC_KEY, code
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.client import verify_held

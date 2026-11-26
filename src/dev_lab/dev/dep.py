@@ -60,7 +60,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -68,6 +67,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from dev_lab.dev.commonsfloor import importing
+from dev_lab.dev.harness import child_env
 
 with importing(entry=__name__ == '__main__'):
     import lab_commons.launch as _door
@@ -357,8 +357,7 @@ def _run(
     if Path(base).is_file() and Path(_snapshot(base)[0]).resolve() != live.resolve():
         msg = f'{base} does not execute in its own environment {live}'
         raise ValueError(msg)
-    environment = dict(os.environ)
-    environment.pop('VIRTUAL_ENV', None)
+    environment = child_env(drop=('VIRTUAL_ENV',))
     if syncing and (why := init_submodules(root, dry_run=args.dry_run)):
         emit(f'REFUSED: {why}')
         return 1

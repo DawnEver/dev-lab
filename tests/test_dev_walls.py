@@ -43,7 +43,7 @@ def test_a_wall_line_carries_a_digest_never_the_command(tmp_path: Path) -> None:
     assert line['command_sha256'] == hashlib.sha256(command.encode('utf-8')).hexdigest()[: walls.DIGEST_CHARS]
     assert 's3cr3t' not in walls.ledger(tmp_path).read_text(encoding='utf-8')
     assert (line['session'], line['rule'], line['remedy_present']) == (SESSION, 'FORGE-WRITE-VIA-HTTP', True)
-    assert set(line) == {'ts', 'session', 'rule', 'command_sha256', 'remedy_present'}
+    assert set(line) == {'ts', 'session', 'rule', 'command_sha256', 'cause', 'remedy_present'}
 
 
 @pytest.mark.parametrize(
@@ -199,3 +199,52 @@ def test_only_a_refusal_line_records_a_wall_never_an_id_in_output(tmp_path: Path
     assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(payload))) == 0
     recorded = [line['rule'] for line in _lines(tmp_path)] if walls.ledger(tmp_path).exists() else []
     assert recorded == rules
+
+
+def test_a_wall_line_keeps_its_redacted_cause_line(tmp_path: Path) -> None:
+    """#825: the line keeps what the refusal SAID (its first line), an address or token masked, never the command."""
+    said = (
+        'Exit code 1\nImportError: cannot import name x for someone@example.org '
+        'via ghp_abcdefghijklmnopqrstuvwxyz0123\nsecond line'
+    )
+    walls.record(tmp_path, rule='UNNAMED-IMPORTERROR', remedy=False, command='git commit -m s3cr3t', cause=said)
+    (line,) = _lines(tmp_path)
+    assert line['cause'].startswith('ImportError: cannot import name x')
+    assert 'someone@example.org' not in line['cause']
+    assert 'ghp_abcdefghijklmnopqrstuvwxyz0123' not in line['cause']
+    assert 's3cr3t' not in walls.ledger(tmp_path).read_text(encoding='utf-8'), 'PLANTED: the command stays a digest'
+
+
+def test_a_long_rule_id_in_a_cause_line_is_never_masked_as_a_token() -> None:
+    """PLANTED CONTROL for the mask: an upper-case RULE-ID of 24+ characters is the cause, not a secret."""
+    said = 'REFUSED: BASE-HOLDS-THE-MILESTONE: pr/x lacks v1.0.0'
+    assert walls.cause_line(said) == said
+
+
+def test_a_cause_line_is_capped() -> None:
+    assert len(walls.cause_line('X' * 1000 + ' tail')) <= walls.CAUSE_CHARS
+
+
+def test_a_foreign_denial_keeps_its_cause_line(tmp_path: Path) -> None:
+    """The post-tool path records what the denial said, so an UNNAMED wall can be read afterwards."""
+    payload = {'session_id': SESSION, 'cwd': str(tmp_path), 'error': 'Permission to use Bash has been denied.'}
+    walls.main(['post-tool'], stdin=io.StringIO(json.dumps(payload)))
+    (line,) = _lines(tmp_path)
+    assert line['cause'] == 'Permission to use Bash has been denied.'
+
+
+@pytest.mark.parametrize(
+    ('output', 'declared', 'rule'),
+    [
+        (
+            '\n  REFUSED: BASE-HOLDS-THE-MILESTONE: pr/x lacks v1.0.0.\n    Door: forge sync\n',
+            '',
+            'BASE-HOLDS-THE-MILESTONE',
+        ),
+        ('x.py:1:1: F401 unused import', 'RUFF', 'RUFF'),
+        ('no', '', 'milestone-base'),  # PLANTED: an output naming no rule keeps the row id
+    ],
+)
+def test_a_hook_rows_wall_is_the_rule_its_refusal_names(output: str, declared: str, rule: str) -> None:
+    """#870: a row id (`milestone-base`) is a table key; the rule its refusal line names is what a reader looks up."""
+    assert walls.hook_rule('milestone-base', output, declared) == rule

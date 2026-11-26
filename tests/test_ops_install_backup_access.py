@@ -77,7 +77,7 @@ def test_the_pull_side_renders_its_timer_and_reads_the_offsite_table(tmp_path: P
     config = load(_config(tmp_path, _PULL), environ={})
     assert config.backup is not None
     assert config.backup.offsite is not None
-    assert config.backup.offsite.max_put_bytes == 5_000_000_000
+    assert config.backup.offsite.max_put == 5_000_000_000
     rendered = files(config)
     assert 'OnCalendar=*-*-* 03:30:00' in rendered['etc/systemd/system/dev-lab-ops-backup-pull.timer']
     assert 'User=backup' in rendered['etc/systemd/system/dev-lab-ops-backup-pull.service']

@@ -75,7 +75,8 @@ PRINCIPLES: Final = (
         'Keep every valuable parameter and option',
         'Generality is a requirement: keep every parameter and option a real case uses or plausibly needs. A '
         'reference match ADDS a selectable option and never replaces or deletes the alternative; numerical '
-        'method choices are options even with no current caller.',
+        'method choices are options even with no current caller. Every retirement is classified (renamed, '
+        'baggage, or capability-dropped) and only a user ruling drops a capability.',
     ),
     Principle(
         'every-wall-teaches',
@@ -109,6 +110,17 @@ PRINCIPLES: Final = (
         'a Python version of it is only a scratch prototype, never a second implementation; acceptance is against '
         'references (analytic, the vendor ladder, the previous implementation during a migration), never against a '
         'Python twin.',
+    ),
+    Principle(
+        'everything-in-its-place',
+        'Everything in its place',
+        'Each thing lives in the one owner responsible for it; a misplaced thing moves, never leaving a pointer or a '
+        'copy.',
+    ),
+    Principle(
+        'no-detour',
+        'No detour',
+        'Every hop must add something; a rule that forces a detour is the defect. Complexity is measured, not guessed.',
     ),
 )
 

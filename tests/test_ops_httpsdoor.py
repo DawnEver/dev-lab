@@ -128,7 +128,7 @@ def test_repeated_refusals_lock_the_peer_and_a_lock_refuses_even_a_good_request(
     with pytest.raises(Refused, match='locked'):
         gate.verified(_signed(keys), PEER)
     assert gate.verified(_signed(keys), '198.51.100.9')  # PLANTED CONTROL: another peer is not locked
-    clock.now += DOOR.https_lock_minutes * 60 + 1
+    clock.now += DOOR.https_lock + 1
     assert gate.verified(_signed(keys, at=clock.now), PEER)
 
 

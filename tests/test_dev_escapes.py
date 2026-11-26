@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 import pytest
-from lab_commons.home import HOME_ENV
+from lab_commons.hostenv import HOME_ENV
 from lab_commons.hpc.layout import ROOT_VAR
 
 from dev_lab.dev import escapes

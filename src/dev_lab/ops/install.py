@@ -34,7 +34,7 @@ from lab_commons.config import CONFIG_ENV, FAMILY_TABLE
 
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.taskkeys import REVIEW_TASK, loader
-from dev_lab.ops import forcecommand
+from dev_lab.ops import forcecommand, forgerunner
 from dev_lab.ops.access import Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.caddy import Door, install_caddy
@@ -137,7 +137,7 @@ def _https_door(config: OpsConfig, name: str, role: HttpsDoor, account: str) -> 
     relay = shlex.join([
         config.python, '-m', 'dev_lab.ops.httpsdoor', '--port', str(role.https_port), '--role', name,
         '--keys', keys_file(account), '--attempts', str(role.https_attempts),
-        '--window-minutes', f'{role.https_window_minutes:g}', '--lock-minutes', f'{role.https_lock_minutes:g}',
+        '--window-minutes', f'{role.https_window / 60:g}', '--lock-minutes', f'{role.https_lock / 60:g}',
         '--', 'sudo', '-n', *shlex.split(door(config, name, 'serve')),
     ])  # fmt: skip
     unit = (
@@ -208,6 +208,7 @@ def files(config: OpsConfig) -> dict[str, str]:
         **_consent(config),
         **access,
         **scheduled(config),
+        **forgerunner.files(config),
     }
 
 
@@ -261,6 +262,7 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
             'systemctl daemon-reload',
             f'systemctl enable --now {SUPERVISE}.service',
         ]
+    steps += forgerunner.steps(config)
     return tuple(steps)
 
 

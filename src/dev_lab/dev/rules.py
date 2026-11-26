@@ -70,6 +70,7 @@ from dev_lab.dev._rule_rows_layout import ROWS as _ROWS_LAYOUT
 from dev_lab.dev._rule_rows_memory import ROWS as _ROWS_MEMORY
 from dev_lab.dev._rule_rows_output import ROWS as _ROWS_OUTPUT
 from dev_lab.dev._rule_rows_pr_flow import ROWS as _ROWS_PR_FLOW
+from dev_lab.dev._rule_rows_units import ROWS as _ROWS_UNITS
 from dev_lab.dev.profile import RepoProfile
 
 __all__ = [
@@ -321,6 +322,7 @@ def _build(rows: Iterable[tuple[str, str, tuple[str | tuple[str, str], ...]]]) -
 #: and the honest repair when it disagrees is to edit the digit.
 RULES: Final[tuple[Rule, ...]] = _build(
     ROWS
+    + _ROWS_UNITS
     + _ROWS_MEMORY
     + _ROWS_B
     + _ROWS_CITATIONS

@@ -28,18 +28,22 @@ from pathlib import Path
 from typing import Any, Final
 
 from dev_lab.dev.forge import forge_of_url
+from dev_lab.dev.tablequantity import quantity
+from dev_lab.dev.tablequantity import values as quantities
 from dev_lab.dev.taskkeys import require_bundle
 from dev_lab.ops import clientkeys
 from dev_lab.ops.backuprole import Backup, Offsite
 from dev_lab.ops.caddy import Caddy, Status
 from dev_lab.ops.configretired import refuse as refuse_retired
 from dev_lab.ops.consentrole import Access, Consent, ConsentClient
+from dev_lab.ops.forgerunner import ForgeRunner, runners
 from dev_lab.ops.giteaadmin import Forge
 from dev_lab.ops.httpsdoor import HttpsDoor, behind_allowlist
 from dev_lab.ops.judgerole import Judge
 from dev_lab.ops.pgroles import Postgres
 from dev_lab.ops.placement import Placement
-from dev_lab.ops.served import served, served_by
+from dev_lab.ops.proberole import Probe
+from dev_lab.ops.served import served_by
 from dev_lab.supervise.config import ENV_PREFIX, load_config
 
 __all__ = [
@@ -49,7 +53,6 @@ __all__ = [
     'ConfigSource',
     'Forge',
     'OpsConfig',
-    'Probe',
     'Promote',
     'Supervise',
     'Upgrade',
@@ -141,8 +144,9 @@ class Breakglass(Placement, HttpsDoor):
 
     ``state`` is a directory (the waves and their reports). A wave's window and merge cap are the params of the
     ``breakglass.wave`` consent credential that opens it (:mod:`dev_lab.ops.consent`); the role declares only their
-    CEILINGS (user ruling 2026-11-06): ``wave_hours_max`` the longest window, ``max_merges_max`` the largest cap
-    (``0`` = no ceiling). A non-positive or NaN window ceiling and a negative cap ceiling are refused at load.
+    CEILINGS (user ruling 2026-11-06): ``wave_ceiling`` the longest window (a duration, ``"24 h"``), ``max_merges_max``
+    the largest cap (``0`` = no ceiling). A non-positive or NaN window ceiling and a negative cap ceiling are refused at
+    load.
     ``tick`` is when the timer ends expired waves and resends a wave summary no alert channel delivered (a systemd
     ``OnCalendar``). ``family`` is the break-glass processes' lab-commons family layer, ``{source, file, max_age}``:
     a wave reads who produces each repo's tests from the family's roles binding (:mod:`dev_lab.dev.roles`, D73), so
@@ -159,7 +163,7 @@ class Breakglass(Placement, HttpsDoor):
     apps: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     keys: tuple[str, ...] = ()
     min_reason: int = 10
-    wave_hours_max: float = 24.0
+    wave_ceiling: float = quantity('duration', 24 * 3600.0, retired=('wave_hours_max', 'h'))  # seconds
     max_merges_max: int = 0
     tick: str = 'hourly'
     family: Mapping[str, Any] = field(default_factory=dict)
@@ -171,8 +175,8 @@ class Breakglass(Placement, HttpsDoor):
         if self.family and not self.family.get('source'):
             msg = '[ops.breakglass.family] names no source (the family file on this host)'
             raise ValueError(msg)
-        if not self.wave_hours_max > 0:  # NaN fails too
-            msg = f'[ops.breakglass] wave_hours_max ({self.wave_hours_max}) must be positive'
+        if not self.wave_ceiling > 0:  # NaN fails too
+            msg = f'[ops.breakglass] wave_ceiling ({self.wave_ceiling} s) must be positive'
             raise ValueError(msg)
         if self.max_merges_max < 0:
             msg = f'[ops.breakglass] max_merges_max ({self.max_merges_max}) must not be negative'
@@ -184,31 +188,6 @@ class Breakglass(Placement, HttpsDoor):
 
     def token_file(self, url: str) -> str:
         """The file holding the break-glass token of *url*'s forge (a forge with no App: Gitea)."""
-        return self.tokens[forge_of_url(url).host]
-
-
-@dataclass(frozen=True)
-class Probe(Placement):
-    """The forge probe (:mod:`dev_lab.ops.probe`): the repos it reads, a READ-ONLY token per forge, when, as whom.
-
-    ``repos`` are clone URLs on any forge -- its own set, as break-glass's is; ``tokens`` maps each forge host to the
-    file holding that forge's probe token (refused as :class:`Breakglass` refuses its own); ``state`` the directory
-    of what was already alerted; ``schedule`` the timer's ``OnCalendar``; ``user`` the account it runs as, which must
-    read the token files.
-    """
-
-    user: str
-    schedule: str
-    state: str
-    repos: tuple[str, ...] = ()
-    tokens: Mapping[str, str] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        """Refuse a declaration that lies (see :func:`~dev_lab.ops.served.served`)."""
-        served(self.repos, self.tokens, '[ops.probe]')
-
-    def token_file(self, url: str) -> str:
-        """The file holding the probe token of *url*'s forge."""
         return self.tokens[forge_of_url(url).host]
 
 
@@ -249,6 +228,7 @@ class OpsConfig:
     caddy: Caddy | None = None
     status: Status | None = None
     postgres: Postgres | None = None
+    runners: tuple[ForgeRunner, ...] = ()
 
     def checkout(self, url: str) -> Path:
         """Where the host keeps its clone of *url*."""
@@ -260,7 +240,7 @@ class OpsConfig:
 OPS_KEYS: Final = frozenset({
     'home', 'python', 'repos', 'environment_file',
     'promote', 'breakglass', 'consent', 'consent_client', 'backup', 'access', 'caddy', 'supervise', 'judge',
-    'upgrade', 'probe', 'config', 'forge', 'status', 'postgres', clientkeys.TABLE,
+    'upgrade', 'probe', 'config', 'forge', 'status', 'postgres', 'runner', clientkeys.TABLE,
 })  # fmt: skip
 
 
@@ -294,12 +274,13 @@ def _role[
     if not isinstance(table, dict):
         msg = f'{where} must be a table'
         raise TypeError(msg)
+    declared = quantities(cls, table, where)
     known = {field.name for field in fields(cls)}
-    if unknown := sorted(set(table) - known - {'enabled'}):
+    if unknown := sorted(set(declared) - known - {'enabled'}):
         msg = f'{where} has unknown keys {unknown}; known: {sorted(known)}'
         raise ValueError(msg)
     values = {
-        key: tuple(value) if isinstance(value, list) else value for key, value in table.items() if key != 'enabled'
+        key: tuple(value) if isinstance(value, list) else value for key, value in declared.items() if key != 'enabled'
     }
     try:
         return cls(**values)
@@ -407,6 +388,7 @@ def load(
         environment_file=environment_file,
         status=_role(Status, ops.get('status'), '[ops.status]'),
         postgres=_role(Postgres, ops.get('postgres'), '[ops.postgres]'),
+        runners=runners(ops.get('runner')),
     )
     found = _with_clients(found, ops.get(clientkeys.TABLE))
     doors = {name: role for name, role in (('consent', found.consent), ('breakglass', found.breakglass))

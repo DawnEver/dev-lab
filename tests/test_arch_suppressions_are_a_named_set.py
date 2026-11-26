@@ -65,6 +65,17 @@ Site = tuple[str, str, str]
 #: neither, so this guard had been red since -- found on 2026-09-16 by a verify for an unrelated fix.
 #: The COUNT was right and the TABLE was wrong, the direction this file's own docstring warns about,
 #: so both rows are declared below rather than any number being edited down to meet the tree.
+#: The reason shared by testcost's deferred imports.
+_PLUGIN_DEFERRED: Final = (
+    'testcost is a pytest plugin every session of four repos loads; its ledger, forge and machine-file readers '
+    'import only when a budget plans or the forge places a part'
+)
+#: The reason shared by the budget-check tests' test double.
+_CLAIMPASS_DOUBLE: Final = (
+    'a SimpleNamespace stands in for the ClaimPass the budget check reads (repo, part_costs, test_budget, budgets, '
+    'starved): a test double, not a subclass the type checker sees'
+)
+
 ALLOWED: Final[dict[Site, str]] = {
     (
         'tests/_forge_state.py',
@@ -219,7 +230,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/hpcaccount/__init__.py',
         'PLC0415',
-        'from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL_MINUTES',
+        'from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL',
     ): 'spec imports the package (division, grantslice) and the roles table; only the tick verb needs its default',
     (
         'src/dev_lab/dev/servelock.py',
@@ -742,7 +753,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'rows = {path: frozen.index_object(root, path)[1] for path in (_SETTINGS, _DOCS)}',
     ): 'index_object returns None for an untracked path; the fixture tracked both',
     (
-        'tests/test_dev_large_objects.py',
+        'tests/test_dev_storage_run_objects.py',
         'arg-type',
         "assert forgeunit.main(['unit=x'], cwd=_checkout(tmp_path), client=object()) == 2",
     ): 'planted control: a client that is not one, to prove the refusal happens before any call',
@@ -797,7 +808,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/_ir_codec.py',
         'PLR0911',
-        'def _value_out(spec: object, value: object, units: Mapping[str, str], prefix: str) -> object:',
+        ('def _value_out(spec: F, value: object, units: Mapping[str, str], prefix: str, reference: object) -> object:'),
     ): 'one return per IR field kind: a dispatch, split further it only scatters the table',
     (
         'src/dev_lab/dev/_ir_codec.py',
@@ -854,6 +865,84 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLR0911',
         'def _read(f: Field, ref: TypeRef, var: str, path: Path) -> str:',
     ): 'one return per IR field kind: the pyo3 reader emitter is a dispatch',
+    (
+        'src/dev_lab/dev/_ir_codec.py',
+        'BLE001',
+        'except Exception:',
+    ): (
+        'the IR boundary converts through user-declared unit and value hooks whose refusals share no base class; '
+        'every one means "does not convert"'
+    ),
+    (
+        'src/dev_lab/dev/cargostep.py',
+        'PLC0415',
+        'from dev_lab.dev.localpart import local_record, post_local',
+    ): 'localpart imports this module at its top for the cargo part, so a top-level import here would be a cycle',
+    (
+        'src/dev_lab/dev/sectionrender.py',
+        'ANN401',
+        'def _table(document: Any, path: tuple[str, ...]) -> Table:',
+    ): 'tomlkit documents and containers share no typed base the walk can name; the walk returns a typed Table',
+    (
+        'src/dev_lab/dev/testcost.py',
+        'PLC0415',
+        'from dev_lab.dev import durations',
+    ): _PLUGIN_DEFERRED,
+    (
+        'src/dev_lab/dev/testcost.py',
+        'PLC0415',
+        'from dev_lab.dev.datedlog import UndeclaredOutput',
+    ): _PLUGIN_DEFERRED,
+    (
+        'src/dev_lab/dev/testcost.py',
+        'PLC0415',
+        'from dev_lab.dev.forge import UnreadableRemote',
+    ): _PLUGIN_DEFERRED,
+    (
+        'src/dev_lab/dev/testcost.py',
+        'PLC0415',
+        'from dev_lab.dev.partrows import needs_of_row',
+    ): _PLUGIN_DEFERRED,
+    (
+        'src/dev_lab/dev/testcost.py',
+        'PLC0415',
+        'from dev_lab.dev.platformparts import origin_url',
+    ): _PLUGIN_DEFERRED,
+    (
+        'src/dev_lab/dev/testcost.py',
+        'PLC0415',
+        'from lab_commons.compute import learned',
+    ): _PLUGIN_DEFERRED,
+    (
+        'src/dev_lab/dev/testcost.py',
+        'PLC0415',
+        'from lab_commons.compute.measured import Measured',
+    ): _PLUGIN_DEFERRED,
+    (
+        'src/dev_lab/dev/testcost.py',
+        'PLC0415',
+        'from lab_commons.config import section',
+    ): _PLUGIN_DEFERRED,
+    (
+        'tests/test_dev_testcost.py',
+        'arg-type',
+        "assert 'over this host test budget' in ClaimPass._beyond_test_budget(fits, part)",
+    ): _CLAIMPASS_DOUBLE,
+    (
+        'tests/test_dev_testcost.py',
+        'arg-type',
+        "assert 'over this host test budget' in ClaimPass._beyond_test_budget(host, part)",
+    ): _CLAIMPASS_DOUBLE,
+    (
+        'tests/test_dev_testcost.py',
+        'arg-type',
+        "assert ClaimPass._beyond_test_budget(host, request) == ''",
+    ): _CLAIMPASS_DOUBLE,
+    (
+        'tests/test_dev_testcost.py',
+        'arg-type',
+        'why = ClaimPass._beyond_test_budget(host, part)',
+    ): _CLAIMPASS_DOUBLE,
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

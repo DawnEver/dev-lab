@@ -69,4 +69,9 @@ def selected_command(root: Path, command: tuple[str, ...], paths: tuple[str, ...
             return f'package.json declares no {name[0]!r} script for {shlex.join(command)}'
         command = tuple(shlex.split(script))
     program, *rest = command
-    return (program, *(word for word in rest if word.startswith('-')), *paths)
+    options = [word for word in rest if word.startswith('-')]
+    if Path(program).stem == 'node' and '--test' not in options:
+        # A runner script (`node run-tests.mjs`) loses its positional; plain `node p1 p2` would run p1 alone and
+        # hand p2 to it as argv, so p2 would pass unrun. `--test` runs every selected file.
+        options.insert(0, '--test')
+    return (program, *options, *paths)

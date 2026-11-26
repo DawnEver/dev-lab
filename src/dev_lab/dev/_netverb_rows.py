@@ -55,6 +55,29 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         ("transport 'file' not allowed",),
     ),
     (
+        # NO INTERPRETER FITS THE PROJECT'S requires-python. Measured 2026-11-26: `dep --bootstrap` with a misfit
+        # Python gave up 3/3 as unclassified ("looks transient") and never named the interpreter to use; uv's
+        # answer is about the host's interpreters, which no attempt changes. Above the hook row: a hook may print it.
+        'python-unfit',
+        False,
+        ('no interpreter found for python', "incompatible with the project's python requirement"),
+    ),
+    (
+        # THE PROJECT HAS NO LOCK. Measured 2026-11-26: `dep --bootstrap` of a config-only repo (no uv.lock) was
+        # retried 3/3 as "transient"; a frozen sync of a lock that does not exist fails the same way every time.
+        'lock-absent',
+        False,
+        ('unable to find lockfile',),
+    ),
+    (
+        # A GIT HOOK THAT CANNOT START. Measured 2026-11-26: a push failed on a retired pre-commit framework shim
+        # (`No module named pre_commit`) and netverb called it transient 3/3; the hook file names a module its
+        # interpreter lacks, so only reinstalling the hooks changes the answer.
+        'hook-unrunnable',
+        False,
+        ('no module named pre_commit', "no module named 'pre_commit'"),
+    ),
+    (
         # A PRE-PUSH HOOK'S REFUSAL. Measured 2026-09-17 in this session: a repo's pre-push hook
         # refused a push and printed the identical refusal on all three attempts -- the same tree
         # re-judged by the same hook returns the same answer, and each re-judgment paid the hook's
@@ -182,6 +205,19 @@ REMEDIES: Final[dict[str, str]] = {
         'this uv was installed by pip or a package manager, so move it through that installer (`<its python> -m '
         'pip install uv==<version>`); a lock never needs it moved -- dev_lab.dev.uvrelease installs the pinned '
         'release beside it as the lock writer'
+    ),
+    'python-unfit': (
+        'no interpreter this command found fits the project requires-python -- name one that does with '
+        '`uv python find "<requires-python>"` (`uv python install "<requires-python>"` fetches one), then rerun '
+        'with it: `<that python> -m dev_lab.dev.dep --bootstrap <tree>`'
+    ),
+    'lock-absent': (
+        'the project has no uv.lock, so there is nothing to build -- a repo with no Python environment (config '
+        'only) needs no bootstrap; a Python project locks first (`uv lock`) and commits uv.lock'
+    ),
+    'hook-unrunnable': (
+        'a git hook could not start: it imports a module its interpreter lacks (a retired pre-commit framework '
+        'shim) -- reinstall the family hooks: `<venv python> -m dev_lab.dev.hook_install --install`, then retry'
     ),
     # A forge refusal's answer is a JSON body no reader sees unless it is quoted: ForgeCallFailed appends it.
     'forge-refused': 'the forge answered and refused this call -- fix what its answer names',

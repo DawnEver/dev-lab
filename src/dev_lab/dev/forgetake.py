@@ -73,6 +73,7 @@ from dev_lab.dev.forgewait import Box, Outlook
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
+from dev_lab.dev.testcost import Budget, beyond_budget, fits_nowhere, part_costs
 
 __all__ = ['ClaimPass', 'skips']
 
@@ -118,6 +119,16 @@ class ClaimPass:
     authors: frozenset[str] = frozenset()  # whose requests run here at any served sha (X1)
     reached: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why a git source is unreachable here
     serves: Serves = dataclasses.field(default_factory=Serves)  # [serve] parts: a skipped part waits for another host
+    #: This host's declared test budget (:func:`dev_lab.dev.testcost.read_budget`); None places nothing by cost.
+    test_budget: Budget | None = None
+    #: A part's measured seconds per test id (:func:`dev_lab.dev.testcost.part_costs`), injectable for a control.
+    part_costs: Callable[[str, str], Mapping[str, float]] = part_costs
+    #: Every OTHER live host's ``[test_budget] test`` (seconds; its card carries it as ``test_s``) that would claim a
+    #: need-set (``0``: none declared; ``None``:
+    #: the hosts are unknown) -- what tells a part over this budget whether any host fits it at all.
+    budgets: Callable[[frozenset[str]], Mapping[str, float] | None] = lambda _needs: None
+    #: Parts NO live host's test budget fits, by candidate key, with that answer: the tick refuses them.
+    starved: dict[str, tuple[Candidate, str]] = dataclasses.field(default_factory=dict)
     #: Takes a LOCAL part's box claim before it is claimed: its ledger row, or why the box refused (None: no box).
     reserve: Callable[[Work], int | str] | None = None
     #: This box as the pass sees it (None: a cluster seat): what tells a waiting part its outlook and protects it.
@@ -134,6 +145,16 @@ class ClaimPass:
         return {
             key: (works[wanted.sha, wanted.platform], demand, seen)
             for key, (wanted, demand, seen) in self.over.items()
+            if (wanted.sha, wanted.platform) in works
+        }
+
+    @property
+    def starving(self) -> dict[str, tuple[Work, str]]:
+        """Every open part no live host's test budget fits: its work and the answer, by candidate key."""
+        works = {(one.sha, one.platform): one for one in self.work if one.state in CLAIMABLE}
+        return {
+            key: (works[wanted.sha, wanted.platform], why)
+            for key, (wanted, why) in self.starved.items()
             if (wanted.sha, wanted.platform) in works
         }
 
@@ -245,9 +266,7 @@ class ClaimPass:
         if why := self._not_here(one, wanted):
             self.unservable.add(wanted.key)
             return one, why
-        return dataclasses.replace(
-            one, argv=declared.argv, producer=declared.name, wall_s=round(declared.wall_h * 3600)
-        ), ''
+        return dataclasses.replace(one, argv=declared.argv, producer=declared.name, wall_s=round(declared.wall)), ''
 
     def _not_here(self, one: Work, wanted: Candidate) -> str:
         """Why THIS host does not run the request *one*, ``''`` when it does (its sources probed once a tick)."""
@@ -267,9 +286,29 @@ class ClaimPass:
             or self.defer(wanted)
             or behind(self.root, wanted, self.schedule, self.history, self.now)
             or over_budget(self.root, wanted, self.schedule, self.usage)
+            or self._beyond_test_budget(wanted)
             or self._admission(wanted, needed)
         )
         return why, needed
+
+    def _beyond_test_budget(self, wanted: Candidate) -> str:
+        """A part holding a test measured over this host's ``[test_budget]`` waits for a host that fits it (H1).
+
+        When no live host's budget fits it either (:func:`~dev_lab.dev.testcost.fits_nowhere`), it is kept in
+        :attr:`starved` with that answer, for the tick to refuse on its commit -- never a silent, endless wait.
+        """
+        if wanted.kind == REQUEST:
+            return ''
+        costs = self.part_costs(self.repo, wanted.platform)
+        why = beyond_budget(costs, self.test_budget, part=wanted.platform)
+        if not why or self.test_budget is None:
+            return why
+        others = self.budgets(needs_of_row(wanted.platform))
+        everyone = None if others is None else {'this host': self.test_budget.test, **others}
+        if nowhere := fits_nowhere(costs, everyone, part=wanted.platform):
+            self.starved[wanted.key] = (wanted, nowhere)
+            return nowhere
+        return why
 
     def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:
         job, demand = self._job(wanted, needed), self.size(wanted, needed)
@@ -291,7 +330,7 @@ class ClaimPass:
 
     def _wall_s(self, wanted: Candidate) -> int:
         """How long *wanted*'s box claim holds: a request's declared wall, else a part's day."""
-        return round(self._declared(wanted).wall_h * 3600) if wanted.kind == REQUEST else BOX_WALL_S
+        return round(self._declared(wanted).wall) if wanted.kind == REQUEST else BOX_WALL_S
 
     def _behind(self, wanted: Candidate, demand: Mapping[str, float]) -> str:
         """Why *wanted*, admitted, still waits: claiming it would delay a higher-ranked part's start (``''``: never)."""
@@ -312,7 +351,7 @@ class ClaimPass:
 
     def _take(self, one: Work, wanted: Candidate, needed: frozenset[str]) -> tuple[Work, str]:
         if one.cluster is not None and one.cluster.outputs and self.store_why:
-            why = f'its declared outputs could exceed threshold_mb and {self.store_why}'
+            why = f'its declared outputs could exceed threshold and {self.store_why}'
             self.refused.append(f'{one.context}: not claimed -- {why}')
             return one, why
         one = dataclasses.replace(one, demand=self.size(wanted, needed))

@@ -43,6 +43,7 @@ from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
+from dev_lab.dev.deletejudge import discarded
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclient import client_for
@@ -167,8 +168,11 @@ def _git(root: Path, *args: str) -> str:
 
 def _absorbed(root: Path, target: str, tip: str) -> bool:
     # ``git cherry``: a ``+`` line is a commit whose change the target does not hold. Ancestry alone
-    # would answer NO for a cherry-picked or rebased lane whose content IS present.
-    return not any(line.startswith('+') for line in _git(root, 'cherry', f'{_TRACKING}{target}', tip).splitlines())
+    # would answer NO for a cherry-picked or rebased lane whose content IS present -- and cherry answers YES for a
+    # lane an ``-s ours`` merge made an ancestor while discarding its content (dev-lab #611): ``discarded`` says so.
+    if any(line.startswith('+') for line in _git(root, 'cherry', f'{_TRACKING}{target}', tip).splitlines()):
+        return False
+    return discarded(root, tip, f'{_TRACKING}{target}') is None
 
 
 def read_refs(root: Path, policy: Policy, schedule: Schedule) -> tuple[LaneRef, ...]:
