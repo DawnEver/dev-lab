@@ -57,7 +57,9 @@ def test_a_green_preflight_writes_a_receipt_keyed_by_action_and_subject(
 ) -> None:
     written = preflight(WAVE, table=table, send=Wire(issuer), home=tmp_path, now=NOW)
     assert written == receipt_path('breakglass.wave', 'w', home=tmp_path)
-    assert json.loads(written.read_text(encoding='utf-8')) == {'action': 'breakglass.wave', 'subject': 'w', 'at': NOW}
+    assert json.loads(written.read_text(encoding='utf-8')) == {
+        'action': 'breakglass.wave', 'subject': 'w', 'params': WAVE['params'], 'at': NOW,
+    }  # fmt: skip
     require_receipt(WAVE, home=tmp_path, now=NOW + 1)  # the control of every refusal below
     assert receipt_path('breakglass.wave', 'other', home=tmp_path) != written
 

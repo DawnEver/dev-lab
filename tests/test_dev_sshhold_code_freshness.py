@@ -4,8 +4,9 @@ Measured 2026-11-23: ``sshhold open --plan P --digest D --code C`` re-ran the pl
 subject read: ~11 s) before sending a code that had already spent seconds in a chat, and the issuer called it "wrong
 or outside its 30-second window". The guarantee stays -- no code is spent on a stale or blocked plan -- but a green
 recorded for the SAME digest within :data:`~dev_lab.ops.consent.door.CODE_PREFLIGHT_FRESH_S` stands in for the
-re-run. PLANTED CONTROLS: a fresh recorded green sends at once; a stale one re-runs; a blocked re-run refuses with
-"no code used".
+re-run. Older, the given code is refused unspent instead of waiting on a re-run (incident 2026-11-26). PLANTED
+CONTROLS: a fresh recorded green sends at once; a stale one refuses naming the preflight door; a blocked re-run
+refuses with "no code used".
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import pytest
 from dev_lab.dev import sshholdplan
 from dev_lab.dev.sshholdwire import HoldRefused
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import CODE_PREFLIGHT_FRESH_S, PREFLIGHT_FRESH_S, record_preflight
+from dev_lab.ops.consent.door import CODE_PREFLIGHT_FRESH_S, PLAN_PREFLIGHT_DOOR, PREFLIGHT_FRESH_S, record_preflight
 from dev_lab.ops.consent.plan import parsed
 
 _PLAN = {'hosts': ['ops@h.example'], 'grants': [{'host': 'ops@h.example', 'action': 'ops.config', 'subject': 'a' * 64}]}
@@ -32,7 +33,7 @@ def _plan(tmp_path: Path, *, age: float | None) -> Path:
     return path
 
 
-def _offered(tmp_path: Path, plan: Path, reran: list[str], *, blocked: bool = False) -> str:
+def _offered(tmp_path: Path, plan: Path, reran: list[str], *, blocked: bool = False, given: bool = True) -> str:
     def rerun(_plan: Path, _steps: Path | None) -> list[str]:
         reran.append('preflight')
         if blocked:
@@ -41,7 +42,7 @@ def _offered(tmp_path: Path, plan: Path, reran: list[str], *, blocked: bool = Fa
         return ['preflight: GREEN']
 
     return sshholdplan.offered(
-        plan, None, code_given=True, rerun=rerun, held=lambda _dest: False, home=tmp_path / 'home', now=1_000_000.0
+        plan, None, code_given=given, rerun=rerun, held=lambda _dest: False, home=tmp_path / 'home', now=1_000_000.0
     )
 
 
@@ -52,15 +53,17 @@ def test_a_fresh_recorded_green_sends_the_given_code_at_once(tmp_path: Path) -> 
     assert 'recorded green' in said
 
 
-def test_a_stale_recorded_green_runs_the_preflight_again(tmp_path: Path) -> None:
+def test_a_stale_recorded_green_refuses_the_given_code_unspent(tmp_path: Path) -> None:
     reran: list[str] = []
-    _offered(tmp_path, _plan(tmp_path, age=CODE_PREFLIGHT_FRESH_S + 1), reran)
-    assert reran == ['preflight']
+    with pytest.raises(HoldRefused, match='no code used') as refused:
+        _offered(tmp_path, _plan(tmp_path, age=CODE_PREFLIGHT_FRESH_S + 1), reran)
+    assert PLAN_PREFLIGHT_DOOR in str(refused.value)
+    assert reran == []
 
 
 def test_a_blocked_rerun_refuses_with_no_code_used(tmp_path: Path) -> None:
     with pytest.raises(HoldRefused, match='no code used'):
-        _offered(tmp_path, _plan(tmp_path, age=None), [], blocked=True)
+        _offered(tmp_path, _plan(tmp_path, age=None), [], blocked=True, given=False)
 
 
 def test_a_code_asked_at_the_prompt_always_preflights_first(tmp_path: Path) -> None:

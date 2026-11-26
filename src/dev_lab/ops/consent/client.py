@@ -13,9 +13,9 @@ The code is sent once and never logged or kept.
 :func:`preflight` proves, with NO code, that a lone request's grant can succeed -- endpoint and key declared, the
 issuer reached over ssh (:func:`.door.reached`), the version handshake, the subject still current (:data:`SUBJECTS`),
 and any check the calling verb adds -- and writes its receipt (:func:`.door.record_receipt`). :func:`grant` refuses
-a code given in advance without a receipt inside the backstop before any network call, then runs the same proof
-again ITSELF and uses the code only if it is green now; a code typed at its prompt is asked only after the same
-preflight ran inline.
+a code given in advance without a fresh receipt of the same request before any network call, and with one sends the
+code FIRST (a TOTP code lives one 30 s step; incident 2026-11-26), re-running the proof only after a refusal to
+report its cause; a code typed at its prompt is asked only after the same preflight ran inline.
 
 :func:`redeem` is the gate of an IRREVERSIBLE action (a spend, a merge, a wave): the signature and expiry verify
 offline, then the use is registered online with the issuer; an issuer that cannot be reached REFUSES, never admits.
@@ -41,7 +41,14 @@ from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.native_session import session_of
 from dev_lab.dev.taskledger import ledger, task_in
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
-from dev_lab.ops.consent.door import Send, endpoint_send, handshake, offer, record_receipt, require_receipt
+from dev_lab.ops.consent.door import (
+    Send,
+    endpoint_send,
+    handshake,
+    record_receipt,
+    require_plan_green,
+    require_receipt,
+)
 from dev_lab.ops.consent.issuer import requested
 from dev_lab.ops.consent.plan import load as load_plan
 from dev_lab.ops.consent.plan import request as plan_request
@@ -336,13 +343,15 @@ def grant(
 ) -> Path:
     """Ask the issuer for the credential *request_file* describes; the file it was written to.
 
-    THE DOOR PREFLIGHTS ITSELF: whichever way the code arrives, the no-code proof (:func:`_proved`) runs here, right
-    before the code is read, and a proof that is not green NOW refuses ``no code used`` (user ruling 2026-11-22: a
-    code given 5 min after its preflight was refused on the receipt's age alone, and lost).
+    A CODE GIVEN IN ADVANCE (``code``, or stdin) is the FIRST request: it is admitted only by a fresh receipt of the
+    same request (:func:`.door.require_receipt`, local) and sent with no round trip before it -- a TOTP code lives
+    one 30 s step, and a re-run preflight spent it (incident 2026-11-26: four codes in a row). A refusal is then
+    reported with the no-code proof (:func:`_proved`) run after it. A code asked at the prompt is asked only after
+    the preflight ran inline.
 
     Raises:
-        ConsentRefused: a code given in advance has no receipt inside the backstop (:func:`.door.require_receipt`),
-            the proof is not green now, the code is not six digits, or the issuer refused.
+        ConsentRefused: a code given in advance has no fresh receipt for this request, the code is not six digits,
+            or the issuer refused (with what the proof run after it found).
 
     """
     found = _endpoint(table)
@@ -352,16 +361,23 @@ def grant(
     on_tty = sys.stdin.isatty() if tty is None else tty
     if code is not None or not on_tty:  # the code was asked BEFORE this call: a preflight must have preceded the ask
         require_receipt(request, home=home, now=now())  # local: refused before any network call
-        try:
-            _proved(request, found, send, subjects)
-        except ConsentRefused as blocked:
-            msg = f'no code used -- the preflight is not green now: {str(blocked).removeprefix("no code asked: ")}'
-            raise ConsentRefused(msg) from blocked
-        given = _six_digits(given_code(code, tty=on_tty, ask=ask, read=read))
     else:  # the prompt follows a green preflight, run here
         preflight(request, table=found, send=send, home=home, now=now(), subjects=subjects)
-        given = _six_digits(given_code(code, tty=on_tty, ask=ask, read=read))
-    return _issued(found, {'verb': 'issue', 'request': request, 'code': given}, send=send, home=home, now=now())[0]
+    given = _six_digits(given_code(code, tty=on_tty, ask=ask, read=read))
+    try:
+        return _issued(found, {'verb': 'issue', 'request': request, 'code': given}, send=send, home=home,
+                       now=now())[0]  # fmt: skip
+    except ConsentRefused as refused:
+        raise ConsentRefused(_diagnosed(refused, lambda: _proved(request, found, send, subjects))) from refused
+
+
+def _diagnosed(refused: ConsentRefused, proof: Callable[[], object]) -> str:
+    """*refused*, with what the no-code *proof* run after it says: its cause when it is not green, else green."""
+    try:
+        proof()
+    except ConsentRefused as blocked:
+        return f'{refused} -- the preflight run after it is not green: {str(blocked).removeprefix("no code asked: ")}'
+    return f'{refused} -- the preflight run after it is green, so the code itself was refused: ask for a fresh one'
 
 
 def grant_plan(
@@ -381,9 +397,9 @@ def grant_plan(
     opens another).
 
     Raises:
-        ConsentRefused: the plan is not the one shown or does not name *host*, a grant is malformed, it is not
-            offered (:func:`.door.offer`: no green preflight, or a skewed issuer), the code is not six digits, or
-            the issuer refused.
+        ConsentRefused: the plan is not the one shown or does not name *host*, a grant is malformed, it has no
+            green preflight (:func:`.door.require_plan_green`, local), the code is not six digits, or the issuer
+            refused (with what a handshake run after it found).
 
     """
     found = _endpoint(table)
@@ -394,10 +410,14 @@ def grant_plan(
         raise ConsentRefused(msg)
     for grant_ in plan.grants:
         requested(plan_request(grant_))  # refused here, before the user spends a code
-    offer(plan, found, send=send, home=home, now=now())  # green preflight, and an issuer this client agrees with
+    require_plan_green(plan, home=home, now=now())  # LOCAL: the code is the first request (incident 2026-11-26)
     payload = {'verb': 'issue-plan', 'plan': {'hosts': list(plan.hosts), 'grants': list(plan.grants)},
                'code': _six_digits(code)}  # fmt: skip
-    return _issued(found, payload, send=send, home=home, now=now(), plan=plan.digest)
+    try:
+        return _issued(found, payload, send=send, home=home, now=now(), plan=plan.digest)
+    except ConsentRefused as refused:
+        actions = [grant_['action'] for grant_ in plan.grants]
+        raise ConsentRefused(_diagnosed(refused, lambda: handshake(found, send=send, actions=actions))) from refused
 
 
 def recover(

@@ -12,7 +12,8 @@ A plan host whose session is ALREADY HELD is reused, never re-opened: the code g
 2026-11-16: the open refused a held host, so a granted plan read as failed and a second code was asked). Before the
 code is read the door PREFLIGHTS THE PLAN ITSELF (:func:`offered`, :func:`dev_lab.dev.planrunoffer.reproved`: the
 steps file its last green preflight recorded, or ``--steps``): not green NOW refuses ``no code used`` (user ruling
-2026-11-22: the stale green was refused only after the code was given, and the code's window was lost).
+2026-11-22: the stale green was refused only after the code was given, and the code's window was lost). A code GIVEN
+IN ADVANCE is never made to wait on that re-run: a fresh recorded green sends it, else it is refused unspent.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from dev_lab.dev.sshholdwire import HoldRefused
 from dev_lab.dev.sshholdwire import held as live_hold
 from dev_lab.ops.consent.client import grant_plan
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import CODE_PREFLIGHT_FRESH_S, green_age
+from dev_lab.ops.consent.door import CODE_PREFLIGHT_FRESH_S, PLAN_PREFLIGHT_DOOR, green_age
 from dev_lab.ops.consent.plan import not_registered, parsed, unregistered
 from dev_lab.ops.totp import STEP
 
@@ -110,16 +111,24 @@ def offered(
     reached through a live hold or is one the code will open -- never a dead hold read as reused.
 
     A code GIVEN IN ADVANCE (*code_given*) already runs against its 30 s window, so a green recorded for the SAME
-    digest within :data:`~dev_lab.ops.consent.door.CODE_PREFLIGHT_FRESH_S` stands in for the re-run; older, or a
-    code asked at the prompt (asked only after this returns), runs it. Returns the line saying which.
+    digest within :data:`~dev_lab.ops.consent.door.CODE_PREFLIGHT_FRESH_S` stands in for the re-run; older, the
+    given code is refused unspent, naming the plan preflight -- a re-run here spent its window (incident
+    2026-11-26). A code asked at the prompt (asked only after this returns) runs the preflight. Returns the line
+    saying which.
     """
     try:
         found = parsed(json.loads(plan.read_text(encoding='utf-8')))
         for dest in found.hosts:
             (held or live_hold)(dest)  # a dead hold goes BEFORE the preflight: its host is then one the code opens
-        age = green_age(found, home=home, now=now) if code_given else None
-        if age is not None and age <= CODE_PREFLIGHT_FRESH_S:
-            return f'preflight: recorded green {age:.0f} s ago (within {CODE_PREFLIGHT_FRESH_S:.0f} s): not re-run'
+        if code_given:
+            age = green_age(found, home=home, now=now)
+            if age is not None and age <= CODE_PREFLIGHT_FRESH_S:
+                return f'preflight: recorded green {age:.0f} s ago (within {CODE_PREFLIGHT_FRESH_S:.0f} s): not re-run'
+            why = 'none recorded' if age is None else f'the green one is {age:.0f} s old'
+            msg = (f'no code used: plan {found.digest[:12]} has no green preflight within '
+                   f'{CODE_PREFLIGHT_FRESH_S:.0f} s ({why}), and re-running it here would outlast the code -- run '
+                   f'`{PLAN_PREFLIGHT_DOOR}`, then ask the user for a new code')  # fmt: skip
+            raise HoldRefused(msg)
         (rerun or reproved)(plan, steps)
     except (ConsentRefused, OSError, ValueError) as refused:
         raise HoldRefused(str(refused)) from refused
