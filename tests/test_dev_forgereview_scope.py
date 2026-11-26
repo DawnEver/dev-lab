@@ -19,7 +19,7 @@ from _forge_fake import git_out, run_git
 from _forge_state import StateForge, called_due
 from _roles_fixtures import HPC_REVIEWED, carry
 
-from dev_lab.dev.famfiles import GENERATED
+from dev_lab.dev._famfiles_registry import GENERATED
 from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_declared import LENS_FIELD, PATHS_FIELD, RANGE_FIELD, Review, review_from
 from dev_lab.dev.forgereview_findings import merge_outputs, parse_findings

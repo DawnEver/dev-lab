@@ -65,16 +65,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'OWNER-DAG',
         (
             # Why: user-approved 2026-11-25 (principles `everything-in-its-place`, `no-detour`; v1 D67/D68).
-            'In a repo holding a root `dependencies.toml` (opt-in; undeclared is not judged), actual imports match '
-            'the declared graph: `[python.owners]` and `[python.siblings."<package>"]` (explicit acyclic DAGs at '
-            'every level, default none), `[python.importers]` (the only importers of a path), '
-            '`[python.packages]`/`[python.stdlib]` (a package no row names is refused; std is restricted by row; '
-            '`load = "deferred"` rows are imported only inside a function, and only they may be), '
-            '`[rust.external]`/`[rust.std]` (Cargo dependencies by kind and feature, std paths and tokens). The '
-            'crate graph is the SAME graph, derived from crate paths: `rust/crates/<owner path>` is that stage '
-            '(`<package>_native.<owner>_<child>` too), so a Rust-owned stage is a sibling like any other. A cycle, an '
-            'undeclared edge and a path no layout.toml row declares (rows, never the disk) are refused by name; test '
-            'files are judged too. The always-on check and every `verify` '
+            'With a root `dependencies.toml` (opt-in), imports match its graph: `[python.owners]` and '
+            '`[python.siblings."<package>"]` (acyclic DAGs, default none), `[python.importers]` (sole importers), '
+            '`[python.packages]`/`[python.stdlib]` (unnamed packages refused, std by row; '
+            '`load = "deferred"` rows only, and always, inside a function), `[rust.external]`/`[rust.std]` (Cargo deps '
+            'by kind and feature, std paths, tokens). Crates are the same graph by path: '
+            '`rust/crates/<owner path>` and `<package>_native.<owner>_<child>` are that stage. Cycles, '
+            'undeclared edges and paths no layout.toml row declares are refused by name, tests too. The always-on '
+            'check and every `verify` '
             '(`dev_lab.dev.ownerdag`, `dev_lab.dev.rustdeps`).'
         ),
         ('tests/test_dev_ownerdag.py', 'tests/test_dev_rustdeps.py', 'tests/test_dev_deptable.py'),
@@ -96,13 +94,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             # Why: user-approved family policy 2026-11-25 (v1-migration D67/D68) -- env reads changed results unseen.
             'A repo reads the process environment only in the entry module(s) it declares in `[tool.dev_lab.env] '
-            'entry = [...]`: a value that changes a result or behavior is configuration, a fact only the '
-            'environment offers is read there once and passed on as a typed record, and a test switch is a pytest '
-            'option or a resource need -- a read deciding whether a test runs is refused in test code in every mode, '
-            'and an entry never launders one. Existing reads are on record in `pending`, which only shrinks (a stale '
-            'path reds; the `env-pending-shrinks` pre-push row refuses an addition since the merge-base); '
-            '`strict = true` judges every test read too. An AST read of Python `os.environ`/`getenv`/`putenv` and '
-            'a scan of Rust `env::var` (`dev_lab.dev.envreads`), every family checkout`s always-on check.'
+            'entry = [...]`: a value changing a result or behavior is configuration, an environment-only fact is '
+            'read there once and passed on as a typed record, and a test switch is a pytest option or a resource '
+            'need -- a read deciding whether a test runs is refused in test code in every mode, and an entry never '
+            'launders one. Existing reads are listed in `pending`, which only shrinks (a stale path reds; the '
+            '`env-pending-shrinks` pre-push row refuses an addition); `strict = true` judges every test read too. '
+            'Always on in every family checkout (`dev_lab.dev.envreads`: Python `os.environ`/`getenv`/`putenv`, '
+            'Rust `env::var`).'
         ),
         ('tests/test_dev_envreads.py',),
     ),

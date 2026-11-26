@@ -354,7 +354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     The adoption is DATA -- R's ``[tool.dev_lab.hook_adoption]`` table (:func:`adoption_from_table`) -- or, with
     ``--adoption``, a module's ``ADOPTION`` and optional ``LOCAL_RULES`` (the rows the family registry cannot hold,
     rendered after the family's). The renderer of ``.claude/hooks/deny-rules.json``
-    (:data:`dev_lab.dev.famfiles.RENDERERS`), re-run by a relock.
+    (:data:`dev_lab.dev._famfiles_registry.RENDERERS`), re-run by a relock.
     """
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.hook_adoption', description=main.__doc__)
     parser.add_argument('--repo', type=Path, default=Path.cwd())

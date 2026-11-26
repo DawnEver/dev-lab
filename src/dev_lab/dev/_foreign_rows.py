@@ -102,6 +102,10 @@ EVICTED: Final[dict[str, str]] = {
         'The memory rows of the same registry, split out of `_rule_rows.py` by concept (2026-10-23): their '
         'mechanism paths belong to that registry, under the same HEADLINE row and the same migration.'
     ),
+    'src/dev_lab/dev/_rule_rows_machine.py::path': (
+        'The machine rows of the same registry, split out of `_rule_rows.py` by concept (2026-11-26): their '
+        'mechanism paths belong to that registry, under the same HEADLINE row and the same migration.'
+    ),
     'src/dev_lab/dev/_famconfig_ruff_rows.py::data': (
         '3 repo-keyed rows in the ruff base. The base/delta renderer is right; the per-repo delta '
         'belongs in the repo whose delta it is.'
@@ -171,7 +175,7 @@ SYNTHETIC: Final[dict[str, str]] = {
         'CLAUDE_ENTRIES, the closed `.claude/` inventory (`hooks/deny-commands.js` and its siblings): the '
         'family-managed names every adopting checkout holds; they name no file of a particular sibling.'
     ),
-    'src/dev_lab/dev/famfiles.py::path': (
+    'src/dev_lab/dev/_famfiles_registry.py::path': (
         'the PROJECT_FILES list names family-managed files (`.claude/settings.json`, the hook files) that '
         'every adopting repo tracks and this one does not yet -- the list is the family`s, not a consumer`s.'
     ),

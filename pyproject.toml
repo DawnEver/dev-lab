@@ -209,7 +209,7 @@ PUSH-NO-VERIFY = "push without skipping the hook; no hook runs a test, and the f
 NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- <git push|fetch|pull|clone|ls-remote|submodule update ...  or  uv lock|add|remove ...>  (retries 3x, then reports a diagnosis); an environment change is <venv python> -m dev_lab.dev.dep --sync, which retries inside"
 
 [tool.dev_lab.render]
-# What the family renderers read from this repo (dev_lab.dev.famfiles.RENDERERS); a relock re-runs each one due.
+# What the family renderers read from this repo (dev_lab.dev._famfiles_registry.RENDERERS); a relock re-runs each one due.
 deltas = "tests/_famconfig_delta.py"
 
 [tool.pytest.ini_options]

@@ -14,10 +14,10 @@ box's record names, else its exit code's
 (:func:`~dev_lab.dev.producer.box_release_reason`) -- or ``stopped`` when :mod:`dev_lab.dev.stoprun`
 stopped it on purpose.
 
-THE PRODUCER RUNS IN THE BOX (:func:`boxed`, :func:`lab_commons.box.command`): admitted on this machine's
-box ledger at exactly the demand the tick admitted it at (:func:`lab_commons.compute.learned.box_demand`),
-and killed by the box past that memory or its wall (a part's :data:`~lab_commons.compute.learned.BOX_WALL_S`,
-a request's declared ``wall_h``). A box with no
+THE PRODUCER RUNS IN THE BOX (:func:`~dev_lab.dev._forgeproduce_box.boxed`, :func:`lab_commons.box.command`): admitted
+on this machine's box ledger at exactly the demand the tick admitted it at
+(:func:`lab_commons.compute.learned.box_demand`), and killed by the box past that memory or its wall (a part's
+:data:`~lab_commons.compute.learned.BOX_WALL_S`, a request's declared ``wall_h``). A box with no
 room releases the claim retryable; a kill is released naming it -- both read from the box's record
 beside the run's tree, never from the exit code, which is the producer's own. A REQUEST (context
 ``request/<n>``) is the same job on the same path; its producer knows nothing of the forge, so its result
@@ -52,20 +52,19 @@ import dataclasses
 import math
 import subprocess
 import threading
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
-from lab_commons.box import GB, Capacity, ProcessEnd, Refused, command, not_admitted, read_ended, release
+from lab_commons.box import GB, Capacity, ProcessEnd, Refused, not_admitted, read_ended, release
 from lab_commons.box import Claim as BoxClaim
-from lab_commons.compute.learned import Run, box_demand, record_run
-from lab_commons.compute.model import Demand
-from lab_commons.proc import process_tree, working_set_bytes
+from lab_commons.compute.learned import Run
 from lab_commons.proccpu import TreeCpu
 
 from dev_lab.dev import forgerequest, producer
+from dev_lab.dev._forgeproduce_box import box_claim, boxed, learn_box_run, tree_gb
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgecarry import SETTLED, carry_target
 from dev_lab.dev.forgeclaim import Claim, Work, forge_now, publish
@@ -74,21 +73,15 @@ from dev_lab.dev.forgeintent import Intent, forget, journal
 from dev_lab.dev.forgelabels import LabelMissing
 from dev_lab.dev.forgerequesthost import result, settle
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
-from dev_lab.dev.forgewait import claim_vector
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.harness import child_env
-from dev_lab.dev.partrows import needs_of_row
-from dev_lab.dev.platformparts import origin_url, parts_of, run_tag
+from dev_lab.dev.platformparts import parts_of, run_tag
 from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, box_release_reason, owned, producing, release_reason
 from dev_lab.dev.producerpriority import below_normal
 from dev_lab.dev.servelock import was_stopped
 from dev_lab.dev.shatree import TreeFailed, close_tree, open_tree, record_manifest
 
-__all__ = ['BOX_QUEUE_S', 'Produced', 'box_claim', 'boxed', 'produce']
-
-#: How long a producer waits for its box claim, in seconds: the tick admitted it against the box ledger, so
-#: only a run admitted in between can be in its way -- then the claim is released and retried next tick.
-BOX_QUEUE_S: Final = 60.0
+__all__ = ['Produced', 'produce']
 
 
 @dataclass(frozen=True)
@@ -102,64 +95,6 @@ class Produced:
     returncode: int
     stopped: bool = False  # by :mod:`dev_lab.dev.stoprun`, on purpose
     outage: bool = False  # the producer DECLARED its infrastructure unreachable (:func:`producer.unreachable`)
-
-
-#: Bytes in one gibibyte.
-_GB: Final = 1024.0**3
-
-
-def tree_gb(pid: int) -> float | None:
-    """Resident GB of *pid*'s whole process tree now, or ``None`` when nothing of it could be read."""
-    readings = [working_set_bytes(one) for one in process_tree(pid)]
-    known = [r for r in readings if r is not None]
-    return sum(known) / _GB if known else None
-
-
-def learn_box_run(root: Path, item: Work, run: Run, *, ended: str) -> None:
-    """Record one box run of *root*'s repository under ``(its producer, its need-set)``, by how it *ended*.
-
-    *ended* is :attr:`~lab_commons.box.ProcessEnd.reason`'s vocabulary; ``record_run`` prices only an exit
-    and a memory kill, so a run the wall or a signal cut mid-climb teaches nothing.
-
-    A part's producer is ``local``; a request's is its declared NAME, so it never shares a test part's record.
-    """
-    record_run(origin_url(root), item.producer, needs_of_row(item.platform), run, ended=ended)
-
-
-def _origin(root: Path | None) -> str:
-    """*root*'s origin URL, ``''`` (nothing learned) for none or an unreadable one."""
-    try:
-        return '' if root is None else origin_url(root)
-    except OSError:
-        return ''
-
-
-def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path, *, root: Path | None = None) -> list[str]:
-    """*argv* run through the box at the demand the tick admitted *item* at, recording how it ended at *outcome*.
-
-    An item claimed with no demand is priced as the tick prices a box part (:func:`~lab_commons.compute.learned.
-    box_demand` of *root*'s origin). The child holds against *capacity*, the one reading the demand was sized by.
-    """
-    what = f'{item.context}@{item.sha[:12]}'
-    return command(
-        argv,
-        box_claim(item, capacity, root=root),
-        item.wall_s,
-        BOX_QUEUE_S,
-        key=item.context,
-        what=what,
-        outcome=outcome,
-        fingerprint=item.sha,
-        capacity=capacity,
-        claim=item.box,
-    )
-
-
-def box_claim(item: Work, capacity: Capacity, *, root: Path | None = None) -> Demand:
-    """The :class:`Demand` *item* runs in the box at: the tick's admitted demand, else priced as a box part."""
-    needs = needs_of_row(item.platform)
-    asked = item.demand or box_demand(_origin(root), needs, cpu=capacity.cpu, mem_gb=capacity.mem_bytes / GB)
-    return claim_vector(asked, capacity, needs)
 
 
 def _pump(stream: Iterable[str], tag: str, say: Callable[[str], None], heard: list[str]) -> None:
@@ -189,8 +124,8 @@ def produce(
     """Run one local part's argv in its tree at the sha, streaming it and holding its claim; release what it left.
 
     The tree is built first and removed last (:mod:`dev_lab.dev.shatree`); the argv runs in the box
-    (:func:`boxed`, sized against *capacity*, default this box's). At each heartbeat the ref is
-    renewed; a ref that moved on never stops the producer -- *fetch* reads the tip once, at the end, to carry to.
+    (:func:`~dev_lab.dev._forgeproduce_box.boxed`, sized against *capacity*, default this box's). At each heartbeat the
+    ref is renewed; a ref that moved on never stops the producer -- *fetch* reads the tip once, at the end, to carry to.
     """
     with _released(item):  # the box claim the tick took: dropped however this ends (no-op once its run adopted it)
         journal(root, _intent(item))  # intent before action: a restarted host re-attaches (forgeintent)

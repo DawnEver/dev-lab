@@ -17,14 +17,10 @@ import pytest
 from _famconfig_delta import DELTAS, REPO
 
 from dev_lab.dev._famfiles_disk import project_files_on_disk, unplaced_workflows
+from dev_lab.dev._famfiles_registry import MANAGED, OWNED, PROJECT_FILES, RENDERERS, RETIRED_PROJECT_FILES
 from dev_lab.dev.agentsection import AGENTS_REL, BEGIN, END, render_section
 from dev_lab.dev.famconfig import BASES, RENDERED, ForkedDelta
 from dev_lab.dev.famfiles import (
-    MANAGED,
-    OWNED,
-    PROJECT_FILES,
-    RENDERERS,
-    RETIRED_PROJECT_FILES,
     due_renderers,
     is_member,
     main,

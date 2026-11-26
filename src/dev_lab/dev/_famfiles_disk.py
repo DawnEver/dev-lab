@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING
 import lab_commons.launch as _door
 
 from dev_lab.dev import ciworkflowshape
+from dev_lab.dev._famfiles_registry import PROJECT_FILES, RETIRED_PROJECT_FILES
 from dev_lab.dev.ciworkflows import declared_paths
-from dev_lab.dev.famfiles import PROJECT_FILES, RETIRED_PROJECT_FILES
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

@@ -60,7 +60,7 @@ def claim_vector(asked: Mapping[str, float], capacity: Capacity, needs: frozense
     """What a box part declares to the ledger: whole cores within the box, its memory, a seat of each declared need.
 
     *needs* default: every name of *asked* but cores and memory. The one source of a box part's claim
-    (:func:`dev_lab.dev.forgeproduce.box_claim`) and of the outlook a waiting one is judged by.
+    (:func:`dev_lab.dev._forgeproduce_box.box_claim`) and of the outlook a waiting one is judged by.
     """
     named = frozenset(asked) - set(_SHARES) if needs is None else needs
     seats = {name: 1 for name in named if name in capacity.seats}

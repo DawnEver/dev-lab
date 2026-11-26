@@ -40,7 +40,7 @@ from lab_commons.hpc.config import Cost
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev import _tick_demand, forgeproduce, forgerounds, forgetick
+from dev_lab.dev import _forgeproduce_box, _tick_demand, forgeproduce, forgerounds, forgetick
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeaffinity import DEFERRED, HELD
 from dev_lab.dev.forgeclaim import (
@@ -520,9 +520,9 @@ def test_the_producer_adopts_the_ticks_box_claim_and_drops_it_when_nothing_ran(t
     row = forgerounds.reserve(work, root=tmp_path, capacity=lambda: size, read=quiet(size))
     assert isinstance(row, int)
     taken = dataclasses.replace(work, box=row)
-    argv = forgeproduce.boxed(taken, ['x'], size, tmp_path / 'o.json')
+    argv = _forgeproduce_box.boxed(taken, ['x'], size, tmp_path / 'o.json')
     assert argv[argv.index('--claim') + 1] == str(row)
-    assert '--claim' not in forgeproduce.boxed(work, ['x'], size, tmp_path / 'o.json')
+    assert '--claim' not in _forgeproduce_box.boxed(work, ['x'], size, tmp_path / 'o.json')
     assert [one.id for one in holdings()] == [row]
     with forgeproduce._released(taken):
         pass

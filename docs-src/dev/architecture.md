@@ -146,7 +146,7 @@ the session's next prompt. No Monitor is armed and no `Stop` gate waits on a PR.
 
 - **Contract.** dev-lab generates every family file a member repeats; a hand edit is detected; a generator change
   is shown not to change unrelated repos.
-- **Today.** `dev_lab.dev.famfiles.PROJECT_FILES` lists every project file and its owner; `famfiles` renders
+- **Today.** `dev_lab.dev._famfiles_registry.PROJECT_FILES` lists every project file and its owner; `famfiles` renders
   them (`render_all`). Workflows are rendered from TOML and the drift check compares rendered bytes, refusing a
   hand-written one (`dev_lab.dev.ciworkflows`, stamp `RENDERED_BY`). The dev index table is
   `devdocs::pointer_table`. A lock left behind its dependencies alarms (`dev_lab.dev.drift`).
