@@ -1,7 +1,7 @@
 """``dev_lab.dev`` — the OPT-IN gate, and the absence of a new dependency.
 
 Two properties, and both are the kind that decay silently: that importing ``lab_commons`` never
-pulls this subpackage in (the same discipline that keeps ``lab_commons.em`` optional), and that
+pulls this subpackage in (the same discipline that keeps ``lab_commons.viz`` optional), and that
 nothing here needs a package the library did not already declare. Both are asserted against the
 REAL artifacts -- a fresh interpreter for the first, the parsed ``pyproject.toml`` and the actual
 import statements for the second -- rather than against a restatement of them.

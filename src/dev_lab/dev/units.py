@@ -4,7 +4,7 @@ THE DEFECT, from first principles. ``--slot-pitch-mm=12.5`` tells a reader the u
 is a unitless float, so nothing downstream can convert it, and the unit is recoverable only by the reader's memory of
 the flag's name. The user's ruling -- "all units must go through pint; forbid any spelling like this: --slot-pitch-
 mm|slot_pitch_mm|conductor-width-mm" -- bans the SPELLING, and that is what makes pint non-optional: once a name may
-not carry a unit, the value is the only place left for one. This module is the naming half; :mod:`lab_commons.units`
+not carry a unit, the value is the only place left for one. This module is the naming half; :mod:`lab_commons.quantity`
 is the pint half. The token table is DATA, in :mod:`dev_lab.dev._unit_tokens`, for the reason
 ``tests/architecture/docs/test_enforced_registry.py`` keeps its table out of its checks: a table edited through the
 module that reads it drifts from what it describes.
@@ -34,7 +34,7 @@ two things are exempt, and both are PROOFS rather than guesses:
   A comment cannot buy the exemption, because the AST does not contain comments;
 * a PARAMETER or a DECLARED FIELD whose ANNOTATION is a quantity spelling, taken as the terminal name ending in
   ``Quantity`` or ``Type``. ``Type`` is in the set on measurement rather than on taste: the family declares its
-  quantity types as ``LengthType``/``TorqueType`` via ``lab_commons.units.get_quantity_type``, and MEASURED 2026-09-15
+  quantity types as ``LengthType``/``TorqueType`` via pydantic quantity types, and MEASURED 2026-09-15
   in consumer-a, of the annotations written on a unit-suffixed name, 822 are ``float`` and 181 are absent -- all of
   them still violations -- while ``LengthType`` appears ONCE and that one IS a quantity.
 

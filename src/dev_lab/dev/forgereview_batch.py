@@ -31,8 +31,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.quantity import parse
 from lab_commons.temp import TEMP_PREFIX
-from lab_commons.units import Q_
 
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
 
@@ -99,15 +99,7 @@ def check_expiry(value: str) -> None:
 
 def wait_of(review: Review) -> timedelta:
     """*review*'s ``batch_wait``; a bare number or a non-duration is refused naming it."""
-    try:
-        quantity = Q_(review.batch_wait)
-    except Exception as bad:
-        msg = f'batch_wait {review.batch_wait!r} is not a duration; write one such as "20 min"'
-        raise ValueError(msg) from bad
-    if not isinstance(quantity, Q_) or not quantity.check('[time]'):
-        msg = f'batch_wait {review.batch_wait!r} is not a duration (it needs a unit); write one such as "20 min"'
-        raise ValueError(msg)
-    return timedelta(seconds=float(quantity.m_as('s')))
+    return timedelta(seconds=parse('batch_wait', review.batch_wait, 'duration'))
 
 
 def batch_args(review: Review, state: Path) -> tuple[str, ...]:
