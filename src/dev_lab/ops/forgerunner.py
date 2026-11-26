@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import shlex
 from dataclasses import dataclass, fields
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from dev_lab.ops.placement import Placement
 
@@ -66,16 +66,19 @@ def runners(table: object) -> tuple[ForgeRunner, ...]:
         msg = '[ops.runner] must be a table of runners'
         raise TypeError(msg)
     known = {field.name for field in fields(ForgeRunner)} - {'name'}
-    found = []
-    for name, row in sorted(table.items()):
+    found: list[ForgeRunner] = []
+    for name, declared in sorted(cast('dict[str, object]', table).items()):
         where = f'[ops.runner.{name}]'
-        if not isinstance(row, dict):
+        if not isinstance(declared, dict):
             msg = f'{where} must be a table'
             raise TypeError(msg)
+        row = cast('dict[str, object]', declared)
         if unknown := sorted(set(row) - known):
             msg = f'{where} has unknown keys {unknown}; known: {sorted(known)}'
             raise ValueError(msg)
-        values: dict[str, Any] = {key: tuple(value) if isinstance(value, list) else value for key, value in row.items()}
+        values: dict[str, Any] = {
+            key: tuple(cast('list[object]', value)) if isinstance(value, list) else value for key, value in row.items()
+        }
         try:
             runner = ForgeRunner(name=name, **values)
         except TypeError as missing:
