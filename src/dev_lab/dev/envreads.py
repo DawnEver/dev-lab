@@ -60,6 +60,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.lanepolicy import policy_at
+from dev_lab.dev.rangebase import NoMergeBaseError, range_base
 from dev_lab.dev.rules import tracked_files
 
 if TYPE_CHECKING:
@@ -380,7 +381,10 @@ def _pending_at(root: Path, rev: str) -> frozenset[str]:
 
 def range_problems(root: Path, base: str, head: str) -> list[str]:
     """A ``pending`` path *head* adds since its merge-base with *base*. A base with no table admits the census."""
-    since = _git(root, 'merge-base', base, head).strip()
+    try:
+        since = range_base(root, base, head)
+    except NoMergeBaseError as error:
+        return [str(error)]
     before = _pending_at(root, since)
     if not before:
         return []
