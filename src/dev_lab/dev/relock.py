@@ -132,6 +132,8 @@ _VERBS: Final = frozenset({'Update', 'Add', 'Remove'})
 _NAME_INDEX: Final = 2
 #: A full commit sha: the one ``rev`` that names a commit rather than a line.
 _FULL_SHA: Final = re.compile(r'[0-9a-f]{40}')
+#: An abbreviated commit sha: git's shortest unambiguous form is four hex digits.
+_HEX: Final = re.compile(r'[0-9a-f]{4,40}')
 
 
 class RelockFailed(OSError):
@@ -169,18 +171,19 @@ class Floated(NamedTuple):
     sha: str
 
 
-def line_of(query: str) -> str | None:
+def line_of(query: str, locked: str = '') -> str | None:
     """The line a git source query *query* FOLLOWS; ``None`` when it HOLDS -- the one held-or-floated predicate.
 
-    Judged by what the ref IS, URL-decoded: a ``tag`` holds (a tag is declared a fixed point), a ``rev`` holds only
-    as a full 40-hex commit sha -- any other ``rev`` names a branch and follows it, as ``branch`` does. No ref
-    follows :data:`DEFAULT_LINE`.
+    Judged by what the ref IS, URL-decoded: a ``tag`` holds (a tag is declared a fixed point), a ``rev`` holds as a
+    full 40-hex commit sha, or as an abbreviation of the commit the lock resolved it to (*locked*, the locator's
+    ``#<sha>``: ``rev = "595b43eb"`` pins that commit and is never a branch to fetch) -- any other ``rev`` names a
+    branch and follows it, as ``branch`` does. No ref follows :data:`DEFAULT_LINE`.
     """
     refs = parse_qs(query)
     if 'tag' in refs:
         return None
     rev = refs.get('rev', [''])[0]
-    if _FULL_SHA.fullmatch(rev.lower()):
+    if _FULL_SHA.fullmatch(rev.lower()) or (_HEX.fullmatch(rev.lower()) and locked.lower().startswith(rev.lower())):
         return None
     return refs.get('branch', [rev or DEFAULT_LINE])[0]
 
@@ -202,7 +205,7 @@ def floated(lock: str) -> tuple[Floated, ...]:
             continue
         address, _, sha = locator.partition('#')
         url, _, query = address.partition('?')
-        if (line := line_of(query)) is not None:
+        if (line := line_of(query, sha)) is not None:
             found.append(Floated(_canon(entry['name']), url, line, sha))
     return tuple(found)
 
