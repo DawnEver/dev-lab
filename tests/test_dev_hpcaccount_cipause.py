@@ -20,6 +20,7 @@ from lab_commons.hpc.grants import declared_grants
 from dev_lab.dev import devhost, forgeslurm
 from dev_lab.dev.devdeclared import layered
 from dev_lab.dev.hpcaccount import account, cimark, cipause, deploy, drift, tick
+from dev_lab.dev.hpcaccount import spec as spec_module
 from dev_lab.dev.hpcaccount.fleet import account_host, grant_slice
 from dev_lab.dev.hpcaccount.grantslice import REDEPLOY_DOOR, grant_setup, render_grant, without_hpc
 from dev_lab.dev.hpcaccount.spec import MARK, TICK_LINE, cron_lines, load
@@ -32,6 +33,12 @@ MINE: Final = '0 1 * * * echo mine\n'
 @pytest.fixture(autouse=True)
 def _slurm(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(deploy, 'slurm_dirs', lambda: ['/opt/slurm/bin'])
+
+
+@pytest.fixture(autouse=True)
+def _serves_every_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every declared repo is served here: its one cron line ticks them all (ticked follows served)."""
+    monkeypatch.setattr(spec_module, 'served', lambda spec: frozenset(repo.name for repo in spec.repos))
 
 
 def _account(tmp_path: Path, mine: str = '', extra: str = '', family: str = FAMILY) -> tuple[Path, Path, list[str]]:

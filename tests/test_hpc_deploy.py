@@ -859,7 +859,9 @@ def _cron_spec(text: str, tmp_path: Path) -> deploy_spec.Deployment:
     return spec
 
 
-def test_the_cron_period_is_the_schedule_tick_staggered_per_account(tmp_path: Path) -> None:
+def test_the_cron_period_is_the_schedule_tick_staggered_per_account(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """HPC pressure (2026-10-26): one period, ``[schedule] tick`` -- the one the host card is judged by.
 
     Each account's minute offset is derived from its home, so accounts do not tick in lockstep.
@@ -867,6 +869,7 @@ def test_the_cron_period_is_the_schedule_tick_staggered_per_account(tmp_path: Pa
     """
     spec = _cron_spec('\n[schedule]\ntick = "15 min"\n', tmp_path)
     assert spec.tick == 15 * 60
+    monkeypatch.setattr(deploy_spec, 'served', lambda spec: frozenset(repo.name for repo in spec.repos))
     offsets = set()
     for user in ('alice', 'bob', 'carol', 'dave', 'erin', 'frank'):
         lines = deploy_spec.cron_lines(spec, Path('/home') / user)

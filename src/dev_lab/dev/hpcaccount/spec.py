@@ -353,16 +353,21 @@ def cron_lines(
 
 
 def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
-    """The repos this account TICKS: every declared one, each refreshed and served where a role is bound here.
+    """The repos this account TICKS: exactly those it serves (:func:`served`), never one hosted on github.com.
 
-    A tick serves a repo only where the family binds one of its roles to this account (:func:`serves_here`).
+    ONE-LOGIN-POLLER (user ruling 2026-11-27): an account keeps only the Gitea repos it serves, so its one poller
+    refreshes nothing it does not serve; a repo on github.com is tested by GitHub Actions alone
+    (GITHUB-TESTS-ON-ACTIONS) and is never ticked, whatever its binding says.
 
     Only an account whose role SERVES ticks -- *serves* as the workstation's role table says, else the shipped
     default for its role (:data:`dev_lab.dev.hpcaccount.division.DEFAULT_ROLES`); undeclared ticks nothing.
     """
     if not (DEFAULT_ROLES.get(spec.role, {}).get('serves', False) if serves is None else serves):
         return ()
-    return spec.repos
+    from dev_lab.dev.githubtests import on_github  # noqa: PLC0415 -- githubtests imports this module (accounthost)
+
+    here = served(spec)
+    return tuple(repo for repo in spec.repos if repo.name in here and not on_github(repo.url))
 
 
 def served(spec: Deployment) -> frozenset[str]:
