@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
-import sys
 import tomllib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -44,6 +43,7 @@ from typing import Any, Final, Protocol, cast
 from lab_commons import launch as _door
 from lab_commons.config import section
 from lab_commons.home import repos
+from lab_commons.log import emit
 
 from dev_lab.dev.artifactstores import RcloneStore
 from dev_lab.dev.datedlog import dated_log, declared_output
@@ -398,11 +398,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             repos(), GitForge(), _RunStore(tree), now=now, names=tuple(args.lock or LOCK_NAMES), family=family
         )
     except RootsUnread as cause:
-        sys.stderr.write(f'REFUSED: {cause}\n')
+        emit(f'REFUSED: {cause}', err=True)
         return 1
     out = dated_log(tree, f'report-{now:%H%M%S}.md', base=declared_output(tree), kind=KIND)
     out.write_text(render(found, now=now), encoding='utf-8')
-    sys.stdout.write(f'{out}\n')
+    emit(str(out))
     return 0
 
 
