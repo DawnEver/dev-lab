@@ -232,23 +232,14 @@ build-backend = "hatchling.build"
 
 ## Rust output
 
-The consuming crate's `build.rs` runs the generator into `OUT_DIR`; nothing is committed.
+The consuming crate's `build.rs` runs the generator into `OUT_DIR`; nothing is committed. Print it with
+`python -m dev_lab.dev.irschema build-rs` (`irrust.build_rs`) and keep it as printed:
 
-```rust
-// build.rs
-fn main() {
-    let out = std::env::var("OUT_DIR").unwrap();
-    let python = std::env::var("PYTHON").unwrap_or_else(|_| "python".into());
-    let status = std::process::Command::new(python)
-        .args(["-m", "dev_lab.dev.irschema", "rust", "--root", "..", "--out", &out])
-        .status()
-        .expect("python -m dev_lab.dev.irschema rust");
-    assert!(status.success(), "IR generation failed; the line above names why");
-    println!("cargo:rerun-if-changed=../ir");
-    println!("cargo:rerun-if-changed=../pyproject.toml");
-}
-// lib.rs: include!(concat!(env!("OUT_DIR"), "/ir.rs"));
-```
+- It finds the interpreter by probing every `venvpath.VENV_LAYOUTS` spelling (`.venv/Scripts/python.exe`,
+  `.venv/bin/python`) upward from the crate, and runs the generator with that checkout as `--root`. No `PYTHON`
+  variable and no PATH guess; with no venv it panics naming the bootstrap door.
+- It reads only `OUT_DIR`, the build-script door of ENV-IS-READ-ONCE (`envreads.BUILD_SCRIPT`).
+- `lib.rs`: `include!(concat!(env!("OUT_DIR"), "/ir.rs"));`
 
 - One `mod ir_<module>` per schema module, written to `ir.rs`. Dependencies: `serde` (derive),
   `serde_json` and `ndarray`.

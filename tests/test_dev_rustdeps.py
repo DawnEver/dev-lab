@@ -245,3 +245,24 @@ def test_dev_crates_is_refused_on_a_row_that_already_grants_dev_everywhere(tmp_p
     (tmp_path / deptable.FILE).write_text(redundant, encoding='utf-8')
     with pytest.raises(deptable.DependenciesError, match='dev_crates'):
         deptable.load(tmp_path)
+
+
+#: A build-kind std row: ``std::fs`` in a build script, only in base's (FAM-03 b, D153 B1-09).
+BUILD_STD = DECLARED.replace(
+    'unsafe = {', '"std::fs" = { crates = ["base"], kind = "build", reason = "the build writes OUT_DIR" }\nunsafe = {'
+)
+
+
+def test_a_build_kind_std_row_judges_build_scripts_only(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL: base's build.rs and middle's src may use std::fs; middle's build.rs may not."""
+    fs_build = 'fn main() { std::fs::write("x", "").unwrap(); }\n'
+    allowed = {'rust/crates/base/build.rs': fs_build, 'rust/crates/middle/src/lib.rs': 'use std::fs;\n'}
+    assert _problems(tmp_path / 'ok', allowed, declared=BUILD_STD) == []
+    assert _problems(tmp_path / 'no', {'rust/crates/middle/build.rs': fs_build}, declared=BUILD_STD) == [
+        'rust/crates/middle/build.rs: crate middle uses std::fs::write, but [rust.std] std::fs allows it only in base'
+    ]
+
+
+def test_a_normal_std_row_never_judges_a_build_script(tmp_path: Path) -> None:
+    """build.rs reading OUT_DIR under the normal ``std::env`` row granting nowhere stays free (the base tree)."""
+    assert _problems(tmp_path, {'rust/crates/middle/build.rs': 'fn main() { std::env::var("OUT_DIR"); }\n'}) == []
