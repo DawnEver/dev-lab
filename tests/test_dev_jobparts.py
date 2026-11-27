@@ -736,7 +736,7 @@ def test_a_rust_workspace_gets_one_hosted_cargo_row_and_a_repo_without_rust_none
     """
     rust = _rust_repo(tmp_path / 'rust', workspace=True)
     plain = _rust_repo(tmp_path / 'plain', workspace=False)
-    collect = {'': ['t::a']}.__getitem__
+    collect = {'': ['t::a'], 'femm': [], 'windows': []}.__getitem__
     found = jobparts.matrix(rust, collect=collect, event=event, hosted=True)['include']
     assert [row for row in found if row['part'].startswith('cargo')] == [{'part': 'cargo', 'runs-on': 'ubuntu-latest'}]
     assert jobparts.off_gate(['cargo'], {}) == frozenset(), 'the cargo part is on the GitHub gate'
