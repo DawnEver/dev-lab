@@ -21,7 +21,7 @@ commit, push, and read the queue. Upgrade lab-commons, then use the five command
 ## Set up once
 
 1. Bootstrap your worktree's own environment:
-   `<any venv python> -m dev_lab.dev.dep --bootstrap <worktree> --sync` ([fan-out](fanout.md)).
+   `<any venv python> -m dev_lab.dev.dep --bootstrap <worktree>` ([fan-out](fanout.md)).
 2. Install the hooks: `.venv/Scripts/python.exe -m dev_lab.dev.hook_install --install --repo .`
    (POSIX: `.venv/bin/python`).
 3. Store your own forge token: `python -m dev_lab.dev.forge auth login` ([the forge](forge.md#credentials)).

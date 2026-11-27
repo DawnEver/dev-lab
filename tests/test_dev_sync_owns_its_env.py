@@ -76,7 +76,7 @@ def test_the_checkouts_own_interpreter_proceeds(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(sys, 'executable', str(_foreign(tmp_path)))
     assert _dep_project.own_interpreter(root, str(own)) == str(own)
     monkeypatch.setattr(_dep_project.shutil, 'which', lambda _name: 'uv')
-    command = _dep_project.uv_command(root, str(own), (), syncing=True, upgrade_packages=(), frozen=True)
+    command = _dep_project.uv_command(root, str(own), (), frozen=True)
     assert command[command.index('--python') + 1] == str(own)
 
 
@@ -84,10 +84,10 @@ def test_only_a_frozen_bootstrap_builds_under_the_invoking_interpreter(tmp_path,
     root = _project(tmp_path / 'config')
     monkeypatch.setattr(_dep_project.shutil, 'which', lambda _name: 'uv')
     missing = str(root / '.venv' / 'Scripts' / 'python.exe')
-    command = _dep_project.uv_command(root, missing, (), syncing=True, upgrade_packages=(), frozen=True)
+    command = _dep_project.uv_command(root, missing, (), frozen=True)
     assert command[command.index('--python') + 1] == sys.executable
     with pytest.raises(_dep_project.ForeignEnvRefused):
-        _dep_project.uv_command(root, missing, (), syncing=False, upgrade_packages=(), frozen=True)
+        _dep_project.uv_command(root, missing, (), frozen=False)
 
 
 def test_a_bootstrap_the_caller_cannot_serve_asks_uv_for_the_targets_requires_python(tmp_path, monkeypatch) -> None:
@@ -97,7 +97,7 @@ def test_a_bootstrap_the_caller_cannot_serve_asks_uv_for_the_targets_requires_py
     )
     monkeypatch.setattr(_dep_project.shutil, 'which', lambda _name: 'uv')
     missing = str(root / '.venv' / 'Scripts' / 'python.exe')
-    command = _dep_project.uv_command(root, missing, (), syncing=True, upgrade_packages=(), frozen=True)
+    command = _dep_project.uv_command(root, missing, (), frozen=True)
     assert command[command.index('--python') + 1] == '>=99.0'
 
 

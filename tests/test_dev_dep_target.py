@@ -309,8 +309,11 @@ def test_bootstrap_refuses_an_own_venv_alias_to_another_environment(tmp_path) ->
         dep.main(['--bootstrap', str(lane)], cwd=tmp_path, run=run)
 
 
-def test_sync_defaults_to_no_extras_and_upgrades_each_git_requirement(tmp_path) -> None:
-    """D78: with nothing declared and no --extra, no extra is installed -- never every available one."""
+def test_sync_defaults_to_no_extras_and_installs_the_lock_without_moving_a_git_requirement(tmp_path) -> None:
+    """D78: with nothing declared and no --extra, no extra is installed -- never every available one.
+
+    And the floating git requirement is NOT re-resolved: a sync installs the committed lock (user ruling 2026-11-27).
+    """
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\ndependencies=["peer @ git+https://example.invalid/peer.git"]\n'
         '[tool.dev_lab.dep]\nextras=[]\n[project.optional-dependencies]\ndev=[]\ngeometry=[]\n',
@@ -324,11 +327,18 @@ def test_sync_defaults_to_no_extras_and_upgrades_each_git_requirement(tmp_path) 
 
     assert dep.main(['--sync'], cwd=tmp_path, run=run) == 0
     command = calls[0]
+    assert command[1] == 'sync'
     assert '--extra' not in command
-    assert command[command.index('--upgrade-package') + 1] == 'peer'
+    assert '--upgrade-package' not in command
+    assert '--locked' in command
 
 
-def test_an_upgrade_without_sync_only_resolves_the_named_package(tmp_path) -> None:
+def test_a_bare_upgrade_package_is_refused_naming_the_one_lock_path(tmp_path, capsys) -> None:
+    """ONE path moves a package (user ruling 2026-11-27): ``--lock-upgrade ROOT --upgrade-package NAME``.
+
+    PLANTED CONTROL: :func:`test_a_lock_upgrade_naming_packages_moves_only_them` -- the same name under
+    ``--lock-upgrade`` is accepted and moves it.
+    """
     (tmp_path / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
     calls = []
 
@@ -336,9 +346,10 @@ def test_an_upgrade_without_sync_only_resolves_the_named_package(tmp_path) -> No
         calls.append(tuple(argv))
         return SimpleNamespace(returncode=0, stdout='', stderr='')
 
-    assert dep.main(['--upgrade-package', 'peer'], cwd=tmp_path, run=run) == 0
-    assert calls[0][1] == 'lock'
-    assert calls[0][calls[0].index('--upgrade-package') + 1] == 'peer'
+    with pytest.raises(SystemExit):
+        dep.main(['--upgrade-package', 'peer'], cwd=tmp_path, run=run)
+    assert '--lock-upgrade' in capsys.readouterr().err
+    assert calls == []
 
 
 def test_explicit_interpreters_with_one_resolved_binary_still_have_distinct_prefixes(tmp_path, monkeypatch) -> None:
@@ -392,10 +403,11 @@ def test_a_lane_cannot_bootstrap_an_unrelated_repositories_main_environment(tmp_
         dep.main(['--bootstrap', str(foreign)], cwd=lane, run=run)
 
 
-def test_a_bootstrap_builds_exactly_the_lock_and_a_sync_re_resolves(tmp_path) -> None:
-    """PIN + FRESHNESS (2026-10-17): a bootstrap is THAT commit's environment -- `uv sync --frozen`, lock or not.
+def test_a_bootstrap_builds_exactly_the_lock_and_a_sync_installs_it_unmoved(tmp_path) -> None:
+    """PIN (2026-10-17): a bootstrap is THAT commit's environment -- `uv sync --frozen`, lock or not.
 
-    PLANTED CONTROL: a `--sync` of the same project re-resolves its floating git requirement.
+    A `--sync` installs the same lock `--locked` (user ruling 2026-11-27): it refuses a stale lock rather than
+    building it, and neither re-resolves the floating git requirement.
     """
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\ndependencies=["peer @ git+https://example.invalid/peer.git"]\n',
@@ -408,7 +420,8 @@ def test_a_bootstrap_builds_exactly_the_lock_and_a_sync_re_resolves(tmp_path) ->
         return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     assert dep.main(['--root', str(tmp_path), '--sync'], cwd=tmp_path, run=run) == 0
-    assert '--upgrade-package' in calls[-2]
+    assert '--upgrade-package' not in calls[-2]
+    assert '--locked' in calls[-2]
     assert '--frozen' not in calls[-2]
     assert dep.main(['--bootstrap', str(tmp_path)], cwd=tmp_path, run=run) == 0
     assert '--frozen' in calls[-2]
@@ -588,7 +601,7 @@ def test_a_lock_upgrade_naming_packages_holds_the_toolchain_where_it_is(tmp_path
     assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.1"\n'
 
 
-def test_every_sync_compiles_bytecode_so_the_first_hook_after_a_relock_is_warm(tmp_path) -> None:
+def test_every_sync_compiles_bytecode_so_the_first_hook_after_a_relock_is_warm(tmp_path, monkeypatch) -> None:
     """D24 (2026-11-17): a hook's cold first run after a relock was 1.3-2.8 s, mostly compiling the import chain.
 
     A bootstrap and a sync write the bytecode at install time (`--compile-bytecode`), so no hook pays it.
@@ -604,7 +617,9 @@ def test_every_sync_compiles_bytecode_so_the_first_hook_after_a_relock_is_warm(t
     syncs = [call for call in calls if call[1] == 'sync']
     assert len(syncs) >= 2
     assert all('--compile-bytecode' in call for call in syncs)
-    lock = _dep_project.uv_command(tmp_path, 'py', (), syncing=False, upgrade_packages=())
+    monkeypatch.setattr(_dep_project, 'own_interpreter', lambda _root, python: python)
+    monkeypatch.setattr(_dep_project, 'lock_writer', lambda uv, _required, _pin: uv)
+    lock = _dep_project.lock_upgrade_command(tmp_path, 'py', '0', ('peer',))
     assert lock[1] == 'lock'
     assert '--compile-bytecode' not in lock
 
@@ -645,31 +660,3 @@ def test_a_named_extra_adds_to_the_declared_extras_and_never_drops_dev(tmp_path)
     assert dep.main(['--sync', '--extra', 'gpu'], cwd=tmp_path, run=run) == 0
     command = calls[0]
     assert [command[i + 1] for i, flag in enumerate(command) if flag == '--extra'] == ['dev', 'gpu']
-
-
-_LOCK = '[[package]]\nname = "dev-lab"\nversion = "1"\nsource = {{ git = "https://x/dev-lab?rev={rev}" }}\n'
-
-
-@pytest.mark.parametrize(('after', 'said'), [('aaa', ''), ('bbb', 'dep --sync RELOCKED')])
-def test_a_sync_that_rewrites_the_lock_says_it_relocked_and_names_the_frozen_door(
-    tmp_path, capsys: pytest.CaptureFixture[str], after: str, said: str
-) -> None:
-    """dev-lab #1005: a plain `--sync` moved dev-lab in uv.lock and left a modified lock, unannounced.
-
-    PLANTED CONTROL: the same sync leaving the lock as it was says nothing.
-    """
-    (tmp_path / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
-    (tmp_path / 'uv.lock').write_text(_LOCK.format(rev='aaa'), encoding='utf-8')
-
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
-        if 'sync' in argv:
-            (tmp_path / 'uv.lock').write_text(_LOCK.format(rev=after), encoding='utf-8')
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
-
-    assert dep.main(['--sync'], cwd=tmp_path, run=run) == 0
-    out = capsys.readouterr().out
-    assert ('RELOCKED' in out) is bool(said)
-    if said:
-        line = next(text for text in out.splitlines() if 'RELOCKED' in text)
-        assert '(dev-lab)' in line
-        assert '--bootstrap' in line
