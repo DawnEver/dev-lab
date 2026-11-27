@@ -155,6 +155,8 @@ WHAT IS HERE, one module per shared body:
 
 * :mod:`dev_lab.dev.famtests.reviewcommand` -- the PR review command is the family's; a repo's
   ``[tool.dev_lab.review]`` declares only where it differs, never the same command or a retired capability.
+* :mod:`dev_lab.dev.famtests.secretlog` -- NEVER-LOG-SECRETS over the tracked corpus, adoptable with one test
+  before a repo has any other test code.
 * :mod:`dev_lab.dev.famtests.sharedsettings` -- a setting :mod:`lab_commons.config` owns in its
   ``[user]`` table is declared nowhere else: no consumer schema field, table key or own default.
 * :mod:`dev_lab.dev.famtests.venvspelling` -- ONE place may spell a venv interpreter, and the
