@@ -56,7 +56,7 @@ def generator_version() -> str:
 
 def _sources(ir: IR, module: str) -> tuple[str, ...]:
     declaration = ir.declaration
-    return (declaration.modules[module], declaration.quantities)
+    return (declaration.modules[module], declaration.quantities, *ir.modules[module].terms)
 
 
 def fingerprint(ir: IR, module: str) -> str:
@@ -111,6 +111,8 @@ def _scalar_keys(ir: IR, f: Field) -> list[str]:
 
 def _spec(ir: IR, f: Field, ref: TypeRef, here: str, *, name: str) -> str:
     parts = [repr(name), repr(ref.kind)]
+    if name and f.py_name != name:
+        parts.append(f'attr={f.py_name!r}')
     if name and f.optional:
         parts.append('optional=True')
     if ref.kind in ('enum', 'record'):
@@ -120,8 +122,15 @@ def _spec(ir: IR, f: Field, ref: TypeRef, here: str, *, name: str) -> str:
     if name:
         parts += _scalar_keys(ir, f)
     if name and f.unique_by:
-        parts.append(f'key=lambda r: r.{f.unique_by}')
+        parts.append(f'key=lambda r: r.{_py_attr(ir, ref, f.unique_by)}')
     return f'F({", ".join(parts)})'
+
+
+def _py_attr(ir: IR, ref: TypeRef, wire: str) -> str:
+    """The Python attribute of field *wire* of the record a list *ref* holds (a keyword is escaped)."""
+    target = _item(ref).target if ref.kind == 'list' else ref.target
+    found = [f for f in ir.record(target).fields if f.name == wire] if target else []
+    return found[0].py_name if found else wire
 
 
 def _comment(ir: IR, f: Field) -> str:
@@ -143,8 +152,8 @@ def _record(ir: IR, record: Record) -> list[str]:
     for f in ordered:
         hint = _hint(f, f.type, here, local)
         default = ' | None = None' if f.optional else ''
-        lines.append(f'    {f.name}: {hint}{default}{_comment(ir, f)}')
-    names = [f.name for f in record.fields]
+        lines.append(f'    {f.py_name}: {hint}{default}{_comment(ir, f)}')
+    names = [f.py_name for f in record.fields]
     lines += ['    _ir_dims: dict | None = _rt.ir_dims()', '', '    __post_init__ = _rt.post_init', '']
     lines += ['    def _ir_values(self) -> tuple:', f'        return ({"".join(f"self.{n}, " for n in names)})', '']
     lines += ['    def _ir_set(self, values: tuple, dims: dict) -> None:']
@@ -208,6 +217,7 @@ def render_module(ir: IR, name: str) -> str:
         '',
         f'VERSION = {declaration.version_text!r}',
         f'SCHEMA_TOML = {module.source!r}',
+        f'ENUM_VALUES = { ({e.name: list(e.values) for e in module.enums.values()})!r}',
         f'QUANTITIES_TOML = {ir.catalogue_source!r}',
         f'_BOUNDS = {module.dims!r}',
         f'_rt.check_fresh(__file__, {root_up}, "pyproject.toml", {sources!r}, {fingerprint(ir, name).split(":")[0]!r})',

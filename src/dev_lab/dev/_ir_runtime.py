@@ -88,6 +88,7 @@ class F(NamedTuple):
     csr_values: str = ''
     gauge: str = ''
     db: tuple[float, int] | None = None
+    attr: str = ''  # the Python attribute when the wire name is a keyword (``from`` -> ``from_``)
 
 
 # -- scalars ------------------------------------------------------------------------------------------------
@@ -255,10 +256,13 @@ def post_init(record: object) -> None:
     record._ir_set(tuple(values.values()), dims)  # noqa: SLF001 -- generated
 
 
-def build(cls: type, kwargs: dict, path: str) -> object:
-    """``cls(**kwargs)`` whose validation errors read from *path* rather than from ``cls``."""
+def build(cls: type, kwargs: dict[str, object], path: str) -> object:
+    """``cls(**kwargs)`` (keyed by WIRE name) whose validation errors read from *path* rather than from ``cls``."""
+    specs: tuple[F, ...] = getattr(cls, '_ir_fields', ())
+    attrs: dict[str, str] = {spec.name: spec.attr for spec in specs if spec.attr}
+    named: dict[str, object] = {attrs.get(str(name), str(name)): value for name, value in kwargs.items()}
     try:
-        return cls(**kwargs)
+        return cls(**named)
     except IRValidationError as error:
         raise error.under(cls.__name__, path) from None
 

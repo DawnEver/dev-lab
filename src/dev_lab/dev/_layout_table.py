@@ -23,6 +23,7 @@ from dev_lab.dev.datedlog import FAMILY_KINDS
 
 __all__ = [
     'ANY',
+    'DOC_SITE_ROOT',
     'FAMILY_ROWS',
     'OTHER_CONFIG_SUFFIXES',
     'REQUIRED',
@@ -52,6 +53,8 @@ ANY: Final = '*'
 TOOL_CACHE_ROOT: Final = 'output/cache'
 #: Where a named program's job tree lives: ``output/logs/<yy>/<mm>/<dd>/vendor/<program>/`` (D95, 2026-11-25).
 VENDOR_JOB_ROOT: Final = 'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/vendor'
+#: Where a named builder's documentation site lives: ``output/docs/<site>/`` (FAM-08, 2026-11-26).
+DOC_SITE_ROOT: Final = 'output/docs'
 #: One tool's or program's name: a plain word, so an entry can never widen into a glob or a path.
 _TOOL: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*')
 #: ONE-FORMAT-PER-NEED: configuration is TOML, so a second configuration format is never declared -- except where a
@@ -111,6 +114,7 @@ class Layout:
     read_only: tuple[str, ...] = ()
     tool_caches: tuple[str, ...] = ()
     vendor_jobs: tuple[str, ...] = ()
+    doc_sites: tuple[str, ...] = ()
     #: MIRROR rows: pattern -> (the mirrored root, the explicit extra names below the row, the depth or None).
     mirrors: dict[str, tuple[str, tuple[str, ...], int | None]] = dataclasses.field(default_factory=dict)
 
@@ -119,7 +123,9 @@ class Layout:
         """The declaration's fingerprint: a changed table invalidates every journalled verdict."""
         rows = sorted((k, sorted(v)) for k, v in self.rows.items())
         mirrors = sorted((k, v[0], list(v[1]), v[2]) for k, v in self.mirrors.items())
-        text = json.dumps([rows, self.pruned_paths, self.read_only, self.tool_caches, mirrors, self.vendor_jobs])
+        text = json.dumps(
+            [rows, self.pruned_paths, self.read_only, self.tool_caches, mirrors, self.vendor_jobs, self.doc_sites]
+        )
         return hashlib.sha256(text.encode()).hexdigest()[:16]
 
     def judging(self, parts: list[str]) -> dict[str, frozenset[str]]:
@@ -133,6 +139,10 @@ class Layout:
     def in_vendor_job(self, rel: str) -> bool:
         """Whether repo-relative POSIX *rel* is at or below a NAMED program's job tree (``vendor_jobs``)."""
         return _below(rel, VENDOR_JOB_ROOT, self.vendor_jobs)
+
+    def in_doc_site(self, rel: str) -> bool:
+        """Whether repo-relative POSIX *rel* is at or below a NAMED doc site (``doc_sites``)."""
+        return _below(rel, DOC_SITE_ROOT, self.doc_sites)
 
 
 def _below(rel: str, root: str, names: tuple[str, ...]) -> bool:
@@ -202,7 +212,8 @@ def declared_layout(root: Path) -> Layout:
     read_only = tuple(p.strip('/') for p in placement.get('read_only', []) if isinstance(p, str))
     tools = _named(manifest, placement, 'tool_caches', 'tools')
     vendor_jobs = _named(manifest, placement, 'vendor_jobs', 'programs')
-    return Layout(rows, pruned, read_only, tools, vendor_jobs=vendor_jobs, mirrors=mirrors)
+    doc_sites = _named(manifest, placement, 'doc_sites', 'sites')
+    return Layout(rows, pruned, read_only, tools, vendor_jobs=vendor_jobs, doc_sites=doc_sites, mirrors=mirrors)
 
 
 def _named(manifest: Path, placement: dict, key: str, what: str) -> tuple[str, ...]:
