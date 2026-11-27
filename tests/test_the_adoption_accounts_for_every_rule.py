@@ -259,6 +259,7 @@ _ENFORCED = {
     'OUTPUT-HOLDS-NO-CODE': (guard('tests/test_dev_outputcode.py'),),
     # 2026-11-24 (user ruling, ruling C): a credential value never reaches an output sink; hashes only.
     'NEVER-LOG-SECRETS': (guard('tests/test_dev_secretlog.py'),),
+    'SHARE-FOLDER-HOLDS-DATA': (guard('tests/test_dev_sharefolder.py'),),
     # 2026-11-25 (family policy, v1-migration D67/D68): the environment is read in the declared entry only.
     'ENV-IS-READ-ONCE': (guard('tests/test_dev_envreads.py'),),
     # 2026-11-25 (tests-by-need, H2): a rewritten baseline quotes both its old and new deviation.

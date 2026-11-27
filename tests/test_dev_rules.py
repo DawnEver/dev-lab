@@ -86,6 +86,7 @@ _IDS = frozenset(
         'NETWORK-RETRY-THEN-REPORT',
         'NEVER-LOG-SECRETS',
         'NO-CJK-IN-TRACKED-SOURCE',
+        'SHARE-FOLDER-HOLDS-DATA',
         'NO-LAZY-IMPORT',
         'NO-REFLECTION',
         'VERDICTS-FROM-THE-FORGE',
