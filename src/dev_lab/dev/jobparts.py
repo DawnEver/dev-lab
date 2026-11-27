@@ -105,6 +105,7 @@ __all__ = [
     'Job',
     'absent',
     'command_part',
+    'head_sha',
     'main',
     'matrix',
     'off_gate',
@@ -112,6 +113,7 @@ __all__ = [
     'pytest_collector',
     'rows',
     'run_jobs',
+    'run_url',
     'runner_for',
     'systems_for',
 ]
@@ -289,7 +291,7 @@ def no_matrix(client: Client, sha: str, cause: Exception, env: Mapping[str, str]
     """
     description = owned(Owner.CODE, f'{NO_MATRIX}: {cause}')
     status_post(
-        client, sha, context=part_context(BASE), state='error', description=description, target_url=_run_url(env)
+        client, sha, context=part_context(BASE), state='error', description=description, target_url=run_url(env)
     )
     return f'{part_context(BASE)}: error {NO_MATRIX}: {cause}'
 
@@ -360,7 +362,7 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
     else its exit code's (:func:`release_reason`) -- naming this run, and exits non-zero.
     """
     given = os.environ if env is None else env
-    sha = _head(root)
+    sha = head_sha(root)
     argv = producer_argv(root, part, sha=sha)
     context = part_context(part)
     with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
@@ -373,7 +375,7 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
     if _settled(client, sha, context):
         return code
     description = outage_said(said) or release_reason(code, outage=None)
-    status_post(client, sha, context=context, state='error', description=description, target_url=_run_url(given))
+    status_post(client, sha, context=context, state='error', description=description, target_url=run_url(given))
     emit(f'[jobparts] {context}: error {description}', err=True)
     return code or 1
 
@@ -392,7 +394,7 @@ def _settled(client: Client, sha: str, context: str) -> bool:
     return False
 
 
-def _head(root: Path) -> str:
+def head_sha(root: Path) -> str:
     """*root*'s HEAD sha."""
     head = _door.run(
         ['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, encoding='utf-8', check=True
@@ -400,7 +402,7 @@ def _head(root: Path) -> str:
     return head.stdout.strip()
 
 
-def _run_url(env: Mapping[str, str]) -> str:
+def run_url(env: Mapping[str, str]) -> str:
     """The web URL of the Actions run *env* names, ``''`` outside one."""
     parts = (env.get('GITHUB_SERVER_URL', ''), env.get('GITHUB_REPOSITORY', ''), env.get('GITHUB_RUN_ID', ''))
     return '{}/{}/actions/runs/{}'.format(*parts) if all(parts) else ''
@@ -429,7 +431,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             found = matrix(args.root, collect=collect, event=args.event, hosted=args.runners == 'hosted')
         except ValueError as cause:  # UndeclaredPart among them
-            emit(f'[jobparts] {no_matrix(client_for(args.root), _head(args.root), cause, os.environ)}', err=True)
+            emit(f'[jobparts] {no_matrix(client_for(args.root), head_sha(args.root), cause, os.environ)}', err=True)
             return 1
         emit(json.dumps(found))
         return 0

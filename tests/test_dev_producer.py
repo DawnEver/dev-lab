@@ -110,6 +110,7 @@ def test_every_owner_class_of_contract_6_is_one_enum() -> None:
         'network',
         'status-publishing',
         'part-refusal',
+        'setup',
     }
 
 
