@@ -22,6 +22,15 @@ hash moved -- without quoting old and new numbers in its message, one line per r
 
 (:func:`unquoted`; a golden may only agree better, and an unquoted rewrite is an unchecked claim). An added row
 is no rewrite. Each refusal names its cause and this door.
+
+EVERY DECLARED LOCK (FAM-02). The rewrite rule reaches any lock a repo declares, not only :data:`LOCK`::
+
+    [tool.dev_lab.baselines]
+    locks = ["tests/baselines.lock", "data/cases/**/references.lock"]   # repo-relative globs; default [LOCK]
+
+A declared lock is JSON lines with a ``name`` per row; a row whose content moved is a rewrite. A name in a lock
+other than :data:`LOCK` is quoted qualified by its lock's directory (``baseline data/cases/ipm/torque: ...``), so
+two case locks that both hold ``torque`` are quoted apart.
 """
 
 from __future__ import annotations
@@ -33,16 +42,19 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
+from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol, cast
 
 import lab_commons.launch as _door
 from lab_commons import storage
 from lab_commons.compute.store import Ref
 from lab_commons.log import emit
 
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.reports import StepReport
 from dev_lab.dev.storage import run_objects
 
@@ -60,13 +72,16 @@ __all__ = [
     'Row',
     'Store',
     'data_files',
+    'declared_locks',
     'get',
+    'lock_matches',
     'main',
     'parse_lock',
     'put',
     'read_lock',
     'refusals',
     'rewritten',
+    'staged_rewrites',
     'step',
     'unquoted',
     'write_lock',
@@ -275,9 +290,72 @@ def refusals(root: Path, commit: str | None = None) -> list[str]:
 RULE: Final = 'BASELINE-REWRITE-QUOTED'
 
 
+def declared_locks(root: Path) -> tuple[str, ...]:
+    """The lock globs *root* declares (``[tool.dev_lab.baselines] locks``); :data:`LOCK` when it declares none."""
+    manifest = root / 'pyproject.toml'
+    data = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
+    locks: object = declared_table(data, 'baselines', {}).get('locks', [str(LOCK)])
+    entries = cast('list[object]', locks) if isinstance(locks, list) else []
+    globs = tuple(one for one in entries if isinstance(one, str) and one)
+    if not globs or len(globs) != len(entries):
+        msg = f'[tool.dev_lab.baselines] locks must be a list of repo-relative globs, not {locks!r}'
+        raise LockRefused(msg)
+    return globs
+
+
+def _segments_match(path: list[str], pattern: list[str]) -> bool:
+    if not pattern:
+        return not path
+    if pattern[0] == '**':
+        return any(_segments_match(path[cut:], pattern[1:]) for cut in range(len(path) + 1))
+    return bool(path) and fnmatchcase(path[0], pattern[0]) and _segments_match(path[1:], pattern[1:])
+
+
+def lock_matches(path: str, globs: Iterable[str]) -> bool:
+    """Whether repo-relative *path* is one of the declared lock *globs* (``**`` spans any number of directories)."""
+    parts = PurePosixPath(path).parts
+    return any(_segments_match(list(parts), list(PurePosixPath(one).parts)) for one in globs)
+
+
+def _named_rows(text: str, *, where: str) -> dict[str, str]:
+    """``{name: canonical row}`` of a declared lock's JSON lines; a row without a ``name`` is refused by line."""
+    rows: dict[str, str] = {}
+    for number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+            name = str(payload['name'])
+        except (json.JSONDecodeError, KeyError, TypeError) as why:
+            msg = f'{where} line {number}: not a JSON row with a name ({why})'
+            raise LockRefused(msg) from why
+        rows[name] = json.dumps(payload, sort_keys=True)
+    return rows
+
+
+def _lock_text(root: Path, rev: str, path: str) -> str:
+    try:
+        return _git(root, 'show', f'{rev}:{path}')
+    except subprocess.CalledProcessError:
+        return ''
+
+
+def staged_rewrites(root: Path) -> tuple[str, ...]:
+    """The quoted names of every row a STAGED declared lock rewrites against ``HEAD``, sorted."""
+    globs = declared_locks(root)
+    staged = _git(root, 'diff', '--cached', '--name-only', '--diff-filter=M', '-z').split('\0')
+    names: list[str] = []
+    for path in (one for one in staged if one and lock_matches(one, globs)):
+        old = _named_rows(_lock_text(root, 'HEAD', path), where=f'HEAD:{path}')
+        new = _named_rows(_lock_text(root, '', path), where=f':{path}')
+        prefix = '' if path == str(LOCK) else f'{PurePosixPath(path).parent}/'
+        names += [f'{prefix}{name}' for name, row in new.items() if name in old and old[name] != row]
+    return tuple(sorted(names))
+
+
 def _check_message(root: Path, message: str) -> int:
-    """The commit-msg row: the STAGED lock against HEAD's, judged against *message* before the commit exists."""
-    missing = unquoted(rewritten(_rows_at(root, 'HEAD'), _rows_at(root, '')), message)
+    """The commit-msg row: every STAGED declared lock against HEAD's, judged before the commit exists."""
+    missing = unquoted(staged_rewrites(root), message)
     for name in missing:
         emit(
             f'{RULE}: this commit rewrites baseline {name!r} without quoting its numbers.\n'
