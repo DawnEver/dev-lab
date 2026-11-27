@@ -112,7 +112,7 @@ def test_a_status_posted_in_the_old_order_still_reads() -> None:
     [
         'scope=full ran=2',  # no hands
         'scope=full ran=2 hands=- hands=-',  # a field twice
-        'scope=full ran=2 hands=- colour=red',  # a field no part says
+        'scope=full ran=2 hands=- color=red',  # a field no part says
         'scope=full ran=two hands=-',  # a value off its grammar
         'claim machine=G',
     ],
