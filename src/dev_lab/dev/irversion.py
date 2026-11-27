@@ -1,9 +1,9 @@
 """THE IR VERSION CLASS: what a schema change IS, computed by diffing against a git revision.
 
 ``version`` in ``[tool.dev_lab.ir_schema]`` is ``MAJOR.MINOR.PATCH``, one epoch per repo (``docs-src/dev/ir-schema.md``,
-"Versioning"). PATCH is docs only; MINOR is additive (a new optional field, record, enum, enum value, quantity, port
-domain, dim or module); MAJOR is everything else, and its tracked records migrate once in the same change. The
-generator refuses a declared bump below the class it computes here (``IR-VERSION-NOT-BUMPED``).
+"Versioning"). PATCH is docs only; MINOR is additive (a new optional field, record, enum, enum value, quantity,
+constant, port domain, dim or module); MAJOR is everything else, and its tracked records migrate once in the same
+change. The generator refuses a declared bump below the class it computes here (``IR-VERSION-NOT-BUMPED``).
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+    from dev_lab.dev._ir_catalogue import Constant
     from dev_lab.dev.irmodel import IR, Record
 
 __all__ = ['Change', 'Level', 'at_revision', 'bump_refusal', 'classify', 'declared_level']
@@ -89,13 +90,22 @@ def _containers(ir: IR, touched: set[str]) -> set[str]:
         grown |= more
 
 
+def _pinned(constant: Constant | None) -> tuple[float, str] | None:
+    """What a reader depends on in a constant: its value and unit (its citation and reason are documentation)."""
+    return None if constant is None else (constant.value, constant.unit)
+
+
 def _catalogue_level(old: IR, new: IR) -> tuple[Level, str]:
     if any(new.quantities.get(n) != q for n, q in old.quantities.items()):
         return Level.MAJOR, 'a quantity was removed or changed'
     if any(new.port_domains.get(n) != d for n, d in old.port_domains.items()):
         return Level.MAJOR, 'a port domain was removed or changed'
+    if any(_pinned(new.constants.get(n)) != _pinned(c) for n, c in old.constants.items()):
+        return Level.MAJOR, 'a constant was removed or its value or unit changed'
     if new.quantities.keys() - old.quantities.keys() or new.port_domains.keys() - old.port_domains.keys():
         return Level.MINOR, 'a quantity or port domain was added'
+    if new.constants.keys() - old.constants.keys():
+        return Level.MINOR, 'a constant was added'
     return Level.NONE, ''
 
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from dev_lab.dev import sessionprs
+from dev_lab.dev import forgepr, sessionprs
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import GITHUB
 
@@ -62,6 +62,12 @@ def merge(client: Client, number: int, *, head: str, message: str, delete_branch
     (404, or 422 "Reference does not exist" -- the repo auto-deletes head branches; DawnEver/cc-market #12,
     2026-11-13) is the delete done, any other refusal raises. The merged PR ends in every session record holding it
     (:func:`dev_lab.dev.sessionprs.ended`) before that delete is asked.
+
+    Before GitHub deletes the head, every open PR STACKED on it (its base) is retargeted to the merged PR's base
+    with one comment saying why (:func:`dev_lab.dev.forgepr.retarget_children`): GitHub CLOSES a PR whose base
+    branch is deleted, and a closed PR whose base is gone cannot be reopened (dev-lab #1003, document-lab #67).
+    Gitea retargets the children itself when its merge deletes the head (``RETARGET_CHILDREN_ON_MERGE``, on by
+    default since Gitea 1.20).
     """
     title, _, body = message.partition('\n\n')
     if client.backend is GITHUB:
@@ -72,7 +78,9 @@ def merge(client: Client, number: int, *, head: str, message: str, delete_branch
         )
         sessionprs.ended(client.forge, number)
         if delete_branch:
-            _delete_head(client, client.pr_view(number).head)
+            landed = client.pr_view(number)
+            forgepr.retarget_children(client, landed.head, onto=landed.base, landed=number)
+            _delete_head(client, landed.head)
         return
     asked = {
         'Do': 'merge',

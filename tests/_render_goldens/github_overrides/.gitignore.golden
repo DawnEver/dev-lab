@@ -11,6 +11,7 @@
 /output/
 /rust/target/
 /src/**/__version__.py
+/src/*.egg-info/
 /target/
 /temp/
 */**/.claude/

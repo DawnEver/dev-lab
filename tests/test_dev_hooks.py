@@ -296,6 +296,7 @@ def test_an_unknown_severity_raises() -> None:
 ASKING_ROWS = {
     'TRACKED-CITES-NO-EPHEMERAL': 'dev_lab.dev.journaldoor',
     'USER-FROZEN-FILES': 'dev_lab.dev.frozen',
+    'MACHINE-FILE-IS-RENDERED': 'dev_lab.dev.machineguard',
     'WRITES-STAY-IN-THE-TREE': 'dev_lab.dev.writeroots',
 }
 

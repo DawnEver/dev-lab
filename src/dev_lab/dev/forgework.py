@@ -37,7 +37,7 @@ import http.client
 import json
 import time
 import urllib.parse
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from http import HTTPStatus
@@ -45,17 +45,13 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 from dev_lab.dev import forge as _forge
-from dev_lab.dev import sessionprs
 from dev_lab.dev._forge_journal import (
-    LOOKBACK,
     Durable,
     Journal,
-    Probe,
     Write,
-    since,
     write_key,
 )
-from dev_lab.dev._forge_records import Comment, Issue, PullRequest, _issue, comment_of, draft_title, is_pull, pull_of
+from dev_lab.dev._forge_records import Comment, Issue, PullRequest, comment_of, is_pull, pull_of
 from dev_lab.dev._forgebackends import (
     ACTIONS_BOT,
     GITEA,
@@ -66,6 +62,7 @@ from dev_lab.dev._forgebackends import (
     backend_for,
 )
 from dev_lab.dev._forgework_kept import KeptReads
+from dev_lab.dev._forgework_verbs import Verbs
 from dev_lab.dev.forge import (
     Forge,
     Transport,
@@ -84,8 +81,6 @@ from dev_lab.dev.forgefailure import (
     retried,
 )
 from dev_lab.dev.forgememo import ReadMemo
-from dev_lab.dev.forgepages import issues
-from dev_lab.dev.forgethreads import record_own
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 __all__ = [
@@ -114,7 +109,7 @@ _OCTETS: Final = 'application/octet-stream'
 
 
 @dataclass
-class Client:
+class Client(Verbs):
     """The seven verbs against one repository. *stamp* is the provenance line, or ``None``."""
 
     forge: Forge
@@ -146,16 +141,19 @@ class Client:
     #: Each thread's kept READ connection per host: a connect and a TLS handshake are paid once, not per GET.
     _kept_reads: KeptReads = dataclasses.field(default_factory=KeptReads, init=False, repr=False)
 
-    @property
-    def backend(self) -> Backend:
-        """The backend this repository's host selects."""
-        return backend_for(self.forge)
-
     def _once(
         self, method: str, path: str, data: bytes | None, content_type: str, host: str | None, *,
         accept: str = '', authed: bool = True, extra: Mapping[str, str] | None = None,
     ) -> Answer:  # fmt: skip
         backend = self.backend
+        if not path.startswith('/'):
+            # http.client writes the path into the request line as given: ``GET repos/o/r/... HTTP/1.1`` is no
+            # request target, and Gitea answers it 400 Bad Request whatever the query string holds.
+            msg = (
+                f'forge call {method} {path!r}: the path must be absolute -- start it with client.repo '
+                f'({self.repo!r}), e.g. f"{{client.repo}}/issues/1/comments?page=2"'
+            )
+            raise ValueError(msg)
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
         target = host or backend.host(self.forge)
         # authed: no credential follows a redirect; no token: an anonymous read of a public repo
@@ -224,11 +222,6 @@ class Client:
         username, token = outcome.credential
         self.username, self.token = username, token
         return True
-
-    @property
-    def repo(self) -> str:
-        """The repository's API collection path, which every verb's path starts with."""
-        return self.backend.repo_path(self.forge)
 
     def call(
         self, method: str, path: str, body: Mapping[str, Any] | None = None, durable: Durable | None = None
@@ -353,12 +346,6 @@ class Client:
         listed = self.call('GET', write.probe.path)
         return write.probe.landed(listed, after=write.queued_at, login=self.whoami())
 
-    def _recent(self, collection: str) -> str:
-        return f'{self.repo}/{collection}?state=all&{self.backend.page_param}={LOOKBACK}'
-
-    def _stamped(self, text: str) -> str:
-        return text if self.stamp is None else f'{self.stamp}\n\n{text}'
-
     def trusts(self, login: str) -> bool:
         """Whether *login*'s PR may auto-merge and its cap raise is admitted.
 
@@ -387,53 +374,3 @@ class Client:
             if self.backend is GITHUB and _INTEGRATION in said:
                 return ACTIONS_BOT
             raise
-
-    def issue_list(self, *, state: str = 'open', limit: int = 30, labels: Sequence[str] = ()) -> tuple[Issue, ...]:
-        """Issues in *state* carrying every one of *labels*, read page by page (:func:`forgepages.issues`)."""
-        return issues(self.call, f'{self.repo}/issues?{self.backend.list_query}', state, limit, labels)
-
-    def issue_view(self, number: int) -> Issue:
-        """One issue."""
-        return _issue(self.call('GET', f'{self.repo}/issues/{number}'))
-
-    def issue_create(self, title: str, body: str) -> Issue:
-        """A new issue; the body carries the provenance line."""
-        payload = {'title': title, 'body': self._stamped(body)}
-        probe = Probe(self._recent('issues'), payload)
-        return _issue(self.call('POST', f'{self.repo}/issues', payload, Durable(probe=probe)))
-
-    def issue_comment(self, number: int, body: str) -> Comment:
-        """A comment on an issue (or a PR, which both forges number as an issue)."""
-        path, payload = f'{self.repo}/issues/{number}/comments', {'body': self._stamped(body)}
-        probe = Probe(f'{path}?since={since(self.clock())}', payload)
-        posted = comment_of(self.call('POST', path, payload, Durable(probe=probe)))
-        record_own(f'{self.forge.identity}#{number}')  # TASK-HEARS-ITS-FORGE-EVENTS: own words are never news
-        return posted
-
-    def issue_edit(self, number: int, body: str) -> Issue:
-        """Replace an issue's body; the body is state, so no provenance line is added."""
-        return _issue(self.call('PATCH', f'{self.repo}/issues/{number}', {'body': body}))
-
-    def issue_close(self, number: int) -> Issue:
-        """Close an issue; nothing is written but the state."""
-        return _issue(self.call('PATCH', f'{self.repo}/issues/{number}', {'state': 'closed'}))
-
-    def pr_create(self, title: str, body: str, *, head: str, base: str, draft: bool) -> PullRequest:
-        """A new pull request from *head* into *base*; a *draft* in the forge's own way (:mod:`dev_lab.dev.forgedraft`).
-
-        GitHub takes ``draft: true``; Gitea has no draft field, and reads its ``WIP:`` title prefix as one. Every
-        door that opens a PR comes through here, so here it is recorded as the running agent session's
-        (TASK-HEARS-ITS-FORGE-EVENTS, :func:`~dev_lab.dev.sessionprs.record_opened`), whatever a shell line printed.
-        """
-        if draft and self.backend is not GITHUB:
-            title = draft_title(title)
-        payload: dict[str, Any] = {'title': title, 'body': self._stamped(body), 'head': head, 'base': base}
-        if draft and self.backend is GITHUB:
-            payload['draft'] = True
-        durable = Durable(probe=Probe(self._recent('pulls'), {'title': title, 'body': payload['body']}))
-        made = self.call('POST', f'{self.repo}/pulls', payload, durable)
-        return sessionprs.noted(self.forge, pull_of(made), branch=head)
-
-    def pr_view(self, number: int) -> PullRequest:
-        """One pull request."""
-        return pull_of(self.call('GET', f'{self.repo}/pulls/{number}'))

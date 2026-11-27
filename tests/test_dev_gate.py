@@ -23,6 +23,9 @@ DEV_ROOT = REPO_ROOT / 'src' / 'dev_lab' / 'dev'
 #: only under the tool that owns the dependency, so ``pip install`` still pulls exactly what it did. Two-sided:
 #: an entry nothing imports any more reds as an orphan.
 OPTIONAL_IMPORTS: dict[tuple[str, str], str] = {
+    ('_ir_codec.py', '_ir_unit_boundary'): (
+        "a template placeholder, never imported here: irpython rewrites it to the consumer's declared boundary module"
+    ),
     ('docrows.py', 'markdown_it'): "lazy, inside the markdown kind, which declares Module('markdown_it') as its need",
     ('irhatch.py', 'hatchling'): "the IR build hook: only hatchling imports it, at a consumer's package build",
 }

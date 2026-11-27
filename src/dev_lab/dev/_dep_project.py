@@ -32,6 +32,17 @@ from dev_lab.dev.uvfollow import follow
 from dev_lab.dev.venvpath import VENV_LAYOUTS
 from dev_lab.dev.venvpointer import current
 
+#: The package every family kit builds on: a kit moved without it imports modules its floor does not carry (#994).
+FAMILY_FLOOR: Final = 'lab-commons'
+_FAMILY_SUFFIX: Final = '-lab'
+
+
+def with_family_floor(packages: set[str]) -> set[str]:
+    """*packages* plus :data:`FAMILY_FLOOR` when any of them is a family kit (``*-lab``); else unchanged."""
+    if any(name.endswith(_FAMILY_SUFFIX) for name in packages):
+        return {*packages, FAMILY_FLOOR}
+    return set(packages)
+
 
 def _checkout(cwd: Path, git_binary: str) -> tuple[Path, Path] | None:
     result = _door.run(
@@ -225,7 +236,7 @@ def uv_command(
     upgrades = set(upgrade_packages)
     if syncing:
         upgrades.update(floating_requirements(root / 'pyproject.toml'))
-    for package in sorted(upgrades):
+    for package in sorted(with_family_floor(upgrades)):
         command.extend(('--upgrade-package', package))
     return command
 
@@ -241,7 +252,8 @@ def lock_upgrade_command(root: Path, python: str, required: str, packages: Seque
         raise FileNotFoundError(msg)
     interpreter = own_interpreter(root, python)
     uv = lock_writer(uv, required, pin_file(root))
-    moves = [part for package in packages for part in ('--upgrade-package', package)] or ['--upgrade']
+    moves = [part for package in sorted(with_family_floor(set(packages))) for part in ('--upgrade-package', package)]
+    moves = moves or ['--upgrade']
     return [uv, 'lock', *moves, '--project', str(root), '--python', interpreter]
 
 
@@ -263,15 +275,17 @@ def anchor_paths(root: Path, anchors: object) -> tuple[Path, ...]:
 def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tuple[str, ...], tuple[Path, ...]]:
     """Validate target-owned environment, extras and anchors before mutation.
 
+    The extras are the repo's declared ones (``[tool.dev_lab.dep] extras``) followed by every *requested* one: a
+    named extra adds to the always-on set and never drops it.
+
     Anchors live in their own ``[tool.dev_lab.anchors] paths``: ``[tool.dev_lab.dep]`` is
     :mod:`lab_commons.extras`'s closed table, read by that one reader, which refuses any key it does not own.
     """
     manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
     available = manifest.get('project', {}).get('optional-dependencies', {})
-    selected = requested if requested is not None else extras.extras_for(manifest, (), str(root / 'pyproject.toml'))
-    if not isinstance(selected, (list, tuple)) or any(not isinstance(name, str) for name in selected):
-        msg = 'tool.dev_lab.dep.extras must be an array of declared extra names'
-        raise ValueError(msg)
+    declared = extras.extras_for(manifest, (), str(root / 'pyproject.toml'))
+    # A named extra ADDS to the always-on ones (dev-lab #1005): `--extra gpu` replacing `dev` left no dev_lab.
+    selected = tuple(dict.fromkeys([*declared, *(requested or ())]))
     unknown = set(selected) - set(available)
     if unknown:
         msg = f'unknown dependency extras: {sorted(unknown)}'
@@ -315,6 +329,8 @@ def lock_upgrade(
         return 1
     try:
         required = uv_due(root, newest()) if (root / UV_PIN).is_file() and not packages else uv_version(root)
+        # Read BEFORE anything is written (#996): a toolchain that cannot be resolved refuses a run that moved nothing.
+        toolchain = stable() if not packages and (root / TOOLCHAIN).is_file() else None
         command = lock_upgrade_command(root, python, required, packages)
     except (OtherUvRefused, ForeignEnvRefused, OSError) as exc:
         emit(f'REFUSED: {exc}')
@@ -323,9 +339,43 @@ def lock_upgrade(
         emit('would run: ' + ' '.join(command))
         return 0
     code = run_change(command, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment)
-    if code == 0 and not packages and (root / TOOLCHAIN).is_file():
-        pin_stable(root, stable())
+    if code == 0 and toolchain is not None:
+        pin_stable(root, toolchain)
     if code == 0 and not packages and (root / UV_PIN).is_file():
         moved = uvrelease.release(pin_file(root), required)
         pin_uv(root, required, {key: digest for key, (_asset, digest) in moved.assets.items()})
     return code
+
+
+def lock_text(root: Path) -> str:
+    """*root*'s ``uv.lock`` text; ``''`` when it has none."""
+    lock = root / 'uv.lock'
+    return lock.read_text(encoding='utf-8') if lock.is_file() else ''
+
+
+def relock_note(root: Path, before: str) -> str:
+    """What an unfrozen sync did to *root*'s ``uv.lock`` (*before*: its text first), or ``''`` when unchanged.
+
+    A plain ``--sync`` re-resolves the floating Git requirements and may add packages (dev-lab #1005): the lock it
+    leaves is a CHANGE in the worktree, so it is said, with each package moved and the door that only builds the
+    committed lock (a frozen ``--bootstrap``).
+    """
+    after = lock_text(root)
+    if before == after:
+        return ''
+    old, new = _locked(before), _locked(after)
+    moved = sorted(name for name in old.keys() | new.keys() if old.get(name) != new.get(name))
+    return (
+        f'dep --sync RELOCKED {root / "uv.lock"} ({", ".join(moved) or "its metadata"}): commit it or restore it; '
+        f'to build the committed lock unchanged: python -m dev_lab.dev.dep --bootstrap {root}'
+    )
+
+
+def _locked(text: str) -> dict[str, tuple[str, str]]:
+    """Each locked package's version and source, by name; an unreadable lock reads as none."""
+    try:
+        parsed: dict[str, Any] = tomllib.loads(text) if text else {}
+    except tomllib.TOMLDecodeError:
+        return {}
+    rows: list[dict[str, Any]] = parsed.get('package', [])
+    return {str(row.get('name', '')): (str(row.get('version', '')), str(row.get('source', ''))) for row in rows}

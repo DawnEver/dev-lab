@@ -181,6 +181,35 @@ def test_a_whole_redundant_clone_names_the_clone_door() -> None:
         assert 'dev_lab.dev.cloneremove <path> --approved' in text
 
 
+@pytest.mark.parametrize(
+    'command', ['rm -rf src/optimi_lab.egg-info', 'Remove-Item -Recurse -Force src\\pkg.egg-info\\']
+)
+def test_an_egg_info_build_artifact_is_permitted(rules: Path, command: str) -> None:
+    """Issue #995: a bootstrap's `<pkg>.egg-info` is a regenerable build artifact."""
+    reason = agenthooks.decide(command, rules)
+    assert reason is None or 'RECURSIVE-DELETE' not in reason, f'{command!r}: {reason}'
+
+
+@pytest.mark.parametrize(
+    'command',
+    ['rm -rf src', 'rm -rf src/egg-info-notes', 'rm -rf src/pkg.egg-info/../..', 'rm -rf src/pkg.egg-info src'],
+)
+def test_a_non_artifact_is_refused(rules: Path, command: str) -> None:
+    """PLANTED CONTROL: the egg-info permission opens nothing else (the doc, not the remedy, names it: #1020)."""
+    reason = agenthooks.decide(command, rules)
+    assert reason is not None, f'not refused: {command!r}'
+    assert 'RECURSIVE-DELETE' in reason
+
+
+def test_the_egg_info_permission_is_named_in_the_doc_not_the_remedy() -> None:
+    """An egg-info delete is never refused, so it is no door a refusal names; the doc says it is permitted."""
+    rule = rules_by_id(DENY_RULES)['RECURSIVE-DELETE']
+    section = (Path(__file__).resolve().parents[1] / disclosure.REFUSALS_DOC).read_text(encoding='utf-8')
+    section = section.split('\n## RECURSIVE-DELETE\n', 1)[1].split('\n## ', 1)[0]
+    assert '.egg-info' in section
+    assert '.egg-info' not in str(rule.remedy)
+
+
 def _dead_doors(remedy: str) -> list[str]:
     """Every ``dev_lab.dev.<module> <word>...`` the remedy names whose module or flag/subcommand does not exist."""
     dead = []

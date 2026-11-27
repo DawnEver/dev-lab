@@ -14,10 +14,9 @@ import dataclasses
 import hashlib
 import json
 import math
-import tomllib
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import NamedTuple, NoReturn
+from typing import NamedTuple, NoReturn, Protocol, cast
 
 import numpy as np
 
@@ -88,6 +87,7 @@ class F(NamedTuple):
     csr_values: str = ''
     gauge: str = ''
     db: tuple[float, int] | None = None
+    attr: str = ''  # the Python attribute when the wire name is a keyword (``from`` -> ``from_``)
 
 
 # -- scalars ------------------------------------------------------------------------------------------------
@@ -162,7 +162,11 @@ def _scalar(spec: F, value: object, path: str) -> object:
 # -- arrays and dims ----------------------------------------------------------------------------------------
 
 
-def _bind(dims: dict[str, tuple[int, str]], name: str, extent: int, path: str, bounds: dict) -> None:
+#: Each dim name's declared (low, high), either side open.
+type _Bounds = dict[str, tuple[int | None, int | None]]
+
+
+def _bind(dims: dict[str, tuple[int, str]], name: str, extent: int, path: str, bounds: _Bounds) -> None:
     low, high = bounds.get(name, (None, None))
     if low is not None and extent < low:
         fail(path, f'{name} >= {low}', str(extent))
@@ -173,7 +177,7 @@ def _bind(dims: dict[str, tuple[int, str]], name: str, extent: int, path: str, b
     dims.setdefault(name, (extent, path))
 
 
-def _array(spec: F, value: object, path: str, dims: dict, bounds: dict) -> np.ndarray:
+def _array(spec: F, value: object, path: str, dims: dict[str, tuple[int, str]], bounds: _Bounds) -> np.ndarray:
     if not isinstance(value, np.ndarray):
         fail(path, 'ndarray', _type_name(value))
     if value.dtype != np.dtype(spec.dtype):
@@ -255,10 +259,19 @@ def post_init(record: object) -> None:
     record._ir_set(tuple(values.values()), dims)  # noqa: SLF001 -- generated
 
 
-def build(cls: type, kwargs: dict, path: str) -> object:
-    """``cls(**kwargs)`` whose validation errors read from *path* rather than from ``cls``."""
+class _Fielded(Protocol):
+    """A generated record class, as :func:`build` reads it: its field table."""
+
+    _ir_fields: tuple[F, ...]
+
+
+def build(cls: type, kwargs: dict[str, object], path: str) -> object:
+    """``cls(**kwargs)`` (keyed by WIRE name) whose validation errors read from *path* rather than from ``cls``."""
+    specs = cast('type[_Fielded]', cls)._ir_fields  # noqa: SLF001 -- generated
+    attrs: dict[str, str] = {spec.name: spec.attr for spec in specs if spec.attr}
+    named: dict[str, object] = {attrs.get(str(name), str(name)): value for name, value in kwargs.items()}
     try:
-        return cls(**kwargs)
+        return cls(**named)
     except IRValidationError as error:
         raise error.under(cls.__name__, path) from None
 
@@ -371,16 +384,16 @@ def sources_hash(version: str, sources: list[bytes]) -> str:
     return digest.hexdigest()
 
 
-def check_fresh(module_file: str, root_up: int, version_source: str, sources: tuple[str, ...], expected: str) -> None:
-    """Raise IR-STALE-GENERATED when this module's sources are present and moved; silent without them."""
+def check_fresh(module_file: str, root_up: int, version: str, sources: tuple[str, ...], expected: str) -> None:
+    """Raise IR-STALE-GENERATED when this module's sources are present and moved; silent without them.
+
+    *version* is the declared IR version the module was generated under, EMBEDDED in it: the runtime reads no
+    manifest. A version bump in ``pyproject.toml`` alone is refused by ``irschema check`` (and ``verify``), not here.
+    """
     root = Path(module_file).resolve().parents[root_up]
-    files = [root / s for s in (version_source, *sources)]
+    files = [root / s for s in sources]
     if not all(f.is_file() for f in files):
         return
-    if sources_hash(_declared_version(files[0]), [f.read_bytes() for f in files[1:]]) != expected:
+    if sources_hash(version, [f.read_bytes() for f in files]) != expected:
         message = f'IR-STALE-GENERATED: {module_file} predates its schema -- {_GENERATE}'
         raise IRStaleError(message)
-
-
-def _declared_version(pyproject: Path) -> str:
-    return tomllib.loads(pyproject.read_text(encoding='utf-8'))['tool']['dev_lab']['ir_schema']['version']

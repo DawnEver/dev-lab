@@ -12,6 +12,7 @@ from dev_lab.dev.ircheck import load
 from dev_lab.dev.irversion import Level, at_revision, bump_refusal, classify, declared_level
 
 SPARE = '[quantity.spare]\nunit = "m"\ndimension = "0 1 0 0 0 0 0"\n'
+SPARE_CONSTANT = '[constant.spare]\nvalue = 1.5\nunit = "m"\ncitation = "c"\nreason = "r"\n'
 GIT = shutil.which('git') or 'git'
 FIXTURE = Path(__file__).parent / 'data' / 'ir_schema' / 'repo'
 
@@ -90,6 +91,10 @@ def test_an_optional_field_is_minor_and_reaches_every_container(repo: Path) -> N
         ),
         ('ir/widgets.toml', '"painted", ', ''),
         ('ir/quantities.toml', '[port_domain.electrical]', SPARE + '[port_domain.electrical]'),
+        ('ir/quantities.toml', 'value = "4e-7 * pi"', 'value = 1.25663706212e-6'),
+        ('ir/quantities.toml', 'unit = "J/K"', 'unit = "J/kg"'),
+        ('ir/quantities.toml', '[constant.turns_ratio]\nvalue = 2\n', '[constant.turns_ratio]\nvalue = 3\n'),
+        ('ir/quantities.toml', '[constant.mu0]', SPARE_CONSTANT + '[constant.mu0]'),
     ],
     ids=[
         'field-removed',
@@ -98,6 +103,10 @@ def test_an_optional_field_is_minor_and_reaches_every_container(repo: Path) -> N
         'optional-made-required',
         'enum-value-removed',
         'quantity-added',
+        'constant-value-changed',
+        'constant-unit-changed',
+        'constant-int-value-changed',
+        'constant-added',
     ],
 )
 def test_each_change_gets_its_class(repo: Path, relative: str, old: str, new: str) -> None:
@@ -109,6 +118,11 @@ def test_each_change_gets_its_class(repo: Path, relative: str, old: str, new: st
     _edit(repo, 'pyproject.toml', 'version = "1.1.0"', 'version = "2.0.0"')
     assert _change(repo)[2] is None
     assert refused is not None
+
+
+def test_a_constant_citation_edit_is_a_patch(repo: Path) -> None:
+    _edit(repo, 'ir/quantities.toml', 'Table 1"', 'Table 1, row 4"')
+    assert _change(repo)[0] == Level.PATCH
 
 
 def test_a_new_enum_value_is_minor_and_touches_its_users(repo: Path) -> None:

@@ -84,18 +84,24 @@ def held(
     yield False
 
 
-def detach_argv(root: Path, args: list[str], *, python: Path | None = None) -> None:
-    """Start *python* (default: this interpreter) with *args* in *root*, outliving this process and opening no window.
+def detach_argv(root: Path, args: list[str], *, python: Path | None = None) -> bool:
+    """Start *python* (default: this interpreter) with *args* in *root*, opening no window; whether it OUTLIVES us.
 
     This interpreter as its checkout's CURRENT environment has it (:func:`dev_lab.dev.venvpointer.current_interpreter`):
     a run detached by a process from a legacy ``.venv`` or an older ``.venvs/<name>`` never holds that one again.
+
+    ``False`` when Windows refused the breakaway: the run still starts, but inside this process's job, and a job closed
+    on its owner's exit ends it with the owner (#1002: a hook's bootstrap died with git and left its build half done).
+    A caller whose run must finish does not count on it then.
     """
     argv = [current_interpreter() if python is None else str(python), *args]
     quiet = {'stdin': subprocess.DEVNULL, 'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL}
     if sys.platform != 'win32':
         _door.popen(argv, cwd=root, start_new_session=True, **quiet)
-        return
+        return True
     try:
         _door.popen(argv, cwd=root, creationflags=_DETACHED | _BREAKAWAY, **quiet)
     except OSError:  # the job forbids breakaway: still detached from the console and the process group
         _door.popen(argv, cwd=root, creationflags=_DETACHED, **quiet)
+        return False
+    return True

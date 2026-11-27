@@ -19,7 +19,7 @@ KEPT, LOOSE, ABSENT, MAIN = ('a' * 64), ('b' * 64), ('c' * 64), ('d' * 64)
 
 def _git(root: Path, *args: str) -> str:
     argv = ['git', '-C', str(root), *args]
-    done = subprocess.run(argv, capture_output=True, text=True, check=True)
+    done = subprocess.run(argv, capture_output=True, text=True, encoding='utf-8', check=True)
     return done.stdout.strip()
 
 

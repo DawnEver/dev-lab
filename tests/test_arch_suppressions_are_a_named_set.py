@@ -184,6 +184,12 @@ ALLOWED: Final[dict[Site, str]] = {
     ): 'call and the journaling door under it (the end of their wrapped signatures) return the parsed JSON '
     'answer, whose shape is the endpoint; each verb normalizes it into a typed Issue/Comment/PullRequest',
     (
+        'src/dev_lab/dev/_forgework_verbs.py',
+        'ANN401',
+        ') -> Any:',
+    ): "the verbs' declaration of Client.call (the end of its wrapped signature) returns what call returns: the "
+    'parsed JSON answer, whose shape is the endpoint',
+    (
         'src/dev_lab/dev/forgework.py',
         'ANN401',
         'def upload_raw(self, host: str, path: str, *, content: bytes, durable: Durable | None = None) -> Any:',
@@ -708,7 +714,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'from dev_lab.dev.servelock import held',
     ): 'the serve lock is read only on the verb that needs it',
     (
-        'src/dev_lab/dev/task.py',
+        'src/dev_lab/dev/_task_read.py',
         'arg-type',
         'return status(taskjournal.record(folder))',
     ): 'record() returns Record | None and the branch above already proved the folder holds one',
@@ -806,6 +812,46 @@ ALLOWED: Final[dict[Site, str]] = {
         'from dev_lab.dev.rules import tracked_files',
     ): "the rules registry imports this module's row: a top-level import back is a cycle",
     (
+        'src/dev_lab/dev/_ir_catalogue.py',
+        'ANN401',
+        'def _coherent_unit(text: str, where: str) -> Any:',
+    ): "a pint Unit: lab_commons.quantity's registry is untyped, so the unit has no type to name",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        "specs = cast('type[_Fielded]', cls)._ir_fields",
+    ): "the runtime reads the generated records' field table through the private protocol it defines",
+    (
+        'src/dev_lab/dev/heavyguard.py',
+        'PLC0415',
+        'import pytest',
+    ): "mark_heavy_tests runs inside pytest; the guard's --admit hook path imports this module and never loads pytest",
+    (
+        'src/dev_lab/dev/vendorrow.py',
+        'no-cover',
+        "if (row.get('version'), row.get('home')) != (proposal.version, proposal.home):",
+    ): "a read-back of _machinefile.merged's write: reachable only if merged regresses, which its own tests pin",
+    (
+        'tests/test_dev_baselines.py',
+        'FBT001',
+        'def test_a_declared_glob_matches_by_path_segment(path: str, matched: bool) -> None:',
+    ): 'a parametrized case argument: pytest passes it by name, so the positional-bool hazard cannot occur',
+    (
+        'tests/test_dev_forgesecretnames.py',
+        'arg-type',
+        "held = ClientFacts(_Client(_TEA, {_TEA_SECRETS: [{'name': 'R'}]}))",
+    ): 'a _Client stands in for the forge Client ClientFacts takes: a test double, not a subclass the checker sees',
+    (
+        'tests/test_dev_forgesecretnames.py',
+        'arg-type',
+        'refused = ClientFacts(_Client(_TEA, {}))',
+    ): 'PLANTED CONTROL through the same _Client test double: a refused read is named, never "holds none"',
+    (
+        'src/dev_lab/dev/_ir_catalogue.py',
+        'BLE001',
+        'except Exception:',
+    ): 'pint\'s refusals share no base class; every one means "not coherent SI"',
+    (
         'src/dev_lab/dev/_ir_codec.py',
         'PLR0911',
         ('def _value_out(spec: F, value: object, units: Mapping[str, str], prefix: str, reference: object) -> object:'),
@@ -850,11 +896,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'ARG002',
         'def initialize(self, version: str, build_data: dict) -> None:',
     ): "hatchling's build-hook signature; the hook uses neither argument",
-    (
-        'src/dev_lab/dev/irmodel.py',
-        'BLE001',
-        'except Exception:',
-    ): 'pint\'s refusals share no base class; every one means "not coherent SI"',
     (
         'src/dev_lab/dev/irrust.py',
         'PLR0911',

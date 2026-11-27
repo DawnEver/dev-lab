@@ -15,8 +15,13 @@ __all__ = ['shell_targets']
 _TOKEN: Final = re.compile(r"""\d?>>?|&>>?|\|\||&&|[|;&\n]|<<?|(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s|;&<>"'])+""")
 _HEREDOC: Final = re.compile(r"""<<-?\s*(["']?)([A-Za-z_][A-Za-z0-9_]*)\1""")
 _REDIRECT: Final = re.compile(r'\d?>>?|&>>?')
+#: A redirect's target word up to an unquoted ``)``, which closes a command substitution and is no part of the word
+#: (#1006: ``x=$(cmd 2>/dev/null)`` was read as a write to ``/dev/null)``).
+_TARGET_WORD: Final = re.compile(r"""(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^)"'])*""")
 _SEPARATORS: Final = frozenset({'|', '||', '&&', ';', '&', '\n'})
 _DISCARDS: Final = frozenset({'/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty', 'nul', '$null'})
+#: A shell whose ``-c`` script is a line of its own, read for its targets too.
+_SHELLS: Final = frozenset({'bash', 'sh', 'zsh', 'dash'})
 _CD: Final = frozenset({'cd', 'pushd', 'set-location', 'sl', 'chdir'})
 _EACH_OPERAND: Final = frozenset({'mkdir', 'touch', 'tee'})
 _LAST_OPERAND: Final = frozenset({'cp', 'mv', 'copy', 'move', 'rsync', 'install', 'copy-item', 'move-item'})
@@ -52,10 +57,38 @@ def _absolute(text: str) -> bool:
     return bool(re.match(r'^(?:[A-Za-z]:[\\/]|[\\/]|~|\$|%)', text))
 
 
+def _join(cwd: str, where: str) -> str:
+    """The cwd a nested script's *where* names, seen from the outer *cwd*."""
+    if not where:
+        return cwd
+    return where if not cwd or _absolute(where) else f'{cwd}/{where}'
+
+
+def _shell_script(words: list[str]) -> str | None:
+    """The script a ``[launcher ...] bash|sh|zsh|dash -c '<script>'`` segment runs, else ``None``.
+
+    MEASURED 2026-11-27: ``timeout 5m bash -c 'cmd > /tmp/x.log' &`` -- the bounded form BACKGROUND-SHELL-IS-BOUNDED
+    asks for -- wrote to /tmp unrefused, because the write lived inside one quoted word.
+    """
+    for index, word in enumerate(words[:-2]):
+        name = word.replace('\\', '/').rsplit('/', 1)[-1].casefold().removesuffix('.exe')
+        if name in _SHELLS:
+            for flag, script in zip(words[index + 1 : -1], words[index + 2 :], strict=True):
+                if re.fullmatch(r'-[a-z]*c[a-z]*', flag):
+                    return script
+                if not flag.startswith('-'):
+                    break
+            return None
+    return None
+
+
 def _segment_targets(words: list[str], cwd: str, found: list[tuple[str, str]]) -> str:
     """Append the targets one command segment (*words*) writes to *found*; return the cwd after it."""
     if not words:
         return cwd
+    script = _shell_script(words)
+    if script is not None:
+        found.extend((target, _join(cwd, where)) for target, where in shell_targets(script))
     verb = words[0].replace('\\', '/').rsplit('/', 1)[-1].casefold()
     operands = [one for one in words[1:] if not one.startswith('-')]
     if verb in _CD and operands:
@@ -89,7 +122,8 @@ def shell_targets(command: str) -> list[tuple[str, str]]:
         if redirect:
             redirect = False
             if not token.startswith('&'):
-                found.append((_unquote(token), cwd))
+                word = _TARGET_WORD.match(token)  # a `*` pattern: it always matches, possibly empty
+                found.append((_unquote(word.group(0) if word else token), cwd))
         elif _REDIRECT.fullmatch(token):
             redirect = True
         elif token in _SEPARATORS:

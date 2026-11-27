@@ -1,7 +1,8 @@
 """``python -m dev_lab.dev.forge <noun> <verb>`` -- the one noun dispatch over the ``forge*`` doors.
 
-``status`` for commit statuses, ``issue claim|status|comments|comments-since`` for derived issue
-state and comment reads, ``auth`` for the token, ``protect plan|check|apply`` for the declared branch protection,
+``status`` for commit statuses, ``issue claim|status|comments|comments-since|comment-view|view --comments``
+for derived issue state and comment reads, ``auth`` for the token, ``protect plan|check|apply`` for the declared
+branch protection,
 ``publish`` for the status outbox, ``records`` for
 run records, ``run show <sha>`` for what a cluster run published (each round's losses, the final
 failing ids), ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
@@ -136,7 +137,7 @@ PR_VERBS: dict[str, Callable[[list[str]], int]] = {
 }
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.
-ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since'})
+ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since', 'comment-view'})
 
 
 def main(argv: Sequence[str]) -> int:
@@ -158,12 +159,19 @@ def _route(args: list[str]) -> int:
         return NOUNS[args[0]](args[1:])
     if args[:1] == ['pr'] and args[1:2] and args[1] in PR_VERBS:
         return PR_VERBS[args[1]](args[2:])
-    if args[:1] == ['issue'] and args[1:2] and args[1] in ISSUE_VERBS:
+    if args[:1] == ['issue'] and ((args[1:2] and args[1] in ISSUE_VERBS) or _threaded(args)):
         return forgeissue.main(args[1:])
     return issue_and_pr(args)
 
 
-def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
+def _threaded(args: Sequence[str]) -> bool:
+    """``issue view N --comments``: the issue WITH its thread is :mod:`forgeissue`'s; the bare view stays here."""
+    return args[1:2] == ['view'] and '--comments' in args
+
+
+def _dispatch(
+    client: Client, args: argparse.Namespace, root: Path
+) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
     verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit, labels=args.label),
         ('issue', 'view'): lambda: client.issue_view(args.number),
@@ -176,6 +184,9 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
         ),
         ('pr', 'view'): lambda: client.pr_view(args.number),
         ('pr', 'close'): lambda: forgepr.pr_close(client, args.number, args.reason),
+        ('pr', 'retarget'): lambda: forgepr.pr_retarget(
+            client, args.number, args.base, allowed=forgepr.declared_bases(root), reason=args.reason
+        ),
         ('pr', 'edit'): lambda: forgepr.pr_edit(
             client, args.number, body=forgepr.edit_text(args) if args.body_file else None, append=args.append_line
         ),
@@ -189,6 +200,13 @@ def _relabeled(client: Client, args: argparse.Namespace) -> Issue:
     return client.issue_view(args.number)
 
 
+def _labels(args: argparse.Namespace) -> Sequence[str]:
+    """The labels an issue verb names: ``label --add`` and ``list``/``create --label``; the other verbs name none."""
+    if args.verb == 'label':
+        return args.add
+    return args.label if args.verb in {'list', 'create'} else ()
+
+
 def _show(args: argparse.Namespace, result: Issue | PullRequest | Comment | tuple[Issue, ...], root: Path) -> None:
     """Print *result* (JSON with ``--json``); an issue verb that subscribed a task nobody hears says so."""
     items = result if isinstance(result, tuple) else (result,)
@@ -198,8 +216,7 @@ def _show(args: argparse.Namespace, result: Issue | PullRequest | Comment | tupl
     else:
         for item in items:
             emit(_render(item))
-    labels = getattr(args, 'add', None) or getattr(args, 'label', ())
-    if args.noun == 'issue' and (said := unheard_notice(root, labels)):
+    if args.noun == 'issue' and (said := unheard_notice(root, _labels(args))):
         emit(f'[forge] {said}', err=True)  # TASK-HEARS-ITS-FORGE-EVENTS: a subscription nobody hears is said
 
 
@@ -256,7 +273,7 @@ def issue_and_pr(
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
             emit('\n'.join(f'[forge] {line}' for line in lines), err=True)
             args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
-        result = _dispatch(client, args)
+        result = _dispatch(client, args, root)
         if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
             emit(f'[forge] {forgemergecall.auto_merge(client, result.number)}', err=True)
             if head := result.head_sha or pushwatch.pushed_sha(root, f'refs/remotes/origin/{result.head}'):

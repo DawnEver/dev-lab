@@ -13,8 +13,22 @@ dev-lab's own runs. So this module defers the import to the collection hook, aft
 from __future__ import annotations
 
 import importlib
+from typing import Final
 
 import pytest
+
+
+#: NO-LOCAL-HEAVY's verdict on THIS host, read at plugin load: before any conftest relocates the machine file for
+#: its tests, so the host judged is the one the session started on (:func:`dev_lab.dev.heavyguard.mark_heavy_tests`).
+#: lab_commons, not dev_lab, so nothing measured is imported unmeasured.
+def _heavy_host() -> str | None:
+    try:
+        return importlib.import_module('lab_commons.box.heavy').refusal('a test marked heavy_compute')
+    except (ValueError, TypeError, OSError) as unreadable:
+        return f'NO-LOCAL-HEAVY: the machine file is unreadable ({unreadable}), so no heavy test runs here'
+
+
+_HEAVY_HOST: Final = _heavy_host()
 
 __all__ = [
     'pytest_collection_modifyitems',
@@ -57,11 +71,12 @@ def pytest_fixture_setup(fixturedef: pytest.FixtureDef[object]) -> object:
 
 @pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(session: pytest.Session, config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Refuse an unregistered need and a hand-kept cost marker, plan by the ledger, then append the always-on rows."""
+    """Refuse unregistered needs and cost markers, plan by the ledger, xfail heavy tests here, append always-on rows."""
     importlib.import_module('dev_lab.dev.needs').refuse_unregistered(items, root=config.rootpath)
     cost = importlib.import_module('dev_lab.dev.testcost')
     cost.refuse_cost_markers(items)
     cost.schedule(config, items, budget=cost.read_budget())
+    importlib.import_module('dev_lab.dev.heavyguard').mark_heavy_tests(items, why=_HEAVY_HOST)
     importlib.import_module('dev_lab.dev.famtests.alwayson').append_rows(session, config, items)
 
 

@@ -10,11 +10,11 @@ into the table at its full dotted path, creating it when absent. Comments and th
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import tomlkit
+from lab_commons.log import emit
 
 from dev_lab.dev.famconfig import SectionBase, SectionDelta, expected_entries, section_base
 
@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('section', help="the section, as the registry spells it (e.g. '[tool.pyright]')")
     parsed = parser.parse_args(argv)
     render_section(parsed.file, section_base(parsed.section))
-    sys.stdout.write(f'rendered {parsed.section} into {parsed.file}\n')
+    emit(f'rendered {parsed.section} into {parsed.file}')
     return 0
 
 

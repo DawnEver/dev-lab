@@ -815,3 +815,26 @@ def test_a_kept_connection_the_forge_dropped_is_replaced_without_a_retry_wait() 
     assert len(opened) == 2
     assert opened[0].closed
     assert slept == []
+
+
+@pytest.mark.parametrize('path', ['repos/o/r/issues/1/comments', 'issues/1/comments', 'pulls?state=open'])
+def test_a_relative_path_is_refused_naming_the_repository_collection(server, path: str) -> None:
+    """The 400 Gitea gave a raw ``client.call('GET', 'repos/...')``: the request line carried no leading slash.
+
+    PLANTED CONTROL: nothing reaches the forge, and the refusal names the absolute form to send instead.
+    """
+    gitea = _client(Forge('forge.example.org', 'o', 'r'), _Loopback(server))
+    with pytest.raises(ValueError, match=r"absolute.*client\.repo.*'/api/v1/repos/o/r'"):
+        gitea.call('GET', path)
+    assert _Recorder.received == []
+
+
+def test_an_absolute_path_keeps_its_query_string(server) -> None:
+    _answer('GET', '/api/v1/repos/o/r/pulls', (200, []))
+    assert (
+        _client(Forge('forge.example.org', 'o', 'r'), _Loopback(server)).call(
+            'GET', '/api/v1/repos/o/r/pulls?state=open&limit=5'
+        )
+        == []
+    )
+    assert _Recorder.received[-1]['path'] == '/api/v1/repos/o/r/pulls?state=open&limit=5'

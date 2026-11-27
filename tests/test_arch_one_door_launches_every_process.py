@@ -26,6 +26,10 @@ STANDALONE: dict[str, str] = {
     'src/lab_commons/hpc/pytest_item.py': 'shipped as TEXT to a cluster node and run there; imports no lab_commons',
     'src/dev_lab/dev/accountsweep.py': 'streamed as TEXT to a cluster account interpreter on stdin; stdlib only',
     'src/dev_lab/dev/hpcaccount/archivestream.py': 'streamed as TEXT to a cluster account interpreter; stdlib only',
+    'src/dev_lab/dev/commonsfloor.py': (
+        'judges a lab-commons that may be below the floor, so it imports only the stdlib (its module contract) and '
+        'cannot load the door whose package it is judging'
+    ),
 }
 #: The kit's source-module floor; MEASURED 2026-10-16 well above it.
 SOURCE_FLOOR = 100

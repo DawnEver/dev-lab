@@ -98,7 +98,9 @@ def produce(root: Path, *, run: Callable[..., int] | None = None, cargo: str | N
         emit(refused, err=True)
         return ProducerExit.USAGE
     git = shutil.which('git') or 'git'
-    listed = _door.run([git, '-C', str(root), 'ls-files', '-z'], capture_output=True, text=True, check=True)
+    listed = _door.run(
+        [git, '-C', str(root), 'ls-files', '-z'], capture_output=True, text=True, encoding='utf-8', check=True
+    )
     found = workspaces(root, [one for one in listed.stdout.split('\0') if one])
     if not found:
         emit(f'verify: refused -- part {PART}: this checkout holds no cargo workspace', err=True)
@@ -112,7 +114,9 @@ def produce(root: Path, *, run: Callable[..., int] | None = None, cargo: str | N
 
     launch = run or spawn
     codes = {node(one): launch(argv(cargo, one)) for one in found}
-    sha = _door.run([git, '-C', str(root), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True)
+    sha = _door.run(
+        [git, '-C', str(root), 'rev-parse', 'HEAD'], capture_output=True, text=True, encoding='utf-8', check=True
+    )
     cells = {
         name: cell
         for name, code in codes.items()

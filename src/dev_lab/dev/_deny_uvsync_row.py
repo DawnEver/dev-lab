@@ -12,8 +12,9 @@ __all__ = ['ENVIRONMENT_THROUGH_DEP']
 
 #: The network door in front of a command, when present: ``<python> -m dev_lab.dev.netverb [opts] --``.
 _NETVERB = r'(?:\S*python[\w.]*\s+-m\s+dev_lab\.dev\.netverb\b[^;&|\n]*?\s--\s+)?'
-#: ``uv`` by any path, then its global options (a separate value included) before the verb.
-_UV = r'(?:\S*[/\\])?uv(?:\.exe)?(?:\s+-\S+(?:\s+[^-\s]\S*)?)*?'
+#: ``uv`` by any path (``.exe`` in any case: Windows spells ``uv.EXE``), then its global options
+#: (a separate value included) before the verb.
+_UV = r'(?:\S*[/\\])?uv(?:\.[eE][xX][eE])?(?:\s+-\S+(?:\s+[^-\s]\S*)?)*?'
 
 ENVIRONMENT_THROUGH_DEP: dict[str, object] = {
     'id': 'ENVIRONMENT-THROUGH-DEP',
@@ -36,7 +37,7 @@ ENVIRONMENT_THROUGH_DEP: dict[str, object] = {
         'python -m dev_lab.dev.dep --root . --sync --extra test',
         'uv lock',
         'uv pip list',
-        'uv run --no-sync pytest --collect-only',
+        'uv lock --no-sync',
         'git commit -m "uv sync is refused"',
         'python -m dev_lab.dev.netverb -- uv lock',
     ),

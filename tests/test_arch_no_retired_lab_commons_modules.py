@@ -37,7 +37,7 @@ def test_no_module_imports_a_retired_lab_commons_module() -> None:
     assert not offenders, f'import lab_commons.quantity (registry(), parse, parse_si) instead: {offenders}'
 
 
-def test_the_scan_refuses_each_spelling_of_a_retired_import(tmp_path: Path) -> None:
+def test_a_planted_retired_import_is_refused_in_each_spelling(tmp_path: Path) -> None:
     """PLANTED-CONTROL: every import form is caught, and prose naming the module is not an import."""
     planted = tmp_path / 'planted.py'
     planted.write_text(

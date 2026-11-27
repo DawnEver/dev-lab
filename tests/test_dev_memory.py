@@ -25,7 +25,7 @@ def test_add_writes_a_dated_entry_with_its_frontmatter(tmp_path: Path) -> None:
     rel = _entry(tmp_path)
     assert rel == '.claude/memory/2026/11/23/seam-measured.md'
     text = (tmp_path / rel).read_text(encoding='utf-8')
-    assert text.startswith('---\nname: seam-measured\ndescription: what the seam costs\n---\n')
+    assert text.startswith('---\nname: seam-measured\ndescription: what the seam costs\ncreated: 2026-11-23\n---\n')
 
 
 def test_add_refuses_an_existing_entry_and_a_bad_slug(tmp_path: Path) -> None:
@@ -42,7 +42,7 @@ def test_add_refuses_an_existing_entry_and_a_bad_slug(tmp_path: Path) -> None:
 
 def test_amend_replaces_one_line_and_adds_the_note(tmp_path: Path) -> None:
     rel = _entry(tmp_path)
-    memory.amend(tmp_path, rel, 6, 'The seam costs 3 s.', reason='misstated figure', approved='yes fix it')
+    memory.amend(tmp_path, rel, 7, 'The seam costs 3 s.', reason='misstated figure', approved='yes fix it')
     text = (tmp_path / rel).read_text(encoding='utf-8')
     assert 'The seam costs 3 s.' in text
     assert 'The seam costs 4 s.' not in text
@@ -54,7 +54,7 @@ def test_amend_without_approval_words_is_refused(tmp_path: Path) -> None:
     rel = _entry(tmp_path)
     before = (tmp_path / rel).read_text(encoding='utf-8')
     with pytest.raises(MemoryRefused, match='not an amendment'):
-        memory.amend(tmp_path, rel, 6, 'changed', reason='r', approved='')
+        memory.amend(tmp_path, rel, 7, 'changed', reason='r', approved='')
     assert (tmp_path / rel).read_text(encoding='utf-8') == before
 
 
@@ -165,7 +165,7 @@ def test_a_non_ascii_approval_is_refused_before_any_write_and_names_its_door(tmp
     rel = _entry(tmp_path)
     before = (tmp_path / rel).read_text(encoding='utf-8')
     with pytest.raises(MemoryRefused, match=r'\(user, translated\)'):
-        memory.amend(tmp_path, rel, 6, 'The seam costs 3 s.', reason='misstated figure', approved=_CHINESE)
+        memory.amend(tmp_path, rel, 7, 'The seam costs 3 s.', reason='misstated figure', approved=_CHINESE)
     assert (tmp_path / rel).read_text(encoding='utf-8') == before
     named = _entry(tmp_path, name='login-jdoe-fixed')
     with pytest.raises(MemoryRefused, match='English'):
@@ -176,7 +176,7 @@ def test_a_non_ascii_approval_is_refused_before_any_write_and_names_its_door(tmp
         memory.delete(tmp_path, 'gone', [path.relative_to(tmp_path).as_posix()], reason='r', approved=_CHINESE, day=DAY)
     assert path.exists()
     memory.amend(
-        tmp_path, rel, 6, 'The seam costs 3 s.', reason='misstated figure', approved='agree (user, translated)'
+        tmp_path, rel, 7, 'The seam costs 3 s.', reason='misstated figure', approved='agree (user, translated)'
     )
     assert '(user, translated)' in (tmp_path / rel).read_text(encoding='utf-8')
 
@@ -184,10 +184,37 @@ def test_a_non_ascii_approval_is_refused_before_any_write_and_names_its_door(tmp
 def test_amending_a_note_line_is_refused_with_the_redact_door(tmp_path: Path) -> None:
     """A note line is not amended; the refusal names the door that does change it, a redaction with a token."""
     rel = _entry(tmp_path)
-    memory.amend(tmp_path, rel, 6, 'The seam costs 3 s.', reason='misstated figure', approved='yes fix it')
+    memory.amend(tmp_path, rel, 7, 'The seam costs 3 s.', reason='misstated figure', approved='yes fix it')
     lines = (tmp_path / rel).read_text(encoding='utf-8').splitlines()
     note = next(n for n, line in enumerate(lines, 1) if line.startswith('> Amended'))
     before = (tmp_path / rel).read_text(encoding='utf-8')
     with pytest.raises(MemoryRefused, match=r'redact .*<kebab-token>'):
         memory.amend(tmp_path, rel, note, '> Amended differently', reason='r', approved='yes')
     assert (tmp_path / rel).read_text(encoding='utf-8') == before
+
+
+def _written_by_every_verb(root: Path) -> list[Path]:
+    """One entry per writing verb, each written through the door."""
+    added = memory.add(root, 'seam-measured', 'what the seam costs', 'The seam costs 4 s.\nacme-host-7', day=DAY)
+    rel = added.relative_to(root).as_posix()
+    amended = memory.amend(root, rel, 7, 'The seam costs 3 s.', reason='misstated', approved='yes fix it')
+    redacted = memory.redact(root, rel, 'acme-host-7', '<host>')
+    other = memory.add(root, 'login-jdoe-fixed', 'a login fix', 'body', day=DAY)
+    renamed = memory.rename(root, other.relative_to(root).as_posix(), 'login-user-fixed.md', approved='rename it')
+    attachment = _attach(root, '2026/08/30/.archive/a.md')
+    deleted = memory.delete(
+        root, 'archive-cleared', [attachment.relative_to(root).as_posix()], reason='stray', approved='ok', day=DAY
+    )
+    return [added, amended, redacted, renamed, deleted]
+
+
+def test_every_entry_the_door_writes_dates_itself(tmp_path: Path) -> None:
+    """Issue #999: every writing verb leaves an entry whose frontmatter declares ``created:`` (and every key)."""
+    for path in _written_by_every_verb(tmp_path):
+        text = path.read_text(encoding='utf-8')
+        assert memoryentry.missing_keys(text, memoryentry.WRITTEN_KEYS) == (), path
+        assert '\ncreated: 2026-11-23\n' in text.split('\n---\n', 1)[0] + '\n', path
+    hand_made = '---\nname: undated\ndescription: no date\n---\n\nbody\n'
+    assert memoryentry.missing_keys(hand_made, memoryentry.WRITTEN_KEYS) == ('created',), (
+        'planted control: an undated entry is caught'
+    )

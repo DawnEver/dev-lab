@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
+    from datetime import date
 
 __all__ = [
     'AMENDMENT_NOTE',
@@ -25,8 +26,10 @@ __all__ = [
     'RENAME_PLACEHOLDER',
     'REQUIRED_KEYS',
     'VOLATILE_FIELDS',
+    'WRITTEN_KEYS',
     'amendment_notes',
     'deletion_approved',
+    'frontmatter',
     'is_attachment',
     'is_memory',
     'lf',
@@ -45,6 +48,10 @@ __all__ = [
 #: The frontmatter keys every entry declares (MEMORY-SHAPE): ``name`` is an index's key, ``description`` what a
 #: reader decides on unopened. An ADDED entry lacking one is refused at commit, not by a later tree scan.
 REQUIRED_KEYS: Final = ('name', 'description')
+
+#: The keys the memory door WRITES (:func:`frontmatter`, its one writer): the required ones plus ``created``, the
+#: ISO day, so every entry the door writes dates itself.
+WRITTEN_KEYS: Final = (*REQUIRED_KEYS, 'created')
 
 #: Frontmatter fields the migration strips: per-read bookkeeping, never content.
 VOLATILE_FIELDS = ('accessed', 'tier', 'count')
@@ -127,11 +134,17 @@ def only_dated(path: str, old: str, new: str) -> bool:
     return lines.count(line) == 1 and [key for key in lines if key != line] == kept
 
 
-def missing_keys(text: str) -> tuple[str, ...]:
-    """The :data:`REQUIRED_KEYS` *text*'s frontmatter does not declare (all of them when it has none)."""
+def frontmatter(name: str, description: str, created: date) -> str:
+    """The frontmatter block declaring every :data:`WRITTEN_KEYS`: the one shape every door-written entry opens with."""
+    values = {'name': name, 'description': description.strip(), 'created': created.isoformat()}
+    return '---\n' + ''.join(f'{key}: {values[key]}\n' for key in WRITTEN_KEYS) + '---\n'
+
+
+def missing_keys(text: str, keys: tuple[str, ...] = REQUIRED_KEYS) -> tuple[str, ...]:
+    """The *keys* (default :data:`REQUIRED_KEYS`) *text*'s frontmatter does not declare (all when it has none)."""
     match = FRONTMATTER.match(lf(text))
     head = match.group(1).splitlines() if match else []
-    return tuple(key for key in REQUIRED_KEYS if not any(line.startswith(f'{key}:') for line in head))
+    return tuple(key for key in keys if not any(line.startswith(f'{key}:') for line in head))
 
 
 def _completed(old: str, new: str) -> list[str] | None:

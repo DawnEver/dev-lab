@@ -16,4 +16,5 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'devschema',
     'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrollment (2026-11-16)
     'devservers',  # ORIGINAL: every workstation renders the family servers as [[server]] rows (2026-11-25)
+    'vendorrow',  # ORIGINAL: 2026-11-27, a user-confirmed vendor location written on a config-source PR branch
 )

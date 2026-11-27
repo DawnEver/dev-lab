@@ -8,10 +8,11 @@ import subprocess
 import sys
 import time
 import venv
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from lab_commons.box import Refused
@@ -104,6 +105,8 @@ def test_bootstrap_defaults_to_the_declared_full_extra_set_and_named_worktree(tm
 
     def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append((tuple(argv), kwargs))
+        if 'sync' in argv:  # uv sync creates the environment it is pointed at; the pointer is published onto it
+            Path(cast('Mapping[str, str]', kwargs['env'])['UV_PROJECT_ENVIRONMENT']).mkdir(parents=True)
         return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
@@ -534,6 +537,27 @@ def test_lock_upgrade_moves_a_pinned_rust_toolchain_to_the_newest_stable(tmp_pat
     assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.1"\n'
 
 
+def test_a_lock_upgrade_whose_toolchain_cannot_resolve_refuses_before_it_writes(tmp_path, capsys) -> None:
+    """#996: the newest stable was read AFTER ``uv lock`` rewrote the lock, so its failure left the run half done.
+
+    PLANTED CONTROL: the same run with a resolvable stable writes (the case above).
+    """
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
+    pin = tmp_path / 'rust-toolchain.toml'
+    pin.write_text('[toolchain]\nchannel = "1.99.0"\n', encoding='utf-8')
+    ran: list[object] = []
+
+    def unresolved() -> str:
+        msg = 'https://github.com/rust-lang/rust listed no Rust release (offline)'
+        raise OSError(msg)
+
+    upgrade = functools.partial(_dep_project.lock_upgrade, tmp_path, 'py', dry_run=False, environment={})
+    assert upgrade(run=lambda argv, **_k: ran.append(argv), stable=unresolved) == 1
+    assert ran == [], 'nothing ran: the lock was never rewritten'
+    assert 'REFUSED' in capsys.readouterr().out
+    assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.0"\n'
+
+
 def test_a_lock_upgrade_naming_packages_moves_only_them(tmp_path) -> None:
     """The relock's in-house scope (user ruling 2026-11-05): ``--upgrade-package`` replaces ``--upgrade``.
 
@@ -600,3 +624,52 @@ def test_an_explicit_extra_still_selects_it(tmp_path) -> None:
     assert dep.main(['--sync', '--extra', 'all'], cwd=tmp_path, run=run) == 0
     command = calls[0]
     assert [command[i + 1] for i, flag in enumerate(command) if flag == '--extra'] == ['all']
+
+
+def test_a_named_extra_adds_to_the_declared_extras_and_never_drops_dev(tmp_path) -> None:
+    """dev-lab #1005: `--sync --extra gpu` dropped the always-on `dev`, and with it dev_lab and verify.
+
+    PLANTED CONTROL: :func:`test_an_explicit_extra_still_selects_it` -- with nothing declared, the named extra alone.
+    """
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nextras=["dev"]\n'
+        '[project.optional-dependencies]\ndev=[]\ngpu=[]\n',
+        encoding='utf-8',
+    )
+    calls = []
+
+    def run(argv, **_kwargs: object) -> SimpleNamespace:
+        calls.append(tuple(argv))
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+    assert dep.main(['--sync', '--extra', 'gpu'], cwd=tmp_path, run=run) == 0
+    command = calls[0]
+    assert [command[i + 1] for i, flag in enumerate(command) if flag == '--extra'] == ['dev', 'gpu']
+
+
+_LOCK = '[[package]]\nname = "dev-lab"\nversion = "1"\nsource = {{ git = "https://x/dev-lab?rev={rev}" }}\n'
+
+
+@pytest.mark.parametrize(('after', 'said'), [('aaa', ''), ('bbb', 'dep --sync RELOCKED')])
+def test_a_sync_that_rewrites_the_lock_says_it_relocked_and_names_the_frozen_door(
+    tmp_path, capsys: pytest.CaptureFixture[str], after: str, said: str
+) -> None:
+    """dev-lab #1005: a plain `--sync` moved dev-lab in uv.lock and left a modified lock, unannounced.
+
+    PLANTED CONTROL: the same sync leaving the lock as it was says nothing.
+    """
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
+    (tmp_path / 'uv.lock').write_text(_LOCK.format(rev='aaa'), encoding='utf-8')
+
+    def run(argv, **_kwargs: object) -> SimpleNamespace:
+        if 'sync' in argv:
+            (tmp_path / 'uv.lock').write_text(_LOCK.format(rev=after), encoding='utf-8')
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+    assert dep.main(['--sync'], cwd=tmp_path, run=run) == 0
+    out = capsys.readouterr().out
+    assert ('RELOCKED' in out) is bool(said)
+    if said:
+        line = next(text for text in out.splitlines() if 'RELOCKED' in text)
+        assert '(dev-lab)' in line
+        assert '--bootstrap' in line

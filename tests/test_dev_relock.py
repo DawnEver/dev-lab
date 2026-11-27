@@ -21,6 +21,7 @@ import pytest
 
 from dev_lab.dev import _dep_project, forgeservesteps, locklag, relock, uvfollow
 from dev_lab.dev._dep_project import OtherUvRefused
+from dev_lab.dev._relock_lockfile import DEFAULT_LINE, dist_of, floated, in_house, line_of
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgesync import relock_floating
 from dev_lab.dev.forgework import Client, PullRequest
@@ -37,10 +38,6 @@ from dev_lab.dev.relock import (
     cadence,
     carry,
     chosen,
-    dist_of,
-    floated,
-    in_house,
-    line_of,
     rerender,
 )
 
@@ -701,7 +698,7 @@ _A_SHA = '0123456789abcdef0123456789abcdef01234567'
         ('rev=integrate/main', 'integrate/main'),
         ('rev=main', 'main'),
         ('branch=release%2Fx', 'release/x'),
-        ('', relock.DEFAULT_LINE),
+        ('', DEFAULT_LINE),
         (f'rev={_A_SHA}', None),
         (f'rev={_A_SHA[:12]}', _A_SHA[:12]),
         ('tag=v1', None),

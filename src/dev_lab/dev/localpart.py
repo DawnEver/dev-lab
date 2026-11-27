@@ -149,7 +149,9 @@ def post_cited(
 def tracked_files(root: Path) -> list[str]:
     """The checkout's tracked paths (``git ls-files``); none outside a work tree."""
     git = shutil.which('git') or 'git'
-    done = _door.run([git, '-C', str(root), 'ls-files', '-z'], capture_output=True, text=True, check=False)
+    done = _door.run(
+        [git, '-C', str(root), 'ls-files', '-z'], capture_output=True, text=True, encoding='utf-8', check=False
+    )
     return [one for one in done.stdout.split('\0') if one] if done.returncode == 0 else []
 
 

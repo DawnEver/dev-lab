@@ -22,8 +22,8 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import irmigrate, irpython, irrust
+from dev_lab.dev._ir_errors import IRSchemaError
 from dev_lab.dev.ircheck import load
-from dev_lab.dev.irmodel import IRSchemaError
 from dev_lab.dev.irversion import Level, at_revision, bump_refusal, classify
 
 if TYPE_CHECKING:
@@ -167,6 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     verbs.add_parser('check', help='refuse a malformed IR, a missing bump or a stale generated file')
     rust = verbs.add_parser('rust', help='write ir.rs into a build directory (a build.rs calls this)')
     rust.add_argument('--out', type=Path, required=True)
+    verbs.add_parser('build-rs', help="print the consuming crate's build.rs (it finds the venv interpreter itself)")
     migrate = verbs.add_parser('migrate', help='rewrite stored records at the current version')
     migrate.add_argument('paths', nargs='+', type=Path)
     affected = verbs.add_parser('affected', help='the change class and the modules consuming the touched records')
@@ -175,6 +176,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     root = parsed.root.resolve()
     if parsed.verb == 'check':
         return _report([stale_refusal(root)])
+    if parsed.verb == 'build-rs':
+        emit(irrust.build_rs().rstrip())
+        return 0
     ir = _loaded(root)
     if ir is None:
         return 0 if (root / 'pyproject.toml').is_file() else 1

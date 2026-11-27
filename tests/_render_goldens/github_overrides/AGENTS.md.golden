@@ -23,10 +23,10 @@ _Rendered by `dev_lab.dev.agentsection` from `dev_lab.dev.principles`; a hand ed
   retirement is classified (renamed, baggage, or capability-dropped) and only a user ruling drops a capability.
 - **Every wall teaches** (`every-wall-teaches`): Every refusal or failure an agent hits names its cause and its door;
   one that does not is a mechanism gap, and closing it (a hook row, a remedy, a test) comes before the task. Never route
-  around a wall or hand the user a command. The loop: docs-src/dev/feedback.md.
+  around a wall or hand the user a command. The loop: docs-src/dev/feedback.md (dev-lab).
 - **Fan out without a barrier** (`no-barrier-fan-out`): Parallel work is independent items, each landed the moment it is
   done; nothing waits for the slowest sibling -- no barrier-style orchestration (e.g. a dynamic workflow that joins all
-  agents) unless a step truly needs every result. How: docs-src/dev/fanout.md.
+  agents) unless a step truly needs every result. How: docs-src/dev/fanout.md (dev-lab).
 - **Deliver an image by its absolute path** (`images-by-absolute-path`): An image handed to the user is named by its
   ABSOLUTE path, never a relative one (IMAGES-BY-ABSOLUTE-PATH).
 - **A worktree is named for its task** (`worktree-names-its-task`): A worktree's name has a physical meaning tied to its
@@ -71,8 +71,9 @@ _Each rule is cited by ID; its full statement and refusing mechanism live in `de
 - `MERGE-OR-DELETE`: A merged branch is DELETED and an unmerged one is MERGED, no third state: an `archive/*` tag or
   untracked rename hides work and is debt -- `branchset` lists it, deletes it when a declared branch holds its tip, else
   names it to merge.
-- `AGENT-GUARD`: A hand-written test invocation, a bare network git verb and a stash are refused by the shared deny
-  machinery rather than by prose, so the refusal is identical in every repo that adopts it.
+- `AGENT-GUARD`: A hand-written test invocation and a stash are refused, and a bare network verb is hinted toward the
+  retry door (a repo raises it to a refusal in its adoption severities), by the shared deny machinery rather than by
+  prose, so the answer is identical in every repo that adopts it.
 - `NETWORK-RETRY-THEN-REPORT`: The forge is a REMOTE service: a network verb goes through the retry wrapper rather than
   being called directly, and a write that still fails is REPORTED with its diagnosis instead of hammered.
 - `PRODUCTION-ENTRY-POINT`: Reproduce a behavior through the PRODUCTION entry point, never an ad-hoc script handed out

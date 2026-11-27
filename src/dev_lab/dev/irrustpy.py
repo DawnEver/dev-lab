@@ -137,7 +137,7 @@ def record_py(ir: IR, module: Module, record: Record, path: Path, owned: Owned) 
     lines = ['', _CFG, f"pub struct {name}View<'py> {{"]
     for f in record.fields:
         view = _view_type(f, f.type, path, owned)
-        lines.append(f'    pub {f.name}: {f"Option<{view}>" if f.optional else view},')
+        lines.append(f'    pub {f.rust_name}: {f"Option<{view}>" if f.optional else view},')
     lines += ["    _py: std::marker::PhantomData<&'py ()>,", '}', '', _CFG]
     lines += [f"impl<'a, 'py> pyo3::FromPyObject<'a, 'py> for {name}View<'py> {{", '    type Error = pyo3::PyErr;', '']
     lines.append("    fn extract(ob: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {")
@@ -146,14 +146,16 @@ def record_py(ir: IR, module: Module, record: Record, path: Path, owned: Owned) 
     for f in record.fields:
         read = _read(f, f.type, 'a', path)
         value = f'if a.is_none() {{ None }} else {{ Some({read}) }}' if f.optional else read
-        lines.append(f'            {f.name}: {{ let a = ob.getattr("{f.name}")?; {value} }},')
+        lines.append(f'            {f.rust_name}: {{ let a = ob.getattr("{f.py_name}")?; {value} }},')
     lines += ['            _py: std::marker::PhantomData,', '        })', '    }', '}', '', _CFG]
     lines += [f"impl<'py> {name}View<'py> {{", f'    pub fn into_owned(self) -> {name} {{', f'        {name} {{']
     for f in record.fields:
         owned = (
-            f'self.{f.name}.map(|x| {_owned(f, f.type, "x")})' if f.optional else _owned(f, f.type, f'self.{f.name}')
+            f'self.{f.rust_name}.map(|x| {_owned(f, f.type, "x")})'
+            if f.optional
+            else _owned(f, f.type, f'self.{f.rust_name}')
         )
-        lines.append(f'            {f.name}: {owned},')
+        lines.append(f'            {f.rust_name}: {owned},')
     lines += ['        }', '    }', '}', '', _CFG]
     lines += [f"impl<'a, 'py> pyo3::FromPyObject<'a, 'py> for {name} {{", '    type Error = pyo3::PyErr;', '']
     lines.append("    fn extract(ob: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {")
@@ -168,10 +170,10 @@ def record_py(ir: IR, module: Module, record: Record, path: Path, owned: Owned) 
     for f in record.fields:
         write = _write(ir, f, f.type, 'x')
         if f.optional:
-            value = f'match self.{f.name} {{ Some(x) => {write}, None => py.None().into_bound(py) }}'
+            value = f'match self.{f.rust_name} {{ Some(x) => {write}, None => py.None().into_bound(py) }}'
         else:
-            value = _write(ir, f, f.type, f'self.{f.name}')
-        lines.append(f'        kwargs.set_item("{f.name}", {value})?;')
+            value = _write(ir, f, f.type, f'self.{f.rust_name}')
+        lines.append(f'        kwargs.set_item("{f.py_name}", {value})?;')
     lines.append(f'        ir_runtime::py::class(py, "{_python_module(ir, f"{module.name}.{name}")}", "{name}")?')
     lines += ['            .call((), Some(&kwargs))', '    }', '}']
     return lines

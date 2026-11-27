@@ -82,6 +82,7 @@ def _log(root: Path) -> list[str]:
         [shutil.which('git') or 'git', '-C', str(root), 'log', '--format=%s'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
         check=True,
     )
     return done.stdout.splitlines()

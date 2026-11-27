@@ -6,7 +6,7 @@ step (:data:`dev_lab.dev.verifysteps.LINT_STEPS`), so every verify in every fami
 ONE CONFIG, DEV-LAB'S: :data:`CONFIG` ships in this package and every repo's run passes it to typos; no repo
 carries a copy, so the vocabulary moves for the whole family at one relock.
 
-WHAT IS CHECKED: every file git would track -- tracked, plus untracked and not ignored -- except dated memory
+WHAT IS CHECKED: every TRACKED file (issue #995: an untracked build artifact is never scanned) except dated memory
 written before the ruling (:data:`MEMORY_CUTOFF`). A memory entry is immutable history, so the ruling is not
 applied to it backwards; an entry written on or after the cutoff is checked like any other file. A BINARY file
 (a NUL in its head: an ``.npz`` golden) is never handed to typos, so ``--write`` cannot rewrite one; the
@@ -91,7 +91,7 @@ def binary() -> Path | None:
 
 def _files(root: Path) -> tuple[str, ...]:
     done = _door.run(
-        [_GIT, '-C', str(root), 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+        [_GIT, '-C', str(root), 'ls-files', '-z', '--cached'],
         capture_output=True,
         text=True,
         encoding='utf-8',

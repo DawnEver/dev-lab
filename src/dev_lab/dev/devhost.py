@@ -22,7 +22,9 @@ A host file restating a family key is refused (:func:`check`). ``[dev]`` (:data:
 ``[capabilities.<vendor>] seats``, its one consumer-facing copy.
 
 Install homes are found ON each machine: ``detect`` globs the family's patterns locally and prints the host-file
-lines to propose through a pull request; a vendor with seats and no ``home`` is named by the drift notice.
+lines to propose through a pull request, and ``vendor-row`` (:mod:`dev_lab.dev.vendorrow`) writes a
+USER-CONFIRMED location row on a config-source branch for its pull request; a
+vendor with seats and no ``home`` is named by the drift notice.
 
 A machine with no host file renders the family's ``[dev.default]`` instead, stamped ``[devhost] unmanaged``
 (:mod:`dev_lab.dev.devprofile`); ``[dev] bridge.hpc`` renders as ``[bridge.hpc]``, ``[dev] hooks`` as
@@ -71,8 +73,10 @@ from dev_lab.dev import (
     forgeenroll,
     tomlleaves,
     vendordetect,
+    vendorrow,
     volumefloor,
 )
+from dev_lab.dev._devhost_cli import parser
 from dev_lab.dev._devhost_layers import family_facts_stay_home
 from dev_lab.dev._machinefile import dumps, merged
 from dev_lab.dev.backedup import backups_dir, replace_backed_up
@@ -341,42 +345,20 @@ def _local_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -
     return 0
 
 
+def _vendor_row_verb(args: argparse.Namespace) -> int:
+    proposal = vendorrow.Proposal(args.host, args.program, args.program_version, args.home)
+    try:
+        tree, sha = vendorrow.write(args.clone, proposal, confirmed=args.confirmed, base=args.base)
+    except (vendorrow.Unconfirmed, ValueError, RuntimeError) as refused:
+        emit(f'refused: {refused}', err=True)
+        return 2
+    emit(f'vendor-row: {vendorrow.branch_for(proposal)} at {sha[:12]} in {tree}; push it and open its pull request')
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    """The verbs: drift, render, detect, session-start, channels, use-store, enroll, admit, bringup (each its help)."""
-    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
-    parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
-    verbs = parser.add_subparsers(dest='verb', required=True)
-    drifting = verbs.add_parser('drift', help='report where the machine file departs from its render')
-    drifting.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
-    verbs.add_parser('session-start', help='the SessionStart hook: the machine-file notice, if any; always 0')
-    telling = verbs.add_parser('channels', help="print this machine's declared session channels (source -> user)")
-    telling.add_argument('--json', action='store_true', required=True, help='as one JSON object ({} when undeclared)')
-    finding = verbs.add_parser('detect', help="print the host-file lines for this machine's vendor install homes")
-    finding.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
-    making = verbs.add_parser('render', help='render the machine file from the family and host files')
-    making.add_argument('--host', default=None, help='the host name (default: the live [devhost] host, else this one)')
-    making.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
-    making.add_argument('--write', action='store_true', help='back the live file up, then replace it')
-    making.add_argument(
-        '--backups', type=Path, default=None, help='where the backup goes (default: backedup.backups_dir)'
-    )
-    forgecredential.add_use_store(verbs)
-    forgeenroll.add_enroll(verbs)
-    devhostadmit.add_admit(verbs)
-    checking = verbs.add_parser('bringup', help='list every wall a new workstation hits, each with its door')
-    checking.add_argument('--check', action='store_true', required=True, help='read only; exit 1 while a wall stands')
-    setting = verbs.add_parser('local', help='set or unset ONE local-layer key ([repos], [user]) and re-render')
-    local_verbs = setting.add_subparsers(dest='local_verb', required=True)
-    one = local_verbs.add_parser('set', help='set <table>.<key> to <value>')
-    one.add_argument('key', help='<table>.<key>, e.g. repos.dev-lab')
-    one.add_argument('value', help='the value; a [repos] path must be absolute')
-    gone = local_verbs.add_parser('unset', help='remove <table>.<key>')
-    gone.add_argument('key', help='<table>.<key>')
-    for sub in (one, gone):
-        sub.add_argument(
-            '--backups', type=Path, default=None, help='where the backup goes (default: backedup.backups_dir)'
-        )
-    args = parser.parse_args(argv)
+    """The verbs: drift, render, detect, vendor-row, session-start, channels, use-store, enroll, admit, bringup."""
+    args = parser(main.__doc__).parse_args(argv)
     path = args.machine or machineconfig.config_path()
     try:  # the render alone repairs the one old shape; every other verb names it and its door
         live = read_machine(path, repair=args.verb == 'render')
@@ -396,6 +378,7 @@ def main(argv: list[str] | None = None) -> int:
         'drift': lambda: _drift(path, live, args.clone),
         'use-store': lambda: forgecredential.use_declared(declared_by(live.get(OWN_TABLE, {})), args.host),
         'bringup': lambda: bringup.main(live),
+        'vendor-row': lambda: _vendor_row_verb(args),
         'admit': lambda: devhostadmit.run(args, live, live.get(OWN_TABLE, {})),
         'enroll': lambda: forgeenroll.run(args, live.get(OWN_TABLE, {}), declared_by(live.get(OWN_TABLE, {}))),
     }

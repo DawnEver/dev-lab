@@ -42,7 +42,7 @@ from typing import Final
 from lab_commons.census import processes
 
 from dev_lab.dev.diskusage import remove_tree
-from dev_lab.dev.liverun import Census, label, removal_holders
+from dev_lab.dev.liverun import Census, describe, label, occupants, removal_holders
 from dev_lab.dev.servelock import held
 from dev_lab.dev.venvpointer import HOME, POINTER, RETIRED_POINTER, is_link, named
 
@@ -247,7 +247,7 @@ def reclaim(root: Path, *, census: Census = processes, building_here: bool = Fal
     if building_here:
         return _reclaim(Path(root), census=census)
     try:
-        with exclusive_build(root):
+        with exclusive_build(root, census=census):
             return _reclaim(Path(root), census=census)
     except BuildBusy as exc:
         return (f'kept     every environment of {root}: {exc}',)
@@ -273,7 +273,12 @@ class BuildBusy(RuntimeError):
     """Another live run (a ``dep`` build or a reclaim) holds this worktree's :data:`BUILD_LOCK`."""
 
 
-def _holder(lock: Path) -> str:
+def _holder(lock: Path, *, census: Census) -> str:
+    """Who holds *lock*: its recorded pid when that pid RUNS, else that it does not and which runs are left (#1002).
+
+    The OS drops the lock when its holder dies, so a held lock whose recorded pid is dead is held by a process that
+    pid left behind. A wall naming only the dead pid sent its reader to stop a process that does not exist.
+    """
     try:
         with lock.open('rb') as handle:
             handle.seek(_HOLDER_AT)
@@ -282,19 +287,32 @@ def _holder(lock: Path) -> str:
         pid, start = '', ''
     if not pid.isdigit():
         return f'another run holds {lock} (its pid is not yet written); wait for it'
+    table = tuple(census())
+    if any(one.pid == int(pid) for one in table):
+        return (
+            f'another run (pid {pid}, running, started {start}) is building or reclaiming this worktree and holds '
+            f'{lock}; wait for it, or stop it with dev_lab.dev.stoprun --pid {pid}'
+        )
+    left = occupants(lock.parent.parent, census=lambda: table)
+    door = (
+        f'Stop that run with dev_lab.dev.stoprun --pid <its pid>:\n{describe(left)}'
+        if left
+        else 'No process working in this worktree is in the process table; the OS releases the lock when its last '
+        'holder exits -- run dep --bootstrap again then.'
+    )
     return (
-        f'another run (pid {pid}, started {start}) is building or reclaiming this worktree and holds {lock}; '
-        f'wait for it, or stop it with dev_lab.dev.stoprun --pid {pid}'
+        f'{lock} is held, but its recorded holder (pid {pid}, started {start}) is NOT running: a process it left '
+        f'behind holds the lock. {door}'
     )
 
 
 @contextlib.contextmanager
-def exclusive_build(root: Path) -> Iterator[None]:
+def exclusive_build(root: Path, *, census: Census = processes) -> Iterator[None]:
     """Hold *root*'s :data:`BUILD_LOCK` for the block; raise :class:`BuildBusy` naming the holder when it is held."""
     lock = Path(root) / HOME / BUILD_LOCK
     with held(lock) as mine:
         if not mine:
-            raise BuildBusy(_holder(lock))
+            raise BuildBusy(_holder(lock, census=census))
         with lock.open('r+b') as handle:
             handle.seek(_HOLDER_AT)
             handle.write(f'{os.getpid()} {time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}\n'.encode())

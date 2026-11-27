@@ -145,6 +145,7 @@ def test_a_session_leaves_nothing_in_the_system_temp_dir_unless_it_failed(tmp_pa
         env=env,
         capture_output=True,
         text=True,
+        encoding='utf-8',
         check=False,
     )
     assert (run.returncode == 0) is (left == 0), run.stdout + run.stderr

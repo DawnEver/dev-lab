@@ -584,3 +584,65 @@ def test_a_family_kinds_declared_data_is_not_refused_as_output_code(tmp_path: Pa
     coded = _TABLE.replace("'output/logs' = []", "'output/logs' = ['.py']")
     with pytest.raises(LayoutNotDeclared, match='never holds'):
         declared_layout(_checkout(tmp_path / 'coded', coded))
+
+
+def test_setuptools_egg_info_beside_the_package_is_build_output_and_a_stray_dir_is_not(tmp_path) -> None:
+    """#1031: every setuptools editable install (dep --bootstrap, verify's seats) writes src/<pkg>.egg-info/.
+
+    It is regenerable build metadata, never judged; the planted control is a stray src/ directory and an egg-info
+    anywhere but directly under src/, both still named.
+    """
+    root = _checkout(tmp_path)
+    _plant(root, 'src/pkg.egg-info/PKG-INFO')
+    _plant(root, 'src/pkg.egg-info/SOURCES.txt')
+    assert layout_violations(root)[1] == []
+    assert refuse_layout(root / 'src/pkg.egg-info/PKG-INFO') is None
+    _plant(root, 'src/stray/notes.txt')
+    _plant(root, 'rust/pkg.egg-info/PKG-INFO')
+    assert layout_violations(root)[1] == [
+        f'rust/pkg.egg-info/: {layout._undeclared("rust/pkg.egg-info")}',
+        f'src/stray/notes.txt: .txt is not allowed under src/* (allowed: {sorted([".py"])})',
+    ]
+
+
+def test_the_rendered_editor_settings_are_a_family_row(tmp_path) -> None:
+    """#1031: the family renders .vscode/settings.json into every checkout, so .vscode/ is the family's row."""
+    root = _checkout(tmp_path)
+    _plant(root, '.vscode/settings.json')
+    assert layout_violations(root)[1] == []
+    _plant(root, '.vscode/launch.py')
+    assert layout_violations(root)[1] == [
+        f'.vscode/launch.py: .py is not allowed under .vscode (allowed: {sorted([".json"])})'
+    ]
+
+
+_NO_DEEP_SCRATCH = _TABLE.replace("'scratch/*' = ['*']\n'scratch/*/*' = ['*']\n'scratch/*/*/*' = ['*']\n", '')
+
+
+def test_scratch_content_is_the_declared_sink_at_any_depth_and_the_same_tree_outside_is_refused(tmp_path) -> None:
+    """#1034: an agent's experiment dir under scratch/ is never an undeclared directory nor a refused format."""
+    assert _NO_DEEP_SCRATCH != _TABLE
+    root = _checkout(tmp_path, _NO_DEEP_SCRATCH)
+    _plant(root, 'scratch/hbprobe1/a/b/c/d/probe.py')
+    _plant(root, 'scratch/hbprobe1/data.weird')
+    assert layout_violations(root)[1] == []
+    assert refuse_layout(root / 'scratch/x/y/z/w/v.py') is None
+    _plant(root, 'hbprobe1/a/probe.py')  # PLANTED CONTROL: the same experiment outside scratch is still judged
+    assert layout_violations(root)[1] == [f'hbprobe1/: {layout._undeclared("hbprobe1")}']
+
+
+def test_a_declared_scratch_elsewhere_is_the_sink_and_the_family_name_is_then_judged(tmp_path) -> None:
+    body = _NO_DEEP_SCRATCH.replace('[layout]', "scratch = 'sink/'\n[layout]") + "sink = ['*']\n"
+    root = _checkout(tmp_path, body)
+    _plant(root, 'sink/exp/deep/x.py')
+    _plant(root, 'scratch/exp/x.py')
+    assert layout_violations(root)[1] == [f'scratch/exp/: {layout._undeclared("scratch/exp")}']
+
+
+def test_a_copy_deep_in_scratch_is_still_named_with_the_discard_door_of_its_entry(tmp_path) -> None:
+    root = _checkout(tmp_path, _NO_DEEP_SCRATCH)
+    _plant(root, 'scratch/hbprobe1/a/b/.git')
+    refusal = scan_refusal(root)
+    assert refusal is not None
+    assert 'scratch/hbprobe1/a/b/: NO-BACKUP-COPIES' in refusal
+    assert 'python -m dev_lab.dev.scratch discard scratch/hbprobe1' in refusal

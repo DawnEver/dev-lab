@@ -21,10 +21,10 @@ THE DECLARATION, in the repo's ``pyproject.toml`` (an absent table is the empty 
 A TEST SWITCH (class C) is refused in every mode: in a test file, a read of ONE variable by name (``environ[..]``,
 ``environ.get(..)``, ``getenv(..)``, ``.. in environ``) that decides whether a test runs -- a ``skipif``/``xfail``
 condition, or the test of an ``if``/``while``/conditional expression whose branch calls ``skip``, ``skipif``,
-``xfail`` or ``importorskip`` -- directly or through a name it is assigned to (:func:`python_switches`). Its door is
-:data:`SWITCH_DOOR`. The ``pending`` ledger records one; an ``entry`` never launders one. Any other test read (an
-OS-set temp directory, an environment handed to a child) is exempt outside ``strict`` and, under it, allowed only
-where declared (``entry`` or ``pending``).
+``xfail`` or ``importorskip`` -- directly or through a name it is assigned to
+(:func:`dev_lab.dev._envreads_python.python_switches`). Its door is :data:`SWITCH_DOOR`. The ``pending`` ledger
+records one; an ``entry`` never launders one. Any other test read (an OS-set temp directory, an environment handed
+to a child) is exempt outside ``strict`` and, under it, allowed only where declared (``entry`` or ``pending``).
 
 TWO JUDGMENTS. The always-on family check (:func:`check`) reads the tracked tree of every family checkout holding
 a ``src/``, ``rust/`` or ``scripts/`` tree (:func:`applies`), under a floor, and refuses a read outside the entry
@@ -37,17 +37,17 @@ pre-push row (:func:`range_problems`) refuses a ``pending`` entry the pushed hea
 WHAT IT SEES, read off the source (nothing is imported or run): in Python, ``environ``, ``environb``, ``getenv``,
 ``getenvb``, ``putenv`` and ``unsetenv`` reached through a name bound to ``os`` (``import os``, ``import os as
 _os``) or imported from it (``from os import environ``); in Rust, a runtime ``env::var``/``var_os``/``vars``/
-``vars_os``/``set_var``/``remove_var`` on a line that is not a ``//`` comment. WHAT IT CANNOT SEE: an implicit
-read inside a library (``Path.home()``, ``shutil.which`` reading ``PATH``), ``os`` reached under a name assigned
-at run time, compile-time ``env!``, and a Rust ``use std::env::var`` called bare. As a SWITCH it cannot see a
-Rust test's switch (Rust is read by line), a test that returns early instead of skipping, a mode switch that
-changes what a test does rather than whether it runs, nor a read inside a helper another file calls: each is still a
-read, judged under ``strict``.
+``vars_os``/``set_var``/``remove_var`` on a line that is not a ``//`` comment -- except Cargo's ``OUT_DIR`` read in
+a ``build.rs``, the build-script door (the one way Cargo hands a build script its output directory). WHAT IT CANNOT
+SEE: an implicit read inside a library (``Path.home()``, ``shutil.which`` reading ``PATH``), ``os`` reached under a
+name assigned at run time, compile-time ``env!``, and a Rust ``use std::env::var`` called bare. As a SWITCH it
+cannot see a Rust test's switch (Rust is read by line), a test that returns early instead of skipping, a mode switch
+that changes what a test does rather than whether it runs, nor a read inside a helper another file calls: each is
+still a read, judged under ``strict``.
 """
 
 from __future__ import annotations
 
-import ast
 import re
 import sys
 import tomllib
@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING, Final, cast
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev._envreads_python import python_reads, python_switches
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.rangebase import NoMergeBaseError, range_base
@@ -67,6 +68,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
 __all__ = [
+    'BUILD_SCRIPT',
     'DOOR',
     'RULE_ID',
     'SOURCE_TREES',
@@ -79,8 +81,6 @@ __all__ = [
     'declared_env',
     'main',
     'problems',
-    'python_reads',
-    'python_switches',
     'range_problems',
     'rust_reads',
 ]
@@ -99,15 +99,12 @@ SWITCH_DOOR: Final = (
     'declare a pytest option (pytest_addoption in conftest.py) or a resource need (a pytest.mark.<resource> the '
     'needs mechanism schedules where the resource is present) -- an environment variable never switches a test'
 )
-#: The calls whose condition argument decides whether a test runs, and the calls a skipping branch makes.
-_CONDITION_CALLS: Final = frozenset({'skipif', 'xfail'})
-_SKIP_CALLS: Final = frozenset({'skip', 'skipif', 'xfail', 'importorskip'})
-_ENVIRONS: Final = frozenset({'environ', 'environb'})
-_GETENVS: Final = frozenset({'getenv', 'getenvb'})
 _DETAILS: Final = 'details: docs-src/dev/refusals.md#env-is-read-once (dev-lab)'
-_OS_NAMES: Final = frozenset({'environ', 'environb', 'getenv', 'getenvb', 'putenv', 'unsetenv'})
 _RUST_READ: Final = re.compile(r'\benv::(?:var|var_os|vars|vars_os|set_var|remove_var)\s*\(')
 _SUFFIXES: Final = ('.py', '.rs')
+#: THE BUILD-SCRIPT DOOR: Cargo hands a build script its output directory only as ``OUT_DIR`` (class B by contract).
+BUILD_SCRIPT: Final = 'build.rs'
+_OUT_DIR_READ: Final = re.compile(r'\benv::(?:var|var_os)\s*\(\s*"OUT_DIR"\s*\)')
 _TEST_DIRS: Final = frozenset({'tests', 'benches'})
 #: Where a checkout's population lives: a family checkout with none of these has nothing for the check to read.
 SOURCE_TREES: Final = ('src', 'rust', 'scripts')
@@ -154,111 +151,17 @@ def declared_env(root: Path) -> EnvPolicy:
     return _policy(tomllib.loads(text))
 
 
-@dataclass(frozen=True, slots=True)
-class _Os:
-    """How one source reaches ``os``: the names bound to the module, and each local name imported from it."""
+def rust_reads(source: str, *, build_script: bool = False) -> tuple[int, ...]:
+    """The lines of *source* calling a runtime ``std::env`` reader or writer, ``//`` comment lines skipped.
 
-    modules: frozenset[str]
-    members: dict[str, str]
-
-    def member(self, node: ast.AST) -> str:
-        """The :data:`_OS_NAMES` member *node* names (``os.environ``, an imported ``getenv`` alias), else ``''``."""
-        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in self.modules:
-            return node.attr if node.attr in _OS_NAMES else ''
-        return self.members.get(node.id, '') if isinstance(node, ast.Name) else ''
-
-
-def _os_bindings(tree: ast.AST) -> _Os:
-    modules: set[str] = set()
-    members: dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            modules |= {alias.asname or alias.name for alias in node.names if alias.name == 'os'}
-        elif isinstance(node, ast.ImportFrom) and node.module == 'os' and not node.level:
-            members |= {alias.asname or alias.name: alias.name for alias in node.names if alias.name in _OS_NAMES}
-    return _Os(frozenset(modules), members)
-
-
-def _read_lines(tree: ast.AST, bound_os: _Os) -> set[int]:
-    return {node.lineno for node in ast.walk(tree) if isinstance(node, ast.expr) and bound_os.member(node)}
-
-
-def python_reads(source: str) -> tuple[int, ...]:
-    """The lines of *source* reaching the environment through ``os`` (see the module docstring for the shapes)."""
-    tree = ast.parse(source)
-    return tuple(sorted(_read_lines(tree, _os_bindings(tree))))
-
-
-def _named_read_lines(tree: ast.AST, bound_os: _Os) -> set[int]:
-    """Lines reading ONE variable by name -- ``environ[..]``, ``environ.get(..)``, ``getenv(..)``, ``.. in environ``.
-
-    Handing the whole environment to a child (``{**os.environ}``, ``dict(os.environ)``) reads no variable's value.
+    In a *build_script* (a crate's ``build.rs``) a read of ``OUT_DIR`` is Cargo's contract, not a read: only another
+    read on the line counts.
     """
-    lines: set[int] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Subscript):
-            hit = bound_os.member(node.value) in _ENVIRONS
-        elif isinstance(node, ast.Call):
-            func = node.func
-            get = isinstance(func, ast.Attribute) and func.attr == 'get' and bound_os.member(func.value) in _ENVIRONS
-            hit = get or bound_os.member(func) in _GETENVS
-        elif isinstance(node, ast.Compare):
-            hit = any(
-                isinstance(op, ast.In | ast.NotIn) and bound_os.member(right) in _ENVIRONS
-                for op, right in zip(node.ops, node.comparators, strict=True)
-            )
-        else:
-            hit = False
-        if hit and isinstance(node, ast.expr):
-            lines.add(node.lineno)
-    return lines
-
-
-def _callee(node: ast.AST) -> str:
-    if not isinstance(node, ast.Call):
-        return ''
-    func = node.func
-    return func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ''
-
-
-def _conditions(tree: ast.AST) -> list[ast.expr]:
-    """Every expression deciding whether a test runs: a ``skipif``/``xfail`` condition, a skipping branch's test."""
-    found: list[ast.expr] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _callee(node) in _CONDITION_CALLS:
-            found += [*node.args, *(kw.value for kw in node.keywords if kw.arg == 'condition')]
-        elif isinstance(node, ast.If | ast.IfExp | ast.While):
-            branches = [node.body, node.orelse] if isinstance(node, ast.IfExp) else [*node.body, *node.orelse]
-            if any(_callee(inner) in _SKIP_CALLS for branch in branches for inner in ast.walk(branch)):
-                found.append(node.test)
-    return found
-
-
-def python_switches(source: str) -> tuple[int, ...]:
-    """The lines of *source* whose environment read decides whether a test runs (class C; module docstring)."""
-    tree = ast.parse(source)
-    bound_os = _os_bindings(tree)
-    bound: dict[str, set[int]] = {}
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign | ast.AnnAssign | ast.NamedExpr) or node.value is None:
-            continue
-        if lines := _named_read_lines(node.value, bound_os):
-            for target in node.targets if isinstance(node, ast.Assign) else [node.target]:
-                if isinstance(target, ast.Name):
-                    bound.setdefault(target.id, set()).update(lines)
-    found: set[int] = set()
-    for condition in _conditions(tree):
-        found |= _named_read_lines(condition, bound_os)
-        found |= {line for name in ast.walk(condition) if isinstance(name, ast.Name) for line in bound.get(name.id, ())}
-    return tuple(sorted(found))
-
-
-def rust_reads(source: str) -> tuple[int, ...]:
-    """The lines of *source* calling a runtime ``std::env`` reader or writer, ``//`` comment lines skipped."""
     return tuple(
         number
         for number, line in enumerate(source.splitlines(), start=1)
-        if not line.lstrip().startswith('//') and _RUST_READ.search(line)
+        if not line.lstrip().startswith('//')
+        and _RUST_READ.search(_OUT_DIR_READ.sub('', line) if build_script else line)
     )
 
 
@@ -276,7 +179,7 @@ def _reads(root: Path, rel: str) -> tuple[int, ...]:
             return python_reads(source)
         except SyntaxError:
             return ()
-    return rust_reads(source)
+    return rust_reads(source, build_script=PurePosixPath(rel).name == BUILD_SCRIPT)
 
 
 def _judged(policy: EnvPolicy, files: Iterable[str]) -> list[str]:
@@ -289,7 +192,10 @@ def _readers(root: Path, policy: EnvPolicy, files: Iterable[str]) -> dict[str, t
 
 
 def _switchers(root: Path, files: Iterable[str]) -> dict[str, tuple[int, ...]]:
-    """Each test file's switch lines (:func:`python_switches`): judged in every mode, ``strict`` or not."""
+    """Each test file's switch lines, judged in every mode, ``strict`` or not.
+
+    The lines are :func:`dev_lab.dev._envreads_python.python_switches`.
+    """
     found: dict[str, tuple[int, ...]] = {}
     for rel in sorted({rel for rel in files if rel.endswith('.py') and _is_test(rel) and (root / rel).is_file()}):
         try:

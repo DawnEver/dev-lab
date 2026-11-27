@@ -99,6 +99,14 @@ FAMILY_KIT: Final = 'dev-lab'
 FOLLOW_LOCK: Final = 'follow.lock'
 
 
+#: Said when the detached follow could not leave this process's job (#1002): it runs, but a job closed with the hook
+#: or the session ends it, and its build lock and half-built environment were all that was left.
+DIES_WITH_THE_HOOK: Final = (
+    'the follow started inside this hook`s job (Windows refused the breakaway), so it ends when the hook does and may '
+    'leave a half-built environment; run it in the foreground: python -m dev_lab.dev.venvfollow --root'
+)
+
+
 def follow_lock(checkout: Path) -> Path:
     """*checkout*'s follow lock, beside its environments: one per checkout, not one per repository."""
     return checkout / VENV_HOME / FOLLOW_LOCK
@@ -257,8 +265,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         if root is None:
             return 0
         if args.background or args.session_start:
-            if due(root):
-                detach_argv(root, ['-m', 'dev_lab.dev.venvfollow', '--root', str(root)])
+            if due(root) and not detach_argv(root, ['-m', 'dev_lab.dev.venvfollow', '--root', str(root)]):
+                emit(f'venv {root}: {DIES_WITH_THE_HOOK} {root}')
             if args.session_start and (notice := behind_notice(root)):
                 emit(notice)
             return 0

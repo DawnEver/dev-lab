@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev import _ir_runtime
-from dev_lab.dev.irmodel import refuse
+from dev_lab.dev._ir_errors import refuse
+from dev_lab.dev.irmodel import CONSTANTS_MODULE
 
 if TYPE_CHECKING:
     from dev_lab.dev.irmodel import IR, Field, Module, Record, TypeRef
@@ -26,6 +27,7 @@ __all__ = [
     'fingerprint',
     'generator_version',
     'refuse_unit_handling',
+    'render_constants',
     'render_module',
     'write',
 ]
@@ -56,11 +58,13 @@ def generator_version() -> str:
 
 def _sources(ir: IR, module: str) -> tuple[str, ...]:
     declaration = ir.declaration
-    return (declaration.modules[module], declaration.quantities)
+    if module == CONSTANTS_MODULE:
+        return (declaration.quantities,)
+    return (declaration.modules[module], declaration.quantities, *ir.modules[module].terms)
 
 
 def fingerprint(ir: IR, module: str) -> str:
-    """``<sources hash>:<generator version>`` of one generated module."""
+    """``<sources hash>:<generator version>`` of one generated module (``constants``: the catalogue's constants)."""
     root = ir.declaration.root
     blobs = [(root / s).read_bytes() for s in _sources(ir, module)]
     return f'{_ir_runtime.sources_hash(ir.declaration.version_text, blobs)}:{generator_version()}'
@@ -111,6 +115,8 @@ def _scalar_keys(ir: IR, f: Field) -> list[str]:
 
 def _spec(ir: IR, f: Field, ref: TypeRef, here: str, *, name: str) -> str:
     parts = [repr(name), repr(ref.kind)]
+    if name and f.py_name != name:
+        parts.append(f'attr={f.py_name!r}')
     if name and f.optional:
         parts.append('optional=True')
     if ref.kind in ('enum', 'record'):
@@ -120,8 +126,15 @@ def _spec(ir: IR, f: Field, ref: TypeRef, here: str, *, name: str) -> str:
     if name:
         parts += _scalar_keys(ir, f)
     if name and f.unique_by:
-        parts.append(f'key=lambda r: r.{f.unique_by}')
+        parts.append(f'key=lambda r: r.{_py_attr(ir, ref, f.unique_by)}')
     return f'F({", ".join(parts)})'
+
+
+def _py_attr(ir: IR, ref: TypeRef, wire: str) -> str:
+    """The Python attribute of field *wire* of the record a list *ref* holds (a keyword is escaped)."""
+    target = _item(ref).target if ref.kind == 'list' else ref.target
+    found = [f for f in ir.record(target).fields if f.name == wire] if target else []
+    return found[0].py_name if found else wire
 
 
 def _comment(ir: IR, f: Field) -> str:
@@ -143,8 +156,8 @@ def _record(ir: IR, record: Record) -> list[str]:
     for f in ordered:
         hint = _hint(f, f.type, here, local)
         default = ' | None = None' if f.optional else ''
-        lines.append(f'    {f.name}: {hint}{default}{_comment(ir, f)}')
-    names = [f.name for f in record.fields]
+        lines.append(f'    {f.py_name}: {hint}{default}{_comment(ir, f)}')
+    names = [f.py_name for f in record.fields]
     lines += ['    _ir_dims: dict | None = _rt.ir_dims()', '', '    __post_init__ = _rt.post_init', '']
     lines += ['    def _ir_values(self) -> tuple:', f'        return ({"".join(f"self.{n}, " for n in names)})', '']
     lines += ['    def _ir_set(self, values: tuple, dims: dict) -> None:']
@@ -208,9 +221,10 @@ def render_module(ir: IR, name: str) -> str:
         '',
         f'VERSION = {declaration.version_text!r}',
         f'SCHEMA_TOML = {module.source!r}',
+        f'ENUM_VALUES = { ({e.name: list(e.values) for e in module.enums.values()})!r}',
         f'QUANTITIES_TOML = {ir.catalogue_source!r}',
         f'_BOUNDS = {module.dims!r}',
-        f'_rt.check_fresh(__file__, {root_up}, "pyproject.toml", {sources!r}, {fingerprint(ir, name).split(":")[0]!r})',
+        f'_rt.check_fresh(__file__, {root_up}, VERSION, {sources!r}, {fingerprint(ir, name).split(":")[0]!r})',
         '',
     ]
     for enum in module.enums.values():
@@ -223,6 +237,39 @@ def render_module(ir: IR, name: str) -> str:
         lines += _table(ir, module, record)
     lines += ['', *_imports(ir, module)]
     return '\n'.join(lines) + '\n'
+
+
+def render_constants(ir: IR) -> str:
+    """The source of ``_ir_constants.py``: one absolute-SI ``Final`` float per catalogue constant, and ``CONSTANTS``.
+
+    The value is written as ``repr`` (the shortest round-trip decimal), which Rust parses to the same ``f64``.
+    """
+    declaration = ir.declaration
+    root_up = len(Path(declaration.package_dir).parts)
+    sources = _sources(ir, CONSTANTS_MODULE)
+    print_ = fingerprint(ir, CONSTANTS_MODULE)
+    lines = [
+        f'{FINGERPRINT_PREFIX}{print_}',
+        f'"""GENERATED from {sources[0]} by dev_lab.dev.irschema: the catalogue constants; never edit or commit."""',
+        '',
+        '# ruff: noqa',
+        'from __future__ import annotations',
+        '',
+        'from typing import Final',
+        '',
+        'from . import _ir_runtime as _rt',
+        '',
+        f'_rt.check_fresh(__file__, {root_up}, {declaration.version_text!r}, {sources!r}, {print_.split(":")[0]!r})',
+    ]
+    for c in ir.constants.values():
+        lines += ['', f'{c.name.upper()}: Final = {c.value!r}', f'"""{c.expression} [{c.unit}]: {c.reason}"""']
+    lines += ['', '#: name -> value (absolute SI), unit, the declared expression, citation and convention reason.']
+    lines.append('CONSTANTS: Final = {')
+    for c in ir.constants.values():
+        row = {'value': c.value, 'unit': c.unit, 'expression': c.expression, 'citation': c.citation, 'reason': c.reason}
+        lines.append(f'    {c.name!r}: {row!r},')
+    lines.append('}')
+    return _NEWLINE.join(lines) + _NEWLINE
 
 
 def _ids(ir: IR) -> list[str]:
@@ -290,6 +337,7 @@ def expected_files(ir: IR) -> dict[Path, str]:
     files = {directory / name: header + _template(ir, source) for name, source in _TEMPLATES.items()}
     files[directory / '.gitignore'] = _GITIGNORE
     files[directory / '_ir_ids.py'] = render_ids(ir)
+    files[directory / f'_ir_{CONSTANTS_MODULE}.py'] = render_constants(ir)
     for name in ir.modules:
         files[directory / f'_ir_{name}.py'] = render_module(ir, name)
     return files

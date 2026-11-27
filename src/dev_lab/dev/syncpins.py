@@ -101,7 +101,10 @@ def _transplant(lock: str, dist: str, block: str) -> str:
 
 
 def _pins(lock: str) -> dict[str, tuple[str, str]]:
-    """*lock*'s git pins; a lock that is not TOML pins nothing (as :func:`dev_lab.dev.relock.in_house` reads it)."""
+    """*lock*'s git pins; a lock that is not TOML pins nothing.
+
+    As :func:`dev_lab.dev._relock_lockfile.in_house` reads it.
+    """
     try:
         return sources(lock)
     except tomllib.TOMLDecodeError:
