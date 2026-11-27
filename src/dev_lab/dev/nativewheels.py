@@ -24,7 +24,7 @@ GitHub only: Gitea runners carry no macOS or Windows host, so a Gitea repo decla
 from __future__ import annotations
 
 import tomllib
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from dev_lab.dev.family import declared_table
 
@@ -59,6 +59,7 @@ def wheels_workflow(text: str, origin: str) -> dict[str, Any] | None:
     if not isinstance(systems, list):
         msg = f'{origin}: [tool.dev_lab.native] wheels must be a list of systems from {sorted(RUNNERS)}'
         raise TypeError(msg)
+    systems = [str(name) for name in cast('list[object]', systems)]
     if not systems:
         msg = f'{origin}: [tool.dev_lab.native] wheels names no system -- name some of {sorted(RUNNERS)} or drop it'
         raise ValueError(msg)
