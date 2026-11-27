@@ -163,7 +163,8 @@ class UnfitEnvRefused(ValueError):
 def requires_python(root: Path) -> str:
     """*root*'s ``[project] requires-python``; ``''`` where it declares none (or has no manifest)."""
     manifest = root / 'pyproject.toml'
-    declared = tomllib.loads(manifest.read_text(encoding='utf-8')).get('project', {}) if manifest.is_file() else {}
+    data = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
+    declared: dict[str, Any] = data.get('project', {})
     return str(declared.get('requires-python') or '')
 
 
