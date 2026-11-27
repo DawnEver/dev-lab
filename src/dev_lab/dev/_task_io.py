@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final, Protocol
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
 
 from dev_lab.dev.labsession import ENV
 
@@ -116,6 +117,7 @@ def git(root: Path, *args: str) -> tuple[int, str]:
 
 
 def commit(root: Path, message: str, *paths: str) -> None:
+    """Commit *paths* in the ledger at *root*, then publish it (:mod:`dev_lab.dev.taskpublish`); never fatal."""
     # A path already moved by `git mv` is on neither disk nor index: `add` would refuse it; `commit` records it.
     present = [p for p in paths if (root / p).exists()]
     status, said = git(root, 'add', '-A', '--', *present) if present else (0, '')
@@ -127,6 +129,10 @@ def commit(root: Path, message: str, *paths: str) -> None:
             f'Door: git -C {root.as_posix()} commit -m "{message}" -- {" ".join(paths)}'
         )
         raise TaskRefused(msg)
+    from dev_lab.dev.taskpublish import publish  # noqa: PLC0415 -- it reads GIT and git from here
+
+    if failed := publish(root):
+        emit(failed, err=True)
 
 
 @contextlib.contextmanager
