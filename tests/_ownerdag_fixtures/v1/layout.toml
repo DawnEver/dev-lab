@@ -298,7 +298,7 @@ vendor_jobs = ["jmag", "aedt", "femm", "fluent", "openfoam", "plecs", "ngspice",
 # --- untracked roots
 "output" = []
 # Four roles (D95): RECORDS (what happened, .jsonl only), EXPORTS (report, convert/<format>, pack), VENDOR JOBS, and
-# the ONE result store, output/store. Results are stored once; a record cites their hashes.
+# the ONE result store (its row below). Results are stored once; a record cites their hashes.
 # Only v1's own actions are listed: the dated levels and the family kinds (verify, coverage, durations, ...) come
 # from dev-lab and are never repeated here.
 "output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/run" = [".jsonl"]
