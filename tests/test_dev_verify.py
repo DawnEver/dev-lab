@@ -2263,9 +2263,9 @@ def test_the_ruff_steps_never_judge_the_declared_scratch_but_still_judge_code_be
     for rel in (f'{sink}probe/x.py', 'src/pkg/kept.py'):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text(bad, encoding='utf-8')
-    ruff_steps = [arguments for name, arguments in verifysteps.LINT_STEPS if name.startswith('ruff')]
-    assert len(ruff_steps) == 2
-    for arguments in ruff_steps:
+    ruff_lint_steps = [arguments for name, arguments in verifysteps.LINT_STEPS if name.startswith('ruff')]
+    assert len(ruff_lint_steps) == 2
+    for arguments in ruff_lint_steps:
         argv = [sys.executable, '-m', *verifysteps.lint_arguments(tmp_path, arguments)]
         done = launch.run([*argv, '--no-cache'], cwd=tmp_path, capture_output=True, text=True, check=False)
         said = done.stdout + done.stderr
