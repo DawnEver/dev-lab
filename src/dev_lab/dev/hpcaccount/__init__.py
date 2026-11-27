@@ -9,9 +9,12 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   :mod:`~dev_lab.dev.hpcaccount.steps`, its host check :mod:`~dev_lab.dev.hpcaccount.deployhost`, its declaration
   :mod:`~dev_lab.dev.hpcaccount.declaration`, its FEMM 5 build where ``[capabilities.femm]`` is declared
   :mod:`~dev_lab.dev.hpcaccount.femm`.
-* ``tick <repo>... [--lock <path> --wall-minutes <m>]`` (:mod:`~dev_lab.dev.hpcaccount.tick`) is one cron tick: the
-  host refreshes the kit (this package's checkout) and the repo, then the kit's ``forge serve`` runs in the repo's
-  checkout -- under the lock and within the wall the cron line names (:mod:`~dev_lab.dev.hpcaccount.tickwall`).
+* ``tick <repo>... [--lock <path> --wall-minutes <m>]`` (:mod:`~dev_lab.dev.hpcaccount.tick`) is the account's one
+  cron tick: the host refreshes each repo, then the kit's ``forge serve`` runs in the repo's checkout -- under the
+  lock and within the wall the cron line names (:mod:`~dev_lab.dev.hpcaccount.tickwall`). It never builds: a repo
+  whose environment is not current is asked of a Slurm prep job.
+* ``prep-build <repo>`` (:func:`~dev_lab.dev.hpcaccount.tick.prep_build`) is that prep job's body, run ON A
+  COMPUTE NODE: uv to its pin, the repo's ``needs`` probed, its environment built and published.
 * ``allocate --until <iso> [name=cpus/mem_gb ...] [--borrow <direction>] | --show | --clear``
   (:mod:`~dev_lab.dev.hpcaccount.allocate`) writes, prints or deletes the ONE expiring allocation record on the forge
   (:mod:`lab_commons.hpc.allocation`); the forge's own submits read it (:mod:`dev_lab.dev.forgeslurm`).
@@ -93,7 +96,7 @@ _USAGE = (
     'archive [...] | archive-clean [...] | salvage [...] | '
     'reclaim-foreign [...] | storage-check [...] | '
     'tick-status [...] | tick-stop [...] | '
-    'tick <repo>... [--lock <path> --wall-minutes <m>] | allocate [...]}'
+    'tick <repo>... [--lock <path> --wall-minutes <m>] | prep-build <repo> | allocate [...]}'
 )
 
 
@@ -152,6 +155,10 @@ def main(argv: list[str] | None = None) -> int:
         return verbs[verb](rest)
     if verb == 'tick' and rest:
         return _tick(rest)
+    if verb == 'prep-build' and len(rest) == 1:
+        from dev_lab.dev.hpcaccount.tick import prep_build  # noqa: PLC0415 -- the package imports no verb
+
+        return prep_build(rest[0], home=Path.home())
     emit(retired_refusal('dev_lab.dev.hpcaccount', verb) or _USAGE, err=True)
     return 2
 
@@ -167,10 +174,9 @@ def _tick(argv: list[str]) -> int:
     parser.add_argument('--lock', type=Path, help="this tick's lock; its holder record is written beside it")
     parser.add_argument('--wall-minutes', type=int, default=DEFAULT_TICK_WALL // 60)
     args = parser.parse_args(argv)
-    probed: dict[str, bool] = {}  # one probe per tool per tick, however many repos it serves
 
     def body(wall: tickwall.Wall | None) -> int:
-        return max(tick.tick(name, home=Path.home(), probed=probed, wall=wall) for name in args.repos)
+        return max(tick.tick(name, home=Path.home(), wall=wall) for name in args.repos)
 
     if args.lock is None:
         return body(None)

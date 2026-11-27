@@ -672,6 +672,17 @@ class _Done:
         self.returncode = returncode
 
 
+def _prepared(box: Box, name: str) -> None:
+    """Stamp *name*'s live environment with its current key, as its Slurm prep job's publish does."""
+    spec = deploy_spec.load(box.machine)
+    assert spec is not None
+    repo = next(one for one in spec.repos if one.name == name)
+    key = deploy_steps.env_key(deploy_steps.Step(box.tools, dry=False), spec, repo)
+    live = venvpointer.current(deploy_spec.checkout_of(spec, repo))
+    live.mkdir(parents=True, exist_ok=True)
+    (live / deploy_steps.STAMP).write_text(key, encoding='utf-8')
+
+
 def _tick(box: Box, name: str, served: list[tuple[list[str], Path, str]]) -> int:
     def run(argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
         served.append((argv, cwd, box.logged()))
@@ -796,37 +807,47 @@ def test_a_tick_of_an_undeclared_repo_is_refused(box: Box, capsys: pytest.Captur
     assert 'gamma is not a served repo' in capsys.readouterr().err
 
 
-def test_a_tick_whose_declared_need_no_longer_runs_serves_nothing_and_alarms_naming_account_and_tool(
-    box: Box, monkeypatch: pytest.MonkeyPatch
+def test_a_tick_whose_lock_moved_asks_the_prep_job_and_never_builds(
+    box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Every tick RE-ASSERTS the deploy's ``needs`` with the same probe, once per tool per tick.
+    """ONE-LOGIN-POLLER (user ruling 2026-11-27): the login-node tick never builds; a Slurm prep job does.
 
-    Ada 2026-10-25: cargo ran at deploy and was gone later; every tick claimed parts its build could not make.
+    alpha's live environment is stamped with an older key (its lock moved): the tick installs nothing, asks the prep
+    job once for the current key and serves nothing.
+    PLANTED CONTROL: once the live environment is stamped with that key (the prep job's publish), the same tick serves
+    and asks nothing.
     """
     assert box.run(*DECLARE) == 0
-    probed: list[str] = []
-    monkeypatch.setattr(tick, '_runs', lambda _sh, _env, tool: probed.append(tool) or tool != 'cargo')
-    monkeypatch.setattr(tick, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo', 'cmake')))
-    alarms: list[object] = []
-    cache: dict[str, bool] = {}
-    served: list[tuple[list[str], Path, str]] = []
+    alpha = box.root / 'repos' / 'alpha'
+    asked: list[tuple[Path, str]] = []
+
+    def submit(checkout: Path, key: str, **_kw: str) -> str:
+        asked.append((checkout, key))
+        return 'submitted job 7'
 
     def run(argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
         served.append((argv, cwd, ''))
         return _Done(0)
 
-    for name in ('alpha', 'beta'):
-        code = tick.tick(
-            name, home=box.home, config=box.machine, tools=box.tools, run=run, alarm=alarms.append, probed=cache
-        )
-        assert code == 2
-    assert served == [], 'a repo whose need fails claims nothing'
-    assert sorted(probed) == ['cargo', 'cmake'], 'one probe per tool per tick'
-    first = alarms[0]
-    assert 'cargo' in first.subject
-    assert tick.account() in first.subject
-    assert 'cmake' not in first.subject
-    assert first.repo == f'{URL}/alpha.git'
+    stamp = venvpointer.current(alpha) / deploy_steps.STAMP
+    stamp.write_text('a key the lock no longer has', encoding='utf-8')
+    served: list[tuple[list[str], Path, str]] = []
+    start = len(box.logged())
+    capsys.readouterr()
+    assert tick.tick('alpha', home=box.home, config=box.machine, tools=box.tools, run=run, submit=submit) == 2
+    assert served == []
+    [(checkout, key)] = asked
+    assert checkout == alpha
+    err = capsys.readouterr().err
+    assert f'not yet built for key {key[:12]}' in err
+    assert 'submitted job 7' in err, 'what the prep door said is named'
+    ticked = box.logged()[start:]
+    assert 'sh ' not in ticked, f'the tick ran no shell build: {ticked}'
+    assert 'uv ' not in ticked, 'the tick ran no uv'
+    stamp.write_text(key, encoding='utf-8')
+    assert tick.tick('alpha', home=box.home, config=box.machine, tools=box.tools, run=run, submit=submit) == 0
+    assert len(served) == 1
+    assert len(asked) == 1, 'a prepared environment asks nothing'
 
 
 def _cron_spec(text: str, tmp_path: Path) -> deploy_spec.Deployment:
@@ -905,6 +926,7 @@ def test_a_checkout_whose_roles_are_unbound_is_released_by_name(
     pyproject = box.root / 'repos' / 'beta' / 'pyproject.toml'
     served: list[tuple[list[str], Path, str]] = []
     _write(pyproject, '[tool.lab_commons.hpc]\n')
+    _prepared(box, 'beta')  # its prep job ran for the new declaration
     carry(monkeypatch, EVERY_CI)
     assert _tick(box, 'beta', served) == 0, 'PLANTED CONTROL: every role on CI -- refreshed, not served'
     monkeypatch.delenv(ROLES_ENV)

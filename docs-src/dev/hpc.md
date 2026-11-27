@@ -26,11 +26,13 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
 - **The same line is the upgrade.** The first run stores the declaration (`[deploy]` in the account's machine
   file: host, root, python, served repos, partitions, and `--slurm-account` when Slurm names several); later
   runs read it, and flags that disagree with it are refused. `dev-lab` (the kit) is always served: every tick runs it.
-- **The host refreshes; a repo never updates itself.** Each cron line runs the HOST's kit,
-  `python -m dev_lab.dev.hpcaccount tick <repo>` from the dev-lab checkout: it checks out `~/<root>/dev-lab`
-  and then the repo at their deployed refs, rebuilds the repo's venv where its inputs (its committed `uv.lock` among them) moved
-  (the deploy's own keyed steps), and only then serves it: THE HOST KIT's `forge serve` with the repo checkout
-  as its cwd. The repo's venv only runs its producers, in their trees, so one host runs one scheduler. A repo whose refresh fails is
+- **The host refreshes; a repo never updates itself.** The account's one cron line runs the HOST's kit,
+  `python -m dev_lab.dev.hpcaccount tick <repo>...` from the dev-lab checkout: it checks out each repo at its
+  deployed ref and serves it only from an environment stamped with the key of its inputs (its committed `uv.lock`
+  among them; `dev_lab.dev.hpcaccount.prep.prepared`): THE HOST KIT's `forge serve` with the repo checkout as its
+  cwd. **The tick never builds** (ONE-LOGIN-POLLER, user ruling 2026-11-27): a key that moved is asked of a Slurm
+  PREP JOB (`dev_lab.dev.hpcaccount.prep.submit`, lab-commons' `submit_env_prep`: venv, native build, `needs`
+  probes and uv's pin all run there) and the repo is released for that tick, naming the key. The repo's venv only runs its producers, in their trees, so one host runs one scheduler. A repo whose refresh fails is
   released for that tick, its reason in its log; a kit that cannot move is reported and the repo serves with
   the kit it has. Only the crontab itself changes when you re-run the line.
 - **What it does** (`dev_lab.dev.hpcaccount.deploy`): refuses off the declared host; checks the account before changing
@@ -54,13 +56,14 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
 - A grant's compute-node `setup` (e.g. `module load git`) is a cluster fact the deploy cannot read: add it to
   the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
-- **The crontab line**, per served repo and the kit, every `[schedule] tick` (whole minutes dividing an
+- **The crontab line** -- exactly ONE per account (ONE-LOGIN-POLLER), ticking every served repo, every
+  `[schedule] tick` (whole minutes dividing an
   hour, default `"5 min"`; the host card is judged stale against the same number) at a minute offset derived from the
   account's home, so accounts never tick in lockstep. Each tick refreshes its repo and serves its queue only
   where the family binds a role of the repo to the account's grant (`[roles.<forge>]`, `dev_lab.dev.roles`, D73;
-  ruling 2026-11-16); a repo with no role bound there is checked out, installed and never served. The line:
-  `<offset>-59/<minutes> * * * * PATH=...; cd <root>/repos/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount tick <repo> --lock <root>/serve/<repo>.lock --wall-minutes <wall> >> <root>/serve/<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
-  The tick takes its own lock and writes who holds it beside it (`<lock>.holder`: pid, start, phase); it runs
+  ruling 2026-11-16). The line:
+  `<offset>-59/<minutes> * * * * PATH=...; cd <root>/repos/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount tick <repo>... --lock <root>/serve/tick.lock --wall-minutes <wall> >> <root>/serve/tick.log 2>&1 # lab-commons-deploy:tick`.
+  The tick takes the account's one lock and writes who holds it beside it (`<lock>.holder`: pid, start, phase); it runs
   within `[schedule] tick_wall` (whole minutes, default `"40 min"`) and past it ends its serve, releases the lock and prints
   `tick: ended at its wall after <s> s doing <phase>` -- the next tick resumes every run from its saved step
   (`dev_lab.dev.hpcaccount.tickwall`).

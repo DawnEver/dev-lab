@@ -164,10 +164,10 @@ What every host still reads, kept small:
   verb -- and only when that cannot land is the lock refused naming why, never written by the old uv.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
-  cluster account's cron line runs `python -m dev_lab.dev.hpcaccount tick <repo>` from the dev-lab checkout, which
-  checks out both at their deployed refs and rebuilds the venv where its inputs or the kit's HEAD moved
-  (`dev_lab.dev.hpcaccount.tick`). A repo whose refresh fails -- dirty, diverged, a sync that exits non-zero
-  -- is released for that tick with its reason, and the other repos are still served. The
+  cluster account's one cron line runs `python -m dev_lab.dev.hpcaccount tick <repo>...` from the dev-lab checkout,
+  which checks out each at its deployed ref and serves it only from an environment built for its inputs -- a Slurm
+  prep job builds one whose inputs moved, never the login node (`dev_lab.dev.hpcaccount.tick`, ONE-LOGIN-POLLER). A
+  repo whose refresh fails -- dirty, diverged, its environment not yet built -- is released for that tick with its reason, and the other repos are still served. The
   ref is the integration branch, not the trunk: a kit following the trunk would refuse the integration commit
   that adds a table, and that commit could then never reach the trunk.
 - **The producer exit contract** (`dev_lab.dev.producer.ProducerExit`): `0` PASS, `1` FAIL, `2` refused

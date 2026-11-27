@@ -205,8 +205,7 @@ def test_the_deployed_machine_file_alone_names_its_root_to_every_verb_on_the_acc
 def _ticked(tmp_path: Path, machine: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[int, list[Path]]:
     """One tick of ``dev-lab`` on the account of *machine*, its refresh done; the exit and where it served."""
     monkeypatch.setenv(CONFIG_ENV, str(machine))
-    monkeypatch.setattr(tick, '_refresh', lambda *_a: ('', []))
-    monkeypatch.setattr(tick, 'follow_uv', lambda _name: '')
+    monkeypatch.setattr(tick, '_refresh', lambda *_a: '')
     served: list[Path] = []
 
     def run(_argv: list[str], *, cwd: Path, **_kw: object) -> SimpleNamespace:
