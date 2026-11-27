@@ -77,12 +77,13 @@ from dev_lab.dev.hpcaccount.fleetguard import deploy_root, serving_twice_refusal
 from dev_lab.dev.hpcaccount.spec import KIT, TICK_LOCK, paths_of_root, uv_cache
 from dev_lab.dev.hpcaccount.transport import Started, describe, outcomes, start
 from dev_lab.dev.machinehome import default_layout
+from dev_lab.dev.pythontoolchain import SYNC_FLAGS, VERSION
 from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
     'KIND', 'ConfigSource', 'Target', 'account_clone', 'account_host', 'config_source_of', 'declared_target',
     'deploy_command', 'deploy_fleet', 'first_install', 'in_checkout', 'in_job', 'layer_refusal', 'layer_target', 'main',
-    'refresh_kit', 'render_command',
+    'minor_check', 'refresh_kit', 'render_command',
 ]  # fmt: skip
 
 #: The dated-log kind every account's log is written under.
@@ -274,10 +275,27 @@ def account_clone(target: Target, source: ConfigSource) -> PurePosixPath:
     return repo_dir(target, PurePosixPath(urlsplit(source.url).path).stem)
 
 
+def minor_check(want: str) -> str:
+    """A ``python -c`` program exiting 0 on Python *want* (``<major>.<minor>``), else 1 naming both and the door.
+
+    Written for any Python 3: it runs on the very interpreter that may be too old for the kit's code.
+    """
+    return (
+        "import sys; have = '%d.%d' % sys.version_info[:2]; "
+        f"sys.exit(0 if have == '{want}' else 'KIT-PYTHON-MINOR: the kit venv runs Python ' + have + "
+        f"', the kit requires {want}: deploy-fleet --account <this account> (dev_lab.dev.hpcaccount) rebuilds it "
+        "in a Slurm job')"
+    )
+
+
 def in_checkout(target: Target, argv: Sequence[str]) -> str:
-    """The shell line that runs ``python <argv>`` in *target*'s declared dev-lab checkout, with its venv."""
-    kit = repo_dir(target, KIT)  # every cluster login host is POSIX
-    return f'cd {kit} && {shell_interpreter(".")} {shlex.join(argv)}'
+    """The shell line that runs ``python <argv>`` in *target*'s declared dev-lab checkout, with its venv.
+
+    The venv's minor is checked first (:func:`minor_check` against the family :data:`VERSION`): measured 2026-11-27,
+    a 3.13 venv under a checkout of 3.14 code crashed drift with a SyntaxError that named nothing.
+    """
+    kit, python = repo_dir(target, KIT), shell_interpreter('.')  # every cluster login host is POSIX
+    return f'cd {kit} && {python} -c {shlex.quote(minor_check(VERSION))} && {python} {shlex.join(argv)}'
 
 
 def grant_slice(grant: Grant) -> dict[str, Any]:
@@ -339,7 +357,7 @@ def first_install(grant: Grant, target: Target) -> str:
     synced = ' && '.join([
         f'export PATH="$HOME/.local/bin:$PATH" UV_CACHE_DIR={_cache(target)}',
         f'{{ command -v uv >/dev/null || curl -LsSf {UV_INSTALLER} | env UV_NO_MODIFY_PATH=1 sh; }}',
-        f'cd {kit}', 'uv sync --frozen',
+        f'cd {kit}', f'uv sync --frozen {SYNC_FLAGS}',
     ])  # fmt: skip
     steps = [
         f'echo "[first-install] {grant.user}: no kit venv in {kit}"',
@@ -393,11 +411,13 @@ def _move_kit(grant: Grant, target: Target, kit: PurePosixPath, ref: str) -> str
 
     Never through the kit's tick: that reads the account's machine file, which is the stale thing this deploy is
     about to render over (2026-11-20: a retired key crashed it before it refreshed; an old root sent it to another
-    checkout). The lock is the cron tick's, so the kit keeps one writer; the sync runs in a Slurm job (:func:`in_job`).
+    checkout). The lock is the cron tick's, so the kit keeps one writer; the sync runs in a Slurm job (:func:`in_job`)
+    on the family interpreter (``SYNC_FLAGS``): a venv on another minor is rebuilt by uv, never kept (ezxmw9's 3.13
+    venv under 3.14 code, 2026-11-27).
     """
     remote = f'refs/remotes/origin/{ref}'
     python = shell_interpreter('.')
-    sync = 'UV_PROJECT_ENVIRONMENT="${py%/bin/python}" uv sync --frozen'
+    sync = f'UV_PROJECT_ENVIRONMENT="${{py%/bin/python}}" uv sync --frozen {SYNC_FLAGS}'  # another minor: rebuilt
     body = ' && '.join([
         f'git fetch -q origin {shlex.quote(f"+refs/heads/{ref}:{remote}")}',
         f'git checkout -q -B {shlex.quote(ref)} {shlex.quote(remote)}',

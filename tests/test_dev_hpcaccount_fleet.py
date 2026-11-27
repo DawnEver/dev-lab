@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import IO, Any
@@ -26,11 +28,14 @@ from dev_lab.dev.hpcaccount.fleet import (
     deploy_command,
     deploy_fleet,
     first_install,
+    in_checkout,
     layer_target,
+    minor_check,
     render_command,
     repo_dir,
 )
 from dev_lab.dev.hpcaccount.fleetguard import stale_render
+from dev_lab.dev.pythontoolchain import SYNC_FLAGS, VERSION
 from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
@@ -160,7 +165,9 @@ def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path
 
 def test_the_remote_runs_the_accounts_own_deploy() -> None:
     argv = [deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC)]
-    assert f'cd /r/src/repos/dev-lab && {shell_interpreter(".")} -m dev_lab.dev.hpcaccount deploy' in argv[-1]
+    python = shell_interpreter('.')
+    checked = f'cd /r/src/repos/dev-lab && {python} -c {shlex.quote(minor_check(VERSION))} && {python}'
+    assert f'{checked} -m dev_lab.dev.hpcaccount deploy' in argv[-1], 'its minor is checked before it runs'
     assert '--grant-table' in argv[-1], 'the declared slice is the one source of the grant the deploy writes'
 
 
@@ -695,3 +702,38 @@ def test_each_accounts_outcome_and_remote_tail_are_reported_and_a_failed_remote_
     assert '[deploy-fleet] alice: exit 3' in log
     code, said, _ = _outcome(tmp_path / 'green', {'alice': 0, 'bob': 0})
     assert code == 0, said
+
+
+_KIT_REF = (('dev-lab', 'https://forge.example/dev-lab.git', 'integrate/main'),)
+
+
+def test_the_kit_sync_rebuilds_its_venv_on_the_family_python() -> None:
+    """2026-11-27: ezxmw9's kit checkout moved to 3.14 code while its venv stayed 3.13 (a SyntaxError in drift).
+
+    Every kit ``uv sync`` -- the refresh's and a first install's -- names the family interpreter, uv-managed
+    (``pythontoolchain.SYNC_FLAGS``), so a venv on another minor is rebuilt on it, inside the Slurm job.
+    PLANTED CONTROL: the sync without the flags is what the old line ran, and it is no longer there.
+    """
+    target = Target('login02.example', '/r/src', repos=_KIT_REF)
+    for line in (deploy_command(_FLEET[0], target, _SRC), first_install(_FLEET[0], target)):
+        assert f'uv sync --frozen {SYNC_FLAGS}' in line
+        assert 'uv sync --frozen"' not in line
+        assert "uv sync --frozen'" not in line
+        assert 'sbatch' in line
+
+
+def test_a_kit_venv_on_another_minor_is_refused_by_name_never_run() -> None:
+    """Every verb run in the kit checks the venv's minor first: drift says so by name instead of a SyntaxError.
+
+    The check runs here on this interpreter. PLANTED CONTROL: the same check demanding another minor exits non-zero,
+    naming both minors and the door; the family minor passes.
+    """
+    line = in_checkout(Target('login02.example', '/r/src'), ['-m', 'dev_lab.dev.hpcaccount', 'drift'])
+    assert line.index(shlex.quote(minor_check(VERSION))) < line.index('-m dev_lab.dev.hpcaccount drift')
+    ok = subprocess.run([sys.executable, '-c', minor_check(VERSION)], capture_output=True, text=True, check=False)
+    assert ok.returncode == 0, ok.stderr
+    off = subprocess.run([sys.executable, '-c', minor_check('3.99')], capture_output=True, text=True, check=False)
+    assert off.returncode != 0
+    assert f'runs Python {VERSION}' in off.stderr
+    assert 'requires 3.99' in off.stderr
+    assert 'deploy-fleet' in off.stderr
