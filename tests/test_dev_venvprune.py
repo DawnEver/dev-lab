@@ -73,8 +73,17 @@ def test_a_checkout_without_a_pointer_is_left_alone(tmp_path: Path) -> None:
     assert venvprune.plan(root, census=tuple) == ()
 
 
-def test_the_recursive_delete_refusal_names_the_door() -> None:
-    assert 'dev_lab.dev.venvprune --apply' in str(RECURSIVE_DELETE['remedy'])
+#: The RECURSIVE-DELETE remedy keeps only its essential doors (#1041); this door is disclosed in its refusal's section.
+_REFUSALS = Path(__file__).resolve().parents[1] / 'docs-src' / 'dev' / 'refusals.md'
+
+
+def _section(text: str, heading: str) -> str:
+    return text.split(f'\n## {heading}\n', 1)[1].split('\n## ', 1)[0]
+
+
+def test_the_recursive_delete_refusal_discloses_the_door() -> None:
+    section = _section(_REFUSALS.read_text(encoding='utf-8'), str(RECURSIVE_DELETE['id']))
+    assert '-m dev_lab.dev.venvprune --apply' in section
 
 
 def _half_built(root: Path, name: str, pid: int, *, lock: bool = True) -> Path:
