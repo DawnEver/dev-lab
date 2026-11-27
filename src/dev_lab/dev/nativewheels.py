@@ -13,8 +13,9 @@ the pinned toolchain); these wheels are for consumers outside the family.
 * Build: per the repo's ``[build-system] build-backend`` -- ``maturin`` builds with ``PyO3/maturin-action`` (the
   toolchain from the repo's ``rust-toolchain.toml``), any other backend with ``pypa/cibuildwheel``. One wheel per
   OS across Python versions means pyo3 ``abi3``: a built wheel that is not ``abi3`` fails the job by name.
-* Smoke: each wheel installs into a clean venv and imports the extension (``[tool.maturin] module-name``, else the
-  project name as a module).
+* Smoke: each wheel installs into a clean venv of the family Python (:data:`dev_lab.dev.pythontoolchain.VERSION`,
+  the one interpreter its ``requires-python`` admits) and imports the extension (``[tool.maturin] module-name``, else
+  the project name as a module).
 * Publish: the wheels and the sdist go to the rolling prerelease :data:`ROLLING` (replaced on each push to
   ``main``) and, on a tag, to that tag's release. PyPI stays out of scope until a repo asks.
 
@@ -27,6 +28,7 @@ import tomllib
 from typing import Any, Final, cast
 
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.pythontoolchain import VERSION
 
 __all__ = ['ROLLING', 'RUNNERS', 'WORKFLOW', 'wheels_workflow']
 
@@ -101,7 +103,7 @@ def _build(systems: list[str], module: str, *, maturin: bool) -> dict[str, Any]:
         'runs-on': '${{ matrix.os }}',
         'steps': [
             {'uses': 'actions/checkout@v4'},
-            {'uses': 'actions/setup-python@v5', 'with': {'python-version': '3.x'}},
+            {'uses': 'actions/setup-python@v5', 'with': {'python-version': VERSION}},
             *built,
             {'name': 'Refuse a wheel that is not abi3', 'shell': 'bash', 'run': _ABI3_CHECK},
             {'name': 'Smoke-import the wheel in a clean venv', 'shell': 'bash', 'run': smoke},

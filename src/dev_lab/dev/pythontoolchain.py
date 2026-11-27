@@ -9,6 +9,7 @@
   interpreter fits (:func:`dev_lab.dev._dep_project.bootstrap_python`);
 * every ``uv sync`` a rendered CI workflow runs (``ci_base.toml``'s ``@python@``, :data:`SYNC_FLAGS`): a uv-managed
   interpreter on every runner, never the runner's own;
+* the interpreter a rendered wheels workflow builds and smoke-imports on (:mod:`dev_lab.dev.nativewheels`);
 * a cluster deployment's default interpreter (:data:`dev_lab.dev.hpcaccount.spec.DEFAULT_PYTHON`).
 
 WHY ``requires-python`` CARRIES A CEILING (``>=3.14,<3.15``). The family runs ONE minor, so the ceiling is the
