@@ -645,31 +645,3 @@ def test_a_named_extra_adds_to_the_declared_extras_and_never_drops_dev(tmp_path)
     assert dep.main(['--sync', '--extra', 'gpu'], cwd=tmp_path, run=run) == 0
     command = calls[0]
     assert [command[i + 1] for i, flag in enumerate(command) if flag == '--extra'] == ['dev', 'gpu']
-
-
-_LOCK = '[[package]]\nname = "dev-lab"\nversion = "1"\nsource = {{ git = "https://x/dev-lab?rev={rev}" }}\n'
-
-
-@pytest.mark.parametrize(('after', 'said'), [('aaa', ''), ('bbb', 'dep --sync RELOCKED')])
-def test_a_sync_that_rewrites_the_lock_says_it_relocked_and_names_the_frozen_door(
-    tmp_path, capsys: pytest.CaptureFixture[str], after: str, said: str
-) -> None:
-    """dev-lab #1005: a plain `--sync` moved dev-lab in uv.lock and left a modified lock, unannounced.
-
-    PLANTED CONTROL: the same sync leaving the lock as it was says nothing.
-    """
-    (tmp_path / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
-    (tmp_path / 'uv.lock').write_text(_LOCK.format(rev='aaa'), encoding='utf-8')
-
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
-        if 'sync' in argv:
-            (tmp_path / 'uv.lock').write_text(_LOCK.format(rev=after), encoding='utf-8')
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
-
-    assert dep.main(['--sync'], cwd=tmp_path, run=run) == 0
-    out = capsys.readouterr().out
-    assert ('RELOCKED' in out) is bool(said)
-    if said:
-        line = next(text for text in out.splitlines() if 'RELOCKED' in text)
-        assert '(dev-lab)' in line
-        assert '--bootstrap' in line

@@ -390,7 +390,6 @@ def _run(
         publish_built(root, prefix, live, ok=False, census=census)
         return 1
     port = Port(name=str(root), anchor_paths=lambda: paths)
-    before = _dep_project.lock_text(root)
     try:
         result = _change(
             command,
@@ -410,15 +409,20 @@ def _run(
         return 1
     emit(result.render())
     stale = publish_built(root, prefix, live, ok=not result.returncode, census=census)
+    _name_a_stale_lock(command, root, failed=bool(result.returncode), run=run, environment=environment)
     synced = syncing and not args.dry_run and not result.returncode
-    return result.returncode or (_synced(root, python, before, run=run) if synced else 0) or stale
+    return result.returncode or (after_sync(root, python, run=run) if synced else 0) or stale
 
 
-def _synced(root: Path, python: str, before: str, *, run: Callable[..., Any]) -> int:
-    """After a sync: say a relock it made (:func:`~dev_lab.dev._dep_project.relock_note`), then the after-sync step."""
-    if said := _dep_project.relock_note(root, before):
-        emit(said)
-    return after_sync(root, python, run=run)
+def _name_a_stale_lock(
+    command: Sequence[str], root: Path, *, failed: bool, run: Callable[..., Any], environment: dict[str, str]
+) -> None:
+    """After a failed ``--locked`` sync: when *root*'s lock no longer matches its manifest, name the relock door."""
+    if not failed or '--locked' not in command:
+        return
+    check = _dep_project.lock_check_command(command)
+    if run_change(check, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment):
+        emit(_dep_project.stale_lock_note(root))
 
 
 if __name__ == '__main__':

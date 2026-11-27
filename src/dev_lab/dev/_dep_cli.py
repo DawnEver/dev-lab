@@ -28,4 +28,7 @@ def argv_error(args: argparse.Namespace, *, locking: bool) -> str:
     """Why *args* name no change this door makes, else ``''``."""
     if args.bootstrap is None and not locking and not args.sync and not args.upgrade_package:
         return 'use --bootstrap PATH, --lock-upgrade [ROOT], --sync, or --upgrade-package NAME'
+    if args.upgrade_package and not locking and (args.sync or args.bootstrap is not None):
+        # A sync installs the committed lock and never moves it (user ruling 2026-11-27): a move is a relock.
+        return 'a sync installs the committed lock; move a package with --lock-upgrade [ROOT] --upgrade-package NAME'
     return ''
