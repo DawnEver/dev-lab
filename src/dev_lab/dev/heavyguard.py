@@ -30,7 +30,7 @@ import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, Final
+from typing import TYPE_CHECKING, BinaryIO, Final, cast
 
 from lab_commons.box.heavy import CAPABILITY, DOOR, RULE, refusal
 from lab_commons.hostenv import HEAVY_APPROVED_ENV
@@ -75,24 +75,34 @@ def declared(manifest: Mapping[str, object]) -> Heavy | None:
         ValueError: an unknown key, or a value that is not a list of non-empty strings -- each named.
 
     """
-    tool = manifest.get('tool', {})
-    dev = tool.get('dev_lab', {}) if isinstance(tool, Mapping) else {}
-    table = dev.get('heavy') if isinstance(dev, Mapping) else None
+    table = _table(_table(manifest.get('tool')).get('dev_lab')).get('heavy')
+    declared_table = _table(table)
     if table is None:
         return None
     if not isinstance(table, Mapping):
         msg = f'{TABLE} must be a table of {", ".join(KEYS)}'
         raise TypeError(msg)
-    bad = [f'unknown key {key!r} (keys: {", ".join(KEYS)})' for key in table if key not in KEYS]
-    bad += [
-        f'{key} must be a list of non-empty strings'
-        for key in KEYS
-        if not (isinstance(table.get(key, []), list) and all(isinstance(v, str) and v for v in table.get(key, [])))
-    ]
+    bad = [f'unknown key {key!r} (keys: {", ".join(KEYS)})' for key in declared_table if key not in KEYS]
+    good = {key: _strings(declared_table.get(key, [])) for key in KEYS}
+    bad += [f'{key} must be a list of non-empty strings' for key, value in good.items() if value is None]
     if bad:
         msg = f'{TABLE}: {"; ".join(bad)}'
         raise ValueError(msg)
-    return Heavy(*(tuple(table.get(key, [])) for key in KEYS))
+    return Heavy(*(good[key] or () for key in KEYS))
+
+
+def _table(value: object) -> Mapping[str, object]:
+    """*value* as a parsed TOML table (string keys); anything that is not a table reads as an empty one."""
+    return cast('Mapping[str, object]', value) if isinstance(value, Mapping) else {}
+
+
+def _strings(value: object) -> tuple[str, ...] | None:
+    """*value* as a tuple of non-empty strings, or ``None`` when it is not a list of only those."""
+    if not isinstance(value, list):
+        return None
+    items = cast('list[object]', value)
+    strings = tuple(v for v in items if isinstance(v, str) and v)
+    return strings if len(strings) == len(items) else None
 
 
 def _script(script: str) -> str:
@@ -157,7 +167,7 @@ def _admit_refusal(payload: Mapping[str, object]) -> str | None:
     The host's two lines (:func:`lab_commons.box.heavy.refusal`) and the row's ``details:`` pointer: a refusal's shape.
     """
     tool_input = payload.get('tool_input')
-    command = str(tool_input.get('command', '')) if isinstance(tool_input, Mapping) else ''
+    command = str(_table(tool_input).get('command', ''))
     if not command or _APPROVED.search(command):
         return None
     why = refusal(command.strip().splitlines()[0])
@@ -187,7 +197,7 @@ def main(argv: Sequence[str] | None = None, *, stdin: BinaryIO | None = None, st
     parser.parse_args(argv)
     try:
         payload = json.loads((stdin or sys.stdin.buffer).read().decode('utf-8'))
-        reason = _admit_refusal(payload) if isinstance(payload, dict) else None
+        reason = _admit_refusal(_table(payload))
     except (ValueError, OSError, RuntimeError):
         return 0
     if reason is None:
