@@ -16,7 +16,7 @@ import json
 import math
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import NamedTuple, NoReturn
+from typing import NamedTuple, NoReturn, Protocol, cast
 
 import numpy as np
 
@@ -162,7 +162,11 @@ def _scalar(spec: F, value: object, path: str) -> object:
 # -- arrays and dims ----------------------------------------------------------------------------------------
 
 
-def _bind(dims: dict[str, tuple[int, str]], name: str, extent: int, path: str, bounds: dict) -> None:
+#: Each dim name's declared (low, high), either side open.
+type _Bounds = dict[str, tuple[int | None, int | None]]
+
+
+def _bind(dims: dict[str, tuple[int, str]], name: str, extent: int, path: str, bounds: _Bounds) -> None:
     low, high = bounds.get(name, (None, None))
     if low is not None and extent < low:
         fail(path, f'{name} >= {low}', str(extent))
@@ -173,7 +177,7 @@ def _bind(dims: dict[str, tuple[int, str]], name: str, extent: int, path: str, b
     dims.setdefault(name, (extent, path))
 
 
-def _array(spec: F, value: object, path: str, dims: dict, bounds: dict) -> np.ndarray:
+def _array(spec: F, value: object, path: str, dims: dict[str, tuple[int, str]], bounds: _Bounds) -> np.ndarray:
     if not isinstance(value, np.ndarray):
         fail(path, 'ndarray', _type_name(value))
     if value.dtype != np.dtype(spec.dtype):
@@ -255,9 +259,15 @@ def post_init(record: object) -> None:
     record._ir_set(tuple(values.values()), dims)  # noqa: SLF001 -- generated
 
 
+class _Fielded(Protocol):
+    """A generated record class, as :func:`build` reads it: its field table."""
+
+    _ir_fields: tuple[F, ...]
+
+
 def build(cls: type, kwargs: dict[str, object], path: str) -> object:
     """``cls(**kwargs)`` (keyed by WIRE name) whose validation errors read from *path* rather than from ``cls``."""
-    specs: tuple[F, ...] = getattr(cls, '_ir_fields', ())
+    specs = cast('type[_Fielded]', cls)._ir_fields  # noqa: SLF001 -- generated
     attrs: dict[str, str] = {spec.name: spec.attr for spec in specs if spec.attr}
     named: dict[str, object] = {attrs.get(str(name), str(name)): value for name, value in kwargs.items()}
     try:

@@ -31,17 +31,17 @@ from lab_commons.box import POLL_S
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev import baselines, cargostep, durations
+from dev_lab.dev import durations
 from dev_lab.dev._logdistil import distil_log
-from dev_lab.dev._verify_address import _git_z, tree_address
+from dev_lab.dev._verify_address import tree_address
 from dev_lab.dev._verify_coverage import cache_env, coverage_args, coverage_env, coverage_report, coverage_total
-from dev_lab.dev.commandtests import declared_command, script_paths, selected_command
+from dev_lab.dev._verify_native import native_steps
+from dev_lab.dev.commandtests import script_paths
 from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.gitdirs import run_owner
 from dev_lab.dev.harness import child_env
 from dev_lab.dev.hook_install import read_hooks
-from dev_lab.dev.jsrun import NoEngine, node_path
 from dev_lab.dev.lanepolicy import declares_no_test_roots
 from dev_lab.dev.logref import LogRef
 from dev_lab.dev.pytestout import strip_ansi
@@ -59,7 +59,7 @@ from dev_lab.dev.test_outcomes import (
     recorded_diagnostics,
     recorded_failures,
 )
-from dev_lab.dev.testtemp import reclaim, script_temp_env
+from dev_lab.dev.testtemp import reclaim
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
 from dev_lab.dev.verdictenv import verdict_env
 from dev_lab.dev.verifybox import (
@@ -242,68 +242,6 @@ def _tee(
     return process.returncode
 
 
-#: The banner before the declared command's run of the selected script tests.
-SCRIPTS_BANNER: Final = '--- script tests ---\n'
-
-
-def script_step(root: Path, paths: tuple[str, ...], *, handle: IO[str]) -> StepReport:
-    """The selected script tests (``.mjs``/``.cjs``/``.js``), run by the repo's DECLARED command, judged by its exit.
-
-    The command is the command-part producer's (:mod:`dev_lab.dev.commandtests`), cut to *paths*: exit 0 passes,
-    any other exit FAILS each selected path. No declaration, a command that cannot be cut, or one that cannot start
-    measures nothing -- truncated, by name and door, so the run is INCONCLUSIVE rather than a guessed verdict.
-    """
-    name = f'script tests {" ".join(paths)}'
-    handle.write(SCRIPTS_BANNER)
-    try:
-        declared = declared_command((root / 'pyproject.toml').read_text(encoding='utf-8'))
-    except OSError:
-        declared = None
-    if declared is None:
-        return StepReport(
-            name=name,
-            truncated=(
-                (
-                    f'{name}: no test command is declared -- declare it as the producer in pyproject.toml: '
-                    f'[tool.lab_commons.tests] produce = ["-m", "dev_lab.dev.commandpart", "{{part}}", "--", <cmd...>]'
-                ),
-            ),
-        )
-    command = selected_command(root, declared, paths)
-    if isinstance(command, str):
-        return StepReport(name=name, truncated=(f'{name}: {command}',))
-    try:
-        # `node` is the LOCKED engine (:mod:`dev_lab.dev.jsrun`), never the host's; any other program is resolved
-        # on PATH (Windows: `npm` is `npm.cmd`, which a bare name cannot start).
-        program = str(node_path()) if command[0] == 'node' else shutil.which(command[0]) or command[0]
-        with script_temp_env({}) as temp:
-            code = _tee([program, *command[1:]], cwd=root, handle=handle, extra_env=temp)
-    except (OSError, NoEngine) as cannot:
-        return StepReport(name=name, truncated=(f'{name}: cannot start {command[0]!r} here: {cannot}',))
-    return StepReport(name=name, reported=(name, *paths), failures=() if code == 0 else paths)
-
-
-def _native_steps(
-    root: Path, pytest_args: tuple[str, ...], scripts: tuple[str, ...], *, handle: IO[str], cargo: bool
-) -> list[StepReport]:
-    """The steps beside pytest: script tests, then on an untargeted run ``baselines verify`` and cargo.
-
-    ``baselines verify`` is H2's; each cargo workspace's own step (T8) runs only outside a producer, whose part
-    hands it to ``tests/cargo``.
-    """
-    steps = [script_step(root, scripts, handle=handle)] if scripts else []
-    if scripts or is_targeted(root, pytest_args):  # a selection (pytest or script) judges itself, not the tree
-        return steps
-    steps.append(baselines.step(root))
-    if not cargo:
-        return steps
-    tracked = _git_z(root, 'ls-files', '-z') or ()
-    return [
-        *steps,
-        *(cargostep.step(root, one, handle=handle, tee=_tee) for one in cargostep.workspaces(root, tracked)),
-    ]
-
-
 def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec: str, log: LogRef) -> Verdict:
     """Fold the step reports into ONE verdict over the whole verify run.
 
@@ -436,7 +374,7 @@ def run_verify(
                 reports.append(read_hooks(root, handle=handle))
             for name, arguments in LINT_STEPS:
                 reports.append(read_lint(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
-            reports.extend(_native_steps(root, pytest_args, scripts, handle=handle, cargo=cargo))
+            reports.extend(native_steps(root, pytest_args, scripts, handle=handle, cargo=cargo, tee=_tee))
             if not no_pytest:
                 handle.write(_PYTEST_BANNER)
                 stamp = {

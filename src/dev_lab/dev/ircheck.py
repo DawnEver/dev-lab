@@ -2,7 +2,7 @@
 
 :func:`load` is the one way a generator or a check obtains a repo's IR: :func:`dev_lab.dev.irmodel.parse` reads each
 file; this module refuses what only the whole set can show (a dangling ``record:widgets.Widget``, a quantity the
-catalogue lacks, a ``unique_by`` naming a float). Each refusal is an :class:`~dev_lab.dev.irmodel.IRSchemaError`.
+catalogue lacks, a ``unique_by`` naming a float). Each refusal is an :class:`~dev_lab.dev._ir_errors.IRSchemaError`.
 """
 
 from __future__ import annotations
@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.quantity import registry
 
-from dev_lab.dev.irmodel import IR, Field, Record, TypeRef, parse, refuse
+from dev_lab.dev._ir_errors import refuse
+from dev_lab.dev.irmodel import IR, Field, Record, TypeRef, parse
 
 if TYPE_CHECKING:
     from pathlib import Path

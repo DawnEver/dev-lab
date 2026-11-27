@@ -57,7 +57,7 @@ _PROFILE = RepoProfile(
     app_name='dev-lab',
     package='dev_lab',
     root=_ROOT,
-    lint_config='pyproject.toml',
+    lint_config=Path('pyproject.toml'),
 )
 
 #: Rules this repo refuses a violation of TODAY, each with the mechanism in THIS tree that does the

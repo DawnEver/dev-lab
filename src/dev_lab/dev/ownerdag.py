@@ -201,6 +201,8 @@ def _native(scope: _Scope, rel: str, name: str) -> str | None:
     if len(parts) == 1:
         return f'imports the bare native module {name}; import the crate module {name}.<crate>'
     if (stage := native_stage(scope.tree, scope.stages, name)) is None:
+        if scope.layout is None:  # a crate may be declared by layout.toml alone; without it, refused once above
+            return None
         return (
             f'imports {name}, but {parts[1]} is no crate at {CRATES}/<owner path> (in the tree or declared by '
             'layout.toml)'

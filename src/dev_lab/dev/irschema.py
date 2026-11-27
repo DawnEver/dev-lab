@@ -22,8 +22,8 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import irmigrate, irpython, irrust
+from dev_lab.dev._ir_errors import IRSchemaError
 from dev_lab.dev.ircheck import load
-from dev_lab.dev.irmodel import IRSchemaError
 from dev_lab.dev.irversion import Level, at_revision, bump_refusal, classify
 
 if TYPE_CHECKING:

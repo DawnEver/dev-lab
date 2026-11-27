@@ -116,7 +116,7 @@ def _origin(path: Path) -> str | None:
     if not path.is_dir():
         return None
     answer = _door.run(['git', '-C', str(path), 'remote', 'get-url', 'origin'],
-                       capture_output=True, text=True, check=False, timeout=30)  # fmt: skip
+                       capture_output=True, text=True, encoding='utf-8', check=False, timeout=30)  # fmt: skip
     return answer.stdout.strip() or None if answer.returncode == 0 else None
 
 

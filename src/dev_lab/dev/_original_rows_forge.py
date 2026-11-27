@@ -161,4 +161,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgerecordpurge',
     # ORIGINAL: the read-only secret-name list (2026-11-10); no consumer listed names.
     'forgesecretnames',
+    'producerpriority',  # below-normal producer process priority, split from forgeproduce (2026-11-26)
+    'hostsissue',  # the hosts issue (identity, lookup, opening), split from forgehosts (2026-11-26)
 )

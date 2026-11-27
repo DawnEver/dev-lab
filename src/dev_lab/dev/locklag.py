@@ -1,4 +1,6 @@
-"""HOW FAR A COMMIT LAGS A LINE -- measured in TIME; a lock's :func:`~dev_lab.dev.relock.floated` pins, judged by it.
+"""HOW FAR A COMMIT LAGS A LINE -- measured in TIME; a lock's floated pins, judged by it.
+
+The pins are :func:`dev_lab.dev._relock_lockfile.floated`.
 
 :func:`lag_of` is THE one measure of "behind": the first-parent landings a line holds that a commit lacks, aged from
 the OLDEST of them (now minus its committer time). A line quiet for days does not make an old pin stale; a pin
@@ -25,11 +27,12 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.temp import TEMP_PREFIX
 
+from dev_lab.dev._relock_lockfile import floated
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.lockcheck import LOCK, UNRESOLVED
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.relock import SHORT, RelockFailed, floated
+from dev_lab.dev.relock import SHORT, RelockFailed
 
 __all__ = ['LAG_WINDOW', 'LOCAL_ONLY', 'Lag', 'floating_lag', 'hours', 'lag_of', 'within_window']
 

@@ -133,7 +133,12 @@ def _commit(root: Path, rows: list[Row], message: str) -> str:
     _git(root, 'add', '-A')
     _git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', message)
     return subprocess.run(
-        [_GIT, '-C', str(root), 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True, timeout=60
+        [_GIT, '-C', str(root), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        timeout=60,
     ).stdout.strip()
 
 

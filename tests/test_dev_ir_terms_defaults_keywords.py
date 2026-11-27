@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import irpython, irrust
+from dev_lab.dev._ir_errors import IRSchemaError
 from dev_lab.dev.ircheck import load
-from dev_lab.dev.irmodel import IRSchemaError
 
 FIXTURE = Path(__file__).parent / 'data' / 'ir_schema' / 'repo'
 W = 'ir/widgets.toml'

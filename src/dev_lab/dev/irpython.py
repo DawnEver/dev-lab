@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev import _ir_runtime
-from dev_lab.dev.irmodel import CONSTANTS_MODULE, refuse
+from dev_lab.dev._ir_errors import refuse
+from dev_lab.dev.irmodel import CONSTANTS_MODULE
 
 if TYPE_CHECKING:
     from dev_lab.dev.irmodel import IR, Field, Module, Record, TypeRef

@@ -21,8 +21,9 @@ import numpy as np
 import pytest
 
 from dev_lab.dev import irpython
+from dev_lab.dev._ir_errors import IRSchemaError
 from dev_lab.dev.ircheck import load
-from dev_lab.dev.irmodel import IR, IRSchemaError
+from dev_lab.dev.irmodel import IR
 
 FIXTURE = Path(__file__).parent / 'data' / 'ir_schema' / 'repo'
 

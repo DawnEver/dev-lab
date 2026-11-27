@@ -111,7 +111,9 @@ _HOLDER = (
 
 def test_a_held_lock_names_its_holder_pid_age_and_phase(tmp_path: Path) -> None:
     lock = tmp_path / 'alpha.lock'
-    first = subprocess.Popen([sys.executable, '-c', _HOLDER, str(lock)], stdout=subprocess.PIPE, text=True)
+    first = subprocess.Popen(
+        [sys.executable, '-c', _HOLDER, str(lock)], stdout=subprocess.PIPE, text=True, encoding='utf-8'
+    )
     try:
         assert first.stdout is not None
         assert first.stdout.readline().strip() == 'held'
@@ -134,7 +136,9 @@ def test_planted_control_a_holder_that_wrote_no_record_is_said_so_and_never_publ
     lock = tmp_path / 'alpha.lock'
     hold = 'import sys, time\nfrom pathlib import Path\nfrom dev_lab.dev.servelock import held\n'
     hold += "with held(Path(sys.argv[1])):\n    print('held', flush=True)\n    time.sleep(60)\n"
-    first = subprocess.Popen([sys.executable, '-c', hold, str(lock)], stdout=subprocess.PIPE, text=True)
+    first = subprocess.Popen(
+        [sys.executable, '-c', hold, str(lock)], stdout=subprocess.PIPE, text=True, encoding='utf-8'
+    )
     try:
         assert first.stdout is not None
         assert first.stdout.readline().strip() == 'held'

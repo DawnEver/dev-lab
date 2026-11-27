@@ -20,7 +20,7 @@ from dev_lab.dev import heavyguard
 from dev_lab.dev.agenthooks import engine_path, run_engine
 from dev_lab.dev.disclosure import details_for, problems
 from dev_lab.dev.heavyguard import Heavy, declared, heavy_rules, mark_heavy_tests
-from dev_lab.dev.hooks import denies
+from dev_lab.dev.hooks import DenyRule, denies
 
 pytest_plugins = ['pytester']
 
@@ -90,13 +90,13 @@ def test_a_repo_declaring_nothing_ships_no_row(tmp_path: Path) -> None:
 
 
 @pytest.fixture
-def row(tmp_path: Path) -> object:
+def row(tmp_path: Path) -> DenyRule:
     (rule,) = heavy_rules(_root(tmp_path))
     return rule
 
 
-def test_the_row_names_its_judge_and_its_door(row: object) -> None:
-    rendered = row.rendered()  # type: ignore[attr-defined]
+def test_the_row_names_its_judge_and_its_door(row: DenyRule) -> None:
+    rendered = row.rendered()
     assert rendered['name'] == RULE
     assert rendered['asks'] == 'dev_lab.dev.heavyguard'
     assert 'dev_lab.dev.forge request' in rendered['reason']
@@ -104,25 +104,25 @@ def test_the_row_names_its_judge_and_its_door(row: object) -> None:
 
 
 @pytest.mark.parametrize('command', _REFUSED)
-def test_the_prefilter_catches_every_declared_launch_form(row: object, command: str) -> None:
-    assert denies([row], command) == RULE  # type: ignore[list-item]
+def test_the_prefilter_catches_every_declared_launch_form(row: DenyRule, command: str) -> None:
+    assert denies([row], command) == RULE
 
 
 @pytest.mark.parametrize('command', _PERMITTED)
-def test_the_prefilter_admits_light_commands(row: object, command: str) -> None:
-    assert denies([row], command) is None  # type: ignore[list-item]
+def test_the_prefilter_admits_light_commands(row: DenyRule, command: str) -> None:
+    assert denies([row], command) is None
 
 
-def test_the_rows_own_examples_hold(row: object) -> None:
+def test_the_rows_own_examples_hold(row: DenyRule) -> None:
     """The derived refuses/permits are the row's controls in every repo that renders it."""
-    assert [c for c in row.refuses if denies([row], c) is None] == []  # type: ignore[attr-defined,list-item]
-    assert [c for c in row.permits if denies([row], c) is not None] == []  # type: ignore[attr-defined,list-item]
+    assert [c for c in row.refuses if denies([row], c) is None] == []
+    assert [c for c in row.permits if denies([row], c) is not None] == []
 
 
-def test_the_real_engine_runs_the_prefilter(row: object, tmp_path: Path) -> None:
+def test_the_real_engine_runs_the_prefilter(row: DenyRule, tmp_path: Path) -> None:
     """The ENGINE, not a model: the row without its judge refuses a launch and admits a light command."""
     rules = tmp_path / 'deny-rules.json'
-    rules.write_text(json.dumps([replace(row, asks=None).rendered()]), encoding='utf-8')  # type: ignore[type-var]
+    rules.write_text(json.dumps([replace(row, asks=None).rendered()]), encoding='utf-8')
     assert RULE in (run_engine(engine_path(), 'python -m pkg.campaign_driver run s.toml', rules) or '')
     assert run_engine(engine_path(), 'cargo test -p wdg_core --lib', rules) is None
 

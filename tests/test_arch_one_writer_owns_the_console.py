@@ -87,7 +87,9 @@ NOT_OURS = ('stdout', 'stderr')
 #: Re-taken 2026-10-22 at 362 (pr/no-ephemeral-refs merged: dev.ephemeralrefs, dev._rule_rows_citations): 320 -> 322.
 #: Re-taken 2026-10-22 at 240 when the split left lab-commons' trees behind: 322 -> 200.
 #: RE-MEASURED 2026-11-05: 402 modules (the judge, upgrade, mirrors and accounts modules of #99); headroom unchanged.
-MODULE_FLOOR = 370
+#: RE-MEASURED 2026-11-27 at 819 (the kit doubled since 11-05: hpcaccount, famtests, the split modules), so 370 no
+#: longer bound; re-taken the same 40 under: 370 -> 779, headroom unchanged.
+MODULE_FLOOR = 779
 MODULE_HEADROOM = 45
 
 

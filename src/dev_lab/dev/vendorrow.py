@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Final
+
+from lab_commons import launch
 
 from dev_lab.dev._machinefile import merged
 
@@ -78,7 +79,7 @@ def row_text(text: str, proposal: Proposal) -> str:
 
 
 def _git(cwd: Path, *args: str) -> str:
-    done = subprocess.run(
+    done = launch.run(
         [shutil.which('git') or 'git', *args], cwd=cwd, capture_output=True, text=True, encoding='utf-8', check=False
     )
     if done.returncode:

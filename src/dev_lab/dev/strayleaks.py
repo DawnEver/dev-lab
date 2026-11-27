@@ -94,7 +94,12 @@ def _file_clones(path: Path) -> str | None:
 
 def _git(path: Path, *args: str) -> str:
     done = launch.run(
-        [_GIT_EXE, '-C', str(path), *args], capture_output=True, text=True, timeout=_GIT_TIMEOUT_S, check=True
+        [_GIT_EXE, '-C', str(path), *args],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        timeout=_GIT_TIMEOUT_S,
+        check=True,
     )
     return done.stdout.strip()
 
