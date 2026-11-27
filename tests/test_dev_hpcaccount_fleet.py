@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 import pytest
 from lab_commons.config import CONFIG_ENV
@@ -91,7 +91,7 @@ def _run(
         source=_source(tmp_path, deploy=deploy),
         dry_run=False,
         say=said.append,
-        launch=lambda dest, command, _log: started.append([dest, command]),
+        launch=lambda dest, command, _log: started.append([dest, command]) or 0,
     )
     return code, started, said
 
@@ -150,7 +150,7 @@ def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path
         source=_source(tmp_path),
         dry_run=False,
         say=said.append,
-        launch=lambda dest, command, _log: started.append([dest, command]),
+        launch=lambda dest, command, _log: started.append([dest, command]) or 0,
         division=division,
     )
     assert code == 2
@@ -178,7 +178,7 @@ def _two_grants(tmp_path: Path, role: str, accounts: tuple[str, ...]) -> tuple[i
         source=_source(tmp_path),
         dry_run=True,
         say=said.append,
-        launch=lambda _dest, _command, _log: None,
+        launch=lambda _dest, _command, _log: 0,
     )
     return code, said
 
@@ -232,7 +232,7 @@ def test_a_short_host_two_grant_hosts_share_is_refused(tmp_path: Path) -> None:
         source=_source(tmp_path, users=('bob',), deploy={'bob': '[deploy]\nhost = "login01"\nroot = "/r/src"\n'}),
         dry_run=False,
         say=said.append,
-        launch=lambda dest, command, _log: started.append([dest, command]),
+        launch=lambda dest, command, _log: started.append([dest, command]) or 0,
     )
     assert code == 2
     assert started == []
@@ -302,7 +302,7 @@ def _rendered(tmp_path: Path, source: ConfigSource, *, dry_run: bool = False) ->
         source=source,
         dry_run=dry_run,
         say=said.append,
-        launch=lambda dest, command, _log: started.append([dest, command]),
+        launch=lambda dest, command, _log: started.append([dest, command]) or 0,
     )
     return code, started, said
 
@@ -403,7 +403,7 @@ def test_a_grant_naming_no_cluster_is_refused(tmp_path: Path) -> None:
     said: list[str] = []
     bare = (Grant(user='alice', hosts=_HOSTS, slurm_account='acct'),)
     code = deploy_fleet(bare, (), home=tmp_path, source=_source(tmp_path), dry_run=True, say=said.append,
-                        launch=lambda *_: None)  # fmt: skip
+                        launch=lambda *_: 0)  # fmt: skip
     assert code == 2
     assert any('names no cluster' in line for line in said)
 
@@ -640,10 +640,11 @@ def test_every_account_leaves_its_dated_log_even_when_it_exits_early(tmp_path: P
     """
     said: list[str] = []
 
-    def launch(dest: str, _command: str, _log: object) -> None:
+    def launch(dest: str, _command: str, _log: object) -> int:
         if dest.startswith('bob@'):
             msg = 'the held session of bob is recorded but its holder does not answer'
             raise RuntimeError(msg)
+        return 0
 
     code = deploy_fleet(
         _FLEET, (), home=tmp_path, source=_source(tmp_path, deploy=_DEPLOY), dry_run=False, say=said.append,
@@ -655,3 +656,42 @@ def test_every_account_leaves_its_dated_log_even_when_it_exits_early(tmp_path: P
     assert 'holder does not answer' in logs['bob']
     assert 'refused' in logs['carol']
     assert 'started' in logs['alice']
+
+
+class _Remote:
+    """A started remote verb: prints *output* into its log, then exits *status* on its second poll."""
+
+    def __init__(self, log: IO[str], output: str, status: int) -> None:
+        log.write(output)
+        self.polls, self.status = 0, status
+
+    def poll(self) -> int | None:
+        self.polls += 1
+        return self.status if self.polls > 1 else None
+
+
+def _outcome(tmp_path: Path, statuses: dict[str, int]) -> tuple[int, list[str], str]:
+    said: list[str] = []
+    code = deploy_fleet(
+        _FLEET, tuple(statuses), home=tmp_path, source=_source(tmp_path), dry_run=False, say=said.append,
+        launch=lambda dest, _command, log: _Remote(log, f'remote says {dest}\n', statuses[dest.partition('@')[0]]),
+        nap=lambda _s: None,
+    )  # fmt: skip
+    return code, said, next(tmp_path.rglob('alice.log')).read_text(encoding='utf-8')
+
+
+def test_each_accounts_outcome_and_remote_tail_are_reported_and_a_failed_remote_fails_the_fleet(
+    tmp_path: Path,
+) -> None:
+    """2026-11-27: deploy-fleet exited 0 with logs holding only 'started'. Each outcome is now waited for and said.
+
+    PLANTED CONTROL: the same run with every remote exiting 0 exits 0.
+    """
+    code, said, log = _outcome(tmp_path / 'red', {'alice': 3, 'bob': 0})
+    assert code == 1, said
+    assert 'alice: exit 3' in said
+    assert 'bob: exit 0' in said
+    assert '  remote says alice@login02.example' in said, 'the remote output tail rides along'
+    assert '[deploy-fleet] alice: exit 3' in log
+    code, said, _ = _outcome(tmp_path / 'green', {'alice': 0, 'bob': 0})
+    assert code == 0, said

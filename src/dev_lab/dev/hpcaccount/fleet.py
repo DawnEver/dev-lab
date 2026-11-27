@@ -27,7 +27,9 @@ one is live, else ONE detached ``ssh -o BatchMode=yes <user>@<declared host>``),
 refreshed that checkout (:func:`refresh_kit`; with the layer's kit ref, a direct fast-forward under the tick's lock,
 since the tick reads the stale machine file), so a fix to the deploy reaches an account that never ticks --
 and writes everything it prints to one log
-per account (``~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log``). The deploy is safe to repeat.
+per account (``~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log``). The deploy is safe to repeat. Then it
+WAITS for each account and says its outcome as it ends -- ``<user>: exit N`` and its log's tail, also appended to
+the log (:func:`~dev_lab.dev.hpcaccount.transport.outcomes`); a remote that does not exit 0 makes the run exit 1.
 
 THE ACCOUNT RENDERS ITS OWN LAYER FIRST (user ruling 2026-11-15: FAMILY -> ACCOUNT -> LOCAL, one road). Its machine
 file is the render of the config source's ``family.toml`` and ``hosts/<cluster>-<user>.toml``
@@ -48,6 +50,7 @@ import argparse
 import json
 import shlex
 import sys
+import time
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -72,7 +75,7 @@ from dev_lab.dev.hpcaccount.cimark import paused_guard
 from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleetguard import deploy_root, serving_twice_refusal, stale_render
 from dev_lab.dev.hpcaccount.spec import KIT, TICK_LOCK, paths_of_root, uv_cache
-from dev_lab.dev.hpcaccount.transport import describe, start
+from dev_lab.dev.hpcaccount.transport import Started, describe, outcomes, start
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.venvpointer import shell_interpreter
 
@@ -94,8 +97,9 @@ _MACHINE_HOME, _CONFIG_UNDER_HOME = default_layout()
 _MACHINE_FILE: Final = f'"${{{CONFIG_ENV}:-${{{hostenv.HOME_ENV}:-$HOME/{_MACHINE_HOME}}}/{_CONFIG_UNDER_HOME}}}"'
 _READ_DEPLOY: Final = f'f={_MACHINE_FILE}; echo "# $f"; ' + 'sed -n \'/^\\[deploy\\]/,/^\\[/p\' "$f" 2>/dev/null; true'
 
-#: Runs one deploy on a dest: ``(dest, command, log) -> object`` (:func:`dev_lab.dev.hpcaccount.transport.start`).
-Launch = Callable[[str, str, IO[Any]], object]
+#: Runs one deploy on a dest: ``(dest, command, log) ->`` its exit status or the process still running
+#: (:func:`dev_lab.dev.hpcaccount.transport.start`), whose outcome :func:`~.transport.outcomes` waits for.
+Launch = Callable[[str, str, IO[Any]], int | Started]
 
 
 @dataclass(frozen=True)
@@ -429,8 +433,12 @@ def deploy_fleet(
     say: Callable[[str], None],
     launch: Launch = start,
     division: Division | None = None,
+    nap: Callable[[float], None] = time.sleep,
 ) -> int:
-    """Start each account's deploy on its declared host; 2 when any account was refused."""
+    """Start each account's deploy on its declared host, then say each outcome as it ends (:func:`outcomes`).
+
+    2 when any account was refused, else 1 when any remote did not exit 0, else 0. *nap* is the wait between polls.
+    """
     if why := serving_twice_refusal(grants, accounts, division):
         say(f'deploy-fleet: refused -- {why}')
         return 2
@@ -444,6 +452,7 @@ def deploy_fleet(
         say('deploy-fleet: refused -- the machine file declares no [[hpc.grant]]')
         return 2
     refused = 0
+    started: list[tuple[str, Path, int | Started]] = []
     for user in accounts or sorted(fleet):
         grant = fleet[user]
         path = dated_log(home, f'{user}.log', base=_BASE, kind=KIND)
@@ -461,12 +470,13 @@ def deploy_fleet(
         if not dry_run:
             with path.open('a', encoding='utf-8') as log:
                 try:
-                    launch(dest, command, log)
+                    started.append((user, path, launch(dest, command, log)))
                 except (RuntimeError, OSError) as failed:  # HoldRefused is a RuntimeError
                     log.write(f'[deploy-fleet] {user}: refused before the deploy ran -- {failed}\n')
                     say(f'{user}: refused -- {failed}')
                     refused += 1
-    return 2 if refused else 0
+    broke = outcomes(started, say, kind=KIND, nap=nap)
+    return 2 if refused else 1 if broke else 0
 
 
 def _log_line(path: Path, line: str, *, dry_run: bool) -> None:
