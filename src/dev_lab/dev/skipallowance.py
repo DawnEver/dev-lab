@@ -294,7 +294,7 @@ def _names(path: Path, node: str) -> bool:
     """
     try:
         tree = ast.parse(path.read_text('utf-8', errors='replace'))
-    except (OSError, SyntaxError, ValueError):
+    except OSError, SyntaxError, ValueError:
         return False
     defined = {
         inner.name

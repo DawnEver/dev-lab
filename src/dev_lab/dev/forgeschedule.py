@@ -84,6 +84,7 @@ from lab_commons.hpc.needsets import scarce_parts, vocabulary_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.shell import FULL, INCREMENTAL
 
+from dev_lab.dev import cargostep
 from dev_lab.dev._forgeschedule_requests import issue_labels, request_candidates
 from dev_lab.dev._schedule_durations import HOURS, SCHEDULE_RENAMED, in_hours, refuse_unit_keys
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
@@ -98,7 +99,7 @@ from dev_lab.dev.forgerequest import (
 )
 from dev_lab.dev.forgescope import scope_of
 from dev_lab.dev.forgestatus import CARRIED_FROM
-from dev_lab.dev.forgework import Client, is_pull
+from dev_lab.dev.forgework import GITEA, Client, is_pull
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.partrefs import part_refs
 from dev_lab.dev.partrows import row_part
@@ -362,6 +363,9 @@ def candidates(
     A PR's origin is its author; any other head's is the
     login the forge resolves for its commit (:func:`~dev_lab.dev.forgeorigin.head_login`), ``''`` when none.
 
+    On Gitea a commit tracking a Cargo workspace also needs :data:`~dev_lab.dev.cargostep.PART` (:func:`_with_cargo`):
+    no Actions job derives it there (user ruling 2026-11-27).
+
     A repo whose serving checkout has ``tests`` bound to another kind than ``hpc`` (:mod:`dev_lab.dev.roles`)
     has NO candidate: that executor posts its parts, and no HPC host is ever offered one (D70-D72).
     """
@@ -372,7 +376,7 @@ def candidates(
     served = _part_refs(root, client, schedule, policy, say=say)
     prefetch(sha for _, sha, *_ in served)
     for ref, sha, kind, labels, number, pr_author in served:
-        needed = parts(sha)
+        needed = _with_cargo(root, client, sha, parts(sha))
         if kind == PR:
             skipped = waived(sha)
             needed = [part for part in needed if part not in skipped]
@@ -402,11 +406,22 @@ def candidates(
     return tuple(one for one in found if (one.ref, one.sha, one.platform) in reached or _ref_served(root, one, say))
 
 
+def _with_cargo(root: Path, client: Client, sha: str, needed: Sequence[str]) -> list[str]:
+    """*needed*, plus the cargo part when *client* is Gitea and commit *sha* tracks a Cargo workspace.
+
+    GitHub's Actions matrix derives it (:func:`dev_lab.dev.jobparts.matrix`); on Gitea nothing else would, and
+    :func:`dev_lab.dev.platformparts.derived` only grows through posted hands (user ruling 2026-11-27).
+    """
+    if client.backend is not GITEA or cargostep.PART in needed or not cargostep.workspaces_at(root, sha):
+        return list(needed)
+    return [*needed, cargostep.PART]
+
+
 def _scarce(root: Path, sha: str) -> frozenset[str]:
     """The scarce resources commit *sha* declares (:mod:`dev_lab.dev.forgescarce`); none when unreadable."""
     try:
         return frozenset(vocabulary_at(root, sha).scarce)
-    except (ValueError, OSError, subprocess.SubprocessError):
+    except ValueError, OSError, subprocess.SubprocessError:
         return frozenset()
 
 

@@ -122,7 +122,7 @@ def _live(record: Path) -> bool:
     """Whether binding *record* names a retired store that still holds a task (a live session reads it)."""
     try:
         named = json.loads(record.read_text(encoding='utf-8'))['ledger']['path']
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         return False
     store = Path(str(named))
     return store.is_dir() and any(p.is_file() for p in store.rglob('*'))

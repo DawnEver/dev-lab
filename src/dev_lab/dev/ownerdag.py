@@ -329,7 +329,7 @@ def _stale_rows(scope: _Scope, files: list[str]) -> list[str]:
 def _project_name(root: Path) -> str:
     try:
         return str(tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))['project']['name'])
-    except (OSError, ValueError, KeyError):
+    except OSError, ValueError, KeyError:
         return '<no [project].name>'
 
 

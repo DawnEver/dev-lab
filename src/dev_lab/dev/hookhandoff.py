@@ -86,7 +86,7 @@ def state_dir(cwd: Path) -> Path:
 def _read_json(path: Path) -> dict[str, Any] | None:
     try:
         found = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     return found if isinstance(found, dict) else None
 
@@ -95,7 +95,7 @@ def _alive(held: object) -> bool:
     """Whether *held* (``{'pid', 'created'}``) names a live process; a recycled pid, or anything torn, does not."""
     try:
         return isinstance(held, dict) and still_the_same_process(int(held['pid']), held.get('created'))
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         return False
 
 

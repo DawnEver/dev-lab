@@ -39,7 +39,7 @@ def cmdline(pid: int) -> tuple[str, int | None]:
     try:
         words = (proc / 'cmdline').read_bytes().split(b'\0')
         uid = (proc / 'status').read_text(encoding='utf-8').split('Uid:', 1)[1].split()[0]
-    except (OSError, IndexError):
+    except OSError, IndexError:
         return '', None
     return ' '.join(word.decode('utf-8', 'replace') for word in words if word), int(uid)
 
@@ -73,7 +73,11 @@ def stop_here(
     say: Callable[[str], None] = emit,
 ) -> int:
     """Stop every tick under *root*/serve (only *repo*'s when given) older than its wall; 2 when any was refused."""
-    records = sorted((root / 'serve').glob(f'{repo or "*"}.lock.holder'))
+    records = [
+        record
+        for record in sorted((root / 'serve').glob('*.lock.holder'))
+        if not repo or ((holder := tickholder.read(record)) is not None and repo in holder.repo.split())
+    ]
     if not records:
         say(f'tick-stop: no tick holds a lock under {root}/serve' + (f' for {repo}' if repo else ''))
         return 0

@@ -74,7 +74,8 @@ SCAN_FLOOR: Final = 80
 #: RE-MEASURED 2026-10-22 at **141** over src/dev_lab after the split (the scan root moved off src/lab_commons).
 #: RE-MEASURED 2026-11-25 at **134** on the 1124 wave (its prose rewrites dropped seven sibling mentions).
 #: RE-MEASURED 2026-11-27 at **133** on integrate/main 039122c (one more sibling mention gone).
-PROSE_CEILING: Final = 133
+#: RE-MEASURED 2026-11-27 at **132** on dev-lab #1086 (the family Python retired the ruff rows' repo-keyed data).
+PROSE_CEILING: Final = 132
 
 #: ``'<repo-relative module>::<kind>' -> why the deletion is not in this pass``. One handle per
 #: module per kind, so a new module or a new kind cannot arrive under an existing waiver.
@@ -114,10 +115,6 @@ EVICTED: Final[dict[str, str]] = {
     'src/dev_lab/dev/_rule_rows_units.py::path': (
         'The units rows of the same registry, split out of `_rule_rows.py` by concept (2026-11-26): their '
         'mechanism paths belong to that registry, under the same HEADLINE row and the same migration.'
-    ),
-    'src/dev_lab/dev/_famconfig_ruff_rows.py::data': (
-        '3 repo-keyed rows in the ruff base. The base/delta renderer is right; the per-repo delta '
-        'belongs in the repo whose delta it is.'
     ),
     'src/dev_lab/dev/famtests/_placement_readings.py::data': (
         '12 readings keyed by roster name. THE WEAKEST OF THE EVICTIONS and deliberately last: '

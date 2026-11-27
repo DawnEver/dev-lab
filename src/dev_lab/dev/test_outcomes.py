@@ -187,7 +187,7 @@ def read_cells(directory: Path) -> tuple[dict[str, TestCell], frozenset[str]]:
             flaky.update(one_flaky)
         cells, disagreed = merged(sources)
         return cells, frozenset(flaky | disagreed)
-    except (RetiredOutcomes, OutcomeReadError):
+    except RetiredOutcomes, OutcomeReadError:
         raise
     except (OSError, ValueError, KeyError, TypeError) as error:
         msg = f'{directory}: unreadable outcome Record ({type(error).__name__}: {error}); re-run the verify'
@@ -202,7 +202,7 @@ def _recorded_red(directory: Path) -> list[tuple[str, TestCell]]:
     """The cells in *directory* a cut run recorded failing -- a decided miss or no answer -- dead workers first."""
     try:
         cells, _ = read_cells(directory)
-    except (OutcomeReadError, RetiredOutcomes):
+    except OutcomeReadError, RetiredOutcomes:
         return []
     skipped = skipped_nodes(cells)
     ranked = sorted(

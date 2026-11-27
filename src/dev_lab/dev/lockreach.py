@@ -121,7 +121,7 @@ def _graphs(old: str, new: str) -> tuple[set[str], dict[str, set[str]]] | None:
             for package, entries in graph.items():
                 for dep in _depends(entries) if package not in local else ():
                     dependents.setdefault(dep, set()).add(package)
-    except (tomllib.TOMLDecodeError, AttributeError, TypeError, KeyError):
+    except tomllib.TOMLDecodeError, AttributeError, TypeError, KeyError:
         return None
     changed = {package for package in was.keys() | now.keys() if was.get(package) != now.get(package)}
     return changed - local, dependents

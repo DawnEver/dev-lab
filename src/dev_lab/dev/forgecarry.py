@@ -138,7 +138,7 @@ def _judged(root: Path, a: str, b: str) -> tuple[tuple[str, ...], Footprints] | 
         return None
     try:
         return resolve_lock(root, a, b, changed), Footprints.at(root, a)
-    except (ValueError, subprocess.SubprocessError):
+    except ValueError, subprocess.SubprocessError:
         return None
 
 
@@ -170,7 +170,7 @@ def reached_tests(root: Path, integration: str, head: str) -> frozenset[str] | N
         return None
     try:
         changed, prints = resolve_lock(root, base, head, changed), Footprints.at(root, head)
-    except (ValueError, subprocess.SubprocessError):
+    except ValueError, subprocess.SubprocessError:
         return None
     return frozenset(test for test in prints.tests() if prints.reaches(test, changed))
 
@@ -205,7 +205,7 @@ def env_carries(root: Path, a: str, b: str, *, env_a: str, env_b: str) -> bool:
         return False
     try:
         return LOCK not in resolve_lock(root, a, b, changed)
-    except (ValueError, subprocess.SubprocessError):
+    except ValueError, subprocess.SubprocessError:
         return False
 
 

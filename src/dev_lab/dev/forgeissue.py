@@ -265,13 +265,16 @@ def comment_view(client: Client, comment: int) -> IssueComment:
 
 def _listed(client: Client, collection: str, since: str | None) -> tuple[IssueComment, ...]:
     query = {client.backend.page_param: str(_COMMENT_PAGE)} | ({'since': since} if since else {})
-    found: list[IssueComment] = []
+    found: dict[int, IssueComment] = {}
     for page in range(1, _COMMENT_PAGES + 1):
         listed = client.call('GET', f'{client.repo}/{collection}?{urllib.parse.urlencode(query | {"page": page})}')
-        found.extend(_comment(raw) for raw in listed)
-        if len(listed) < _COMMENT_PAGE:
+        fresh = {raw['id']: _comment(raw) for raw in listed if raw['id'] not in found}
+        found |= fresh
+        # Gitea's issue-comments listing has no paging: every page answers the whole thread, so a page bringing
+        # nothing new is the end -- reading on repeated the thread once per page.
+        if len(listed) < _COMMENT_PAGE or not fresh:
             break
-    return tuple(found)
+    return tuple(found.values())
 
 
 def issue_comments(client: Client, number: int, *, since: str | None = None) -> tuple[IssueComment, ...]:

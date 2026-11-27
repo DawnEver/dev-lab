@@ -66,7 +66,7 @@ class SettledHistories:
             return {}
         try:
             saved = json.loads(self._path.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return {}
         return saved if isinstance(saved, dict) else {}
 
@@ -77,7 +77,7 @@ class SettledHistories:
         if sha in self._kept:
             try:
                 found = tuple(_from_json(raw) for raw in self._kept[sha])
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 found = None
             if found is not None:
                 self._memo[sha] = found

@@ -73,7 +73,7 @@ def has_pip(python: str) -> bool:
         return importlib.util.find_spec('pip') is not None
     try:
         done = _door.run([python, '-c', 'import pip'], capture_output=True, timeout=60, check=False)
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return False
     return done.returncode == 0
 

@@ -286,7 +286,7 @@ def _forge_file(source: Path, given: Path | None, dev: Mapping[str, Any]) -> Pat
     for path in sorted((source / 'hosts').glob('*.toml')):
         try:
             sites = tomllib.loads(path.read_text(encoding='utf-8')).get('ops', {}).get('caddy', {}).get('sites', [])
-        except (OSError, tomllib.TOMLDecodeError):
+        except OSError, tomllib.TOMLDecodeError:
             continue
         if wanted & set(sites):
             found.append(path)

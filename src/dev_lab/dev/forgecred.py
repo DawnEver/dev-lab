@@ -134,7 +134,7 @@ def _refresh_support(host: str, username: str, *, cwd: Path | None, env: Mapping
         if provider.lower() != 'gitlab':
             return 'the selected provider has no verified safe automatic refresh path'
         return _helper_support(cwd=cwd, env=env)
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return 'credential configuration could not be read; the original credential is preserved'
 
 
@@ -177,7 +177,7 @@ def refresh_credential(
         return CredentialRefresh(refused, 'kept', attempted=False, reason=reason)
     try:
         pair = credential_for(host, username=refused[0], cwd=cwd, env=effective)
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return CredentialRefresh(
             refused, 'kept', attempted=True, reason='provider supplied no usable credential; original pair retained'
         )

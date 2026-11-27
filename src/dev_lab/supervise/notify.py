@@ -58,7 +58,7 @@ def _send(payload: str) -> bool:
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
             sock.sendto(payload.encode('utf-8'), address)
-    except (OSError, AttributeError):
+    except OSError, AttributeError:
         # `AttributeError` IS NOT DEFENSIVE PADDING AND IS NOT A STAND-IN FOR A REAL FAILURE.
         # `socket.AF_UNIX` does not exist on every platform this kit is developed on -- measured on
         # this one, where the lookup raises before any socket is made. A development box has no

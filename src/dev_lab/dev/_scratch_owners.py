@@ -95,7 +95,7 @@ def heard(session: str) -> float | None:
     path = _beat_file(session)
     try:
         seen = json.loads(path.read_text(encoding='utf-8'))['seen'] if path else None
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         return None
     return float(seen) if isinstance(seen, int | float) else None
 

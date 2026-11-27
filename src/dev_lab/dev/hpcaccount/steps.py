@@ -10,6 +10,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.hpc.builds import Builds, cargo_target, key_of, read_builds
@@ -20,9 +21,20 @@ from dev_lab.dev.harness import child_env
 from dev_lab.dev.hpcaccount import selfclean
 from dev_lab.dev.hpcaccount.checkout import clone, converge
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
-from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab, uv_cache
+from dev_lab.dev.hpcaccount.spec import (
+    MARK,
+    Deployment,
+    Repo,
+    checkout_of,
+    crontab_refusal,
+    merge_crontab,
+    uv_cache,
+)
 
-__all__ = ['Step', 'Tools', 'build', 'crontab', 'declared', 'login', 'prune_uv', 'update']
+__all__ = ['STAMP', 'Step', 'Tools', 'build', 'crontab', 'declared', 'env_key', 'login', 'prune_uv', 'update']
+
+#: The stamp in a live environment naming the key it was built for (:func:`env_key`): written last, by the build.
+STAMP: Final = '.lab-deploy-env'
 
 
 @dataclass(frozen=True)
@@ -95,6 +107,18 @@ def declared(checkout: Path) -> Builds:
     return read_builds(pyproject.read_text(encoding='utf-8')) if pyproject.is_file() else Builds()
 
 
+def env_key(step: Step, spec: Deployment, repo: Repo, builds: Builds | None = None) -> str:
+    """The key of *repo*'s environment: its dependency inputs' blobs (its lock among them), its install, python, needs.
+
+    The one definition the deploy's build stamps and the tick's readiness reads (:func:`dev_lab.dev.hpcaccount.prep.
+    prepared`), so both agree on what "current" means. *builds* is the checkout's declaration when already read.
+    """
+    checkout = checkout_of(spec, repo)
+    builds = declared(checkout) if builds is None else builds
+    inputs = builds.dependency_inputs or ('pyproject.toml', 'uv.lock')
+    return _key(step, checkout, inputs, builds.install, spec.python, *builds.needs)
+
+
 def _stamped(path: Path, key: str) -> bool:
     return path.is_file() and path.read_text(encoding='utf-8') == key
 
@@ -125,18 +149,17 @@ def build(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
         'UV_CACHE_DIR': str(uv_cache(spec.root)),
         'UV_LINK_MODE': 'hardlink',
     }
-    inputs = builds.dependency_inputs or ('pyproject.toml', 'uv.lock')
-    env_key = _key(step, checkout, inputs, builds.install, spec.python, *builds.needs)
+    key = env_key(step, spec, repo, builds)
     live = venvpointer.current(checkout)  # the one rule (dev-lab #641): the env a launch there takes
     env['UV_PROJECT_ENVIRONMENT'] = str(live)
-    if _stamped(live / '.lab-deploy-env', env_key):
-        emit(f'  {repo.name}: {live.name} current (key {env_key[:12]})')
+    if _stamped(live / STAMP, key):
+        emit(f'  {repo.name}: {live.name} current (key {key[:12]})')
     else:
         beside = _beside(step, repo.name, checkout, builds.install, env)
         if isinstance(beside, int):
             return beside
         beside.mkdir(parents=True, exist_ok=True)
-        (beside / '.lab-deploy-env').write_text(env_key, encoding='utf-8')
+        (beside / STAMP).write_text(key, encoding='utf-8')
         try:
             emit(f'  {repo.name}: {venvcurrent.publish(checkout, beside)}')
             for line in venvcurrent.reclaim(checkout):  # superseded envs go at the switch; a held one is kept
@@ -147,7 +170,7 @@ def build(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
     # LEDGER-MIGRATES-ON-INSTALL: every deploy, idempotent, so a venv stamped before the verb existed migrates too
     if rc := boxmigrate.migrate(str(venvpointer.current(checkout) / 'bin' / 'python')):
         return rc
-    return _native(step, spec.root, checkout, builds, {**env, 'ENV_KEY': env_key}) if builds.native_build else 0
+    return _native(step, spec.root, checkout, builds, {**env, 'ENV_KEY': key}) if builds.native_build else 0
 
 
 def _beside(step: Step, name: str, checkout: Path, install: str, env: dict[str, str]) -> Path | int:
@@ -216,13 +239,20 @@ def update(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
 
 
 def crontab(step: Step, lines: Sequence[str]) -> int:
-    """Replace this tool's marked crontab lines with *lines*, every other line kept; each line dropped is printed."""
+    """Replace this tool's marked crontab lines with *lines*, every other line kept; each line dropped is printed.
+
+    Refused, nothing written, when the crontab it would write holds more than the one poller (ONE-LOGIN-POLLER,
+    :func:`~dev_lab.dev.hpcaccount.spec.crontab_refusal`): *lines* of more than one, or an unmarked family line kept.
+    """
     listed = step.read([*step.tools.crontab, '-l'])
     current = listed.stdout if listed.returncode == 0 else ''
     if listed.returncode and 'no crontab' not in listed.stderr:
         emit(f'  crontab -l exited {listed.returncode}: {listed.stderr.strip()}', err=True)
         return 2
     wanted = merge_crontab(current, lines)
+    if lines and (why := crontab_refusal(wanted)):
+        emit(f'  crontab refused, nothing written: {why}', err=True)
+        return 2
     if wanted == current:
         emit(f'  crontab: the {len(lines)} marked line(s) are already in place')
         return 0

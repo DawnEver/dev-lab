@@ -35,7 +35,7 @@ from typing import Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import taskauthority, taskjournal
+from dev_lab.dev import taskauthority, taskjournal, taskpublish
 from dev_lab.dev._task_io import (
     Branches,
     Forge,
@@ -361,10 +361,22 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
         said = _run(args, cwd or Path.cwd())
     except (TaskRefused, taskjournal.RepeatedId, taskauthority.AuthorityRefused, LookupError) as refused:
         emit(f'[task] {refused}', err=True)
+        _warn_ahead()
         return 1
     if said:
         emit(said)
+    _warn_ahead()
     return 0
+
+
+def _warn_ahead() -> None:
+    """Name a ledger clone ahead of its origin (v1 FAM-15); silent when in sync or when no ledger resolves."""
+    try:
+        root = ledger()
+    except LookupError:
+        return
+    if said := taskpublish.ahead_warning(root):
+        emit(said, err=True)
 
 
 if __name__ == '__main__':

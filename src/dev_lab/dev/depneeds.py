@@ -154,7 +154,7 @@ def task_extras(root: Path) -> tuple[str, ...] | None:
         if task is None:
             return None
         needs = task_needs(taskledger.ledger(), task)
-    except (OSError, ValueError, LookupError):
+    except OSError, ValueError, LookupError:
         return None
     return extras_for(root, needs) if needs else None
 

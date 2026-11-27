@@ -76,7 +76,7 @@ def _fresh(stamp: object, now: datetime) -> bool:
     """Whether *stamp* is a reminder inside the window; an unreadable or naive one is not (it is dropped)."""
     try:
         return now - datetime.fromisoformat(str(stamp)) < REMIND_EVERY
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
 
 

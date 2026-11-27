@@ -52,7 +52,7 @@ def waiver_of(bodies: Iterable[str]) -> str | None:
         for match in _RECORD.finditer(body):
             try:
                 why = json.loads(match['json']).get('why')
-            except (ValueError, AttributeError):
+            except ValueError, AttributeError:
                 continue
             cause = why if isinstance(why, str) else cause
     return None if cause is None else f'{UNREVIEWED}: {cause}'

@@ -4,9 +4,11 @@ User ruling 2026-10-19: every change is a short-lived branch returning by a PR t
 which takes ONLY server-side merges. THE TEST PARTS GATE THAT MERGE (user ruling 2026-11-04, superseding
 2026-10-29's "parts never gate", after dev-lab#78 merged with ``tests/base`` FAILED and reddened integration): every
 part the head needs stands PASS (:func:`dev_lab.dev.platformparts.standing`, the reading promotion uses at scope full
-in :func:`dev_lab.dev.integrate.promote`); absent or pending waits, FAIL refuses -- every HOSTED part: a hand part
-(:func:`~dev_lab.dev.forgemergewaits.hand_parts`, user ruling 2026-11-10) is named and tested later, never waited
-on. Opted into by declaring ``[tool.dev_lab.integrator] pr_merges_since = "<sha>"``; from then on the integration
+in :func:`dev_lab.dev.integrate.promote`); absent or pending waits, FAIL refuses -- every GATING part (``base``,
+``cargo``, a pull request's hosted parts, and the parts of each OS ``[tool.dev_lab.integrator] merge_systems`` names,
+Windows by default: user ruling 2026-11-27, :func:`~dev_lab.dev.forgemergewaits.gates`): a hand part
+(:func:`~dev_lab.dev.forgemergewaits.hand_parts`, user ruling 2026-11-10) is named and tested later, never waited on.
+Opted into by declaring ``[tool.dev_lab.integrator] pr_merges_since = "<sha>"``; from then on the integration
 tick (:func:`dev_lab.dev.forgeintegration.tick`) asks :func:`decide` of each open PR into integration and, when
 nothing is missing, asks the forge to merge it (:func:`dev_lab.dev.forgemergecall.merge`). A client push adding a
 commit to the branch is refused at pre-push (:mod:`dev_lab.dev.sessionbranch`, P5).
@@ -33,7 +35,9 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge (a 
 checks standing ``success`` (:func:`~dev_lab.dev.forgemergewaits.checks_wait`) IN PLACE of the first, fourth and
 fifth conditions, which a serve host posts):
 
-* its head's HOSTED test parts all stand PASS (:func:`~dev_lab.dev.forgemergewaits.parts_wait`); a hand part is
+* its head's GATING test parts all stand PASS (:func:`~dev_lab.dev.forgemergewaits.parts_wait`): ``tests/base``,
+  ``tests/cargo``, its hosted parts, and ``tests/windows`` and ``tests/base@windows`` under the family's default
+  ``merge_systems``; a hand part is
   named, never waited on (:func:`~dev_lab.dev.forgemergewaits.hand_parts`, user ruling 2026-11-10);
 * its review is ADVISORY and never a condition (user rulings 2026-11-11/12, both forges): the review still runs at
   the PR's first merge-ready head (:mod:`dev_lab.dev.reviewturn`) and posts its comment and ``tests/review``; a head
@@ -171,8 +175,8 @@ def decide(
     as ran (RED-INTEGRATION-MERGES); every other red still waits, named with that door.
     """
     hosted = _hosted(root)
-    unrecorded = off_record(statuses, record, hosted=hosted)
-    statuses = recorded_as_ran(statuses, record, hosted=hosted)
+    unrecorded = off_record(statuses, record, systems=policy.merge_systems, hosted=hosted)
+    statuses = recorded_as_ran(statuses, record, systems=policy.merge_systems, hosted=hosted)
     into = policy.integration
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
@@ -222,8 +226,10 @@ def decide(
         f'file and push the redone branch'
         for sha, problems in undeclared
     ]
-    waiting = len(missing) == len(waits) and not red_checks(statuses, hosted=hosted)  # the review is never in missing
-    return Decision(tuple(missing), message, unreviewed, waived, _notes(root, statuses, hosted), waiting)
+    # the review is never in missing
+    waiting = len(missing) == len(waits) and not red_checks(statuses, systems=policy.merge_systems, hosted=hosted)
+    notes = _notes(root, statuses, systems=policy.merge_systems, hosted=hosted)
+    return Decision(tuple(missing), message, unreviewed, waived, notes, waiting)
 
 
 def _hosted(root: Path) -> frozenset[str]:
@@ -232,12 +238,14 @@ def _hosted(root: Path) -> frozenset[str]:
     return pull_request_parts(pyproject.read_text(encoding='utf-8')) if pyproject.is_file() else frozenset()
 
 
-def _notes(root: Path, statuses: Sequence[CommitStatus], hosted: frozenset[str]) -> tuple[str, ...]:
+def _notes(
+    root: Path, statuses: Sequence[CommitStatus], *, systems: Sequence[str], hosted: frozenset[str]
+) -> tuple[str, ...]:
     """What the decision says without waiting on it: an undeclared message row, the hand parts and the alarms."""
     unjudged = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
     alarmed = alarms_said(statuses)
     alarm = f'alarms, never a merge condition: {alarmed}' if alarmed else None
-    return (*unjudged, *filter(None, [hand_note(statuses, hosted=hosted), alarm]))
+    return (*unjudged, *filter(None, [hand_note(statuses, systems=systems, hosted=hosted), alarm]))
 
 
 def external(client: Client, pull: PullRequest) -> bool:

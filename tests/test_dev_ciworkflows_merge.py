@@ -51,8 +51,10 @@ def test_the_merger_renders_for_gitea_and_never_runs_from_a_pr_head(tmp_path: Pa
     """
     found = _gitea(tmp_path)[MERGER]
     assert set(found['on']) == {'workflow_run', 'schedule', 'workflow_dispatch'}
-    assert found['on']['workflow_run'] == {'workflows': ['Review'], 'types': ['completed']}
-    assert found['on']['workflow_run']['workflows'] == [_gitea(tmp_path)['review.yml']['name']]
+    assert found['on']['workflow_run'] == {'workflows': ['Gates', 'Review'], 'types': ['completed']}
+    assert found['on']['workflow_run']['workflows'] == sorted(
+        _gitea(tmp_path)[n]['name'] for n in ('review.yml', 'gates.yml')
+    )
     assert not [event for event in found['on'] if event.startswith('pull_request')]
     assert found['concurrency'] == {'group': 'merge', 'cancel-in-progress': False}, 'one merge job at a time'
     assert tmp_path / '.gitea' / 'workflows' / MERGER in write(tmp_path)
@@ -97,7 +99,7 @@ def test_every_gitea_job_runs_on_a_declared_label_and_review_alone_on_review(tmp
         for job, body in workflow['jobs'].items():
             assert body['runs-on'] in labels, f'{name} {job}: {body["runs-on"]} is no declared label'
             seen[name, job] = body['runs-on']
-    assert seen == {('review.yml', 'review'): 'review', (MERGER, 'merge'): LIGHT}
+    assert seen == {('review.yml', 'review'): 'review', (MERGER, 'merge'): LIGHT, ('gates.yml', 'gates'): LIGHT}
 
 
 def test_no_light_job_installs_the_review_method_or_its_key(tmp_path: Path) -> None:
@@ -186,4 +188,6 @@ def test_the_merge_job_follows_the_check_workflows_the_repo_renders(tmp_path: Pa
     assert merger['on']['workflow_run'] == {'types': ['completed']}, 'PURE'
     del rendered['checks.yml']
     assert set(follow_checks(rendered)[MERGER][1]['on']) == {'schedule'}, 'no check to follow: the schedule'
-    assert _gitea(tmp_path)[MERGER]['on']['workflow_run']['workflows'] == ['Review'], 'a review repo follows it'
+    assert _gitea(tmp_path)[MERGER]['on']['workflow_run']['workflows'] == ['Gates', 'Review'], (
+        'a review repo follows it'
+    )

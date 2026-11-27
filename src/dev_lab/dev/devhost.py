@@ -242,7 +242,7 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
     """One SessionStart line when the machine file drifted from its render; else ``None`` (or not a render)."""
     try:
         found = drift(machineconfig.machine() if live is None else live)
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError, tomllib.TOMLDecodeError:
         return None
     first = [line for line in found if line.startswith('install home not filled')]
     rest = [line for line in found if line not in first]

@@ -26,10 +26,10 @@ intersections, never line counts:
 * ``line-length`` -- 120 in all four.
 * ``quote-style`` -- ``single`` in all four; the other six ``[format]`` keys are shared by the three
   CONSUMERS and absent from the kit, so they are not the family's and are not here.
-* ``target-version`` -- NOT shared, and named in :data:`RUFF_TARGET_VERSIONS` rather than dropped
-  silently. The kit says ``py312`` and all three consumers say ``py313``. A base carrying either
-  would be legislating a floor that is a fact about each repo's own interpreter, and one of the
-  consumers derives it from its own ``requires-python`` under its own test.
+* ``target-version`` -- measured py312 in the kit and py313 in the consumers, and NOT in this base:
+  since the user ruling of 2026-11-27 (one family Python, dev-lab #1045) it is the interpreter's fact,
+  owned, rendered and judged by :mod:`dev_lab.dev.pythontoolchain` with ``requires-python``. A
+  second judge here would be two owners of one key.
 
 THE ARTIFACT IS NOT A FILE, and this table is keyed accordingly. consumer-a keeps these tables in
 ``ruff.toml`` (where they lose the ``tool.ruff`` prefix and the root table is the file itself); the
@@ -64,7 +64,6 @@ __all__ = [
     'RUFF_SECTION_ROWS',
     'RUFF_SELECT',
     'RUFF_SELECT_FLOOR',
-    'RUFF_TARGET_VERSIONS',
 ]
 
 #: The 58 selector groups, MEASURED as the four-way intersection and equal to the four-way UNION.
@@ -164,18 +163,6 @@ RUFF_LINE_LENGTH: Final = 120
 #: make this repo adopt three other repos' formatter settings on the strength of their agreeing with
 #: each other, which is the anti-fork arm pointing the wrong way.
 RUFF_QUOTE_STYLE: Final = 'single'
-
-#: WHAT IS MEASURED AND DELIBERATELY NOT IN ANY BASE. Recorded rather than omitted, because an absent
-#: key and a key nobody looked at read the same. The kit is one minor version behind its consumers
-#: and that is a fact about the interpreters each repo runs on, not a family decision; consumer-a
-#: additionally DERIVES its value from `requires-python` under its own test, so a family base
-#: carrying a literal here would be a second source for a number that repo already single-sources.
-RUFF_TARGET_VERSIONS: Final[dict[str, str]] = {
-    'lab-commons': 'py312',
-    'consumer-b': 'py313',
-    'consumer-c': 'py313',
-    'consumer-a': 'py313',
-}
 
 #: The filenames a ruff config may live in, in RUFF'S OWN PRECEDENCE. A ``ruff.toml`` beside a
 #: ``pyproject.toml`` WINS -- verified against ``ruff check --show-settings``, which prints the

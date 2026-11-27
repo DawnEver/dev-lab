@@ -32,13 +32,14 @@ its run -- current, draining for a newer tip, or one no run file names -- is jud
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from lab_commons.box.providers import account_seats
 from lab_commons.compute import learned
@@ -50,6 +51,7 @@ from lab_commons.hpc.allocation import resolve
 from lab_commons.hpc.builds import builds_at
 from lab_commons.hpc.cluster import Runner, Unreachable, probe, scancel, submitter
 from lab_commons.hpc.config import Config
+from lab_commons.hpc.gather import gather_run
 from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.layout import local_root
 from lab_commons.hpc.needsets import vocabulary_at
@@ -60,11 +62,11 @@ from lab_commons.hpc.records import held_cells, run_shas
 from lab_commons.hpc.run import _STARTED as STARTED  # the one spelling of a started task's squeue states
 from lab_commons.hpc.run import NoRoom, cancel_run, job_name, load_state, submit_run, withdraw_pending
 from lab_commons.hpc.shell import INCREMENTAL, RunSpec
-from lab_commons.hpc.slurm import FORGE_SESSION
+from lab_commons.hpc.slurm import FORGE_SESSION, Snapshot
 from lab_commons.hpc.watch import PENDING, settle
 from lab_commons.resources import Engine
 
-from dev_lab.dev import hpcusage, quotawatch
+from dev_lab.dev import cargostep, hpcusage, quotawatch
 from dev_lab.dev.diskusage import Usage, read_usage
 from dev_lab.dev.forgecarry import carry_from, env_carries, reached_tests, read_by
 from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_files, task_items
@@ -134,9 +136,11 @@ def _last_started(text: str, items: set[object]) -> str:
     last = ''
     for raw in text.splitlines():
         with contextlib.suppress(json.JSONDecodeError):
-            line = json.loads(raw)
-            if isinstance(line, dict) and line.get('item') in items and 'start' in line:
-                last = str(line['start'])
+            line: object = json.loads(raw)
+            if isinstance(line, dict):
+                entry = cast('dict[str, object]', line)  # a JSON object's keys are strings
+                if entry.get('item') in items and 'start' in entry:
+                    last = str(entry['start'])
     return last
 
 
@@ -167,14 +171,18 @@ class SlurmCluster:
         return {grant.account: self.connect(grant) for grant in self.machine.grants}
 
     def submitted(self, run: Run) -> list[str]:
-        """The job ids of every round ``hpc`` recorded for *run*'s sha; ``[]`` when it recorded none."""
+        """The job ids ``hpc`` recorded for *run*'s sha -- its prep job, then every round's; ``[]`` when none.
+
+        The prep job counts (lab-commons #arch-prep-job): a run whose prep left Slurm before round 0 is planned has
+        no round yet, and it was submitted all the same -- never settled as "never submitted".
+        """
         try:
             state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
         except Unreachable:  # no host answered: nothing is known, which is never "nothing submitted"
             raise
         except RuntimeError:  # no state.json: nothing was submitted, or it died before writing one
             return []
-        return [job for one in state['rounds'] for job in one['job_ids']]
+        return job_ids(state)
 
     def orphans(self, run: Run) -> list[str]:
         """Jobs Slurm holds under this account with *run*'s job name (``run-<sha12>-<part>``), one id per array.
@@ -199,6 +207,7 @@ class SlurmCluster:
             pack_from=self.root,
             builds=builds_at(self.root, run.sha, python=''),
             only=scoped_files(self.root, run),
+            **entry_of(run.platform),
         )
         state = submit_run(
             spec,
@@ -207,9 +216,8 @@ class SlurmCluster:
             cost=self.config.cost,
             policy=self.config.policy,
             history=learned.learned(run.repo_url),
-            carry=lambda env: self.carry(run.sha, env, run.platform),
         )
-        return [job for one in state['rounds'] for job in one['job_ids']]
+        return job_ids(state)
 
     def carry(self, sha: str, env: str, part: str) -> dict[str, tuple[dict[str, Any], str, str]]:
         """The cells *sha*'s run of *part* takes from its own earlier run and the nearest earlier runs of that part.
@@ -244,6 +252,8 @@ class SlurmCluster:
         releases the claim RETRYABLE. Nothing is learned: a limit is contention, never an under-priced need.
         """
         output = Path(run.output)
+        if self._plans_round_zero(run):
+            return None
         if settle([run.sha], self.machine, self.connect, self.config, output, part=run.platform, sleep=None) == PENDING:
             policy = self.config.policy
             why = held_by_a_limit(where(run.sha, run.platform, self.machine, self.connect, policy=policy), policy)
@@ -256,6 +266,30 @@ class SlurmCluster:
             msg = f'the run of {run.sha[:12]} ended without a record in {output}; its lines above say why'
             raise Unrecorded(msg)
         return records[-1]
+
+    def _plans_round_zero(self, run: Run) -> bool:
+        """Whether *run* has no round yet: its gather plans round 0 once the prep job left Slurm, with the carry.
+
+        ``carry`` is a gather argument (:func:`lab_commons.hpc.gather.gather_run`): round 0 is planned from the
+        collection the prep job wrote, so the cells *run* takes from earlier runs are named there.
+        """
+        state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
+        if 'record' in state or state.get('rounds') or not state.get('prep_job'):
+            return False
+        gather_run(
+            run.sha,
+            run.platform,
+            self.machine,
+            self.connect,
+            cost=self.config.cost,
+            policy=self.config.policy,
+            carry=functools.partial(self.carry_of, run),
+        )
+        return True
+
+    def carry_of(self, run: Run, env: str) -> dict[str, tuple[dict[str, Any], str, str]]:
+        """:meth:`carry` of *run*'s sha and part, for the env key its prep job's build reported."""
+        return self.carry(run.sha, env, run.platform)
 
     def killed(self, run: Run, record: Path | None = None) -> tuple[Killed, ...]:
         """*run*'s jobs Slurm killed for memory or time (:mod:`dev_lab.dev.slurmkilled`); an OOM's need is learned.
@@ -323,7 +357,9 @@ class SlurmCluster:
         """
         shell = self.connect(self.machine.grants[0])
         lines = shell(_RUNNING, None).splitlines()
-        now, manifests, found = float(lines[0]), {}, []
+        now = float(lines[0])
+        manifests: dict[str, dict[str, Any]] = {}
+        found: list[Stalled] = []
         for row in lines[1:]:
             job_id, name, elapsed, run_dir = row.split('|', 3)
             index = job_id.partition('_')[2]
@@ -367,7 +403,7 @@ class SlurmCluster:
         measured = Measured.of(learned.learned(run.repo_url))
         cost, safety = self.config.cost, self.config.policy.safety
         manifests: dict[str, dict[str, Any]] = {}
-        tasks = []
+        tasks: list[Started] = []
         for row in lines[1:]:
             job_id, _, elapsed = row.partition('|')
             base, _, index = job_id.partition('_')
@@ -391,7 +427,8 @@ class SlurmCluster:
 
     def standing(self) -> Standing:
         """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota."""
-        read, probed = [], []
+        read: list[tuple[Snapshot, str]] = []
+        probed: list[tuple[Grant, Snapshot]] = []
         for grant in self.machine.grants:
             snapshot = probe(self.connect(grant), grant.slurm_account)
             read.append((snapshot, snapshot.quota.default_qos))
@@ -416,6 +453,26 @@ class SlurmCluster:
     def scope(self) -> str:
         """What this account's supply is named: ``slurm:<user>``."""
         return f'slurm:{self.machine.grants[0].user}'
+
+
+def entry_of(part: str) -> dict[str, str]:
+    """``RunSpec`` ``entry`` and ``items`` of *part* -- the cargo part's own (:mod:`dev_lab.dev.cargostep`), else none.
+
+    A part whose items are not pytest ids runs one ``module:function`` per item, listed in the prep job
+    (lab-commons pr/toolchain/arch-part-entry): exit 0 passes, any other exit rejects, a raise is an environment
+    error. Every other part is pytest (``{}``).
+    """
+    if part == cargostep.PART:
+        return {'entry': cargostep.ITEM_ENTRY, 'items': cargostep.ITEMS_ENTRY}
+    return {}
+
+
+def job_ids(state: dict[str, Any]) -> list[str]:
+    """Every job id a run *state* records: its prep job's (``state['prep_job']['job_id']``), then each round's."""
+    prep: Mapping[str, Any] = state.get('prep_job') or {}
+    rounds: list[dict[str, Any]] = state.get('rounds', [])
+    ids = [str(job) for one in rounds for job in one['job_ids']]
+    return [str(prep['job_id']), *ids] if prep.get('job_id') else ids
 
 
 def slurm_cluster(root: Path, seat: ClusterAccount | None) -> SlurmCluster:

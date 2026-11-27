@@ -125,7 +125,7 @@ def status_paths(root: Path) -> tuple[str, ...] | None:
             check=False,
             timeout=_GIT_TIMEOUT_S,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return None
     if status.returncode != 0:
         return None

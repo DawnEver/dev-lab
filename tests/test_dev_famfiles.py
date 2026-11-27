@@ -218,8 +218,8 @@ def test_the_renderers_are_derived_from_the_generated_rows() -> None:
     those rows and from nowhere else.
     """
     assert {renderer.name for renderer in RENDERERS} == {
-        'agent_guard', 'autodoors', 'ciworkflows', 'claudesettings', 'famfiles', 'hook_adoption', 'rusttoolchain',
-        'vscodesettings',
+        'agent_guard', 'autodoors', 'ciworkflows', 'claudesettings', 'famfiles', 'hook_adoption', 'pythontoolchain',
+        'rusttoolchain', 'vscodesettings',
     }  # fmt: skip
     unrendered = {row.path for row in PROJECT_FILES.values() if row.generated and row.renderer is None}
     assert unrendered == {'uv.lock'}, 'the lock is the door`s, every other generated file names its renderer'
@@ -297,9 +297,10 @@ def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path:
     ran: list[list[str]] = []
     lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
     assert [line.split(':')[0] for line in lines if line.endswith(': rendered')] == [
-        'famfiles', 'claudesettings', 'agent_guard', 'hook_adoption', 'autodoors', 'vscodesettings', 'ciworkflows',
+        'famfiles', 'pythontoolchain', 'claudesettings', 'agent_guard', 'hook_adoption', 'autodoors',
+        'vscodesettings', 'ciworkflows',
     ]  # fmt: skip
-    assert ran[3][-2:] == ['--adoption', 'scripts/deny_rules.py']
+    assert ran[4][-2:] == ['--adoption', 'scripts/deny_rules.py']
     (hooks / 'deny-rules.json').unlink()
     _declare(tmp_path, 'deltas = "d.py"\n')
     assert f'hook_adoption: skipped -- {_NO_ADOPTION}' in render_repo(tmp_path, 'py', lambda _argv, _root: 0)

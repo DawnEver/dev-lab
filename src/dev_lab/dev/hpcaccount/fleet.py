@@ -12,9 +12,10 @@ A layer with no ``[deploy]`` host, or whose host is not one of its grant's login
 others still deploy (exit 2).
 
 AN ACCOUNT WITH NO KIT VENV IS FIRST INSTALLED (:func:`first_install`): a key-only account has no other door, so
-when ``~/<root>/dev-lab/.venv`` has no interpreter, uv is installed into ``~/.local/bin`` if absent, the
-kit is cloned where missing (only the kit: a forge-hosted repo needs the reader credential placed later), and the
-kit is ``uv sync --frozen``-ed; a kit with its venv skips the step.
+when ``~/<root>/dev-lab/.venv`` has no interpreter, the kit is cloned where missing (only the kit: a forge-hosted
+repo needs the reader credential placed later), then ONE Slurm job, waited for (``sbatch --wait``, :func:`in_job`),
+installs uv into ``~/.local/bin`` if absent and ``uv sync --frozen``-s the kit: nothing is built on the login node
+(ONE-LOGIN-POLLER, user ruling 2026-11-27). A kit with its venv skips the step.
 
 THE ROLE IS THE WORKSTATION'S (user rulings 2026-11-09): each grant's ``role`` and the ``[hpc.roles]`` table
 (:mod:`dev_lab.dev.hpcaccount.division`) are passed to the account's deploy, which refuses when its own ``[deploy]
@@ -70,14 +71,14 @@ from dev_lab.dev.devsource import config_source
 from dev_lab.dev.hpcaccount.cimark import paused_guard
 from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleetguard import deploy_root, serving_twice_refusal, stale_render
-from dev_lab.dev.hpcaccount.spec import KIT, paths_of_root, uv_cache
+from dev_lab.dev.hpcaccount.spec import KIT, TICK_LOCK, paths_of_root, uv_cache
 from dev_lab.dev.hpcaccount.transport import describe, start
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
     'KIND', 'ConfigSource', 'Target', 'account_clone', 'account_host', 'config_source_of', 'declared_target',
-    'deploy_command', 'deploy_fleet', 'first_install', 'in_checkout', 'layer_refusal', 'layer_target', 'main',
+    'deploy_command', 'deploy_fleet', 'first_install', 'in_checkout', 'in_job', 'layer_refusal', 'layer_target', 'main',
     'refresh_kit', 'render_command',
 ]  # fmt: skip
 
@@ -305,7 +306,7 @@ def deploy_command(grant: Grant, target: Target, source: ConfigSource, division:
     refreshed = f'{first_install(grant, target)} && {refresh_kit(grant, target)}'
     reader = division.config_reader(grant.user) if division is not None else ''
     deployed = in_checkout(target, deploy)
-    if grant.setup:  # the venvs it builds compile in the cluster's declared environment, as its ticks run
+    if grant.setup:  # the deploy runs in the cluster's declared environment, as its ticks run
         deployed = f'( {" && ".join([*grant.setup, deployed])} )'
     named = division is not None and division.named_reader(grant.user) == reader != ''
     rendered = render_command(grant, target, source, reader=reader, named=named)
@@ -321,7 +322,8 @@ def first_install(grant: Grant, target: Target) -> str:
 
     A key-only account has no door for a first install (raw ssh is refused), and every later step runs the kit's
     venv python. So, only when that interpreter is missing: uv into ``~/.local/bin`` unless one is on PATH, each
-    declared repo cloned at its ref where its checkout is absent, then ``uv sync --frozen`` in the kit.
+    declared repo cloned at its ref where its checkout is absent, then ``uv sync --frozen`` in the kit -- uv's install
+    and the sync in ONE Slurm job, waited for (:func:`in_job`), never on the login node (ONE-LOGIN-POLLER).
     """
     root = PurePosixPath(paths_of_root(target.root).root) / 'repos'
     kit = root / KIT
@@ -330,11 +332,14 @@ def first_install(grant: Grant, target: Target) -> str:
         for name, url, ref in target.repos
         if name == KIT
     ]
+    synced = ' && '.join([
+        f'export PATH="$HOME/.local/bin:$PATH" UV_CACHE_DIR={_cache(target)}',
+        f'{{ command -v uv >/dev/null || curl -LsSf {UV_INSTALLER} | env UV_NO_MODIFY_PATH=1 sh; }}',
+        f'cd {kit}', 'uv sync --frozen',
+    ])  # fmt: skip
     steps = [
         f'echo "[first-install] {grant.user}: no kit venv in {kit}"',
-        f'export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0 UV_CACHE_DIR={_cache(target)}',
-        f'{{ command -v uv >/dev/null || curl -LsSf {UV_INSTALLER} | env UV_NO_MODIFY_PATH=1 sh; }}',
-        f'mkdir -p {root}', *clones, f'( cd {kit} && uv sync --frozen )',
+        'export GIT_TERMINAL_PROMPT=0', f'mkdir -p {root}', *clones, in_job(grant, target, 'first-install', synced),
     ]  # fmt: skip
     body = ' && '.join([*grant.setup, *steps])
     return f'{{ [ -x {shell_interpreter(str(kit))} ] || ( {body} ); }}'
@@ -355,7 +360,7 @@ def refresh_kit(grant: Grant, target: Target) -> str:
     ref = next((ref for name, _url, ref in target.repos if name == KIT), '')
     tick = f'{cache} ; {in_checkout(target, ["-m", "dev_lab.dev.hpcaccount", "tick", KIT])} ; {recorded}'
     if ref:
-        tick = f'{cache} ; {_move_kit(kit, ref)} ; {recorded}'
+        tick = f'{cache} ; {_move_kit(grant, target, kit, ref)} ; {recorded}'
     return f'bash -lc {shlex.quote("; ".join([*grant.setup, tick]))}' if grant.setup else tick
 
 
@@ -364,23 +369,38 @@ def _cache(target: Target) -> str:
     return shlex.quote(PurePosixPath(uv_cache(target.root).as_posix()).as_posix())
 
 
-def _move_kit(kit: PurePosixPath, ref: str) -> str:
+def in_job(grant: Grant, target: Target, name: str, script: str) -> str:
+    """The shell line running *script* as ONE Slurm job of *grant*, waited for: the login node builds nothing.
+
+    ONE-LOGIN-POLLER (user ruling 2026-11-27): every venv install and sync runs in a Slurm job (compute nodes reach
+    HTTPS, so downloads too). ``sbatch --wait`` returns the job's exit code; its log is
+    ``<root>/serve/<name>-<jobid>.log``.
+    """
+    serve = PurePosixPath(paths_of_root(target.root).root) / 'serve'
+    flags = ['--wait', '--quiet', f'--job-name=lab-{name}', f'--output={serve}/{name}-%j.log']
+    flags += [f'--account={grant.slurm_account}'] if grant.slurm_account else []
+    flags += [f'--partition={grant.partitions[0]}'] if grant.partitions else []
+    submit = ' '.join(shlex.quote(flag) for flag in flags)
+    return f'mkdir -p {shlex.quote(str(serve))} && sbatch {submit} --wrap {shlex.quote(script)}'
+
+
+def _move_kit(grant: Grant, target: Target, kit: PurePosixPath, ref: str) -> str:
     """The kit fast-forwarded to its LAYER-declared *ref* and its own venv re-synced, under the cron tick's lock.
 
     Never through the kit's tick: that reads the account's machine file, which is the stale thing this deploy is
     about to render over (2026-11-20: a retired key crashed it before it refreshed; an old root sent it to another
-    checkout). The lock is the cron tick's, so the kit keeps one writer at a time.
+    checkout). The lock is the cron tick's, so the kit keeps one writer; the sync runs in a Slurm job (:func:`in_job`).
     """
     remote = f'refs/remotes/origin/{ref}'
     python = shell_interpreter('.')
+    sync = 'UV_PROJECT_ENVIRONMENT="${py%/bin/python}" uv sync --frozen'
     body = ' && '.join([
         f'git fetch -q origin {shlex.quote(f"+refs/heads/{ref}:{remote}")}',
         f'git checkout -q -B {shlex.quote(ref)} {shlex.quote(remote)}',
-        f'py={python}',
-        'UV_PROJECT_ENVIRONMENT="${py%/bin/python}" uv sync --frozen',
+        in_job(grant, target, 'kit-sync', f'cd {kit} && py={python} && {sync}'),
     ])  # fmt: skip
     serve = kit.parent.parent / 'serve'  # <root>/repos/dev-lab -> <root>/serve: the cron tick's own lock
-    lock = serve / f'{KIT}.lock'
+    lock = serve / TICK_LOCK  # the account's one tick lock (ONE-LOGIN-POLLER)
     return (
         f'( export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0; mkdir -p {serve}; cd {kit} && '
         f'flock -w 600 {lock} bash -c {shlex.quote(body)} )'

@@ -257,7 +257,7 @@ def _seconds_until(retry_after: str, reset: str, now: float) -> float | None:
     if retry_after:
         try:
             return parsedate_to_datetime(retry_after).timestamp() - now
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             pass
     return float(reset) - now if reset.strip().isdigit() else None
 
