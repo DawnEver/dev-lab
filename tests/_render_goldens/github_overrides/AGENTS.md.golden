@@ -71,8 +71,8 @@ _Each rule is cited by ID; its full statement and refusing mechanism live in `de
 - `MERGE-OR-DELETE`: A merged branch is DELETED and an unmerged one is MERGED, no third state: an `archive/*` tag or
   untracked rename hides work and is debt -- `branchset` lists it, deletes it when a declared branch holds its tip, else
   names it to merge.
-- `AGENT-GUARD`: The shared deny machinery, not prose, refuses a hand-written test invocation and a stash and hints a
-  bare network verb to the retry door (adoption severities raise it), alike in every adopting repo.
+- `AGENT-GUARD`: The shared deny machinery, not prose, refuses a hand-written test invocation and a stash; a bare
+  network verb is hinted to the retry door (adoption severities raise it), alike in every adopting repo.
 - `NETWORK-RETRY-THEN-REPORT`: The forge is a REMOTE service: a network verb goes through the retry wrapper rather than
   being called directly, and a write that still fails is REPORTED with its diagnosis instead of hammered.
 - `PRODUCTION-ENTRY-POINT`: Reproduce a behavior through the PRODUCTION entry point, never an ad-hoc script handed out
