@@ -45,15 +45,17 @@ def complete_hands(client: Client, statuses: Sequence[CommitStatus]) -> tuple[Co
     The completed description is the same :meth:`~dev_lab.dev.partfacts.Part.description`, uncut: held in memory,
     never posted. A record that cannot be read leaves the cut in place (module docstring).
     """
-    out: list[CommitStatus] = []
-    for status in statuses:
-        part = parsed(status)
-        full = _record_hands(client, status) if part is not None and part.hands_more else None
-        if part is not None and full is not None:
-            whole = dataclasses.replace(part, hands=full, hands_more=0).description(limit=None)
-            status = dataclasses.replace(status, description=whole)  # noqa: PLW2901 -- the completed one replaces it
-        out.append(status)
-    return tuple(out)
+    return tuple(_completed(client, status) for status in statuses)
+
+
+def _completed(client: Client, status: CommitStatus) -> CommitStatus:
+    """*status* with its cut ``hands`` said in full from its record; *status* itself when uncut or unreadable."""
+    part = parsed(status)
+    full = _record_hands(client, status) if part is not None and part.hands_more else None
+    if part is None or full is None:
+        return status
+    whole = dataclasses.replace(part, hands=full, hands_more=0).description(limit=None)
+    return dataclasses.replace(status, description=whole)
 
 
 def part_statuses(client: Client, sha: str) -> tuple[CommitStatus, ...]:

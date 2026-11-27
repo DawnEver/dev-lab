@@ -7,12 +7,12 @@ HISTORY is read: a later post replaces only the fact of its own (part, env, poli
 
 THE DESCRIPTION ALWAYS FITS THE FORGE'S 140 CHARACTERS (:data:`~dev_lab.dev.forgestatus.DESCRIPTION_LIMIT`), whatever
 the number of parts (dev-lab#1083: with 11 parts ``hands=`` pushed ``policy=`` past the cap, every part read as "not
-a settled part", and no merge could settle). Its fields are an unordered set of ``key=value`` words, so a status
-posted in any order still reads (OLD-SHAPE-READER). :meth:`Part.description` writes the identity first and ``hands``
-last; when the whole does not fit it cuts ``hands`` (then ``kept``) at whole entries and ends the list with ``+N``,
-the N entries it could not hold -- named in full in the run record the status links (``handed``). A cut is never
-silent: :attr:`Part.hands_more` carries N, and :mod:`dev_lab.dev.parthands` completes it from that record, or the
-composition names it as a problem. A description that would not read back is refused before anything posts it.
+a settled part", and no merge could settle). The grammar is unchanged but for one addition, so every status posted
+before it reads as it always did: when the whole does not fit, :meth:`Part.description` cuts ``hands`` (then
+``kept``) at whole entries and ends the list with ``+N``, the N entries it could not hold -- named in full in the run
+record the status links (``handed``). A cut is never silent: :attr:`Part.hands_more` carries N, and
+:mod:`dev_lab.dev.parthands` completes it from that record, or the composition names it as a problem. A description
+that would not read back is refused before anything posts it.
 """
 
 from __future__ import annotations
@@ -38,38 +38,16 @@ __all__ = ['RESULT', 'Part', 'cut_problems', 'facts_of', 'latest', 'parsed']
 #: The forge state a settled part reads back as; ``error`` (INCONCLUSIVE) is never a settled part.
 RESULT: Final = {state_for(result): result for result in (Conclusion.PASS, Conclusion.FAIL)}
 
-#: The phrase a carried or cited part ENDS with; the words before it are ``key=value`` fields in any order.
-_TAIL: Final = re.compile(
-    r' (?:carried from (?P<carried>[0-9a-f]{12}): (?:docs-only|every outcome carried by footprint)'
-    r'|cited from (?P<cited>[0-9a-f]{12}): same tree)$'
-)
 #: An entry list cut to fit ends ``+N``: the N entries the run record holds that the description could not.
 _LIST: Final = r'(?:{entry},)*(?:{entry}|\+\d+)'
-#: Every field a part description may carry, each value's grammar; ``scope``, ``ran`` and ``hands`` are required.
-_FIELDS: Final = {
-    'scope': re.compile(r'\w+'),
-    'ran': re.compile(r'\d+'),
-    'env': re.compile(r'[0-9a-f]+'),
-    'policy': re.compile(r'[0-9a-f]+'),
-    'kept': re.compile(_LIST.format(entry=r'[0-9a-f]{12}:\d+')),
-    'hands': re.compile(r'-|' + _LIST.format(entry=r'[a-z0-9_+]+:\d+')),
-}
-_REQUIRED: Final = frozenset({'scope', 'ran', 'hands'})
-
-
-def _fields(description: str) -> tuple[dict[str, str], str, str] | None:
-    """``(fields, carried, cited)`` of a part *description*; ``None`` when it is not one (module docstring)."""
-    tail = _TAIL.search(description)
-    fields: dict[str, str] = {}
-    for word in (description[: tail.start()] if tail else description).split(' '):
-        key, _, value = word.partition('=')
-        grammar = _FIELDS.get(key)
-        if grammar is None or key in fields or not grammar.fullmatch(value):
-            return None
-        fields[key] = value
-    if not fields.keys() >= _REQUIRED:
-        return None
-    return fields, (tail['carried'] or '') if tail else '', (tail['cited'] or '') if tail else ''
+_DESCRIPTION: Final = re.compile(
+    r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
+    r'hands=(?P<hands>-|' + _LIST.format(entry=r'[a-z0-9_+]+:\d+') + ')'
+    r'(?: env=(?P<env>[0-9a-f]+))?(?: policy=(?P<policy>[0-9a-f]+))?'
+    r'(?: kept=(?P<kept>' + _LIST.format(entry=r'[0-9a-f]{12}:\d+') + '))?'
+    r'(?: carried from (?P<carried>[0-9a-f]{12}): (?:docs-only|every outcome carried by footprint))?'
+    r'(?: cited from (?P<cited>[0-9a-f]{12}): same tree)?$'
+)
 
 
 def _entries(text: str) -> tuple[dict[str, int], int]:
@@ -125,22 +103,21 @@ class Part:
             ValueError: no cut makes it fit and read back as this part -- refused before anything posts it.
 
         """
-        head = f'scope={self.scope} ran={self.ran}'
-        head += f' env={self.env[:POLICY_CHARS]}' if self.env else ''
-        head += f' policy={self.policy[:POLICY_CHARS]}' if self.policy else ''
+        identity = f' env={self.env[:POLICY_CHARS]}' if self.env else ''
+        identity += f' policy={self.policy[:POLICY_CHARS]}' if self.policy else ''
         carried = f' {CARRIED_FROM} {self.carried}: {DOCS_ONLY}' if self.carried else ''
         tail = carried or (f' {CITED_FROM} {self.cited}: {SAME_TREE}' if self.cited else '')
         hands_keep, kept_keep = len(self.hands), len(self.kept)
         while True:
             kept = _listed(self.kept, kept_keep, self.kept_more)
             hands = _listed(self.hands, hands_keep, self.hands_more) or '-'
-            said = f'{head}{f" kept={kept}" if kept else ""} hands={hands}{tail}'
+            said = f'scope={self.scope} ran={self.ran} hands={hands}{identity}{f" kept={kept}" if kept else ""}{tail}'
             if limit is None or len(said) <= limit or not (hands_keep or kept_keep):
                 break
             hands_keep, kept_keep = (hands_keep - 1, kept_keep) if hands_keep else (0, kept_keep - 1)
-        read = _fields(said)
+        read = _DESCRIPTION.match(said)
         fits = limit is None or len(said) <= limit
-        if not fits or read is None or (read[1], read[2]) != (self.carried, self.cited):
+        if not fits or read is None or ((read['carried'] or ''), (read['cited'] or '')) != (self.carried, self.cited):
             msg = f'the {self.platform} part cannot be said in {limit} characters that read back: {said!r}'
             raise ValueError(msg)
         return said
@@ -160,23 +137,22 @@ def parsed(status: CommitStatus) -> Part | None:
     if not status.context.startswith(CONTEXT_PREFIX) or status.context in NOT_PARTS:
         return None
     name = status.context.removeprefix(CONTEXT_PREFIX)
-    read = _fields(status.description)
-    if status.state not in RESULT or read is None or not is_row(name):
+    found = _DESCRIPTION.match(status.description)
+    if status.state not in RESULT or found is None or not is_row(name):
         return None
-    fields, carried, cited = read
-    hands, hands_more = _entries(fields['hands'])
-    kept, kept_more = _entries(fields.get('kept', ''))
+    hands, hands_more = _entries(found['hands'])
+    kept, kept_more = _entries(found['kept'] or '')
     return Part(
         platform=name,
-        scope=fields['scope'],
+        scope=found['scope'],
         result=RESULT[status.state],
-        ran=int(fields['ran']),
+        ran=int(found['ran']),
         hands=hands,
-        carried=carried,
-        cited=cited,
+        carried=found['carried'] or '',
+        cited=found['cited'] or '',
         kept=kept,
-        env=fields.get('env', ''),
-        policy=fields.get('policy', ''),
+        env=found['env'] or '',
+        policy=found['policy'] or '',
         hands_more=hands_more,
         kept_more=kept_more,
     )

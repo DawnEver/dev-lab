@@ -10,6 +10,7 @@ import dataclasses
 import gzip
 import json
 from collections import Counter
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from lab_commons.outcomes import Conclusion
@@ -17,6 +18,9 @@ from lab_commons.outcomes import Conclusion
 from dev_lab.dev import parthands, platformparts
 from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, CommitStatus
 from dev_lab.dev.partfacts import Part, parsed
+
+if TYPE_CHECKING:
+    from dev_lab.dev.forgework import Client
 
 #: document-lab #157's hands, as tests/linux posted them at ecb0027778d9.
 _ELEVEN = {
@@ -65,7 +69,7 @@ def test_an_eleven_part_description_overflowed_the_forge_and_now_fits_and_reads_
     )
     assert len(back.hands) + back.hands_more == len(_ELEVEN), 'a cut is counted, never silent'
     assert back.hands_more > 0
-    assert said.endswith(f',+{back.hands_more}')
+    assert f',+{back.hands_more} ' in said
     assert all(_ELEVEN[name] == count for name, count in back.hands.items())
 
 
@@ -82,16 +86,16 @@ def test_a_carried_part_with_kept_runs_and_twenty_parts_still_fits_and_reads_bac
     assert len(back.kept) + back.kept_more == 3
 
 
-def test_a_part_that_fits_is_said_whole_and_its_identity_comes_first() -> None:
+def test_a_part_that_fits_is_said_whole() -> None:
     part = _linux(hands={'jmag': 3})
-    assert part.description() == 'scope=full ran=16 env=728295fd policy=0123abcd hands=jmag:3'
+    assert part.description() == 'scope=full ran=16 hands=jmag:3 env=728295fd policy=0123abcd'
     back = parsed(_status(part))
     assert back is not None
     assert (back.hands, back.hands_more) == ({'jmag': 3}, 0)
 
 
-def test_a_status_posted_in_the_old_order_still_reads() -> None:
-    """OLD-SHAPE-READER: the fields are an unordered set, so every part already on the forge reads as before."""
+def test_a_status_posted_before_the_cut_marker_reads_as_it_did() -> None:
+    """The grammar only GAINED ``+N``: every part already on the forge is a description of today's grammar."""
     old = (
         'scope=full ran=2 hands=jmag:3 env=0123abcd policy=89abcdef kept=aaaaaaaaaaaa:4 '
         'carried from bbbbbbbbbbbb: docs-only'
@@ -113,6 +117,7 @@ def test_a_status_posted_in_the_old_order_still_reads() -> None:
         'scope=full ran=2',  # no hands
         'scope=full ran=2 hands=- hands=-',  # a field twice
         'scope=full ran=2 hands=- color=red',  # a field no part says
+        'scope=full ran=2 env=0123abcd hands=-',  # fields out of the one order a part is said in
         'scope=full ran=two hands=-',  # a value off its grammar
         'claim machine=G',
     ],
@@ -158,20 +163,21 @@ def _record(handed: dict[str, int]) -> bytes:
 def test_a_cut_hands_is_completed_from_the_record_its_status_links_and_every_part_is_derived() -> None:
     """THE DISCOVERY, whole: a part no description could name is still wanted, read off ``handed`` once."""
     parthands._HANDS_READ.clear()
-    client = _Records({_URL: _record(_ELEVEN)})
+    records = _Records({_URL: _record(_ELEVEN)})
+    client = cast('Client', records)  # the fake serves download only
     statuses = [_status(_linux())]
     cut = platformparts.derived(statuses)
     assert set(cut) < {'linux', *_ELEVEN}, 'PLANTED CONTROL: the cut description alone names fewer parts'
-    whole = parthands.complete_hands(client, statuses)  # type: ignore[arg-type] -- the fake serves download only
+    whole = parthands.complete_hands(client, statuses)
     assert set(platformparts.derived(whole)) == {'linux', *_ELEVEN}
-    parthands.complete_hands(client, statuses)  # type: ignore[arg-type]
-    assert client.downloads[_URL] == 1, 'a record never changes: it is read once'
+    parthands.complete_hands(client, statuses)
+    assert records.downloads[_URL] == 1, 'a record never changes: it is read once'
 
 
 def test_a_cut_no_record_completed_is_named_and_never_passes() -> None:
     """Never a silently smaller set: the standing says which part's list was cut and how to complete it."""
     parthands._HANDS_READ.clear()
-    unread = parthands.complete_hands(_Records({}), [_status(_linux())])  # type: ignore[arg-type]
+    unread = parthands.complete_hands(cast('Client', _Records({})), [_status(_linux())])
     read = platformparts.standing(unread, head='h', waived=frozenset(_ELEVEN) - {'base'})
     assert read.result is not Conclusion.PASS
     assert any('tests/linux hands' in problem and 'parthands' in problem for problem in read.problems)
