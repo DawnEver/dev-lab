@@ -73,12 +73,12 @@ def test_a_hold_whose_connection_ended_is_opened_with_the_code_never_reused(
         assert sshholdwire.held(DEST)
         sent, lines = _planned(plan)  # the PLANTED control: a live hold is reused, the code is not sent to it
         assert sent == []
-        assert lines[-1] == f'{DEST}: held session reused (no code sent)'
+        assert lines[0] == f'{DEST}: held session reused (no code sent)'
         _kill_the_connection(tmp_path / 'ssh.pid')
         _until(lambda: not sshholdwire.ping(session), 'the holder said its connection is gone')
         sent, lines = _planned(plan)
         assert sent == [DEST], lines
-        assert lines[-1] == f'{DEST}: open'
+        assert lines[0] == f'{DEST}: open'
         assert sshholdstate.read_session(DEST) is None, "the dead hold's record is removed"
     finally:
         if sshholdstate.read_session(DEST) is not None:
