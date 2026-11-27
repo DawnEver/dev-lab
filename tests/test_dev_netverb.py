@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import hook_install, netverb
 from dev_lab.dev._netverb_argv import NotANetworkVerb, is_network_verb, spelled
 from dev_lab.dev._netverb_rows import ROWS
 from dev_lab.dev.netverb import (
@@ -738,3 +739,40 @@ def test_a_certain_failure_is_refused_on_the_first_attempt(output: str, diagnosi
 def test_a_planted_transient_still_retries(output: str) -> None:
     """PLANTED CONTROL: the new permanent rows do not swallow a network blip."""
     assert is_retryable(classify(output))
+
+
+_HOOK_LAYER = '[[tool.dev_lab.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n'
+
+
+def _declaring_repo(tmp_path: Path) -> Path:
+    root = tmp_path / 'declaring'
+    root.mkdir()
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(root)], check=True, capture_output=True)
+    (root / 'pyproject.toml').write_text(_HOOK_LAYER, encoding='utf-8')
+    return root
+
+
+def test_a_push_from_an_unwired_checkout_is_refused_before_the_forge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """HOOKS-ARE-WIRED (v1 FAM-14). PLANTED CONTROL: the wired tree's push reaches the runner; the unwired never."""
+    ran: list[tuple[str, ...]] = []
+
+    def runner(argv: tuple[str, ...], **_: object) -> object:
+        ran.append(tuple(argv))
+        return netverb.Report(
+            argv=tuple(argv), attempts=(netverb.Attempt(1, 0, '', netverb.Diagnosis.SUCCEEDED),), allowed_attempts=1
+        )
+
+    monkeypatch.setattr(netverb, 'run_network_verb', runner)
+    monkeypatch.setattr(netverb, 'pushed_head', lambda *_: None)
+    repo = _declaring_repo(tmp_path)
+    assert main(['--cwd', str(repo), '--', 'git', 'push', 'origin', 'HEAD']) == 2
+    err = capsys.readouterr().err
+    assert err.startswith('HOOKS-ARE-WIRED: ')
+    assert '-m dev_lab.dev.hook_install --repo' in err
+    assert ran == []
+    assert main(['--cwd', str(repo), '--', 'git', 'fetch', 'origin']) == 0, 'a fetch writes no history'
+    hook_install.install(repo)
+    assert main(['--cwd', str(repo), '--', 'git', 'push', 'origin', 'HEAD']) == 0
+    assert ran[-1] == ('git', 'push', 'origin', 'HEAD')
