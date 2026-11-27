@@ -8,13 +8,13 @@ import subprocess
 import sys
 import time
 import venv
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
 
 import pytest
+from _venv_fake import uv_child
 from lab_commons.box import Refused
 
 from dev_lab.dev import _dep_project, dep, venvcurrent, venvpointer
@@ -105,9 +105,7 @@ def test_bootstrap_defaults_to_the_declared_full_extra_set_and_named_worktree(tm
 
     def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append((tuple(argv), kwargs))
-        if 'sync' in argv:  # uv sync creates the environment it is pointed at; the pointer is published onto it
-            Path(cast('Mapping[str, str]', kwargs['env'])['UV_PROJECT_ENVIRONMENT']).mkdir(parents=True)
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return uv_child(argv, kwargs)
 
     monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
     assert dep.main(['--bootstrap', str(root)], run=run, cwd=tmp_path) == 0
@@ -321,9 +319,9 @@ def test_sync_defaults_to_no_extras_and_installs_the_lock_without_moving_a_git_r
     )
     calls = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return uv_child(argv, kwargs)
 
     assert dep.main(['--sync'], cwd=tmp_path, run=run) == 0
     command = calls[0]
@@ -415,9 +413,9 @@ def test_a_bootstrap_builds_exactly_the_lock_and_a_sync_installs_it_unmoved(tmp_
     )
     calls = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return uv_child(argv, kwargs)
 
     assert dep.main(['--root', str(tmp_path), '--sync'], cwd=tmp_path, run=run) == 0
     assert '--upgrade-package' not in calls[-2]
@@ -432,9 +430,9 @@ def test_a_bootstrap_builds_exactly_the_lock_and_a_sync_installs_it_unmoved(tmp_
 def _recording() -> tuple[list[tuple[str, ...]], object]:
     calls: list[tuple[str, ...]] = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return uv_child(argv, kwargs)
 
     return calls, run
 
@@ -521,9 +519,9 @@ def test_a_bootstrap_initializes_the_submodules_its_path_dependencies_point_into
     assert not mounted.exists(), 'PLANTED CONTROL: a plain clone leaves the submodule uninitialized'
     seen = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         seen.append(('sync' in argv, mounted.exists()))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return uv_child(argv, kwargs)
 
     monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
     assert dep.main(['--bootstrap', str(lane)], run=run, cwd=lane) == 0
@@ -632,9 +630,9 @@ def test_an_explicit_extra_still_selects_it(tmp_path) -> None:
     )
     calls = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return uv_child(argv, kwargs)
 
     assert dep.main(['--sync', '--extra', 'all'], cwd=tmp_path, run=run) == 0
     command = calls[0]
@@ -653,9 +651,9 @@ def test_a_named_extra_adds_to_the_declared_extras_and_never_drops_dev(tmp_path)
     )
     calls = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return uv_child(argv, kwargs)
 
     assert dep.main(['--sync', '--extra', 'gpu'], cwd=tmp_path, run=run) == 0
     command = calls[0]

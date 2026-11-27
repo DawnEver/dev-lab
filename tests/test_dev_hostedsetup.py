@@ -10,9 +10,11 @@ from _forge_state import StateForge
 
 from dev_lab.dev import hostedsetup
 from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.harness import ActionsRun
 from dev_lab.dev.producer import Owner, owner_of
 
 SHA = 'c' * 40
+RUN = ActionsRun(server_url='https://github.com', repository='o/r', run_id='7')
 
 PYPROJECT = """
 [tool.lab_commons.tests]
@@ -44,7 +46,7 @@ def test_a_failed_setup_posts_its_part_under_its_own_class_naming_its_last_line(
 ) -> None:
     """EX_TEMPFAIL (a source did not answer) is ``network``; any other exit ``setup`` -- never a test's red."""
     forge, ran = _setup_exits(monkeypatch, tmp_path, code, 'fetching 11 files\narXiv: 503 Service Unavailable\n\n')
-    assert hostedsetup.run_setup(tmp_path, 'corpus', forge, env={}) == code
+    assert hostedsetup.run_setup(tmp_path, 'corpus', forge, run=RUN) == code
     assert ran == [['bash', '-c', 'fetch-corpus']], 'the declared command, from its one declaration'
     (posted,) = status_list(forge, SHA)
     assert (posted.context, posted.state) == ('tests/corpus', 'error')
@@ -52,17 +54,18 @@ def test_a_failed_setup_posts_its_part_under_its_own_class_naming_its_last_line(
     assert owner_of(posted.state, posted.description) not in {Owner.CODE, Owner.ENVIRONMENT}
     assert f'setup exited {code}' in posted.description
     assert 'arXiv: 503 Service Unavailable' in posted.description, 'its last line names the cause'
+    assert posted.url == 'https://github.com/o/r/actions/runs/7', 'the post links the run that failed'
 
 
 def test_a_setup_that_passes_posts_nothing(tmp_path: Path, monkeypatch) -> None:
     """PLANTED CONTROL: the same setup exiting 0 leaves the part to its producer."""
     forge, _ran = _setup_exits(monkeypatch, tmp_path, 0, 'ok\n')
-    assert hostedsetup.run_setup(tmp_path, 'corpus', forge, env={}) == 0
+    assert hostedsetup.run_setup(tmp_path, 'corpus', forge, run=RUN) == 0
     assert not status_list(forge, SHA)
 
 
 def test_a_part_declaring_no_setup_is_refused_by_name(tmp_path: Path, monkeypatch) -> None:
     forge, ran = _setup_exits(monkeypatch, tmp_path, 0, '')
     with pytest.raises(ValueError, match=r"'linux' declares no setup"):
-        hostedsetup.run_setup(tmp_path, 'linux', forge, env={})
+        hostedsetup.run_setup(tmp_path, 'linux', forge, run=RUN)
     assert ran == []
