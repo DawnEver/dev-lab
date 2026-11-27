@@ -76,7 +76,7 @@ RECURSIVE_DELETE: dict[str, object] = {
     'remedy': (
         f'{DOOR_SLOT} -m dev_lab.dev.scratch clear <NAME> --yes|dev_lab.dev.branchset --apply'
         '|dev_lab.dev.branchset --discard <branch> --approved <why>|detached: dev_lab.dev.worktrees --remove <name>'
-        '|dev_lab.dev.cloneremove <path> --approved <why>|rm -rf <pkg>.egg-info ok; never a worktree, else ask the user'
+        '|dev_lab.dev.cloneremove <path> --approved <why>; never a worktree, else ask the user'
     ),
     'needs': None,
     'refuses': (

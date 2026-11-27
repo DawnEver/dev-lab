@@ -194,20 +194,20 @@ def test_an_egg_info_build_artifact_is_permitted(rules: Path, command: str) -> N
     'command',
     ['rm -rf src', 'rm -rf src/egg-info-notes', 'rm -rf src/pkg.egg-info/../..', 'rm -rf src/pkg.egg-info src'],
 )
-def test_a_non_artifact_is_refused_naming_the_egg_info_door(rules: Path, command: str) -> None:
-    """PLANTED CONTROL: the egg-info door opens nothing else, and the refusal names it."""
+def test_a_non_artifact_is_refused(rules: Path, command: str) -> None:
+    """PLANTED CONTROL: the egg-info permission opens nothing else (the doc, not the remedy, names it: #1020)."""
     reason = agenthooks.decide(command, rules)
     assert reason is not None, f'not refused: {command!r}'
     assert 'RECURSIVE-DELETE' in reason
-    assert 'rm -rf <pkg>.egg-info' in reason
 
 
-def test_the_egg_info_door_is_named_in_the_row_and_the_doc() -> None:
+def test_the_egg_info_permission_is_named_in_the_doc_not_the_remedy() -> None:
+    """An egg-info delete is never refused, so it is no door a refusal names; the doc says it is permitted."""
     rule = rules_by_id(DENY_RULES)['RECURSIVE-DELETE']
     section = (Path(__file__).resolve().parents[1] / disclosure.REFUSALS_DOC).read_text(encoding='utf-8')
     section = section.split('\n## RECURSIVE-DELETE\n', 1)[1].split('\n## ', 1)[0]
-    for text in (str(rule.remedy), section):
-        assert '.egg-info' in text
+    assert '.egg-info' in section
+    assert '.egg-info' not in str(rule.remedy)
 
 
 def _dead_doors(remedy: str) -> list[str]:

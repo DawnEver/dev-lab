@@ -67,11 +67,10 @@ BUDGETS: Final[dict[str, Budget]] = {
     'deny-hazard': Budget(max_lines=1, max_line_chars=132),
     'deny-remedy': Budget(
         max_lines=1,
-        max_line_chars=294,
+        max_line_chars=285,
         reason='a refusal names, per need, the exact unified door command with its flags (user ruling 2026-11-10); '
-        'RECURSIVE-DELETE names six doors (scratch, branchset apply/discard, detached worktrees --remove, clone, '
-        'egg-info) and never-a-worktree/ask-the-user, measured 294 (2026-11-27; venvprune moved to the doc) -- cut '
-        'below that, a door loses its flag',
+        'MAIN-ONLY-DOOR measured 285 (2026-11-27); RECURSIVE-DELETE names five doors and never-a-worktree/ask-the-user '
+        'in 269, venvprune and the egg-info permission in its doc -- cut below that, a door loses its flag',
     ),
 }
 
