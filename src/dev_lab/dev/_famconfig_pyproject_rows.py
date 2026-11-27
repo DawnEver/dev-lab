@@ -109,7 +109,7 @@ PYPROJECT_TABLE_FLOOR: Final = (
 
 #: EVERY TABLE MEASURED AND NOT PROMOTED, with the number that decided it. Recorded rather than
 #: omitted: an absent table and a table nobody looked at read identically, and this family has
-#: already been bitten by exactly that (`RUFF_TARGET_VERSIONS` exists for the same reason).
+#: already been bitten by exactly that.
 #:
 #: The key is the table's dotted path as a tuple, so the suite beside this can walk the live
 #: documents and refuse a row naming a table no repo declares -- a decline that outlives its subject

@@ -5,7 +5,9 @@ description = "The family development system: forge, hooks, gate, verify. Depend
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Mingyang Bao" }]
-requires-python = ">=3.12"
+# The family Python (dev_lab.dev.pythontoolchain), rendered here as in every family repo; the ceiling is the
+# one-interpreter ruling of 2026-11-27, not a resolver bound.
+requires-python = ">=3.14,<3.15"
 # dev-lab IS the development system, so what lab-commons shipped as its `dev` extra is this package's base
 # install: the lab-commons runtime it is built on (logging, paths, config, units for the duration/quantity
 # parsers) plus the tools it DRIVES as executables (pytest, ruff, `cz check` for the base commit-msg hook).
@@ -225,14 +227,8 @@ markers = [
 [tool.ruff]
 line-length = 120
 cache-dir = "output/cache/ruff"
-# py312 AND NOT py313, against the consumers' identical py313 -- this is the one scalar where the
-# kit must differ, and the evidence is `requires-python = ">=3.12"` eleven lines above. This repo
-# SHIPS A WHEEL to the family; a py313 target lets the UP group rewrite shipped code into syntax a
-# 3.12 interpreter cannot parse, and the 3.12 half of this repo's own declared support would break
-# at import rather than at lint. Two of the three consumers ALSO declare `>=3.12` while targeting
-# py313, so their scalar is the one that disagrees with its own metadata; only consumer-a
-# (`>=3.13,<3.14`) has earned it. This repo's venv is CPython 3.12.14.
-target-version = "py312"
+# The family Python's syntax, rendered with requires-python by dev_lab.dev.pythontoolchain.
+target-version = "py314"
 
 [tool.ruff.format]
 quote-style = "single"

@@ -140,7 +140,15 @@ def own_interpreter(root: Path, python: str) -> str:
     resolved = candidate.absolute()
     owned = tuple(base / name for base in {root.absolute(), root.resolve()} for name in ('.venvs', '.venv'))
     if Path(python).is_file() and any(resolved.is_relative_to(home) for home in owned):
-        return python
+        if env_fits(root, python):
+            return python
+        msg = (
+            f'ENV-FITS-ITS-PROJECT: the environment of {python} runs Python '
+            f'{".".join(map(str, env_version(python) or ()))}, which {root} refuses (requires-python '
+            f'{requires_python(root)}); a sync or relock under it fails at uv. Rebuild it on a fitting interpreter '
+            f'first:\n{sys.executable} -m dev_lab.dev.dep --bootstrap {root}'
+        )
+        raise UnfitEnvRefused(msg)
     msg = (
         f'SYNC-OWNS-ITS-ENV: the interpreter {candidate} is not inside the own .venvs/ or .venv of the checkout '
         f'{root}, and a sync never runs under a foreign environment.\n'
@@ -149,18 +157,75 @@ def own_interpreter(root: Path, python: str) -> str:
     raise ForeignEnvRefused(msg)
 
 
+class UnfitEnvRefused(ValueError):
+    """A sync or relock would run under the checkout's own environment, built on an interpreter it refuses."""
+
+
+def requires_python(root: Path) -> str:
+    """*root*'s ``[project] requires-python``; ``''`` where it declares none (or has no manifest)."""
+    manifest = root / 'pyproject.toml'
+    declared = tomllib.loads(manifest.read_text(encoding='utf-8')).get('project', {}) if manifest.is_file() else {}
+    return str(declared.get('requires-python') or '')
+
+
+def env_version(python: str) -> tuple[int, ...] | None:
+    """The Python release the environment of *python* was built on, from its ``pyvenv.cfg``; ``None`` unread."""
+    cfg = Path(python).parent.parent / 'pyvenv.cfg'
+    lines = cfg.read_text(encoding='utf-8', errors='replace').splitlines() if cfg.is_file() else []
+    for key, _, value in (line.partition('=') for line in lines):
+        if key.strip() in {'version_info', 'version'} and (release := re.findall(r'\d+', value)[:3]):
+            return tuple(int(part) for part in release)
+    return None
+
+
+def env_fits(root: Path, python: str) -> bool:
+    """Whether the environment of *python* fits *root*'s ``requires-python`` (an unread version is not refused)."""
+    spec, version = requires_python(root), env_version(python)
+    return not spec or version is None or _fits(version, spec)
+
+
 def bootstrap_python(root: Path, *, running: tuple[int, ...] = tuple(sys.version_info[:3])) -> str:
     """The interpreter a first environment of *root* is built with: the caller when it fits, else the target's spec.
 
     MEASURED 2026-11-24: a repo requiring 3.13 was bootstrapped from a 3.12 caller and ``uv sync --python
     <caller>`` refused it. The TARGET declares what it runs on: a caller fitting its ``requires-python`` (or a repo
-    declaring none) builds under the caller, as before; otherwise uv is handed the specifier and finds (or
-    fetches) a fitting interpreter.
+    declaring none) builds under the caller, as before; otherwise uv is handed the specifier and finds a fitting
+    interpreter (:func:`fetch_python` fetched one first where the host had none).
     """
-    manifest = root / 'pyproject.toml'
-    declared = tomllib.loads(manifest.read_text(encoding='utf-8')).get('project', {}) if manifest.is_file() else {}
-    spec = str(declared.get('requires-python') or '')
+    spec = requires_python(root)
     return sys.executable if not spec or _fits(running, spec) else spec
+
+
+def fetch_python(root: Path, *, run: Callable[..., Any], environment: dict[str, str] | None) -> str:
+    """Fetch an interpreter fitting *root*'s ``requires-python`` when uv finds none; ``''`` once one is there.
+
+    MEASURED 2026-11-27 (the family Python moved to 3.14, dev-lab #1045): a host holding only 3.15 and 3.13 cannot
+    build a family environment until uv installs 3.14. The fetch is a network verb, so it runs through the one retry
+    door (:func:`~dev_lab.dev._dep_network.run_change`); a fetch that fails answers why, with the door to rerun.
+    """
+    spec, uv = requires_python(root), shutil.which('uv')
+    if not spec or uv is None or _found(uv, spec):
+        return ''
+    emit(f'[dep] no interpreter on this host fits {root} (requires-python {spec}): uv fetches one')
+    if run_change([uv, 'python', 'install', spec], run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment):
+        return (
+            f'uv could not fetch a Python fitting {spec}, which {root} requires -- rerun the fetch once the network '
+            f'answers: {sys.executable} -m dev_lab.dev.netverb -- {uv} python install "{spec}"'
+        )
+    return ''
+
+
+def _found(uv: str, spec: str) -> bool:
+    """Whether *uv* finds an installed interpreter fitting *spec* (a local read, no download)."""
+    done = _door.run(
+        [uv, 'python', 'find', '--no-python-downloads', spec],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+        timeout=60,
+    )
+    return done.returncode == 0
 
 
 #: One requires-python clause: an operator and a dotted release, optionally ``.*``.
@@ -208,16 +273,16 @@ def uv_command(
 
     A *frozen* sync builds exactly the committed ``uv.lock`` (``--frozen``) and re-resolves nothing: how a
     commit's own environment is materialized, so two hosts on two days build the same revisions.
-    Only a frozen sync with no environment yet -- a bootstrap -- builds
-    one under the target's ``requires-python`` (:func:`bootstrap_python`); every other command
+    Only a frozen sync with no environment yet, or one built on an interpreter the target's ``requires-python``
+    refuses -- a bootstrap -- builds under that requirement (:func:`bootstrap_python`); every other command
     runs under the checkout's own (:func:`own_interpreter`).
     """
     uv = shutil.which('uv')
     if uv is None:
         msg = 'bootstrap/sync requires uv on PATH'
         raise FileNotFoundError(msg)
-    first = syncing and frozen and not Path(python).is_file()
-    interpreter = bootstrap_python(root) if first else own_interpreter(root, python)
+    built = Path(python).is_file() and env_fits(root, python)
+    interpreter = bootstrap_python(root) if syncing and frozen and not built else own_interpreter(root, python)
     command = [
         uv,
         'sync' if syncing else 'lock',
@@ -332,7 +397,7 @@ def lock_upgrade(
         # Read BEFORE anything is written (#996): a toolchain that cannot be resolved refuses a run that moved nothing.
         toolchain = stable() if not packages and (root / TOOLCHAIN).is_file() else None
         command = lock_upgrade_command(root, python, required, packages)
-    except (OtherUvRefused, ForeignEnvRefused, OSError) as exc:
+    except (OtherUvRefused, ForeignEnvRefused, UnfitEnvRefused, OSError) as exc:
         emit(f'REFUSED: {exc}')
         return 1
     if dry_run:

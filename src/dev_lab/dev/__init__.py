@@ -673,6 +673,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   closes salvaged PRs with an evidence comment; it never deletes a branch.
 * :mod:`dev_lab.dev.claudelayout` -- the CLOSED ``.claude/`` inventory: every entry declared by name in one
   constant, ``.claude/`` at the repo root only (user ruling 2026-11-24).
+* :mod:`dev_lab.dev.pythontoolchain` -- the FAMILY PYTHON, one interpreter declared once: rendered into every repo's
+  ``requires-python`` and ruff target, every CI sync, every bootstrap (user ruling 2026-11-27).
 * :mod:`dev_lab.dev.rusttoolchain` -- the FAMILY RUST TOOLCHAIN, one exact channel rendered into every repo
   that commits Rust, plus its ``[tool.dev_lab.rust]`` delta (user ruling 2026-11-24).
 * :mod:`dev_lab.dev.secretkit` -- TYPED-VALUES-ARE-SHOWN: a stale kit never prompts a person for a secret or code.

@@ -21,7 +21,7 @@ consumer-a LANE at ``.claude/worktrees/feat/consumer-c`` -- never the main check
   delta is EMPTY and each consumer's delta IS its own waiver set. That asymmetry is the whole arm:
   a base asserting PRESENCE could not see a consumer ADD a waiver, and adding one is the move.
 * ``line-length`` 120 and ``quote-style`` single in all four, so no scalar drop exists anywhere.
-* ``target-version`` is in NO base (`RUFF_TARGET_VERSIONS` records why), so no delta names it.
+* ``target-version`` is in NO base (`dev_lab.dev.pythontoolchain` owns it), so no delta names it.
 
 THE DROP MAPS ARE ALL EMPTY AND THAT IS A MEASUREMENT. Every one of the four holds all 58 selectors,
 all 10 core ignores and both owned scalars, so there is nothing for a drop to name. A drop here is

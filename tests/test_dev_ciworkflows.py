@@ -42,6 +42,7 @@ from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.nightlycron import NIGHTLY_CRON
+from dev_lab.dev.pythontoolchain import SYNC_FLAGS
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 
 #: A repo declares no placement: the roles are the kinds the test carries (_roles_fixtures; EVERY_CI by default).
@@ -1553,7 +1554,7 @@ def test_both_merge_jobs_sync_through_the_repo_s_setup(tmp_path: Path) -> None:
     """
     base = _base_ci(tmp_path)['jobs']
     for job in ('merge-ready', 'merge-rejudge'):
-        assert any(step.get('run') == 'uv sync --frozen' for step in base[job]['steps']), job
+        assert any(step.get('run') == f'uv sync --frozen {SYNC_FLAGS}' for step in base[job]['steps']), job
     (tmp_path / 'pyproject.toml').write_text(
         ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci._steps]\n'
         'setup = [{ name = "Sync the environment", run = "uv sync --frozen --extra dev" }]\n',
@@ -1665,11 +1666,14 @@ def test_every_job_syncs_only_the_declared_extras_and_a_part_adds_its_own_needs(
     (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _EXTRAS, encoding='utf-8')
     flow = workflows(tmp_path)['ci.yml']
     runs = _sync_runs(flow)
-    assert 'uv sync --frozen --extra dev' in runs
+    assert f'uv sync --frozen {SYNC_FLAGS} --extra dev' in runs
     assert not any('--all-extras' in run for run in runs)
     part = [step['run'] for step in flow['jobs']['part']['steps'] if step.get('name') == "Sync the part's extras"]
     assert part == [
-        'uv sync --frozen $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")'
+        (
+            f'uv sync --frozen {SYNC_FLAGS} '
+            '$(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")'
+        )
     ]
 
 

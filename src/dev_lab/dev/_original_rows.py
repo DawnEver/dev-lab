@@ -72,6 +72,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'secretlog',
     # ORIGINAL: each Rust repo pinned its own toolchain; the family fact had no source (2026-11-24).
     'rusttoolchain',
+    # ORIGINAL: each repo and runner chose its own Python; the family interpreter had no source (2026-11-27).
+    'pythontoolchain',
     'cjk',
     'content',
     # ORIGINAL, and both halves are the reason. No consumer file is being replaced -- the mechanism

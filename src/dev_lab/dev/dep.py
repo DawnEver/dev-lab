@@ -341,6 +341,15 @@ def main(
         return 1
 
 
+def _prerequisites(root: Path, *, run: Callable[..., Any], environment: dict[str, str]) -> str:
+    """A bootstrap's first step: seed the worktree, name every host gap, fetch a missing Python; why not, or ``''``."""
+    for line in worktreeseeds.seed(root):
+        emit(line)
+    for gap in toolchain.diagnose(root):
+        emit(gap.line())
+    return _dep_project.fetch_python(root, run=run, environment=environment)
+
+
 def _run(
     args: argparse.Namespace,
     root: Path,
@@ -360,11 +369,10 @@ def _run(
     if syncing and (why := init_submodules(root, dry_run=args.dry_run)):
         emit(f'REFUSED: {why}')
         return 1
-    if args.bootstrap is not None and not args.dry_run:
-        for line in worktreeseeds.seed(root):
-            emit(line)
-        for gap in toolchain.diagnose(root):
-            emit(gap.line())
+    bootstrapping = args.bootstrap is not None and not args.dry_run
+    if bootstrapping and (why := _prerequisites(root, run=run, environment=environment)):
+        emit(f'REFUSED: {why}')
+        return 1
     if locking:
         code = _dep_project.lock_upgrade(
             root, base, run=run, dry_run=args.dry_run, environment=environment, packages=args.upgrade_package
@@ -385,7 +393,12 @@ def _run(
         overlay = _dep_local.step(
             root, args.local, syncing=syncing, uv=command[0], python=python, prefix=prefix, run=run, env=environment
         )
-    except (_dep_project.OtherUvRefused, _dep_project.ForeignEnvRefused, _dep_local.OverlayRefused) as exc:
+    except (
+        _dep_project.OtherUvRefused,
+        _dep_project.ForeignEnvRefused,
+        _dep_project.UnfitEnvRefused,
+        _dep_local.OverlayRefused,
+    ) as exc:
         emit(f'REFUSED: {exc}')
         publish_built(root, prefix, live, ok=False, census=census)
         return 1
