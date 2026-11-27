@@ -169,7 +169,9 @@ def _threaded(args: Sequence[str]) -> bool:
     return args[1:2] == ['view'] and '--comments' in args
 
 
-def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
+def _dispatch(
+    client: Client, args: argparse.Namespace, root: Path
+) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
     verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit, labels=args.label),
         ('issue', 'view'): lambda: client.issue_view(args.number),
@@ -182,6 +184,9 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
         ),
         ('pr', 'view'): lambda: client.pr_view(args.number),
         ('pr', 'close'): lambda: forgepr.pr_close(client, args.number, args.reason),
+        ('pr', 'retarget'): lambda: forgepr.pr_retarget(
+            client, args.number, args.base, allowed=forgepr.declared_bases(root), reason=args.reason
+        ),
         ('pr', 'edit'): lambda: forgepr.pr_edit(
             client, args.number, body=forgepr.edit_text(args) if args.body_file else None, append=args.append_line
         ),
@@ -268,7 +273,7 @@ def issue_and_pr(
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
             emit('\n'.join(f'[forge] {line}' for line in lines), err=True)
             args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
-        result = _dispatch(client, args)
+        result = _dispatch(client, args, root)
         if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
             emit(f'[forge] {forgemergecall.auto_merge(client, result.number)}', err=True)
             if head := result.head_sha or pushwatch.pushed_sha(root, f'refs/remotes/origin/{result.head}'):
