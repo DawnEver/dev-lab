@@ -69,6 +69,6 @@ def submit(checkout: Path, key: str, *, python: str, root: str, script: str) -> 
     """lab-commons' prep job for *key*, as one line; :data:`ABSENT` when this kit's lab-commons has none."""
     try:
         door = getattr(importlib.import_module(_MODULE), _FUNCTION)
-    except (ImportError, AttributeError):
+    except ImportError, AttributeError:
         return ABSENT
     return str(door(checkout, key, python=python, root=root, script=script))
