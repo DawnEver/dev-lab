@@ -1,11 +1,25 @@
 """The rules registry, HOOKS part -- pure DATA, the same row shape as ``_rule_rows.py``.
 
-The rows about the agent hooks the family renders: what a hook may cost the session it runs in.
+The rows about the agent hooks the family renders: what the shared deny machinery answers, and what a hook may cost
+the session it runs in. AGENT-GUARD moved here from ``_rule_rows.py`` by subject (2026-11-27).
 """
 
 from __future__ import annotations
 
 ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
+    (
+        'AGENT-GUARD',
+        (
+            'A hand-written test invocation and a stash are refused, and a bare network verb is hinted toward the '
+            'retry door (a repo raises it to a refusal in its adoption severities), by the shared deny machinery '
+            'rather than by prose, so the answer is identical in every repo that adopts it.'
+        ),
+        (
+            '.claude/hooks/deny-commands.js',
+            '.claude/hooks/deny-rules.json',
+            'tests/architecture/gate/test_agent_bash_guard.py',
+        ),
+    ),
     (
         'HOOK-UNDER-FIVE-SECONDS',
         (

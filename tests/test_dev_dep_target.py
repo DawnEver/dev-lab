@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 import venv
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -60,6 +60,18 @@ def _live_verdict(tmp_path, monkeypatch, *, python: str = sys.executable) -> Ite
         assert process.returncode == 0
 
 
+def _uv(argv: Sequence[str], kwargs: Mapping[str, object]) -> SimpleNamespace:
+    """A uv child that succeeds as uv does: a ``sync`` creates the environment it is pointed at.
+
+    The door publishes ``.venv`` onto that environment, and :func:`dev_lab.dev.venvcurrent.publish` refuses one that
+    does not exist -- so a fake sync that leaves none is no sync (2026-11-27: on Windows it was a bare junction
+    error, on POSIX a dangling link).
+    """
+    if 'sync' in argv:
+        Path(cast('Mapping[str, str]', kwargs['env'])['UV_PROJECT_ENVIRONMENT']).mkdir(parents=True, exist_ok=True)
+    return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+
 def _port() -> dep.Port:
     return dep.Port(name='target-control', anchor_paths=tuple, key=lambda: 'unchanged')
 
@@ -105,9 +117,7 @@ def test_bootstrap_defaults_to_the_declared_full_extra_set_and_named_worktree(tm
 
     def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append((tuple(argv), kwargs))
-        if 'sync' in argv:  # uv sync creates the environment it is pointed at; the pointer is published onto it
-            Path(cast('Mapping[str, str]', kwargs['env'])['UV_PROJECT_ENVIRONMENT']).mkdir(parents=True)
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return _uv(argv, kwargs)
 
     monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
     assert dep.main(['--bootstrap', str(root)], run=run, cwd=tmp_path) == 0
@@ -321,9 +331,9 @@ def test_sync_defaults_to_no_extras_and_installs_the_lock_without_moving_a_git_r
     )
     calls = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return _uv(argv, kwargs)
 
     assert dep.main(['--sync'], cwd=tmp_path, run=run) == 0
     command = calls[0]
@@ -415,9 +425,9 @@ def test_a_bootstrap_builds_exactly_the_lock_and_a_sync_installs_it_unmoved(tmp_
     )
     calls = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return _uv(argv, kwargs)
 
     assert dep.main(['--root', str(tmp_path), '--sync'], cwd=tmp_path, run=run) == 0
     assert '--upgrade-package' not in calls[-2]
@@ -432,9 +442,9 @@ def test_a_bootstrap_builds_exactly_the_lock_and_a_sync_installs_it_unmoved(tmp_
 def _recording() -> tuple[list[tuple[str, ...]], object]:
     calls: list[tuple[str, ...]] = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return _uv(argv, kwargs)
 
     return calls, run
 
@@ -521,9 +531,9 @@ def test_a_bootstrap_initializes_the_submodules_its_path_dependencies_point_into
     assert not mounted.exists(), 'PLANTED CONTROL: a plain clone leaves the submodule uninitialized'
     seen = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         seen.append(('sync' in argv, mounted.exists()))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return _uv(argv, kwargs)
 
     monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
     assert dep.main(['--bootstrap', str(lane)], run=run, cwd=lane) == 0
@@ -632,9 +642,9 @@ def test_an_explicit_extra_still_selects_it(tmp_path) -> None:
     )
     calls = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return _uv(argv, kwargs)
 
     assert dep.main(['--sync', '--extra', 'all'], cwd=tmp_path, run=run) == 0
     command = calls[0]
@@ -653,9 +663,9 @@ def test_a_named_extra_adds_to_the_declared_extras_and_never_drops_dev(tmp_path)
     )
     calls = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return _uv(argv, kwargs)
 
     assert dep.main(['--sync', '--extra', 'gpu'], cwd=tmp_path, run=run) == 0
     command = calls[0]
