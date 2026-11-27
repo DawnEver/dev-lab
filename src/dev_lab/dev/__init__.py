@@ -539,6 +539,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.memory` -- memory written (add, amend, redact, rename) and searched, at each repo root, no index.
 * :mod:`dev_lab.dev.remretired` -- REM-RETIRED: rem's leftovers refused; the repo migration, the machine uninstall.
 * :mod:`dev_lab.dev.ledgerguard` -- LEDGER-WRITES-THROUGH-ITS-DOOR: a task file is written by the ledger CLI alone.
+* :mod:`dev_lab.dev.nativewheels` -- ``[tool.dev_lab.native] wheels``: the opt-in one-wheel-per-OS workflow (#981).
 * :mod:`dev_lab.dev.rendergoldens` -- every family render of the declaration fixtures, pinned byte for byte as goldens.
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review again|takeover|cap|run``: the review's doors (takeover is advice).
 * :mod:`dev_lab.dev.forgereview_job` -- the forge's review job: ``review run --pr N`` on its one PR, and its exit.
