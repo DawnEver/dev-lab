@@ -441,6 +441,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'hiddenintake',  # ORIGINAL: 2026-11-24, TYPED-VALUES-ARE-SHOWN over every family repo's tracked code
     'secretkit',  # ORIGINAL: 2026-11-24, TYPED-VALUES-ARE-SHOWN, the kit half: a stale kit never prompts
     'machineroutes',  # ORIGINAL: 2026-11-24, MACHINES-MEET-ONLY-THROUGH-THE-FORGE
+    'githubtests',  # ORIGINAL: 2026-11-27, GITHUB-TESTS-ON-ACTIONS
     'notices',  # ORIGINAL: 2026-11-24, the third-party license notice generated from the environment
     'portmeasure',  # ORIGINAL: 2026-11-24, MEASURE-BEFORE-PORTING, a new native crate carries its measured reason
     'priorart',  # ORIGINAL: 2026-11-24, PRIOR-ART-FIRST, a new product module named like an existing one cites it
