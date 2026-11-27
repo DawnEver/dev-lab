@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from lab_commons.hpc.grants import Grant, Machine
 
+from dev_lab.dev.hpcaccount import division
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, account_role, division_of
 
 _GRANT = {'hosts': ['login01.example'], 'slurm_account': 'acct'}
@@ -83,3 +84,30 @@ def test_the_account_role_must_equal_the_workstations() -> None:
 def test_a_hand_run_deploy_falls_back_to_the_defaults_and_refuses_another_name() -> None:
     assert account_role('research', '', None) == DEFAULT_ROLES['research']
     assert isinstance(account_role('batch', '', None), str)
+
+
+def _session_machine() -> Machine:
+    research = Grant(user='r', hosts=('login.ada',), slurm_account='a', role='research', cluster_name='ada')
+    verify = Grant(user='v', hosts=('login.ada',), slurm_account='a', role='verification', cluster_name='ada')
+    return Machine(session=None, grants=(research, verify), reach=frozenset({'research', 'verification'}))
+
+
+def test_the_integrator_role_needs_a_declared_reach_of_its_accounts_cluster() -> None:
+    """User ruling 2026-11-27: undeclared is refused naming the key; declared (direct or vpn) passes."""
+    machine = _session_machine()
+    why = division.session_reach_refusal(machine, {'reach': ['research']})
+    assert why is not None
+    assert "['ada']" in why
+    assert '[dev] hpc_reach = { ada = "direct" | "vpn" }' in why
+    for by in ('direct', 'vpn'):
+        assert (
+            division.session_reach_refusal(machine, {'reach': ['research'], 'cluster_reach': {'ada': {'reach': by}}})
+            is None
+        )
+
+
+def test_a_machine_using_only_its_own_roles_needs_no_declared_reach() -> None:
+    """PLANTED CONTROL: the refusal is the session role's, never every machine's."""
+    machine = _session_machine()
+    assert division.session_reach_refusal(machine, {'reach': ['research', 'verification']}) is None
+    assert division.session_reach_refusal(machine, {'reach': ['research']}, accounts=('r',)) is None

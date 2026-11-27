@@ -33,7 +33,7 @@ from typing import Any, Final, NamedTuple
 
 from lab_commons import storage as _storage
 from lab_commons.hpc import clean as _clean
-from lab_commons.hpc.cluster import Runner, Unreachable
+from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant, Machine
 from lab_commons.log import emit
 from lab_commons.objects import RCLONE_CONFIG
@@ -44,7 +44,7 @@ from dev_lab.dev.hpcaccount import archivestream
 from dev_lab.dev.hpcaccount.division import reached_machine
 from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
 from dev_lab.dev.hpcaccount.look import REPO_NAME, home_path
-from dev_lab.dev.hpcaccount.storage import UNREACHABLE, Pin, on_host
+from dev_lab.dev.hpcaccount.storage import Pin, on_host
 from dev_lab.dev.hpcaccount.storagecheck import check_in_kit
 from dev_lab.dev.hpcaccount.transport import grant_runner
 
@@ -165,7 +165,7 @@ def archive(
         spec = _spec('archive' if apply else 'plan', path, name, declared, account)
         verdict = _stream(account.target, account.run, spec, say)
     except (Refused, ValueError, PermissionError, LookupError, RuntimeError, OSError) as refused:
-        say(f'archive: {user}: refused -- {UNREACHABLE if isinstance(refused, Unreachable) else refused}')
+        say(f'archive: {user}: refused -- {refused}')
         return 2
     if not verdict.get('ok'):
         say(f'archive: {user}: refused -- {verdict.get("why")}')
@@ -185,7 +185,7 @@ def archive_clean(
         account = _account(user, connect, pin)
         verdict = _stream(account.target, account.run, _spec('release', path, name, declared, account), say)
     except (Refused, ValueError, PermissionError, LookupError, RuntimeError, OSError) as refused:
-        say(f'archive-clean: {user}: refused -- {UNREACHABLE if isinstance(refused, Unreachable) else refused}')
+        say(f'archive-clean: {user}: refused -- {refused}')
         return 2
     if verdict.get('verdict') != 'released':
         say(f'archive-clean: {user}: refused, nothing deleted -- {verdict.get("why")}')
