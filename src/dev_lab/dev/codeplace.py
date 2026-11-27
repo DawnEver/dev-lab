@@ -198,7 +198,7 @@ def placement_table(root: Path) -> dict | None:
     """
     try:
         manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError, tomllib.TOMLDecodeError:
         manifest = {}
     if declared_table(manifest, 'placement') is not None:
         msg = (

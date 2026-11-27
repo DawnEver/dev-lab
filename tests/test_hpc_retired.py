@@ -75,7 +75,7 @@ def test_no_retired_spelling_survives_in_the_tracked_tree() -> None:
     for name in scanned:
         try:
             text = (ROOT / name).read_text(encoding='utf-8')
-        except (UnicodeDecodeError, FileNotFoundError):
+        except UnicodeDecodeError, FileNotFoundError:
             continue
         found += [f'{name}: {spelling!r} -> {RETIRED[spelling]}' for spelling in retired_in(text)]
     assert not found, 'retired spellings (replace each with its remedy):\n' + '\n'.join(found)

@@ -123,7 +123,7 @@ def _pypi_latest(locator: str) -> str | None:
         if answer.status != _HTTP_OK:
             return None
         payload = json.loads(answer.read().decode('utf-8'))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return None
     finally:
         connection.close()

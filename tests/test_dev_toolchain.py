@@ -65,3 +65,10 @@ def test_the_linker_probe_carries_the_pin_and_names_the_failure(tmp_path: Path) 
     assert gap is not None
     assert 'link.exe' in gap.why
     assert probe_linker(root, 'cargo', run=lambda _argv: (0, ''), work=work) is None
+
+
+def test_the_python_remedy_goes_through_the_network_door(tmp_path: Path) -> None:
+    """2026-11-27: the remedy was a bare `uv python install`, a network verb the agent guard refuses as printed."""
+    root = _checkout(tmp_path, rust=False)
+    (gap,) = diagnose(root, which=lambda t: f'/bin/{t}', python_found=lambda *_: False)
+    assert ' -m dev_lab.dev.netverb -- /bin/uv python install ">=3.13"' in gap.remedy

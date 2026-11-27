@@ -163,7 +163,7 @@ steps = [
     { use-steps = "setup" },
     # THE PART'S OWN EXTRAS (user, 2026-11-20: most parts need no torch): the declared extras plus those its need-set
     # maps to, from the repo's one declaration (dev_lab.dev.depneeds flags -> lab_commons.extras); never all of them.
-    { name = "Sync the part's extras", shell = "bash", run = 'uv sync --frozen $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")' },
+    { name = "Sync the part's extras", shell = "bash", run = 'uv sync --frozen @python@ $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")' },
     { name = "Produce and post the part", run = "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}" },
     # A red, hung or cancelled part kept no log, so its cause was unreadable (document-lab tests/windows, 2026-11-18):
     # the run's verify log is attached whatever ended the job (always(): a failure, a cancel, the job timeout).
@@ -403,7 +403,10 @@ setup = [
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
     # The repo's DECLARED extras only ([tool.dev_lab.dep] extras, rendered by ciworkflows.EXTRAS_PLACEHOLDER); a part
     # adds its need-set's own. No job syncs every extra: a rendered `--all-extras` is refused (ALL-EXTRAS-REFUSED).
-    { name = "Sync the environment", run = "uv sync --frozen@extras@" },
+    # THE FAMILY PYTHON on every runner (user ruling 2026-11-27, dev-lab #1045): `@python@` renders as
+    # dev_lab.dev.pythontoolchain.SYNC_FLAGS, a uv-managed interpreter uv fetches -- never the runner's own, which
+    # measured three minors on three OSes (Ubuntu's system one, Homebrew's newest, an older Windows one).
+    { name = "Sync the environment", run = "uv sync --frozen @python@@extras@" },
 ]
 # ci.yml's merge decision on its one PR and the smoke run its merge dispatches; merge-ready and merge-rejudge list
 # `setup` before it, so a repo that narrows `setup` narrows both -- never a copy.

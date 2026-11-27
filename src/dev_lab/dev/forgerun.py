@@ -233,7 +233,7 @@ def _gather(
         forgerunpost.killed(client, run, cluster.killed(run), say, tag)
         _settle(root, run, client=client, why=str(why), say=say, alarm=alarm, ran=True)
         return None
-    except (NotSubmitted, Unreachable):  # released by advance / transient: never read as a lost run
+    except NotSubmitted, Unreachable:  # released by advance / transient: never read as a lost run
         raise
     except RuntimeError as why:
         # Its cluster state cannot be read (2026-11-08: the tree's manifest.json gone). With no job of it in

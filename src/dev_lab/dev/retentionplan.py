@@ -206,7 +206,7 @@ def runs(ci: Path) -> list[tuple[Path, dict[str, Any], datetime]]:
                 read.append(
                     (data if isinstance(data, dict) else {}, datetime.fromtimestamp(state.stat().st_mtime, UTC))
                 )
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 read.append(({}, datetime.fromtimestamp(run.lstat().st_mtime, UTC)))
         if not read:
             read = [({}, datetime.fromtimestamp(run.lstat().st_mtime, UTC))]
@@ -257,7 +257,7 @@ def slurm_occupied(run: Callable[..., Any] = _door.run) -> set[str] | None:
     try:
         done = run(list(WORKDIRS_COMMAND), capture_output=True, text=True, encoding='utf-8', errors='replace',
                    check=False, timeout=60)  # fmt: skip
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return None
     return occupied_shas(parse_workdirs(done.stdout)) if done.returncode == 0 else None
 

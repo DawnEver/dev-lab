@@ -25,6 +25,8 @@ Gitea renders no promoter: the host's ``dev_lab.ops`` promote role owns it.
 
 THE BRANCHES ARE THE REPO'S DECLARATION: :data:`INTEGRATION_PLACEHOLDER` in any string renders as the repo's
 ``[tool.dev_lab.integrator] integration`` (user ruling 2026-11-12: a one-branch repo merges into ``main``).
+THE INTERPRETER IS THE FAMILY'S: :data:`PYTHON_PLACEHOLDER` renders as
+:data:`dev_lab.dev.pythontoolchain.SYNC_FLAGS` (user ruling 2026-11-27), so no workflow types a Python version.
 
 SHARED STEPS ARE DECLARED ONCE. The top-level ``_steps`` table (the base's, the repo's ``[tool.dev_lab.ci._steps]``
 merged over it) names step lists; a step ``{ use-steps = "<name>" }`` in any job is replaced by that list at render,
@@ -99,6 +101,7 @@ from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
 from dev_lab.dev.nightlycron import scheduled
+from dev_lab.dev.pythontoolchain import SYNC_FLAGS
 from dev_lab.dev.roles import HOST, REVIEW, ROLES_ENV, Roles, roles_at
 from dev_lab.dev.verifybox import wall_of
 
@@ -110,6 +113,7 @@ __all__ = [
     'LIGHT',
     'PART_MARGIN_MIN',
     'PART_TIMEOUT_PLACEHOLDER',
+    'PYTHON_PLACEHOLDER',
     'RENDERED_BY',
     'RENDER_COMMAND',
     'RETIRED_WORKFLOWS',
@@ -147,6 +151,8 @@ GATES: Final = 'gates.yml'
 INTEGRATION_PLACEHOLDER: Final = '@integration@'
 #: In any base or layer string, the repo's declared extras as ` --extra <name>` words (empty when none), at render.
 EXTRAS_PLACEHOLDER: Final = '@extras@'
+#: In any base or layer string, the family interpreter's sync flags (:data:`SYNC_FLAGS`), at render.
+PYTHON_PLACEHOLDER: Final = '@python@'
 #: A base value that IS this string renders as :func:`part_timeout_minutes` of the repo's selection wall (an int).
 PART_TIMEOUT_PLACEHOLDER: Final = '@part-timeout-minutes@'
 #: Minutes a part spends outside its selection wall: checkout, sync, posting and the log upload.
@@ -333,15 +339,17 @@ def part_timeout_minutes(wall_s: int) -> int:
 
 
 def _named(value: object, integration: str, timeout: int, extras_words: str = '') -> object:
-    """*value* with its placeholders rendered (integration branch, part timeout, declared extras). PURE.
+    """*value* with its placeholders rendered (integration branch, part timeout, declared extras, Python). PURE.
 
     :data:`INTEGRATION_PLACEHOLDER` in every string becomes *integration*, :data:`EXTRAS_PLACEHOLDER` the
-    *extras_words*; a string that IS :data:`PART_TIMEOUT_PLACEHOLDER` becomes the int *timeout*.
+    *extras_words*, :data:`PYTHON_PLACEHOLDER` the family :data:`SYNC_FLAGS`; a string that IS
+    :data:`PART_TIMEOUT_PLACEHOLDER` becomes the int *timeout*.
     """
     if value == PART_TIMEOUT_PLACEHOLDER:
         return timeout
     if isinstance(value, str):
-        return value.replace(INTEGRATION_PLACEHOLDER, integration).replace(EXTRAS_PLACEHOLDER, extras_words)
+        named = value.replace(INTEGRATION_PLACEHOLDER, integration).replace(EXTRAS_PLACEHOLDER, extras_words)
+        return named.replace(PYTHON_PLACEHOLDER, SYNC_FLAGS)
     if isinstance(value, dict):
         return {key: _named(item, integration, timeout, extras_words) for key, item in value.items()}
     if isinstance(value, list):

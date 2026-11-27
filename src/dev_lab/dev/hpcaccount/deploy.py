@@ -6,7 +6,8 @@ a tracked file, since the forge, its repos and the login host are private to the
     [deploy]
     host = "<login host>"          # serving: the ONE node whose cron serves it; research: any grant login host
     root = "<absolute root>"       # the cluster's declared root: <root>/repos/<name> (lab_commons.hpc.layout)
-    python = "3.13"                # a uv-managed CPython: manylinux wheels run on an old glibc
+    python = "<x.y>"               # a uv-managed CPython (manylinux wheels run on an old glibc); default and
+                                   # the only one a family repo installs on: the family Python (pythontoolchain)
     slurm_account = "<account>"    # only when sacctmgr names several
     partitions = ["<partition>", ...]
     role = "verification"          # or "research": only a verification account serves (user ruling 2026-11-06)

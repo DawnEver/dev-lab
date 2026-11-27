@@ -63,7 +63,7 @@ def checkout_lag(root: Path, *, integration: Callable[[Path], str | None] = decl
 
     try:
         return lag_of(git, 'HEAD', f'refs/remotes/origin/{branch}')
-    except (RuntimeError, OSError, ValueError):
+    except RuntimeError, OSError, ValueError:
         return None
 
 

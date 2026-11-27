@@ -340,7 +340,7 @@ def _importable(module: str, root: Path) -> bool:
     with import_root(root):
         try:
             return importlib.util.find_spec(module) is not None
-        except (ImportError, ValueError):
+        except ImportError, ValueError:
             return False
 
 

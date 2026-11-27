@@ -206,7 +206,7 @@ def _off_gate(root: Path, client: Client, sha: str, statuses: Sequence[CommitSta
         return frozenset()
     try:
         declared = hosted_parts(pyproject_at(root, sha))
-    except (ValueError, subprocess.SubprocessError):
+    except ValueError, subprocess.SubprocessError:
         declared = {}
     return off_gate(derived(statuses), declared)
 

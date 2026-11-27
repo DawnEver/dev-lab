@@ -244,7 +244,7 @@ def _read_journal(path: Path | None, digest: str) -> dict[str, list]:
         return {}
     try:
         data = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     return data.get('dirs', {}) if isinstance(data, dict) and data.get('digest') == digest else {}
 

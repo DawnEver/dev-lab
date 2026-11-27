@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from lab_commons.compute.probe import OS_NAMES
 from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 
@@ -26,6 +27,7 @@ from dev_lab.dev.familymanifest import manifest_text
 
 __all__ = [
     'FAMILY_INTEGRATION',
+    'FAMILY_MERGE_SYSTEMS',
     'UNDECLARED_INTEGRATION',
     'Derived',
     'IntegrationNotDeclared',
@@ -41,6 +43,11 @@ _TABLE: Final = 'integrator'
 #: The family's integration branch name: what a repo declaring no ``integration`` is told to declare, and the one
 #: PR base a checkout without the table is still judged against (:mod:`dev_lab.dev.forgemergeready`).
 FAMILY_INTEGRATION: Final = 'integrate/main'
+
+#: The hosted OSes whose parts gate a merge beside ``base`` (``tests/windows``, ``tests/base@windows``), when a repo
+#: declares no ``merge_systems`` (user ruling 2026-11-27, dev-lab #1045): Windows is a merge condition, macOS is
+#: tested later (:func:`dev_lab.dev.forgemergewaits.gates`).
+FAMILY_MERGE_SYSTEMS: Final[tuple[str, ...]] = ('windows',)
 
 #: The note a decision carries when it was judged against :data:`FAMILY_INTEGRATION` for want of a declaration.
 UNDECLARED_INTEGRATION: Final = f'no [tool.dev_lab.{_TABLE}]: judged into {FAMILY_INTEGRATION}'
@@ -93,6 +100,10 @@ class Policy:
     #: (:func:`dev_lab.dev.forgeprotect.required_contexts`). For a repo no serve host serves -- a config-only repo
     #: whose Actions workflow is its check (user ruling 2026-11-12). ``()``: the serve-posted statuses gate.
     merge_checks: tuple[str, ...] = ()
+    #: The hosted OSes whose parts gate a merge beside ``base``: each one's OS part (``tests/windows``) and base row
+    #: (``tests/base@windows``) must stand PASS as ``tests/base`` must; any other OS's are tested later, never waited
+    #: on. ``[]`` gates on ``base`` alone. Each is an OS name (``linux``, ``macos``, ``windows``).
+    merge_systems: tuple[str, ...] = FAMILY_MERGE_SYSTEMS
     #: A head committed more recently than this duration is not AUTO-SYNCED (:mod:`dev_lab.dev.forgeautosync`,
     #: on wherever ``pr_merges_since`` is declared): a live author is not raced.
     auto_sync_quiet: str = '10 min'
@@ -149,7 +160,15 @@ def policy_from(text: str, origin: str) -> Policy:
             f'in {origin} (docs-src/dev/onboarding.md)'
         )
         raise IntegrationNotDeclared(msg)
-    declared = declared | {key: tuple(declared[key]) for key in ('test_roots', 'merge_checks') if key in declared}
+    declared = declared | {
+        key: tuple(declared[key]) for key in ('test_roots', 'merge_checks', 'merge_systems') if key in declared
+    }
+    if unknown_os := sorted(set(declared.get('merge_systems', ())) - set(OS_NAMES.values())):
+        msg = (
+            f'[tool.dev_lab.{_TABLE}] merge_systems in {origin} names {unknown_os}, which no hosted runner is; '
+            f'the OS names are {sorted(OS_NAMES.values())}'
+        )
+        raise ValueError(msg)
     if 'derived' in declared:
         declared = declared | {'derived': _derived(declared['derived'], origin)}
     return Policy(**declared)

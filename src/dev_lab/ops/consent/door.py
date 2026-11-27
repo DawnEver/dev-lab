@@ -211,7 +211,7 @@ def installed_commit() -> str:
     try:
         text = importlib.metadata.distribution('dev-lab').read_text('direct_url.json')
         return str(json.loads(text or '{}').get('vcs_info', {}).get('commit_id', ''))
-    except (importlib.metadata.PackageNotFoundError, ValueError, AttributeError):
+    except importlib.metadata.PackageNotFoundError, ValueError, AttributeError:
         return ''
 
 
@@ -341,7 +341,7 @@ def preflighted_steps(plan: Plan, *, home: Path | None = None) -> Path | None:
     """The steps file *plan*'s last green preflight ran with; ``None`` when none is recorded or the file is gone."""
     try:
         named = json.loads(_stamp(plan.digest, home).read_text(encoding='utf-8')).get('steps')
-    except (OSError, ValueError, AttributeError):
+    except OSError, ValueError, AttributeError:
         return None
     return Path(named) if isinstance(named, str) and Path(named).is_file() else None
 
@@ -418,7 +418,7 @@ def record_receipt(request: Mapping[str, Any], *, home: Path | None = None, now:
 def _age(path: Path, clock: float) -> float | None:
     try:
         return clock - float(json.loads(path.read_text(encoding='utf-8'))['at'])
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         return None
 
 
@@ -452,7 +452,7 @@ def require_receipt(request: Mapping[str, Any], *, home: Path | None = None, now
 def _params(path: Path) -> object:
     try:
         return json.loads(path.read_text(encoding='utf-8')).get('params') or {}
-    except (OSError, ValueError, AttributeError):
+    except OSError, ValueError, AttributeError:
         return None
 
 

@@ -197,7 +197,7 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
     try:
         read = _live(None) if live is None else live
         lines = listing(read) + stale_origins(read)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     return '\n'.join(lines) or None
 

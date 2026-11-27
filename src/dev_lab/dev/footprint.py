@@ -186,7 +186,7 @@ def _parse(path: str, text: str, top: frozenset[str]) -> _Parsed:
     """The import candidates of module *path*, and whether it reaches the repo by path."""
     try:
         tree = ast.parse(text, filename=path)
-    except (SyntaxError, ValueError):
+    except SyntaxError, ValueError:
         return _Parsed(frozenset(), by_path=True)
     roots = ['src', *_ancestors(path)]
     found: set[str] = set()

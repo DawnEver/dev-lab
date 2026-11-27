@@ -66,7 +66,7 @@ def _off_default(text: str) -> set[str]:
     """A branchset value that DIFFERS from its built-in default; a line restating the default is no feature."""
     try:
         table = declared_table(tomllib.loads(text), 'branchset', {})
-    except (tomllib.TOMLDecodeError, ValueError):
+    except tomllib.TOMLDecodeError, ValueError:
         return set()
     ephemeral = table.get('ephemeral') if isinstance(table, dict) else None
     if ephemeral is None or sorted(ephemeral) == sorted(FAMILY_EPHEMERAL):

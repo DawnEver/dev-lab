@@ -25,7 +25,7 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
 <forge login> --host-config <the forge host's reviewed config file>` with the token on stdin), then paste:
 
 ```
-[ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/dev-lab; { [ -d $D/.git ] || git clone -q -b integrate/main $F/dev-lab.git $D; } && git -C $D pull -q --ff-only && cd $D && ~/.local/bin/uv run --python 3.13 python -m dev_lab.dev.hpcaccount deploy --host <login host> --repo dev-lab=$F/dev-lab.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ... --role <verification|research>
+[ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/dev-lab; { [ -d $D/.git ] || git clone -q -b integrate/main $F/dev-lab.git $D; } && git -C $D pull -q --ff-only && cd $D && ~/.local/bin/uv run --managed-python python -m dev_lab.dev.hpcaccount deploy --host <login host> --repo dev-lab=$F/dev-lab.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ... --role <verification|research>
 ```
 
 - **Every account declares its role** (user ruling 2026-11-06), once, as `[deploy] role` in its own machine
@@ -225,7 +225,7 @@ movable = "30 min"                   # rerun-safe AND this short = movable
 `forge serve` drives two short calls on the login node, one step per tick. They refuse (exit 2) on a box
 without `sbatch`.
 
-1. `python -m lab_commons.hpc run submit --sha <40-hex> --scope full|incremental --repo-url <https> [--only ids.txt] [--collect "<paths>"] [--select "<marker expr>"] [--part <need-set>] [--python 3.13]`
+1. `python -m lab_commons.hpc run submit --sha <40-hex> --scope full|incremental --repo-url <https> [--only ids.txt] [--collect "<paths>"] [--select "<marker expr>"] [--part <need-set>] [--python <x.y>]`
    checks the login node's prerequisites, fetches, builds, collects, plans and submits round 0, writes
    `<root>/runs/<sha>/<part>/state.json` and returns in minutes. `--part` (default `base`) is the need-set it runs; every
    other collected id is handed to its own part. `incremental` needs `--only`; `full` refuses it.

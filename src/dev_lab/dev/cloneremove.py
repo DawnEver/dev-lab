@@ -49,7 +49,7 @@ def consumers() -> dict[str, str]:
 def _inside(path: str, clone: Path) -> bool:
     try:
         Path(path).resolve().relative_to(clone.resolve())
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return False
     return True
 

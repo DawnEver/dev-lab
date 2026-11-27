@@ -108,7 +108,7 @@ def user_agent(forge: Forge) -> str:
     """
     try:
         login = getpass.getuser()
-    except (OSError, KeyError):
+    except OSError, KeyError:
         login = '?'
     machine = harness.context().machine or socket.gethostname().split('.')[0]
     return f'dev-lab ({login}@{machine}; {forge.owner}/{forge.repo})'
