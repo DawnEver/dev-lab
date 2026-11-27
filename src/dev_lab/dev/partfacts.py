@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, NOT_PARTS
-from dev_lab.dev.forgestatus import CARRIED_FROM, CITED_FROM, DOCS_ONLY, SAME_TREE, state_for
+from dev_lab.dev.forgestatus import CARRIED_FROM, CITED_FROM, DOCS_ONLY, SAME_TREE, incomplete, state_for
 from dev_lab.dev.partrows import is_row
 from dev_lab.dev.verdictenv import POLICY_CHARS
 
@@ -89,6 +89,8 @@ def parsed(status: CommitStatus) -> Part | None:
     if not status.context.startswith(CONTEXT_PREFIX) or status.context in NOT_PARTS:
         return None
     name = status.context.removeprefix(CONTEXT_PREFIX)
+    if incomplete(status.description):  # a cut description can still match, short of its policy: never a part
+        return None
     found = _DESCRIPTION.match(status.description)
     if status.state not in RESULT or found is None or not is_row(name):
         return None

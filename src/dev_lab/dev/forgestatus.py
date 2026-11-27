@@ -20,6 +20,14 @@ which also raises when an attempted post fails).
 
 PROVENANCE-FREE ON PURPOSE. CommitStatus descriptions are machine lines, length-limited by the forge, so no
 ``[machine · agent · branch]`` stamp is prepended; the forge records the token's login as ``creator``.
+
+A DESCRIPTION LONGER THAN ITS FORGE STORES CONTINUES, never cut (user defect 2026-11-27: GitHub cut a
+document-lab part's ``hands=`` list at 140 characters and every reader read the all-green part as undetermined).
+Each backend declares its limit (:attr:`~dev_lab.dev._forgebackends.Backend.description_limit`). Past it,
+:func:`status_post` posts the rest as continuation statuses ``<context>#1..k`` FIRST, then the head, which ends
+`` >>k:<digest8>`` (:func:`continued`); :func:`status_list` and :func:`status_history` join them back into one
+:class:`CommitStatus`, so no reader sees a continuation. A head whose continuations are missing or do not match
+its digest is left as posted, and :func:`incomplete` names why -- as it names a description a forge cut.
 """
 
 from __future__ import annotations
@@ -27,6 +35,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import gzip
+import hashlib
 import json
 import re
 import sys
@@ -44,6 +53,7 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion, Status
 
 from dev_lab.dev._forge_journal import Durable, Probe
+from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.failprint import Fingerprints, subjects_of
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
@@ -58,8 +68,10 @@ __all__ = [
     'SAME_TREE',
     'STATES',
     'CommitStatus',
+    'continued',
     'fingerprints_at',
     'head_sha',
+    'incomplete',
     'known_fingerprints',
     'known_reds',
     'main',
@@ -84,8 +96,14 @@ DOCS_ONLY: Final = 'docs-only'
 CITED_FROM: Final = 'cited from'
 SAME_TREE: Final = 'same tree'
 
-#: GitHub's description limit, the tighter of the two forges; a longer one is cut, never sent.
-DESCRIPTION_LIMIT: Final = 140
+#: The tightest description limit a backend declares (GitHub's): the longest text every forge stores in ONE status.
+DESCRIPTION_LIMIT: Final = min(limit for limit in (GITEA.description_limit, GITHUB.description_limit) if limit)
+
+#: A continuation status's context is its head's ``<context>#<n>``, n from 1.
+CONTINUATION: Final = '#'
+
+#: The head of a continued description ends `` >>k:<digest8>``: k continuations, the whole text's sha256 prefix.
+_CONTINUED: Final = re.compile(r' >>(?P<count>[1-9]\d*):(?P<digest>[0-9a-f]{8})$')
 
 #: A commit named in full, used as given; anything else is resolved through git.
 _FULL_SHA: Final = re.compile(r'[0-9a-f]{40}')
@@ -157,12 +175,101 @@ def _commit(sha: str) -> None:
 def status_post(
     client: Client, sha: str, *, context: str, state: str, description: str, target_url: str = ''
 ) -> CommitStatus:
-    """Post one status on *sha*. The description is cut to :data:`DESCRIPTION_LIMIT`, never sent long."""
+    """Post one status on *sha*; a description past the backend's limit continues (module docstring), never cut."""
     _commit(sha)
     if state not in STATES:
         msg = f'a status state is one of {STATES}, not {state!r}'
         raise ValueError(msg)
-    body = {'state': state, 'context': context, 'description': description[:DESCRIPTION_LIMIT]}
+    head, rest = continued(description, client.backend.description_limit)
+    for number, chunk in enumerate(rest, start=1):  # continuations first: a head is never read before its rest
+        _post_one(client, sha, context=f'{context}{CONTINUATION}{number}', state=state, description=chunk)
+    posted = _post_one(client, sha, context=context, state=state, description=head, target_url=target_url)
+    return dataclasses.replace(posted, description=description) if rest and posted.description == head else posted
+
+
+def continued(description: str, limit: int | None) -> tuple[str, tuple[str, ...]]:
+    """``(head, continuations)`` *description* posts as under *limit*, every piece at most *limit* long.
+
+    Shorter than the limit (or with none) it is its own head -- but never EXACTLY :data:`DESCRIPTION_LIMIT` long,
+    on any backend: that length is what a forge's cut leaves, so :func:`incomplete` refuses it, and a whole text
+    of it continues under that limit instead. Past it the head is its first characters and the
+    :data:`_CONTINUED` marker, and the rest is cut into continuations of *limit* characters each.
+    """
+    if len(description) == DESCRIPTION_LIMIT:
+        limit = DESCRIPTION_LIMIT - 1 if limit is None else min(limit, DESCRIPTION_LIMIT) - 1
+    if limit is None or len(description) <= limit:
+        return description, ()
+    digest = _digest(description)
+    count = 1
+    while True:  # the marker's width depends on the count it states
+        marker = f' >>{count}:{digest}'
+        kept = limit - len(marker)
+        rest = description[kept:]
+        chunks = tuple(rest[start : start + limit] for start in range(0, len(rest), limit))
+        if len(chunks) == count:
+            return description[:kept] + marker, chunks
+        count = len(chunks)
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()[:8]
+
+
+def _joined(items: Sequence[CommitStatus]) -> list[CommitStatus]:
+    """Every head of *items* (oldest first) with its continuations joined back; continuations themselves dropped.
+
+    A head takes, per continuation number, the latest one posted no later than itself; one missing or not
+    matching the head's digest leaves the head as posted (:func:`incomplete` names it).
+    """
+    rest: dict[tuple[str, int], list[CommitStatus]] = {}
+    heads: list[CommitStatus] = []
+    for status in items:
+        base, mark, number = status.context.rpartition(CONTINUATION)
+        if mark and number.isdigit():
+            rest.setdefault((base, int(number)), []).append(status)
+        else:
+            heads.append(status)
+    return [_whole(head, rest) for head in heads]
+
+
+def _whole(head: CommitStatus, rest: Mapping[tuple[str, int], Sequence[CommitStatus]]) -> CommitStatus:
+    found = _CONTINUED.search(head.description)
+    if found is None:
+        return head
+    pieces = [head.description[: found.start()]]
+    for number in range(1, int(found['count']) + 1):
+        before = [one for one in rest.get((head.context, number), ()) if one.id <= head.id]
+        if not before:
+            return head
+        pieces.append(before[-1].description)
+    whole = ''.join(pieces)
+    return dataclasses.replace(head, description=whole) if _digest(whole) == found['digest'] else head
+
+
+def incomplete(description: str) -> str:
+    """Why *description* is not the whole text its poster wrote, ``''`` when nothing says it is not.
+
+    A continued head left unjoined names its missing or mismatched continuations; a description exactly
+    :data:`DESCRIPTION_LIMIT` long is what a forge's cut leaves (a poster's whole text past it continues).
+    """
+    if (found := _CONTINUED.search(description)) is not None:
+        return (
+            f'its {found["count"]} continuation status(es) {CONTINUATION}1.. are missing or do not match '
+            f'digest {found["digest"]}'
+        )
+    if len(description) == DESCRIPTION_LIMIT:
+        return f"cut at {DESCRIPTION_LIMIT} characters, the forge's description limit"
+    return ''
+
+
+def _post_one(
+    client: Client, sha: str, *, context: str, state: str, description: str, target_url: str = ''
+) -> CommitStatus:
+    limit = client.backend.description_limit
+    if limit is not None and len(description) > limit:  # continued() never builds one: a defect, refused by name
+        msg = f"a {len(description)}-character status description exceeds {client.backend.name}'s limit of {limit}"
+        raise ValueError(msg)
+    body = {'state': state, 'context': context, 'description': description}
     if target_url:
         body['target_url'] = target_url
     listed = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
@@ -182,18 +289,16 @@ def status_list(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """
     _commit(sha)
     path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
-    newest: dict[str, Mapping[str, Any]] = {}
-    for item in sorted(client.call('GET', path), key=lambda item: item.get('id') or 0):
-        newest[item.get('context') or ''] = item
-    raw = list(newest.values())
-    return tuple(sorted((_status(item) for item in raw), key=lambda status: status.context))
+    ordered = sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id)
+    newest = {status.context: status for status in _joined(ordered)}
+    return tuple(sorted(newest.values(), key=lambda status: status.context))
 
 
 def status_history(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """EVERY status posted on *sha*, oldest first -- what a claim race is decided on (``id`` order)."""
     _commit(sha)
     path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
-    return tuple(sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id))
+    return tuple(_joined(sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id)))
 
 
 def _git(root: Path, *args: str) -> str | None:

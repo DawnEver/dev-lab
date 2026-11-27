@@ -93,6 +93,9 @@ class Backend:
     #: every producer; GitHub, whose repos are the toolchain, wires its Actions and the advisory judge host -- no forge
     #: serve host, cluster or workstation (user ruling 2026-11-11).
     producers: frozenset[str] = frozenset({ACTIONS, FORGE_SERVE, JUDGE_HOST})
+    #: The longest commit-status ``description`` the forge stores whole, ``None`` when it stores any length.
+    #: Gitea keeps it as ``TEXT`` (models/git/commit_status.go); GitHub cuts it at 140 characters, silently.
+    description_limit: int | None = None
 
     def host(self, forge: Forge) -> str:
         """The API host: GitHub's is fixed, a Gitea forge serves its API on its own host."""
@@ -132,6 +135,7 @@ GITHUB: Final = Backend(
     vets_authors=True,
     issues_only=(),
     producers=frozenset({ACTIONS, JUDGE_HOST}),
+    description_limit=140,
     diff_at=('', 'application/vnd.github.diff'),
     headers=(
         ('Accept', 'application/vnd.github+json'),

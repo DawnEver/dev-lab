@@ -65,14 +65,18 @@ def test_pass_is_success_fail_is_failure_and_inconclusive_is_error() -> None:
 
 
 @pytest.mark.parametrize(('forge', 'root'), CASES)
-def test_status_post_sends_state_context_and_a_truncated_description(server, forge, root) -> None:
+def test_status_post_sends_state_context_and_a_description_that_fits(server, forge, root) -> None:
     answer('POST', f'{root}/statuses/{_SHA}', (201, {'context': 'tests/linux', 'state': 'success', 'description': 'd'}))
     posted = status_post(
-        client(forge, Loopback(server)), _SHA, context='tests/linux', state='success', description='x' * 500
+        client(forge, Loopback(server)),
+        _SHA,
+        context='tests/linux',
+        state='success',
+        description='x' * (DESCRIPTION_LIMIT - 1),
     )
     sent = Recorder.received[-1]
     assert (sent['method'], sent['path']) == ('POST', f'{root}/statuses/{_SHA}')
-    assert sent['body'] == {'state': 'success', 'context': 'tests/linux', 'description': 'x' * DESCRIPTION_LIMIT}
+    assert sent['body'] == {'state': 'success', 'context': 'tests/linux', 'description': 'x' * (DESCRIPTION_LIMIT - 1)}
     assert posted == CommitStatus('tests/linux', 'success', 'd', '')
 
 
