@@ -88,4 +88,5 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'archivestream',
     'femm',  # ORIGINAL: 2026-11-25, the account deploy builds and installs the pinned FEMM 5
     'salvageread',  # ORIGINAL: 2026-11-25, salvage's read of an account's unpushed git work
+    'planrunsources',  # the preflight's forge reads, split from planrunpreflight by concept (2026-11-27)
 )
