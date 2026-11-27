@@ -137,3 +137,35 @@ def test_dev_lab_binds_nothing_so_its_venv_cannot_block_a_prompt() -> None:
     assert 'task_of' in names, 'planted control: the reader the module keeps is found'
     assert not {'bind', 'main', 'binding', 'binding_path'} & names
     assert 'pr/<slug>/<feature>' in taskledger.DOOR
+
+
+def _store(checkout: Path) -> Path:
+    store = checkout.joinpath(*taskledger.RETIRED_STORE, 'old')
+    store.mkdir(parents=True)
+    (store / 'TASK.md').write_text('# old\n', encoding='utf-8')
+    return store
+
+
+def _worktree(tmp_path: Path) -> tuple[Path, Path]:
+    main, tree = tmp_path / 'main', tmp_path / 'tree'
+    subprocess.run([_GIT, 'init', '-q', str(main)], check=True)
+    subprocess.run([_GIT, '-C', str(main), 'commit', '-q', '--allow-empty', '-m', 'root'], check=True)
+    subprocess.run([_GIT, '-C', str(main), 'worktree', 'add', '-q', str(tree)], check=True)
+    return main, tree
+
+
+def test_a_worktree_is_judged_by_its_own_store_never_the_main_checkouts(tmp_path: Path) -> None:
+    """#1051: a worktree whose store is gone commits while MAIN still holds one -- main is another session's state."""
+    main, tree = _worktree(tmp_path)
+    _store(main)
+    assert taskledger.retired_stores(tree) == []
+    taskledger.refuse_retired_store(tree)
+
+
+def test_a_worktree_holding_its_own_retired_store_is_still_refused(tmp_path: Path) -> None:
+    """The planted control: the same worktree with its OWN store left is refused, naming that store."""
+    _, tree = _worktree(tmp_path)
+    _store(tree)
+    with pytest.raises(taskledger.LedgerUnresolvedError) as refused:
+        taskledger.refuse_retired_store(tree)
+    assert tree.resolve().joinpath(*taskledger.RETIRED_STORE).as_posix() in str(refused.value)

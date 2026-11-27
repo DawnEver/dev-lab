@@ -113,7 +113,9 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: floor 650 (was 631; 675 - 631 = 44 outgrew the 40 margin).
 #: RE-TAKEN 2026-11-25 AT 726 (the 1124 wave: irschema, layout, writeroots, strayleaks, docrows, nativefirst):
 #: floor 701 (726 - 650 = 76 outgrew the 40 margin).
-FILE_FLOOR = 701
+#: RE-TAKEN 2026-11-27 AT 826 (CI's walk on 039122c read 825, plus hpcaccount.salvagerepo): floor 801
+#: (826 - 701 = 125 outgrew the 40 margin).
+FILE_FLOOR = 801
 
 
 def _tree() -> dict[str, str]:

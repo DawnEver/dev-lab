@@ -73,7 +73,7 @@ SCAN_FLOOR: Final = 80
 #: RE-MEASURED 2026-10-15 at **162** after box P3 deleted the lease/seat prose.
 #: RE-MEASURED 2026-10-22 at **141** over src/dev_lab after the split (the scan root moved off src/lab_commons).
 #: RE-MEASURED 2026-11-25 at **134** on the 1124 wave (its prose rewrites dropped seven sibling mentions).
-#: RE-MEASURED 2026-11-27 at **133**: one sibling mention left the prose since the 1124 wave.
+#: RE-MEASURED 2026-11-27 at **133** on integrate/main 039122c (one more sibling mention gone).
 PROSE_CEILING: Final = 133
 
 #: ``'<repo-relative module>::<kind>' -> why the deletion is not in this pass``. One handle per

@@ -104,7 +104,7 @@ def _capabilities(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rows: str) ->
     monkeypatch.setenv(CONFIG_ENV, str(config))
 
 
-def test_an_accounts_seat_supply_withholds_an_undeclared_vendor_and_keeps_the_declared_one(
+def test_an_accounts_seats_withhold_an_undeclared_vendor_and_keep_the_declared_one(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The cluster standing's seat provider read ``[capabilities]`` itself and raised UndeclaredSeat out of the tick."""

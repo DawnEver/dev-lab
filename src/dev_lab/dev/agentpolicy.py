@@ -202,6 +202,13 @@ POLICY: Final[tuple[Door, ...]] = (
         _FORGE_WRITE,
     ),
     Door(
+        _forge('pr', 'retarget'),
+        MAIN,
+        'Moving a pull request onto the integration branch or a declared branch, its reason commented first '
+        '(PRS-TARGET-INTEGRATION).',
+        _FORGE_WRITE,
+    ),
+    Door(
         _forge('review', 'carry'),
         MAIN,
         'Recording the disposition of a finding a continuation pull request carries: resolved, or deferred with '

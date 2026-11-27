@@ -10,9 +10,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'AGENT-GUARD',
         (
-            'A hand-written test invocation and a stash are refused and a bare network verb hinted to the retry '
-            "door (a repo's adoption severities raise it to a refusal), by the shared deny machinery rather than "
-            'prose.'
+            'The shared deny machinery, not prose, refuses a hand-written test invocation and a stash; a bare '
+            'network verb is hinted to the retry door (adoption severities raise it), alike in every adopting repo.'
         ),
         (
             '.claude/hooks/deny-commands.js',

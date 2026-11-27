@@ -886,12 +886,10 @@ def test_the_steps_claim_names_the_serve_host_not_the_box(tmp_path: Path) -> Non
 
 def test_a_runtime_still_spelled_as_a_capability_names_the_deploy_remedy() -> None:
     """The forge host's serve tick said only "declares no [runtimes.ai_lab]"; the retired spelling names its remedy."""
-    command = ('{runtimes.ai_lab.python}', RANGE_FIELD)
-    why = retired_table(command, {}, {'ai_lab': {'python': 'x'}, 'jmag': {}})
-    assert why == (
-        'the machine file still spells [capabilities.ai_lab]; run workstation deploy to move it to [runtimes]'
-    )
-    assert retired_table(command, {'ai_lab': {'python': 'x'}}, {'ai_lab': {}}) is None, 'PLANTED: a declared runtime'
+    command = ('{runtimes.olden.python}', RANGE_FIELD)
+    why = retired_table(command, {}, {'olden': {'python': 'x'}, 'jmag': {}})
+    assert why == 'the machine file still spells [capabilities.olden]; run workstation deploy to move it to [runtimes]'
+    assert retired_table(command, {'olden': {'python': 'x'}}, {'olden': {}}) is None, 'PLANTED: a declared runtime'
     assert retired_table(command, {}, {'jmag': {}}) is None
 
 

@@ -333,6 +333,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'ciworkflowshape',  # a rendered workflow's pure transforms, split from ciworkflows (2026-11-20)
     'backedup',  # a file replaced whole, its previous content kept: the machine-file doors' one write (2026-11-20)
     'nightlycron',  # ORIGINAL: split from ciworkflows: a workflow's nightly declaration as a cron (D63, 2026-11-19)
+    'nativewheels',  # ORIGINAL: no consumer built a wheel per OS before this opt-in (#981, 2026-11-27)
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
