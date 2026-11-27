@@ -22,11 +22,11 @@ from dev_lab.dev.hpcaccount import selfclean
 from dev_lab.dev.hpcaccount.checkout import clone, converge
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
 from dev_lab.dev.hpcaccount.spec import (
-    MARK,
     Deployment,
     Repo,
     checkout_of,
     crontab_refusal,
+    deployed,
     merge_crontab,
     uv_cache,
 )
@@ -257,7 +257,7 @@ def crontab(step: Step, lines: Sequence[str]) -> int:
         emit(f'  crontab: the {len(lines)} marked line(s) are already in place')
         return 0
     for line in current.splitlines():
-        if MARK in line and line not in lines:
+        if deployed(line) and line not in lines:
             emit(f'  crontab: remove {line}')
     return step.change(
         f'crontab: write {len(lines)} marked line(s), every other line kept', [*step.tools.crontab, '-'], stdin=wanted
