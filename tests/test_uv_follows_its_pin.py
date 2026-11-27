@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _venv_fake import uv_child
 
 from dev_lab.dev import _dep_project, dep, toolrelease, uvfollow
 from dev_lab.dev.lockcheck import uv_version
@@ -125,9 +126,9 @@ def test_the_dependency_door_writes_with_the_pinned_uv_beside_a_stale_one(
     monkeypatch.setattr(toolrelease, 'tool_dir', lambda **_kw: tmp_path / 'tools')
     calls: list[tuple[str, ...]] = []
 
-    def run(argv: Sequence[str], **_kwargs: object) -> SimpleNamespace:
+    def run(argv: Sequence[str], **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return uv_child(argv, kwargs)
 
     assert dep.main(['--lock-upgrade'], cwd=tmp_path, run=run) == 0
     assert host.ran == []  # the PATH uv is never moved
