@@ -107,11 +107,15 @@ def test_a_host_derived_subject_on_an_unreached_host_goes_green_without_any_code
 
 
 def test_a_read_subject_the_host_derives_differently_still_blocks(issuer: Issuer) -> None:
+    """PLANTED: the fake issuer derives another subject; the step blocks naming both, whole (issue #1074)."""
+    other = 'e' * 40
+    wire = Wire(issuer, other)
     green, lines = planrunpreflight.preflight(
-        _plan(), planrunsteps.Steps((UPGRADE,)), lambda _d: Unreached(), readers=_readers(Wire(issuer, 'e' * 40))
+        _plan(), planrunsteps.Steps((UPGRADE,)), lambda _d: Unreached(), readers=_readers(wire)
     )
     assert not green
-    assert any('derives subject eeeeeeeeeeee, the plan grants cccccccccccc (read)' in line for line in lines), lines
+    assert any(f'derives subject {other}, the plan grants {TIP} (read)' in line for line in lines), lines
+    assert [request['verb'] for request in wire.sent] == ['subject']  # read through the fake issuer only
 
 
 def test_the_issuer_reads_only_its_own_hosts_subject(issuer: Issuer) -> None:
