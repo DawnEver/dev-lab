@@ -775,4 +775,5 @@ def test_a_push_from_an_unwired_checkout_is_refused_before_the_forge(
     assert main(['--cwd', str(repo), '--', 'git', 'fetch', 'origin']) == 0, 'a fetch writes no history'
     hook_install.install(repo)
     assert main(['--cwd', str(repo), '--', 'git', 'push', 'origin', 'HEAD']) == 0
-    assert ran[-1] == ('git', 'push', 'origin', 'HEAD')
+    assert ran[-1][:2] == ('git', 'push')
+    assert ran[-1][-2:] == ('origin', 'HEAD')

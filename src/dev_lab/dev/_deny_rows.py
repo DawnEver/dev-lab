@@ -128,7 +128,6 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     USER_FROZEN_FILES,
     MACHINE_FILE_IS_RENDERED,
     COMMIT_HOOKS_RUN,
-    HOOKS_ARE_WIRED,
     {
         'id': 'BARE-TEST-INVOCATION',
         # `uv\s+run\s+pytest` used to stand here as a third alternative. It is GONE because the
@@ -396,4 +395,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     CI_CRON_NEEDS_CONSENT,
     HPC_THROUGH_THE_DOOR,
     REMOTE_WRITE,
+    # LAST: it prefilters every history-writing git verb, so a row naming the specific harm (a force, an amend)
+    # refuses first, by its own name; this one is asked only of a line no other row refused.
+    HOOKS_ARE_WIRED,
 )
