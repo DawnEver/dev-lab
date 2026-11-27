@@ -17,6 +17,7 @@ from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN
+from dev_lab.dev.lanepolicy import FAMILY_MERGE_SYSTEMS
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.producer import OUTCOME_VAR, Owner, full_suite_refusal, owner_of, unreachable
 
@@ -58,7 +59,9 @@ def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path
     """cc-market #29: the matrix came out empty, no part job ran, and merge-ready waited on tests/base forever."""
     (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
     forge = StateForge()
-    assert 'not yet posted' in forgemergewaits.actions_wait(SHA, status_list(forge, SHA), hosted=()), 'PLANTED CONTROL'
+    assert 'not yet posted' in forgemergewaits.actions_wait(
+        SHA, status_list(forge, SHA), systems=FAMILY_MERGE_SYSTEMS, hosted=()
+    ), 'PLANTED CONTROL'
 
     def broken(_expression: str) -> list[str]:
         msg = 'pytest collection failed with exit 2'
@@ -68,7 +71,7 @@ def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path
     monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
     monkeypatch.setattr(jobparts, 'head_sha', lambda _root: SHA)
     assert jobparts.main(['matrix', '--root', str(tmp_path), '--event', 'pull_request']) == 1
-    waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA), hosted=())
+    waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA), systems=FAMILY_MERGE_SYSTEMS, hosted=())
     assert waited is not None
     assert 'not yet posted' not in waited
     assert jobparts.NO_MATRIX in waited
@@ -512,9 +515,11 @@ def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part() -> None:
     PLANTED CONTROL: the same head with ``tests/base`` red still waits.
     """
     handed = [CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemergewaits.parts_wait('hosted', handed, hosted=()) is None
+    assert forgemergewaits.parts_wait('hosted', handed, systems=FAMILY_MERGE_SYSTEMS, hosted=()) is None
     red = [CommitStatus('tests/base', 'failure', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemergewaits.parts_wait('hosted', red, hosted=()) is not None, 'PLANTED CONTROL'
+    assert forgemergewaits.parts_wait('hosted', red, systems=FAMILY_MERGE_SYSTEMS, hosted=()) is not None, (
+        'PLANTED CONTROL'
+    )
 
 
 def test_merge_ready_requires_a_hosted_part_another_part_hands_to() -> None:
@@ -528,15 +533,21 @@ def test_merge_ready_requires_a_hosted_part_another_part_hands_to() -> None:
         CommitStatus('tests/base', 'success', hosting, ''),
         CommitStatus('tests/corpus', 'failure', 'scope=full ran=140 hands=-', ''),
     ]
-    held = forgemergewaits.parts_wait('h', statuses, hosted={'corpus'})
+    held = forgemergewaits.parts_wait('h', statuses, systems=FAMILY_MERGE_SYSTEMS, hosted={'corpus'})
     assert held is not None
     assert 'FAIL' in held, held
-    assert 'corpus' not in forgemergewaits.hand_parts(statuses, hosted={'corpus'})
-    assert forgemergewaits.off_record(statuses, '', hosted={'corpus'}), 'its red asks for Red-On-Record'
+    assert 'corpus' not in forgemergewaits.hand_parts(statuses, systems=FAMILY_MERGE_SYSTEMS, hosted={'corpus'})
+    assert forgemergewaits.off_record(statuses, '', systems=FAMILY_MERGE_SYSTEMS, hosted={'corpus'}), (
+        'its red asks for Red-On-Record'
+    )
     record = 'Red-On-Record: tests/corpus -- t::x\n'
-    recorded = forgemergewaits.recorded_as_ran(statuses, record, hosted={'corpus'})
-    assert forgemergewaits.parts_wait('h', recorded, hosted={'corpus'}) is None, 'on record, it is no wait'
-    assert forgemergewaits.parts_wait('h', statuses, hosted=()) is None, 'PLANTED CONTROL: unproduced is waived'
+    recorded = forgemergewaits.recorded_as_ran(statuses, record, systems=FAMILY_MERGE_SYSTEMS, hosted={'corpus'})
+    assert forgemergewaits.parts_wait('h', recorded, systems=FAMILY_MERGE_SYSTEMS, hosted={'corpus'}) is None, (
+        'on record, it is no wait'
+    )
+    assert forgemergewaits.parts_wait('h', statuses, systems=FAMILY_MERGE_SYSTEMS, hosted=()) is None, (
+        'PLANTED CONTROL: unproduced is waived'
+    )
 
 
 def test_a_pull_request_produces_a_hosted_part_with_no_secret_and_not_manual() -> None:
@@ -787,4 +798,4 @@ def test_the_cargo_part_is_a_merge_condition_never_a_hand_part() -> None:
     """dev-lab#1033: a hosted job produces tests/cargo, so merge-ready waits on it as on tests/base."""
     hands = 'scope=full ran=3 hands=cargo:3,windows:2'
     statuses = [CommitStatus(context='tests/base', state='success', description=hands, url='')]
-    assert forgemergewaits.hand_parts(statuses, hosted=()) == {'windows'}
+    assert forgemergewaits.hand_parts(statuses, systems=(), hosted=()) == {'windows'}, 'windows outside merge_systems'

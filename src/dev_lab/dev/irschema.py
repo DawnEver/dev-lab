@@ -88,7 +88,7 @@ def consumers(root: Path, ir: IR, records: frozenset[str]) -> tuple[str, ...]:
     for relative in _tracked_python(root):
         try:
             tree = ast.parse((root / relative).read_text(encoding='utf-8'))
-        except (OSError, SyntaxError, UnicodeDecodeError):
+        except OSError, SyntaxError, UnicodeDecodeError:
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module in wanted:

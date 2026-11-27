@@ -118,7 +118,7 @@ def _read(path: Path) -> dict[str, Any] | None:
     """
     try:
         parsed = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     return parsed if isinstance(parsed, dict) else None
 

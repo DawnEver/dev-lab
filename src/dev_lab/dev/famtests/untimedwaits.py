@@ -148,7 +148,7 @@ def untimed_waits(root: Path, *, roots: Collection[tuple[str, str]], exempt: Col
                 continue
             try:
                 tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
-            except (OSError, SyntaxError):
+            except OSError, SyntaxError:
                 continue
             files += 1
             hits.extend(f'{rel}:{node.lineno}: {name}() waits with no timeout=' for node, name in _bare_waits(tree))

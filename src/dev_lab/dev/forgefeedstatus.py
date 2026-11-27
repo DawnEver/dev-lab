@@ -73,7 +73,7 @@ def alive(held_by: Mapping[str, object]) -> bool:
     """Whether the process *held_by* names (pid and creation stamp) still runs; a recycled pid is gone."""
     try:
         return bool(still_the_same_process(int(str(held_by['pid'])), held_by.get('created')))
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         return False
 
 

@@ -55,7 +55,7 @@ def _issuer_file(clone: Path) -> Path:
         try:
             if tomllib.loads(path.read_text(encoding='utf-8')).get('ops', {}).get('consent'):
                 found.append(path)
-        except (OSError, tomllib.TOMLDecodeError):
+        except OSError, tomllib.TOMLDecodeError:
             continue
     if len(found) != 1:
         msg = f'{len(found)} host files under {clone / "hosts"} declare [ops.consent]; the issuer host must be one'

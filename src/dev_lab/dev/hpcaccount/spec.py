@@ -29,6 +29,7 @@ from lab_commons.quantity import Renamed, refuse_renamed
 
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
 from dev_lab.dev.hpcaccount.grantslice import granted_root, machine_table
+from dev_lab.dev.pythontoolchain import VERSION
 from dev_lab.dev.roles import HPC, ROLES, Roles, Unbound, roles_at, roles_of_url
 from dev_lab.dev.venvpointer import shell_interpreter
 
@@ -67,7 +68,9 @@ __all__ = [
 #: Every crontab line this tool owns ends with this comment plus the repo's name.
 MARK: Final = '# lab-commons-deploy:'
 
-DEFAULT_PYTHON: Final = '3.13'
+#: ``[deploy] python`` when undeclared: the family Python (user ruling 2026-11-27), whose ``requires-python`` every
+#: served repo declares -- a cluster venv on any other minor would not install them.
+DEFAULT_PYTHON: Final = VERSION
 
 #: ``[schedule] tick`` when undeclared, in seconds -- the same default the host card is judged stale against.
 DEFAULT_TICK: Final = 5 * 60

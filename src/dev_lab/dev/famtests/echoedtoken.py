@@ -232,7 +232,7 @@ def echoed_tokens(root: Path, *, roots: Collection[tuple[str, str]], exempt: Col
                 continue
             try:
                 tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
-            except (OSError, SyntaxError):
+            except OSError, SyntaxError:
                 continue
             for fn in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)):
                 read += 1

@@ -141,7 +141,7 @@ def _cached_issues(client: Client, home: Path) -> dict[int, Mapping[str, Any]]:
     try:
         saved = json.loads(path.read_text(encoding='utf-8'))
         cursor, held = str(saved['cursor']), {int(key): raw for key, raw in saved['issues'].items()}
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+    except OSError, ValueError, KeyError, TypeError, AttributeError:
         cursor, held = '', {}
     query = {'state': 'all', **dict(client.backend.issues_only)} | ({'since': cursor} if cursor else {})
     listed = pages(client, f'{client.repo}/issues', query)
@@ -182,7 +182,7 @@ def forget_issue(client: Client, number: int) -> None:
     path = _cache_file(client, client.cache_dir)
     try:
         saved = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return
     saved['issues'].pop(str(number), None)
     _save(path, saved)

@@ -59,7 +59,7 @@ def _git(cwd: Path, *args: str, index: Path | None = None, stdin: str | None = N
             check=False,
             timeout=_TIMEOUT_S,
         )
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     return done.stdout if done.returncode == 0 else None
 

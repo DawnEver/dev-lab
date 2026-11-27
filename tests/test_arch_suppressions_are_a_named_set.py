@@ -529,13 +529,13 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/branchnotices.py',
         'BLE001',
-        'except (Exception, SystemExit):',
+        'except Exception, SystemExit:',
     ): 'the hook entry point: whatever the report raises, including argparse SystemExit on a bad flag, the '
     'hook exits 0, because a notice must never fail a git verb (test_main_exits_zero_whatever_happens)',
     (
         'src/dev_lab/dev/branchnotices.py',
         'S110',
-        'except (Exception, SystemExit):',
+        'except Exception, SystemExit:',
     ): 'the same entry point: nothing is printed on failure because the hook line is informational only',
     (
         'src/dev_lab/dev/forgenotice.py',

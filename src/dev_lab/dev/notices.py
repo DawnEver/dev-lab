@@ -245,7 +245,7 @@ def git_sources(declared: Sequence[str]) -> dict[str, str]:
         try:
             raw = dist.read_text('direct_url.json')
             direct = json.loads(raw) if raw else {}
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
         name = dist.metadata['Name']
         if (direct.get('vcs_info') or {}).get('vcs') == 'git' and name:

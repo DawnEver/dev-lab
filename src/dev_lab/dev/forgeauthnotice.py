@@ -53,7 +53,7 @@ def declared_forges(root: Path) -> tuple[Forge, ...]:
     for name in (git_out(root, 'remote') or '').split():
         try:
             forge = forge_from_remote(root, remote=name)
-        except (UnreadableRemote, ValueError):
+        except UnreadableRemote, ValueError:
             continue
         found.setdefault(forge.host, forge)
     return tuple(found.values())

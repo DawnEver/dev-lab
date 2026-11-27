@@ -185,7 +185,7 @@ def facts(root: Path, rels: Iterable[str]) -> dict[str, Facts]:
     journal = None if own is None else own.joinpath(*_JOURNAL)
     try:
         data = json.loads(journal.read_text(encoding='utf-8')) if journal is not None else {}
-    except (OSError, ValueError):
+    except OSError, ValueError:
         data = {}
     before = data.get('files', {}) if isinstance(data, dict) and data.get('version') == VERSION else {}
     out: dict[str, Facts] = {}

@@ -175,6 +175,9 @@ class _Forge:
 
 def _carry(clone: Path, forge: _Forge, *, now: float = 0.0, **seams: object) -> str:
     seams.setdefault('upgrade', _Door())
+    # Every world's pyproject.toml makes the pythontoolchain renderer due (rust-toolchain.toml adds lockcheck's);
+    # the fake door syncs no .venv, so the render is a seam unless a test passes its own.
+    seams.setdefault('rerender', lambda _tree: ())
     return carry(
         clone, _DECLARED, pulls=forge.pulls, create=forge.create, edit=forge.edit, close=forge.close, now=now,
         **cast('dict[str, Any]', seams),
@@ -396,7 +399,7 @@ def test_a_declared_cadence_is_read_at_the_tip(world: tuple[Path, Path, str]) ->
     at = _relocked_fully(world)
     manifest = '[project]\nname = "x"\nversion = "0"\n[tool.dev_lab.relock]\nthird_party_every = "1 h"\n'
     _commit(world, 'build: hourly third-party relock', {'pyproject.toml': manifest})
-    assert '(full, 1 move(s))' in _carry(world[0], _Forge(), now=at + 3600, resolve=_stale, rerender=lambda _tree: ())
+    assert '(full, 1 move(s))' in _carry(world[0], _Forge(), now=at + 3600, resolve=_stale)
 
 
 # --- refusals and seams kept from the single-shot relock -----------------------------------------------------
@@ -475,8 +478,7 @@ def test_a_toolchain_behind_the_newest_stable_is_carried_like_a_stale_lock(world
         (tree / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.99.1"\n', encoding='utf-8')
         return 0
 
-    # rust-toolchain.toml makes the lockcheck renderer due; the fake door syncs no .venv, so the render is a seam.
-    said = _carry(clone, _Forge(), resolve=_fresh, stable=lambda: '1.99.1', upgrade=bumped, rerender=lambda _t: ())
+    said = _carry(clone, _Forge(), resolve=_fresh, stable=lambda: '1.99.1', upgrade=bumped)
     assert said.startswith(f'relocked integrate/main at {sha[:12]} onto {BRANCH} (full, 1 move(s))')
     assert _git(origin, 'diff', '--name-only', sha, BRANCH) == 'rust-toolchain.toml'
 

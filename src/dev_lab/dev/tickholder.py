@@ -57,7 +57,7 @@ def read(record: Path) -> Holder | None:
     try:
         raw = json.loads(record.read_text(encoding='utf-8'))
         return Holder(**{key: raw[key] for key in Holder.__dataclass_fields__ if key in raw})
-    except (OSError, ValueError, TypeError):
+    except OSError, ValueError, TypeError:
         return None
 
 

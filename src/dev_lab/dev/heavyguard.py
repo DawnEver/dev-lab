@@ -199,7 +199,7 @@ def main(argv: Sequence[str] | None = None, *, stdin: BinaryIO | None = None, st
     try:
         payload = json.loads((stdin or sys.stdin.buffer).read().decode('utf-8'))
         reason = _admit_refusal(_table(payload))
-    except (ValueError, OSError, RuntimeError):
+    except ValueError, OSError, RuntimeError:
         return 0
     if reason is None:
         return 0

@@ -137,7 +137,7 @@ def citations_in(root: Path, names: Iterable[str]) -> tuple[list[Citation], int]
             continue
         try:
             text = (root / name).read_text(encoding='utf-8')
-        except (UnicodeDecodeError, OSError):
+        except UnicodeDecodeError, OSError:
             continue
         pieces = _pieces(name, text)
         if not pieces and Path(name).suffix.lower() not in {'.py', '.pyi', '.json', *_DATA_HASH}:

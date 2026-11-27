@@ -40,7 +40,6 @@ from dev_lab.dev._famconfig_ruff_rows import (
     RUFF_SECTION_PREFIX,
     RUFF_SELECT,
     RUFF_SELECT_FLOOR,
-    RUFF_TARGET_VERSIONS,
 )
 from dev_lab.dev.famconfig import (
     DIVERGED,
@@ -300,10 +299,9 @@ def test_the_ruff_base_is_the_measured_fifty_eight_and_the_ten_code_core() -> No
     root = section_base('[tool.ruff]')
     assert root.scalars['line-length'] == RUFF_LINE_LENGTH
     assert 'target-version' not in root.scalars, (
-        'target-version is a MEASURED disagreement (py312 in the kit, py313 in all three consumers) '
-        'and a base that carried it would be legislating rather than sharing'
+        'target-version is the family Python`s (dev_lab.dev.pythontoolchain renders and judges it with '
+        'requires-python); a section base carrying it too would be a second owner of one key'
     )
-    assert len(set(RUFF_TARGET_VERSIONS.values())) > 1, RUFF_TARGET_VERSIONS
 
 
 def test_an_unknown_section_names_the_ones_that_exist() -> None:

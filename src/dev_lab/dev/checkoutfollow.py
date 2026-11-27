@@ -45,7 +45,7 @@ def integration(root: Path) -> str | None:
     for read in (lambda: load_policy(root), lambda: policy_at(root, UPSTREAM_DECLARATION)):
         try:
             return read().integration
-        except (OSError, ValueError, RuntimeError):
+        except OSError, ValueError, RuntimeError:
             continue
     return None
 
