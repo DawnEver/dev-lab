@@ -86,6 +86,7 @@ from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import deliver_unit
 from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.harness import actions_run
 from dev_lab.dev.hostedparts import Hosted, hosted_parts
 from dev_lab.dev.partrows import ROW_SEPARATOR, needs_of_row, row_part
 from dev_lab.dev.platformparts import part_context, producer_argv
@@ -403,9 +404,8 @@ def head_sha(root: Path) -> str:
 
 
 def run_url(env: Mapping[str, str]) -> str:
-    """The web URL of the Actions run *env* names, ``''`` outside one."""
-    parts = (env.get('GITHUB_SERVER_URL', ''), env.get('GITHUB_REPOSITORY', ''), env.get('GITHUB_RUN_ID', ''))
-    return '{}/{}/actions/runs/{}'.format(*parts) if all(parts) else ''
+    """The web URL of the Actions run *env* names, ``''`` outside one (:class:`~dev_lab.dev.harness.ActionsRun`)."""
+    return actions_run(env).url
 
 
 def main(argv: Sequence[str] | None = None) -> int:
