@@ -79,6 +79,7 @@ from lab_commons.hpc.shell import parse_collection_errors, parse_ids
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
+from dev_lab.dev import cargostep
 from dev_lab.dev.commandtests import declared_command
 from dev_lab.dev.famtests.alwayson import assert_required_collected, resource_nodes
 from dev_lab.dev.forgeclient import client_for
@@ -197,6 +198,8 @@ def runner_for(part: str) -> str | None:
     2026-11-11): GitHub wires no self-hosted runner, workstation or cluster, so it has no row and nothing waits on
     it -- the test stays, for a consumer's unified run to select (:func:`off_gate`).
     """
+    if part == cargostep.PART:  # dev-lab#1033: rustup on every hosted image; fmt and clippy read no OS
+        return HOSTED_RUNNERS['linux']
     needs = needs_of_row(part)
     systems = needs & set(OS_NAMES.values())
     if needs == systems and len(systems) <= 1:
@@ -235,7 +238,7 @@ def rows(part: str, event: str, declared: Mapping[str, Hosted]) -> list[dict[str
     home = runner_for(part)
     if home is None:
         return []
-    if needs_of_row(part) & set(OS_NAMES.values()):
+    if part == cargostep.PART or needs_of_row(part) & set(OS_NAMES.values()):
         return [{'part': part, 'runs-on': home}]
     runners = {system: HOSTED_RUNNERS[system] for system in systems_for(event)}
     return [
@@ -251,6 +254,7 @@ def matrix(
 
     A part needing a resource the checkout declares ``unproduced`` has no row (:mod:`dev_lab.dev.unproduced`).
     Each part has its :func:`runner_for` row, plus one per further OS of *event* when it names none (:func:`rows`).
+    A checkout tracking a Cargo workspace has the :data:`~dev_lab.dev.cargostep.PART` row too (dev-lab#1033).
     *hosted* keeps only the rows the generic job produces on a GitHub-hosted runner -- a declared hosted row
     (it carries ``secrets``, maybe none) has its own job (:func:`dev_lab.dev.hostedjobs.hosted_jobs`) -- and
     :func:`absent` then names the rest.
@@ -264,6 +268,8 @@ def matrix(
         ids = list(collect(''))
         carrying = {name: set(resource_nodes(root, collect(name))) for name in vocabulary.resources}
         derived = {BASE, *need_sets(ids, carrying).values()}
+    if cargostep.tracked_workspaces(root):
+        derived.add(cargostep.PART)
     names = sorted(derived - unproduced_parts(derived, unproduced(text)))
     declared = hosted_parts(text)
     every = [row for name in names for row in rows(name, event, declared)]
