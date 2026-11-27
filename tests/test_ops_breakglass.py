@@ -11,7 +11,7 @@ import json
 import re
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -556,6 +556,7 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     answer('POST', f'{prefix}/issues/7/comments', (201, {'id': 1, 'body': 'b', 'html_url': '', 'user': {'login': 'u'}}))
     answer(merge, f'{prefix}/pulls/7/merge', (200, {'merged': True}))
     answer('DELETE', f'{prefix}/git/refs/heads/pr/x', (204, None))
+    answer('GET', f'{prefix}/pulls', (200, []))  # the landing lists open PRs stacked on its head (#1047)
     forge = ClientForge(url, 'secret', transport=loopback)
     assert 'integrate/main' in forge.declaration('integrate/main')
     assert forge.pull(7) == ('open', 'integrate/main', HEAD)
@@ -585,14 +586,26 @@ _BACKENDS = [
 ]
 
 
-def _merge_head(loopback: Loopback, url: str, prefix: str, verb: str, *, head_ref: str, status: int = 200) -> list[Any]:
-    """Break-glass-merge PR 7 whose head branch is *head_ref*; return what the fake forge received."""
+def _merge_head(
+    loopback: Loopback, url: str, prefix: str, verb: str, *, head_ref: str, status: int = 200,
+    stacked: Sequence[dict[str, Any]] = (),
+) -> list[Any]:  # fmt: skip
+    """Break-glass-merge PR 7 whose head branch is *head_ref*, *stacked* open on it; what the fake forge received."""
     pull = {'number': 7, 'title': 't', 'body': '', 'state': 'open', 'html_url': '', 'user': {'login': 'u'},
             'head': {'ref': head_ref, 'sha': HEAD}, 'base': {'ref': 'integrate/main'}, 'labels': []}  # fmt: skip
     answer('GET', f'{prefix}/contents/pyproject.toml', (200, {'content': base64.b64encode(_MANIFEST).decode()}))
     answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer(verb, f'{prefix}/pulls/7/merge', (status, {'merged': status == 200, 'message': 'head moved'}))
     answer('DELETE', f'{prefix}/git/refs/heads/{head_ref}', (204, None))
+    answer('GET', f'{prefix}/pulls', (200, list(stacked)))  # the landing lists open PRs stacked on its head (#1047)
+    for child in stacked:
+        number = child['number']
+        answer(
+            'POST',
+            f'{prefix}/issues/{number}/comments',
+            (201, {'id': 1, 'body': 'b', 'html_url': '', 'user': {'login': 'u'}}),
+        )
+        answer('PATCH', f'{prefix}/pulls/{number}', (200, {**child, 'base': {'ref': 'integrate/main'}}))
     forge = ClientForge(url, 'secret', transport=loopback)
     with contextlib.suppress(ForgeCallFailed):
         forge.merge(7, head=HEAD, message=merge_message(7, 'integrate/main', 'review-bot is down', 'w'))
@@ -624,6 +637,21 @@ def test_a_break_glass_merge_overrides_a_gitea_required_check(loopback: Loopback
 def test_a_break_glass_merge_deletes_its_ephemeral_head(loopback: Loopback, url: str, prefix: str, verb: str) -> None:
     """D18: every merge path deletes its pr/ head -- break-glass as the integration path does."""
     assert _deleted(_merge_head(loopback, url, prefix, verb, head_ref='pr/task/feature'), prefix, 'pr/task/feature')
+
+
+def test_a_break_glass_merge_on_github_retargets_a_pr_stacked_on_its_head(loopback: Loopback) -> None:
+    """#1047: GitHub closes a PR whose base is deleted, so the landing moves a stacked child onto its own base first.
+
+    PLANTED CONTROL for the empty open-PR list the other merges are served: a child on the head IS retargeted.
+    """
+    child = {'number': 8, 'title': 'c', 'body': '', 'state': 'open', 'html_url': '', 'user': {'login': 'u'},
+             'head': {'ref': 'pr/task/child', 'sha': HEAD},
+             'base': {'ref': 'pr/task/feature'}, 'labels': []}  # fmt: skip
+    sent = _merge_head(loopback, *_BACKENDS[0], head_ref='pr/task/feature', stacked=[child])
+    (moved,) = [r for r in sent if r['method'] == 'PATCH']
+    assert moved['path'] == '/repos/owner/gamma/pulls/8'
+    assert moved['body'] == {'base': 'integrate/main'}
+    assert _deleted(sent, '/repos/owner/gamma', 'pr/task/feature')
 
 
 @pytest.mark.parametrize('head_ref', ['main', 'integrate/main', 'lane/not-ephemeral'])
