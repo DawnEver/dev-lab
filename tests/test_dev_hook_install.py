@@ -482,3 +482,12 @@ def test_rewire_never_overwrites_a_foreign_hook_and_never_raises(repo: Path) -> 
     said = hook_install.rewire(repo)
     assert 'not reinstalled' in said
     assert (directory / 'pre-push').read_text(encoding='utf-8') == '#!/bin/sh\necho mine\n'
+
+
+def test_a_hooks_path_into_the_work_tree_is_refused_naming_the_unset(repo: Path) -> None:
+    # A retired `core.hooksPath = .githooks` (a repo's pre-family hooks) would land every shim in the work
+    # tree as untracked files; the install refuses and names the remedy rather than writing there.
+    subprocess.run([_GIT, '-C', str(repo), 'config', 'core.hooksPath', '.githooks'], check=True, capture_output=True)
+    with pytest.raises(HookInstallError, match=r'config --unset core\.hooksPath'):
+        install(repo)
+    assert not (repo / '.githooks').exists(), 'a refused install writes nothing'
