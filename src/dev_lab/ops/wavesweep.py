@@ -32,7 +32,7 @@ Every merge counts against the wave's cap; the merge that reaches it closes the 
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -43,6 +43,7 @@ from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.hostedparts import pull_request_parts
 from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.dev.roles import TESTS, roles_of_url
 from dev_lab.ops import request as requests
@@ -90,7 +91,7 @@ def reason_of(wave: str) -> str:
     return f'wave {wave} lands what is green: the review is waived, its security and test parts stand green'
 
 
-def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str, *, tests: str) -> bool:
+def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str, *, tests: str, hosted: Collection[str]) -> bool:
     """Whether *head* is green as its *producer* posts it (:func:`green_waits`) yet REFUSED by the normal decision.
 
     Refused means its newest ``tests/merge-ready`` is ``failure`` and was posted after every other ``tests/`` status:
@@ -98,7 +99,7 @@ def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str, *, tests: str
     """
     if not _refused_on_current_parts(posted):
         return False
-    return not green_waits(head, posted, tests=tests)
+    return not green_waits(head, posted, tests=tests, hosted=hosted)
 
 
 def _refused_on_current_parts(posted: Sequence[CommitStatus]) -> bool:
@@ -137,7 +138,8 @@ def sweep(
             if pull.draft or not _integrates(forge, pull.base, url):
                 continue
             tests = roles_of_url(url).kind(TESTS)
-            if not _waits_for_the_wave(forge.statuses(pull.head), pull.head, tests=tests):
+            hosted = pull_request_parts(forge.declaration(pull.base))
+            if not _waits_for_the_wave(forge.statuses(pull.head), pull.head, tests=tests, hosted=hosted):
                 continue
             try:
                 landed = land(requests.Merge(forge_of_url(url).identity, pull.number, pull.head, reason_of(held)))

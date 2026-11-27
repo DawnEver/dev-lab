@@ -88,6 +88,7 @@ from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, messag
 from dev_lab.dev.forgereview_declared import load_review
 from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgestatus import fingerprints_at, status_list
+from dev_lab.dev.hostedparts import pull_request_parts
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
 from dev_lab.dev.portmeasure import unmeasured
@@ -168,8 +169,9 @@ def decide(
     the decision carry it. *record* is the PR body: a red test part it puts on record (``Red-On-Record:``) reads
     as ran (RED-INTEGRATION-MERGES); every other red still waits, named with that door.
     """
-    unrecorded = off_record(statuses, record)
-    statuses = recorded_as_ran(statuses, record)
+    hosted = _hosted(root)
+    unrecorded = off_record(statuses, record, hosted=hosted)
+    statuses = recorded_as_ran(statuses, record, hosted=hosted)
     into = policy.integration
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
@@ -184,7 +186,7 @@ def decide(
         title, _, trailers = message.partition('\n\n')
         message = f'{title}\n\n{waiver}\n\n{trailers}'
     try:
-        waits = status_waits(policy, head, statuses, tests=roles_at(root).kind(TESTS))
+        waits = status_waits(policy, head, statuses, tests=roles_at(root).kind(TESTS), hosted=hosted)
     except Unbound as undeclared:  # a malformed producer is named, never merged
         waits = [f'its producer: {undeclared}']
     missing += waits + unrecorded
@@ -219,16 +221,22 @@ def decide(
         f'file and push the redone branch'
         for sha, problems in undeclared
     ]
-    waiting = len(missing) == len(waits) and not red_checks(statuses)  # the review is never in missing
-    return Decision(tuple(missing), message, unreviewed, waived, _notes(root, statuses), waiting)
+    waiting = len(missing) == len(waits) and not red_checks(statuses, hosted=hosted)  # the review is never in missing
+    return Decision(tuple(missing), message, unreviewed, waived, _notes(root, statuses, hosted), waiting)
 
 
-def _notes(root: Path, statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
+def _hosted(root: Path) -> frozenset[str]:
+    """The hosted parts *root*'s pull requests produce (:func:`pull_request_parts`); none without a pyproject."""
+    pyproject = root / 'pyproject.toml'
+    return pull_request_parts(pyproject.read_text(encoding='utf-8')) if pyproject.is_file() else frozenset()
+
+
+def _notes(root: Path, statuses: Sequence[CommitStatus], hosted: frozenset[str]) -> tuple[str, ...]:
     """What the decision says without waiting on it: an undeclared message row, the hand parts and the alarms."""
     unjudged = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
     alarmed = alarms_said(statuses)
     alarm = f'alarms, never a merge condition: {alarmed}' if alarmed else None
-    return (*unjudged, *filter(None, [hand_note(statuses), alarm]))
+    return (*unjudged, *filter(None, [hand_note(statuses, hosted=hosted), alarm]))
 
 
 def external(client: Client, pull: PullRequest) -> bool:
