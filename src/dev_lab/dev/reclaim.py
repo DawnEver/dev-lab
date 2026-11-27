@@ -159,7 +159,7 @@ def _patch_ids(root: Path, patch: bytes) -> frozenset[str]:
             [_GIT, 'patch-id', '--stable'], cwd=root, input=patch, capture_output=True, check=False,
             timeout=_GIT_TIMEOUT_S,
         )  # fmt: skip
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return frozenset()
     text = done.stdout.decode('utf-8', 'replace') if done.returncode == 0 else ''
     return frozenset(line.split()[0] for line in text.splitlines() if line.strip())

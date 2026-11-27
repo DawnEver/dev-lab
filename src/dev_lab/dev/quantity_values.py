@@ -211,7 +211,7 @@ def scan_toml_values(
         name = path.relative_to(root).as_posix() if root is not None and path.is_relative_to(root) else path.as_posix()
         try:
             document = tomllib.loads(path.read_text(encoding='utf-8'))
-        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        except OSError, UnicodeDecodeError, tomllib.TOMLDecodeError:
             unreadable.append(name)
             continue
         files_read += 1

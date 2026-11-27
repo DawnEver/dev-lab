@@ -206,7 +206,7 @@ class ClaimPass:
         """Whether every need of *wanted* is present on this host (an unreadable request declaration: no)."""
         try:
             return self._needs(wanted) <= self.supply.present
-        except (UndeclaredRequest, OutdatedKit):
+        except UndeclaredRequest, OutdatedKit:
             return False
 
     def _declared(self, wanted: Candidate) -> Declared:

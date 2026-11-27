@@ -406,7 +406,7 @@ def _scarce(root: Path, sha: str) -> frozenset[str]:
     """The scarce resources commit *sha* declares (:mod:`dev_lab.dev.forgescarce`); none when unreadable."""
     try:
         return frozenset(vocabulary_at(root, sha).scarce)
-    except (ValueError, OSError, subprocess.SubprocessError):
+    except ValueError, OSError, subprocess.SubprocessError:
         return frozenset()
 
 

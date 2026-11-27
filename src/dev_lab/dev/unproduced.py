@@ -58,6 +58,6 @@ def unproduced_waived(root: Path, sha: str, statuses: Sequence[CommitStatus]) ->
     """The derived parts of *statuses* commit *sha* declares unproduced; an unreadable declaration waives nothing."""
     try:
         resources = unproduced_at(root, sha)
-    except (ValueError, subprocess.SubprocessError):
+    except ValueError, subprocess.SubprocessError:
         return frozenset()
     return unproduced_parts(derived(statuses), resources)

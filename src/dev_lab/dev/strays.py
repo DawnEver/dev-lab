@@ -156,7 +156,7 @@ def merges_only(root: Path) -> bool:
         return False
     try:
         policy = load_policy(root)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return False
     return branch in {policy.integration, policy.trunk}
 

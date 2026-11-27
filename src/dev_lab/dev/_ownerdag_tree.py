@@ -32,7 +32,7 @@ def python_tree(root: Path) -> PythonTree | None:
     """
     try:
         name = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8')).get('project', {}).get('name')
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     if not isinstance(name, str) or not name:
         return None

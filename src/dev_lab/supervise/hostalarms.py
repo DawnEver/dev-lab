@@ -163,7 +163,7 @@ def _recent(row: Mapping[str, Any], now: datetime) -> bool:
     try:
         window = timedelta(seconds=float(row['stale_after_s']))
         return now - datetime.fromisoformat(str(row['last_seen'])) <= window
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         return False
 
 

@@ -185,5 +185,5 @@ def opted_in(client: Client, now: datetime) -> bool:
     try:
         raw = read_named(client, ALLOCATION)
         return VERIFY_BORROWS_RESEARCH in borrowing(None if raw is None else raw.decode('utf-8'), now=now)
-    except (OSError, ValueError, ForgeCallFailed):
+    except OSError, ValueError, ForgeCallFailed:
         return False

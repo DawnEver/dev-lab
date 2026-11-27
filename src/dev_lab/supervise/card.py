@@ -140,7 +140,7 @@ def read(path: Path) -> dict[str, Any] | None:
     """The card at *path*, or None when there is none yet or it does not parse (the next cycle rewrites it)."""
     try:
         found = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     return found if isinstance(found, dict) else None
 
@@ -178,7 +178,7 @@ def own_memory(proc: Path = _PROC_CGROUP, mount: Path = _CGROUP_MOUNT) -> dict[s
         group = mount / line.removeprefix('0::').strip().lstrip('/')
         current = int((group / 'memory.current').read_text(encoding='utf-8'))
         cap = (group / 'memory.max').read_text(encoding='utf-8').strip()
-    except (OSError, StopIteration, ValueError):
+    except OSError, StopIteration, ValueError:
         return None
     return {'current_mb': round(current / _MB, 1), 'max_mb': None if cap == 'max' else round(int(cap) / _MB, 1)}
 

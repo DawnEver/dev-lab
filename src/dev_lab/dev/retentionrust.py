@@ -53,7 +53,7 @@ def _channel(checkout: Path) -> str | None:
 def _default(rustup: Path) -> str:
     try:
         settings = tomllib.loads((rustup / 'settings.toml').read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError, tomllib.TOMLDecodeError:
         return ''
     return str(settings.get('default_toolchain', ''))
 

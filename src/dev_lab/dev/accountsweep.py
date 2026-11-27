@@ -178,7 +178,7 @@ def owner(path: Path) -> str:
         import pwd  # noqa: PLC0415 -- POSIX only; getuid above already ruled Windows out
 
         return pwd.getpwuid(uid).pw_name
-    except (ImportError, KeyError):
+    except ImportError, KeyError:
         return f'uid {uid}'
 
 

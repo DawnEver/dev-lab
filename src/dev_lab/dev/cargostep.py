@@ -53,7 +53,7 @@ def workspaces(root: Path, tracked: Iterable[str]) -> tuple[str, ...]:
     for manifest in manifests:
         try:
             table = tomllib.loads((root / manifest).read_text(encoding='utf-8'))
-        except (OSError, tomllib.TOMLDecodeError):
+        except OSError, tomllib.TOMLDecodeError:
             continue
         if 'workspace' in table:
             found.append(manifest)

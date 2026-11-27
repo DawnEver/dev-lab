@@ -300,7 +300,7 @@ def unwired(repo: Path) -> bool:
     """*repo* declares a hook stage whose shim is absent or stale; ``False`` where git or the table cannot answer."""
     try:
         return hook_installation(repo).verdict == UNPROTECTED
-    except (subprocess.SubprocessError, OSError, ValueError):
+    except subprocess.SubprocessError, OSError, ValueError:
         return False
 
 

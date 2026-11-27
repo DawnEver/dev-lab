@@ -50,7 +50,7 @@ def take_unread(session: str) -> list[str]:
         return []
     try:
         done = int(_cursor(session).read_text(encoding='utf-8').strip() or 0)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         done = 0
     fresh = []
     for raw in lines[done:]:
@@ -96,7 +96,7 @@ def take_task_unread(session: str, slug: str) -> list[str]:
     cursor = _home.home() / sessionprs.SESSIONS / f'{session}.{slug}.read'
     try:
         done = int(cursor.read_text(encoding='utf-8').strip() or 0)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         done = 0
     cursor.parent.mkdir(parents=True, exist_ok=True)
     cursor.write_text(str(len(found)), encoding='utf-8')

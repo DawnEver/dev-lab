@@ -105,7 +105,7 @@ def _checkouts(cwd: Path) -> list[Path]:
         try:
             gitdir = (root / dot.read_text(encoding='utf-8').split('gitdir:', 1)[1].strip()).resolve()
             common = (gitdir / (gitdir / 'commondir').read_text(encoding='utf-8').strip()).resolve()
-        except (OSError, IndexError):
+        except OSError, IndexError:
             return found
         if common.name == '.git' and common.parent != root:
             found.append(common.parent)
@@ -145,7 +145,7 @@ def task_in(tasks: Path, slug: str) -> str:
         raise ValueError(msg)
     try:
         head = (tasks / slug / 'TASK.md').read_text(encoding='utf-8').split('---')[1]
-    except (OSError, IndexError):
+    except OSError, IndexError:
         msg = f'no task {slug} in the ledger {tasks.as_posix()}'
         raise ValueError(msg) from None
     fields = dict(line.split(':', 1) for line in head.splitlines() if ':' in line)

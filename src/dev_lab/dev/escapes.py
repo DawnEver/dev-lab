@@ -140,7 +140,7 @@ def step(
     try:
         record = json.loads(state.read_text(encoding='utf-8'))
         since, known = float(record['scanned']), frozenset(map(str, record['home']))
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         _remember(state, now, home)  # the baseline: what already sits there is the 11-03 sweep's, not news
         return []
     found = scan(

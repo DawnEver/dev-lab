@@ -283,7 +283,7 @@ def _holder(lock: Path, *, census: Census) -> str:
         with lock.open('rb') as handle:
             handle.seek(_HOLDER_AT)
             pid, _, start = handle.read().decode('utf-8').strip().partition(' ')
-    except (OSError, UnicodeDecodeError):
+    except OSError, UnicodeDecodeError:
         pid, start = '', ''
     if not pid.isdigit():
         return f'another run holds {lock} (its pid is not yet written); wait for it'

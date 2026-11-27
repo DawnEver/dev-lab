@@ -39,7 +39,7 @@ def cmdline(pid: int) -> tuple[str, int | None]:
     try:
         words = (proc / 'cmdline').read_bytes().split(b'\0')
         uid = (proc / 'status').read_text(encoding='utf-8').split('Uid:', 1)[1].split()[0]
-    except (OSError, IndexError):
+    except OSError, IndexError:
         return '', None
     return ' '.join(word.decode('utf-8', 'replace') for word in words if word), int(uid)
 

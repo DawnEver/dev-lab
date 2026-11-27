@@ -134,7 +134,7 @@ def _local(plan: Plan, index: int, home: Path | None, now: float) -> Path | None
     for path in sorted(folder.glob('*.json')) if folder.is_dir() else ():
         try:
             data = json.loads(path.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
         if (
             isinstance(data, dict)

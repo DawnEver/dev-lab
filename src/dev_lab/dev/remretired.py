@@ -161,7 +161,7 @@ def _codex_home() -> Path:
 def _json(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     return data if isinstance(data, dict) else {}
 
