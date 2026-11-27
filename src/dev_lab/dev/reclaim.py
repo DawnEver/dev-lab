@@ -233,7 +233,7 @@ def unlanded_work(tree: Path, generated: tuple[str, ...] = ()) -> str:
     return f'untracked work -- {UNLANDED_DOORS}: {_shown(loose)}' if loose else ''
 
 
-def _scrap_unsaved(tree: Path, base: str, generated: tuple[str, ...]) -> str:
+def scrap_unsaved(tree: Path, base: str, generated: tuple[str, ...]) -> str:
     """Why disposable *tree* holds work: a tracked change or a HEAD no ref holds; untracked files are scratch."""
     blocking = blockers(tree, generated) if tree.is_dir() else None
     if blocking:
@@ -246,7 +246,7 @@ def _tree_reason(tree: Path, branch: str, judge: _Judge, *, locked: bool) -> str
     if locked:
         return 'locked (git worktree unlock first)'
     base = disposable_base(tree)
-    unsaved = _scrap_unsaved(tree, base, judge.generated) if base else unlanded_work(tree, judge.generated)
+    unsaved = scrap_unsaved(tree, base, judge.generated) if base else unlanded_work(tree, judge.generated)
     if unsaved and (base or not unsaved.startswith('untracked')):
         return unsaved
     age = index_age_s(tree)

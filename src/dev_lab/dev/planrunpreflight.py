@@ -36,9 +36,9 @@ from lab_commons.config import section
 
 from dev_lab.dev import devhost, devsource, forgesecrets, sshholdprobe, sshholdwire
 from dev_lab.dev import remote as ssh_remote
-from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.planremote import Remote
+from dev_lab.dev.planrunsources import declared_at, listed_at, text_at
 from dev_lab.dev.planrunsteps import (
     CONFIG_ACTION,
     LOCAL_VERBS,
@@ -50,7 +50,7 @@ from dev_lab.dev.planrunsteps import (
     ops_command,
     step_stdin,
 )
-from dev_lab.dev.reviewgate import DeclarationUnread, file_at, manifest_at
+from dev_lab.dev.reviewgate import DeclarationUnread
 from dev_lab.ops import configdoor, forgeprotection
 from dev_lab.ops.consent.actions import ACTIONS, read_answer
 from dev_lab.ops.consent.client import TABLE
@@ -69,13 +69,10 @@ __all__ = [
     'Readers',
     'SourceReader',
     'config_subject',
-    'declared_at',
     'host_ready',
     'issuer_subject',
-    'listed_at',
     'preflight',
     'protect_target',
-    'text_at',
 ]
 
 #: ``(forge host, owner/name, ref)`` -> the repo's ``pyproject.toml`` text at the ref, read here.
@@ -137,30 +134,6 @@ def _no_stdin(step: Step) -> str | None:
     if step.stdin_task is not None and not forgesecrets.stored_bundle(step.stdin_task):
         return f'no stored bundle for task {step.stdin_task} here: `forge secrets store --task {step.stdin_task}`'
     return None
-
-
-def declared_at(forge: str, repo: str, ref: str) -> str:
-    """*repo*'s ``pyproject.toml`` at *ref* on *forge*, read here through the forge client (never a working tree)."""
-    return manifest_at(client_for(Path.cwd(), url=f'https://{forge}/{repo}.git'), ref)
-
-
-def listed_at(source: str, where: str, ref: str) -> list[str]:
-    """The file names directly in directory *where* at *ref* of the forge repo at *source*, read here."""
-    client = client_for(Path.cwd(), url=source)
-    try:
-        answer: Any = client.call('GET', f'{client.repo}/contents/{where}?ref={ref}')
-    except ForgeCallFailed as failed:
-        msg = f'{where}/ at {ref} cannot be listed: {failed}'
-        raise DeclarationUnread(msg) from failed
-    if not isinstance(answer, list):
-        msg = f'{where} at {ref} is not a directory'
-        raise DeclarationUnread(msg)
-    return [str(entry['name']) for entry in answer if isinstance(entry, dict) and entry.get('type') == 'file']
-
-
-def text_at(source: str, path: str, ref: str) -> str:
-    """*path* at *ref* of the forge repo at *source* (an https clone URL), read here through the forge client."""
-    return file_at(client_for(Path.cwd(), url=source), path, ref)
 
 
 def protect_target(argv: Sequence[str]) -> tuple[str, str]:

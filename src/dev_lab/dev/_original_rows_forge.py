@@ -163,4 +163,5 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgesecretnames',
     'producerpriority',  # below-normal producer process priority, split from forgeproduce (2026-11-26)
     'hostsissue',  # the hosts issue (identity, lookup, opening), split from forgehosts (2026-11-26)
+    'hostedsetup',  # ORIGINAL: 2026-11-27, a hosted part's setup posts its own failure class (dev-lab#998)
 )

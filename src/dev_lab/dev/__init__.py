@@ -233,6 +233,8 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.hostedjobs` -- a declared hosted part's own workflow job: setup, key bundles, produce, forget.
 * :mod:`dev_lab.dev.hostedparts` -- ``[tool.dev_lab.parts] hosted``: the parts run in a hosted job of their own,
   read and refused by shape.
+* :mod:`dev_lab.dev.hostedsetup` -- a hosted part's setup, run by its job; a failure posts the part ``error`` under
+  its own class (``network`` or ``setup``), naming the exit and the last line.
 * :mod:`dev_lab.dev.native_session` -- the native harness's session identity, validated against one catalog and
   independent of worktree provenance and authorization.
 * :mod:`dev_lab.dev.forgepages` -- a forge listing read page by page up to the caller's limit.
@@ -704,6 +706,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.planrun` -- A CODE IS NEVER WASTED: preflight a consent plan's doors on its hosts, then run it.
 * :mod:`dev_lab.dev.planrunsteps` -- a plan's steps file: one step per grant, and how each is invoked.
 * :mod:`dev_lab.dev.planrunpreflight` -- every door of a plan checked on its hosts before the code is spent.
+* :mod:`dev_lab.dev.planrunsources` -- the forge reads a preflight derives a subject from, without a code.
 * :mod:`dev_lab.dev.planrunoffer` -- a recorded green preflight, run again by the door that takes the code.
 * :mod:`dev_lab.dev.planremote` -- the hosts a plan runs on: the held session, else key-only ssh.
 * :mod:`dev_lab.dev.shellreaper` -- the agent background-shell sweep: a shell past its bound is stopped, children first.

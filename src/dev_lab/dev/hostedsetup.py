@@ -63,7 +63,8 @@ def run_setup(root: Path, part: str, client: Client, *, run: ActionsRun) -> int:
         check=False,
     )
     said = done.stdout or ''
-    sys.stdout.write(said)
+    for line in said.splitlines():
+        emit(line)
     if done.returncode == 0:
         return 0
     last = next((line.strip() for line in reversed(said.splitlines()) if line.strip()), 'it said nothing')
