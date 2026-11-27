@@ -16,7 +16,7 @@ from dev_lab.dev.family import declared_in
 from dev_lab.dev.platformparts import UndeclaredPart
 from dev_lab.dev.taskkeys import secret_name
 
-__all__ = ['Hosted', 'hosted_parts']
+__all__ = ['Hosted', 'hosted_parts', 'pull_request_parts']
 
 
 @dataclass(frozen=True)
@@ -85,3 +85,12 @@ def hosted_parts(text: str) -> dict[str, Hosted]:
         name: Hosted(tuple(entry.get('tasks', ())), entry.get('setup', ''), entry.get('manual', False))
         for name, entry in value.items()
     }
+
+
+def pull_request_parts(text: str) -> frozenset[str]:
+    """The hosted parts of pyproject *text* a pull request's own job produces: neither ``manual`` nor secret-bound.
+
+    Such a part is required by merge-ready like ``tests/base`` (dev-lab#1024): its job runs for every pull request,
+    so it is never a hand part, whatever part ``hands=`` it ids.
+    """
+    return frozenset(name for name, hosted in hosted_parts(text).items() if not hosted.manual and not hosted.tasks)
