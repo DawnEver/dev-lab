@@ -806,6 +806,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'from dev_lab.dev.rules import tracked_files',
     ): "the rules registry imports this module's row: a top-level import back is a cycle",
     (
+        'src/dev_lab/dev/_ir_catalogue.py',
+        'BLE001',
+        'except Exception:',
+    ): 'pint\'s refusals share no base class; every one means "not coherent SI"',
+    (
         'src/dev_lab/dev/_ir_codec.py',
         'PLR0911',
         ('def _value_out(spec: F, value: object, units: Mapping[str, str], prefix: str, reference: object) -> object:'),
@@ -850,11 +855,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'ARG002',
         'def initialize(self, version: str, build_data: dict) -> None:',
     ): "hatchling's build-hook signature; the hook uses neither argument",
-    (
-        'src/dev_lab/dev/irmodel.py',
-        'BLE001',
-        'except Exception:',
-    ): 'pint\'s refusals share no base class; every one means "not coherent SI"',
     (
         'src/dev_lab/dev/irrust.py',
         'PLR0911',

@@ -15,8 +15,9 @@ import functools
 import re
 from typing import TYPE_CHECKING, Final
 
+from dev_lab.dev._ir_errors import refuse
 from dev_lab.dev._irrust_runtime import RUNTIME_RS
-from dev_lab.dev.irmodel import CONSTANTS_MODULE, refuse
+from dev_lab.dev.irmodel import CONSTANTS_MODULE
 from dev_lab.dev.irpython import FINGERPRINT_PREFIX, fingerprint
 from dev_lab.dev.irrustpy import PY_RUNTIME_RS, enum_py, id_py, record_py
 from dev_lab.dev.venvpath import VENV_LAYOUTS

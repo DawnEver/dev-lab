@@ -8,36 +8,31 @@ declaration by its code (``IR-UNKNOWN-TYPE`` ...) with the door that fixes it. C
 
 from __future__ import annotations
 
-import ast
 import importlib
 import keyword
-import math
 import re
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final, NoReturn, cast
+from typing import Any, Final, cast
 
-from lab_commons.quantity import registry
+from dev_lab.dev._ir_catalogue import LOWER, Constant, Quantity
+from dev_lab.dev._ir_errors import refuse
 
 __all__ = [
     'CONSTANTS_MODULE',
     'DTYPES',
     'IR',
-    'Constant',
     'Declaration',
     'Enum',
     'Field',
-    'IRSchemaError',
     'Module',
-    'Quantity',
     'Reader',
     'Record',
     'TypeRef',
     'load_module',
     'parse',
-    'refuse',
 ]
 
 #: Reads one repo-relative path to its text.
@@ -45,10 +40,6 @@ type Reader = Callable[[str], str]
 
 SCALARS: Final = frozenset({'bool', 'int', 'float', 'complex', 'str'})
 DTYPES: Final = ('bool', 'int32', 'int64', 'float32', 'float64', 'complex128')
-#: Pint's dimension names, in the catalogue's exponent order M L T I Theta N J.
-_DIMENSIONS: Final = ('[mass]', '[length]', '[time]', '[current]', '[temperature]', '[substance]', '[luminosity]')
-_UNIT_EPS: Final = 1e-12  # a coherent unit's base magnitude is exactly 1
-_POWER: Final = (1, 2, -3, 0, 0, 0, 0)
 _FIELD_KEYS: Final = frozenset(
     {
         'type', 'optional', 'quantity', 'doc', 'dtype', 'shape', 'unique_by', 'csr_values', 'gauge_reference',
@@ -68,55 +59,7 @@ _RUST_UNRAW: Final = frozenset({'self', 'super', 'crate'})
 _DEFAULT_TYPES: Final = {'bool': (bool,), 'int': (int,), 'float': (int, float), 'str': (str,), 'enum': (str,)}
 #: The generated module holding the catalogue's constants (``_ir_constants.py``, Rust ``mod ir_constants``).
 CONSTANTS_MODULE: Final = 'constants'
-_CONSTANT_KEYS: Final = frozenset({'value', 'unit', 'citation', 'reason'})
-_CONSTANT_NAMES: Final = {'pi': math.pi, 'e': math.e}
-_BINARY: Final[dict[type[ast.operator], Callable[[float, float], float]]] = {
-    ast.Add: float.__add__,
-    ast.Sub: float.__sub__,
-    ast.Mult: float.__mul__,
-    ast.Div: float.__truediv__,
-    ast.Pow: float.__pow__,
-}
 _UPPER: Final = re.compile(r'^[A-Z][A-Za-z0-9]*$')
-_LOWER: Final = re.compile(r'^[a-z][a-z0-9_]*$')
-_DOORS: Final = {
-    'IR-UNKNOWN-TYPE': 'fix the name or declare the target',
-    'IR-RECORD-CYCLE': 'break the cycle with an id: reference',
-    'IR-ID-WITHOUT-ID-FIELD': 'give the target record a field `id` of type id:<Record>',
-    'IR-UNIT-IN-SCHEMA': 'name a catalogue quantity; units live only in the catalogue',
-    'IR-UNKNOWN-QUANTITY': 'add the quantity to the catalogue',
-    'IR-QUANTITY-ON-NON-FLOAT': 'remove the quantity; only float and complex values carry one',
-    'IR-NON-SI-UNIT': 'use the coherent SI unit (no prefix, offset, gauge or dB)',
-    'IR-DIMENSION-MISMATCH': 'correct the catalogue row',
-    'IR-FIELD-SPEC': 'see docs-src/dev/ir-schema.md, "A schema file"',
-    'IR-NO-BOUNDARY': (
-        'declare `boundary = "<module>"` in [tool.dev_lab.ir_schema]: the consumer module whose to_si/from_si is its '
-        'one unit boundary (docs-src/dev/ir-schema.md, "Units cross once, at the boundary")'
-    ),
-    'IR-CONSTANT-SPEC': (
-        'a [constant.<lower_snake>] row holds exactly value (a finite number, or an expression over numbers, pi and '
-        'e with + - * / **), unit (coherent SI, "1" when dimensionless), citation and reason, all non-empty; no '
-        'schema module is named `constants` (docs-src/dev/ir-schema.md, "Constants")'
-    ),
-    'IR-UNIT-LIBRARY': (
-        'generated code holds SI only and reads no unit; units cross at the declared `boundary` module, so fix the '
-        'generator template that names it'
-    ),
-}
-
-
-class IRSchemaError(ValueError):
-    """A refused IR declaration: ``<code>: <where>: <what> -- <door>``."""
-
-    def __init__(self, code: str, where: str, what: str) -> None:
-        """Refuse *what* at *where* under *code*, naming the code's door."""
-        super().__init__(f'{code}: {where}: {what} -- {_DOORS[code]}')
-        self.code = code
-
-
-def refuse(code: str, where: str, what: str) -> NoReturn:
-    """Raise the :class:`IRSchemaError` *code* at *where*."""
-    raise IRSchemaError(code, where, what)
 
 
 @dataclass(frozen=True)
@@ -180,28 +123,6 @@ class Enum:
     module: str
     name: str
     values: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class Quantity:
-    """One catalogue quantity: its coherent SI unit, dimension and optional dB reference."""
-
-    name: str
-    unit: str
-    dimension: tuple[int, ...]
-    db: tuple[float, int] | None = None
-
-
-@dataclass(frozen=True)
-class Constant:
-    """One catalogue constant: its absolute SI value, its unit, and why it holds that value."""
-
-    name: str
-    value: float
-    expression: str  # the declared value, as written
-    unit: str
-    citation: str
-    reason: str
 
 
 @dataclass(frozen=True)
@@ -291,14 +212,14 @@ def _type(text: str, module: str, where: str) -> TypeRef:
         if item.kind in ('list', 'array'):
             refuse('IR-FIELD-SPEC', where, f'a list holds no {item.kind}; wrap it in a record')
         return TypeRef('list', item=item)
-    if head in ('enum', 'id', 'record') and rest:
-        return TypeRef(head, rest if '.' in rest else f'{module}.{rest}')
-    refuse('IR-UNKNOWN-TYPE', where, f'type {text!r} is not one of the declared types')
+    if head not in ('enum', 'id', 'record') or not rest:
+        refuse('IR-UNKNOWN-TYPE', where, f'type {text!r} is not one of the declared types')
+    return TypeRef(head, rest if '.' in rest else f'{module}.{rest}')
 
 
 def _field(module: str, record: str, name: str, row: dict[str, Any]) -> Field:
     where = f'{module}.{record}.{name}'
-    if not _LOWER.match(name):
+    if not LOWER.match(name):
         refuse('IR-FIELD-SPEC', where, 'a field name is lower_snake (a keyword is escaped in generated code)')
     extra = sorted(set(row) - _FIELD_KEYS)
     if extra:
@@ -375,7 +296,7 @@ def load_module(
             values = tuple(resolved[enum_name])
         else:
             values = _enum_values(f'{name}.{enum_name}', row, read)
-        bad = [v for v in values if not _LOWER.match(v) or keyword.iskeyword(v)]
+        bad = [v for v in values if not LOWER.match(v) or keyword.iskeyword(v)]
         if not values or bad or len(set(values)) != len(values) or not _UPPER.match(enum_name):
             refuse('IR-FIELD-SPEC', f'{name}.{enum_name}', 'values: non-empty, unique, lower_snake')
         enums[enum_name] = Enum(name, enum_name, values)
@@ -394,93 +315,6 @@ def load_module(
     dims = {d: (row.get('min'), row.get('max')) for d, row in data.get('dim', {}).items()}
     terms = tuple(sorted({row['terms'] for row in data.get('enum', {}).values() if 'terms' in row}))
     return Module(name, source, records, enums, dims, python, terms)
-
-
-def _catalogue(source: str) -> tuple[dict[str, Quantity], dict[str, tuple[str, str]], dict[str, Constant]]:
-    data = tomllib.loads(source)
-    quantities = {}
-    for name, row in data.get('quantity', {}).items():
-        where = f'quantity.{name}'
-        unit = _coherent_unit(row['unit'], where)
-        dimension = tuple(int(x) for x in row['dimension'].split())
-        measured = tuple(int(unit.dimensionality.get(d, 0)) for d in _DIMENSIONS)
-        if dimension != measured:
-            refuse('IR-DIMENSION-MISMATCH', where, f'unit {row["unit"]} has dimension {measured}')
-        db = (float(row['db_reference']), int(row['db_scale'])) if 'db_reference' in row else None
-        quantities[name] = Quantity(name, row['unit'], dimension, db)
-    domains = {}
-    for name, row in data.get('port_domain', {}).items():
-        effort, flow = quantities[row['effort']], quantities[row['flow']]
-        if tuple(a + b for a, b in zip(effort.dimension, flow.dimension, strict=True)) != _POWER:
-            refuse('IR-DIMENSION-MISMATCH', f'port_domain.{name}', 'effort x flow is not a power')
-        domains[name] = (row['effort'], row['flow'])
-    constants = {name: _constant(name, row) for name, row in data.get('constant', {}).items()}
-    return quantities, domains, constants
-
-
-def _coherent_unit(text: str, where: str) -> Any:  # noqa: ANN401 -- a pint Unit
-    """The pint unit of *text*, refused (IR-NON-SI-UNIT) unless it is coherent SI."""
-    try:
-        ureg = registry()
-        unit = ureg.Unit(text)
-        base = ureg.Quantity(1.0, unit).to_base_units()
-    except Exception:  # noqa: BLE001 -- pint's refusals share no base; every one means "not coherent SI"
-        refuse('IR-NON-SI-UNIT', where, f'unit {text!r}')
-    if abs(base.magnitude - 1.0) > _UNIT_EPS:
-        refuse('IR-NON-SI-UNIT', where, f'unit {text!r} is not coherent SI')
-    return unit
-
-
-def _evaluate(node: ast.expr, where: str) -> float:
-    """A constant expression's value: numbers, ``pi``, ``e``, unary +/- and + - * / ** only; anything else refused."""
-    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
-        return float(node.value)
-    if isinstance(node, ast.Name) and node.id in _CONSTANT_NAMES:
-        return _CONSTANT_NAMES[node.id]
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
-        operand = _evaluate(node.operand, where)
-        return -operand if isinstance(node.op, ast.USub) else operand
-    if isinstance(node, ast.BinOp) and (operation := _BINARY.get(type(node.op))) is not None:
-        try:
-            return operation(_evaluate(node.left, where), _evaluate(node.right, where))
-        except (ArithmeticError, ValueError) as error:
-            refuse('IR-CONSTANT-SPEC', where, f'value does not evaluate: {error}')
-    refuse('IR-CONSTANT-SPEC', where, f'value holds {ast.unparse(node)!r}, not a number, pi, e or + - * / **')
-
-
-def _text(row: dict[str, object], key: str, where: str) -> str:
-    value = row[key]
-    if not isinstance(value, str) or not value.strip():
-        refuse('IR-CONSTANT-SPEC', where, f'{key} is a non-empty string')
-    return value
-
-
-def _constant(name: str, row: dict[str, object]) -> Constant:
-    where = f'constant.{name}'
-    if not _LOWER.match(name):
-        refuse('IR-CONSTANT-SPEC', where, 'a constant name is lower_snake')
-    keys = frozenset(row)
-    if keys != _CONSTANT_KEYS:
-        refuse(
-            'IR-CONSTANT-SPEC',
-            where,
-            f'missing {sorted(_CONSTANT_KEYS - keys)}, unknown {sorted(keys - _CONSTANT_KEYS)}',
-        )
-    unit, citation, reason = (_text(row, key, where) for key in ('unit', 'citation', 'reason'))
-    raw = row['value']
-    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
-        refuse('IR-CONSTANT-SPEC', where, f'value {raw!r} is neither a number nor an expression')
-    expression = raw if isinstance(raw, str) else repr(raw)
-    try:
-        tree = ast.parse(expression, mode='eval').body
-    except SyntaxError:
-        refuse('IR-CONSTANT-SPEC', where, f'value {expression!r} does not parse')
-    value = _evaluate(tree, where)
-    if not math.isfinite(value):
-        refuse('IR-CONSTANT-SPEC', where, f'value {expression!r} is not finite')
-    if unit != '1':
-        _coherent_unit(unit, where)
-    return Constant(name, value, expression, unit, citation, reason)
 
 
 def _external(alias: str, module_name: str) -> Module:
@@ -504,5 +338,5 @@ def parse(root: Path, read: Reader | None = None) -> IR | None:
     }
     external = {alias: _external(alias, target) for alias, target in declaration.external.items()}
     catalogue = read(declaration.quantities)
-    quantities, domains, constants = _catalogue(catalogue)
+    quantities, domains, constants = catalogue(catalogue)
     return IR(declaration, modules, quantities, catalogue, domains, external, constants)

@@ -23,7 +23,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from dev_lab.dev.irmodel import IR, Constant, Record
+    from dev_lab.dev._ir_catalogue import Constant
+    from dev_lab.dev.irmodel import IR, Record
 
 __all__ = ['Change', 'Level', 'at_revision', 'bump_refusal', 'classify', 'declared_level']
 
