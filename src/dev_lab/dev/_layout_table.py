@@ -18,7 +18,13 @@ from typing import Final
 
 from dev_lab.dev import gitdirs
 from dev_lab.dev._deny_outputcode_row import CODE_SUFFIXES
-from dev_lab.dev.codeplace import FAMILY_HOMES, LAYOUT_FILE, PlacementNotDeclared, placement_table
+from dev_lab.dev.codeplace import (
+    FAMILY_HOMES,
+    LAYOUT_FILE,
+    PlacementNotDeclared,
+    declared_placement,
+    placement_table,
+)
 from dev_lab.dev.datedlog import FAMILY_KINDS
 
 __all__ = [
@@ -118,6 +124,8 @@ class Layout:
     tool_caches: tuple[str, ...] = ()
     vendor_jobs: tuple[str, ...] = ()
     doc_sites: tuple[str, ...] = ()
+    #: The declared one-off sink (``scratch`` of the placement): its content is never judged by a row (#1034).
+    scratch: str = 'scratch'
     #: MIRROR rows: pattern -> (the mirrored root, the explicit extra names below the row, the depth or None).
     mirrors: dict[str, tuple[str, tuple[str, ...], int | None]] = dataclasses.field(default_factory=dict)
 
@@ -127,7 +135,16 @@ class Layout:
         rows = sorted((k, sorted(v)) for k, v in self.rows.items())
         mirrors = sorted((k, v[0], list(v[1]), v[2]) for k, v in self.mirrors.items())
         text = json.dumps(
-            [rows, self.pruned_paths, self.read_only, self.tool_caches, mirrors, self.vendor_jobs, self.doc_sites]
+            [
+                rows,
+                self.pruned_paths,
+                self.read_only,
+                self.tool_caches,
+                mirrors,
+                self.vendor_jobs,
+                self.doc_sites,
+                self.scratch,
+            ]
         )
         return hashlib.sha256(text.encode()).hexdigest()[:16]
 
@@ -216,7 +233,14 @@ def declared_layout(root: Path) -> Layout:
     tools = _named(manifest, placement, 'tool_caches', 'tools')
     vendor_jobs = _named(manifest, placement, 'vendor_jobs', 'programs')
     doc_sites = _named(manifest, placement, 'doc_sites', 'sites')
-    return Layout(rows, pruned, read_only, tools, vendor_jobs=vendor_jobs, doc_sites=doc_sites, mirrors=mirrors)
+    try:
+        sink = declared_placement(root).scratch.strip('/')
+    except PlacementNotDeclared as exc:
+        msg = f'{exc} ({RULE_ID})'
+        raise LayoutNotDeclared(msg) from exc
+    return Layout(
+        rows, pruned, read_only, tools, vendor_jobs=vendor_jobs, doc_sites=doc_sites, mirrors=mirrors, scratch=sink
+    )
 
 
 def _named(manifest: Path, placement: dict, key: str, what: str) -> tuple[str, ...]:
