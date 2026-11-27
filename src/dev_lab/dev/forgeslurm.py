@@ -50,6 +50,7 @@ from lab_commons.hpc.allocation import resolve
 from lab_commons.hpc.builds import builds_at
 from lab_commons.hpc.cluster import Runner, Unreachable, probe, scancel, submitter
 from lab_commons.hpc.config import Config
+from lab_commons.hpc.gather import gather_run
 from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.layout import local_root
 from lab_commons.hpc.needsets import vocabulary_at
@@ -167,14 +168,18 @@ class SlurmCluster:
         return {grant.account: self.connect(grant) for grant in self.machine.grants}
 
     def submitted(self, run: Run) -> list[str]:
-        """The job ids of every round ``hpc`` recorded for *run*'s sha; ``[]`` when it recorded none."""
+        """The job ids ``hpc`` recorded for *run*'s sha -- its prep job, then every round's; ``[]`` when none.
+
+        The prep job counts (lab-commons #arch-prep-job): a run whose prep left Slurm before round 0 is planned has
+        no round yet, and it was submitted all the same -- never settled as "never submitted".
+        """
         try:
             state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
         except Unreachable:  # no host answered: nothing is known, which is never "nothing submitted"
             raise
         except RuntimeError:  # no state.json: nothing was submitted, or it died before writing one
             return []
-        return [job for one in state['rounds'] for job in one['job_ids']]
+        return job_ids(state)
 
     def orphans(self, run: Run) -> list[str]:
         """Jobs Slurm holds under this account with *run*'s job name (``run-<sha12>-<part>``), one id per array.
@@ -207,9 +212,8 @@ class SlurmCluster:
             cost=self.config.cost,
             policy=self.config.policy,
             history=learned.learned(run.repo_url),
-            carry=lambda env: self.carry(run.sha, env, run.platform),
         )
-        return [job for one in state['rounds'] for job in one['job_ids']]
+        return job_ids(state)
 
     def carry(self, sha: str, env: str, part: str) -> dict[str, tuple[dict[str, Any], str, str]]:
         """The cells *sha*'s run of *part* takes from its own earlier run and the nearest earlier runs of that part.
@@ -244,6 +248,8 @@ class SlurmCluster:
         releases the claim RETRYABLE. Nothing is learned: a limit is contention, never an under-priced need.
         """
         output = Path(run.output)
+        if self._plans_round_zero(run):
+            return None
         if settle([run.sha], self.machine, self.connect, self.config, output, part=run.platform, sleep=None) == PENDING:
             policy = self.config.policy
             why = held_by_a_limit(where(run.sha, run.platform, self.machine, self.connect, policy=policy), policy)
@@ -256,6 +262,26 @@ class SlurmCluster:
             msg = f'the run of {run.sha[:12]} ended without a record in {output}; its lines above say why'
             raise Unrecorded(msg)
         return records[-1]
+
+    def _plans_round_zero(self, run: Run) -> bool:
+        """Whether *run* has no round yet: its gather plans round 0 once the prep job left Slurm, with the carry.
+
+        ``carry`` is a gather argument (:func:`lab_commons.hpc.gather.gather_run`): round 0 is planned from the
+        collection the prep job wrote, so the cells *run* takes from earlier runs are named there.
+        """
+        state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
+        if 'record' in state or state.get('rounds') or not state.get('prep_job'):
+            return False
+        gather_run(
+            run.sha,
+            run.platform,
+            self.machine,
+            self.connect,
+            cost=self.config.cost,
+            policy=self.config.policy,
+            carry=lambda env: self.carry(run.sha, env, run.platform),
+        )
+        return True
 
     def killed(self, run: Run, record: Path | None = None) -> tuple[Killed, ...]:
         """*run*'s jobs Slurm killed for memory or time (:mod:`dev_lab.dev.slurmkilled`); an OOM's need is learned.
@@ -416,6 +442,13 @@ class SlurmCluster:
     def scope(self) -> str:
         """What this account's supply is named: ``slurm:<user>``."""
         return f'slurm:{self.machine.grants[0].user}'
+
+
+def job_ids(state: dict[str, Any]) -> list[str]:
+    """Every job id a run *state* records: its prep job's (``state['prep_job']['job_id']``), then each round's."""
+    prep = state.get('prep_job') or {}
+    rounds = [str(job) for one in state.get('rounds', ()) for job in one['job_ids']]
+    return [str(prep['job_id']), *rounds] if prep.get('job_id') else rounds
 
 
 def slurm_cluster(root: Path, seat: ClusterAccount | None) -> SlurmCluster:

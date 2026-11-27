@@ -1999,3 +1999,55 @@ def test_migrate_leaves_a_record_carrying_both_spellings_as_it_is(home: Path) ->
     (line,) = forgerunstate.migrate(apply=True)
     assert 'nothing written' in line
     assert json.loads(path.read_text(encoding='utf-8')) == raw
+
+
+def _prep_cluster(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: dict[str, Any]) -> forgeslurm.SlurmCluster:
+    monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, None))
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'))])
+    return forgeslurm.SlurmCluster(tmp_path, machine, Config(), lambda _grant: None)
+
+
+def test_a_run_whose_prep_left_before_round_zero_is_submitted_never_settled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """lab-commons arch-prep-job: ``submit_run`` records the prep job and ``rounds=[]``; round 0 comes with a gather.
+
+    A run whose prep job left Slurm while round 0 is not yet planned has no round and no orphan -- read as
+    "never submitted" it was released and its prep thrown away. Its prep job id is a submitted id.
+    PLANTED CONTROL: a state with no prep job and no round is nothing submitted.
+    """
+    run: Any = SimpleNamespace(sha='a' * 40, platform='base')
+    assert _prep_cluster(tmp_path, monkeypatch, {'rounds': [], 'prep_job': {'job_id': 77}}).submitted(run) == ['77']
+    assert _prep_cluster(tmp_path, monkeypatch, {'rounds': []}).submitted(run) == []
+    both = {'rounds': [{'job_ids': ['78']}], 'prep_job': {'job_id': 77}}
+    assert _prep_cluster(tmp_path, monkeypatch, both).submitted(run) == ['77', '78']
+
+
+def test_the_submit_reports_the_prep_job_and_round_zero_is_planned_by_a_gather_with_the_carry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``carry`` moved from ``submit_run`` to ``gather_run``. PLANTED CONTROL: a run with a round settles as before."""
+    asked: dict[str, Any] = {}
+    monkeypatch.setattr(forgeslurm, 'vocabulary_at', lambda _root, _sha: None)
+    monkeypatch.setattr(forgeslurm, 'builds_at', lambda _root, _sha, **_k: None)
+    monkeypatch.setattr(forgeslurm, 'scoped_files', lambda _root, _run: None)
+    monkeypatch.setattr(
+        forgeslurm, 'submit_run', lambda _spec, *_a, **kw: asked.update(kw) or {'rounds': [], 'prep_job': {'job_id': 9}}
+    )
+    cluster = _prep_cluster(tmp_path, monkeypatch, {'rounds': [], 'prep_job': {'job_id': 9}})
+    run = forgerunstate.Run('https://f/o/r.git', SHA, PR_REF, 'tests', str(tmp_path), HERE.description())
+    assert cluster.submit(run) == ['9']
+    assert 'carry' not in asked, 'the submit no longer takes the carry'
+    gathered: list[Any] = []
+    settled: list[str] = []
+    monkeypatch.setattr(forgeslurm, 'gather_run', lambda *_a, **kw: gathered.append(kw['carry']))
+    monkeypatch.setattr(forgeslurm, 'settle', lambda *_a, **_k: settled.append('settle') or forgeslurm.PENDING)
+    monkeypatch.setattr(forgeslurm, 'where', lambda *_a, **_k: None)
+    monkeypatch.setattr(forgeslurm, 'held_by_a_limit', lambda *_a: '')
+    assert cluster.gather(run) is None
+    assert len(gathered) == 1
+    assert callable(gathered[0])
+    assert settled == []
+    planned = _prep_cluster(tmp_path, monkeypatch, {'rounds': [{'job_ids': ['10']}], 'prep_job': {'job_id': 9}})
+    assert planned.gather(run) is None
+    assert (len(gathered), settled) == (1, ['settle'])
