@@ -47,6 +47,7 @@ def statuses(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _Statuses:
     monkeypatch.setattr(sessionbranch, 'head_refusals', lambda *_a: [])
     monkeypatch.setattr(prcurrent, 'head_refusals', lambda *_a: [])
     monkeypatch.setattr(forgeheadgate, 'lag_verdict', lambda *_a: ('success', 'within the limit'))
+    monkeypatch.setattr(forgeheadgate, 'stamped_verdict', lambda *_a: ('success', 'every commit is stamped'))
 
     class _Tree:
         def __enter__(self) -> Path:
@@ -72,7 +73,12 @@ def _gate(tmp_path: Path, render: Callable[..., tuple[str, str] | None], branch:
 def test_an_error_is_re_judged_and_a_verdict_latches(tmp_path: Path) -> None:
     """SR-20261024-001: only success/failure are terminal; an error (or pending) is judged again on the same sha."""
     render = _renders(('error', f'{UNRESOLVED}: timeout'), None)
-    assert _gate(tmp_path, render) == ['session-branch: success', 'pr-current: success', 'lock/lag: error']
+    assert _gate(tmp_path, render) == [
+        'session-branch: success',
+        'pr-current: success',
+        'lock/lag: error',
+        'hooks-wired: success',
+    ]
     assert _gate(tmp_path, render) == ['lock/lag: success']
     assert _gate(tmp_path, render) == [], 'CONTROL: a verdict latches, and rendering is not checked again'
 
@@ -88,6 +94,7 @@ def test_a_checkout_that_fails_is_an_error_and_is_retried(tmp_path: Path, monkey
         'session-branch: success',
         'pr-current: success',
         'lock/lag: error',
+        'hooks-wired: success',
     ]
     assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main') == [], (
         'the same error is not posted again, and it is retried'
@@ -106,16 +113,21 @@ def test_lock_lag_is_the_one_lock_status_and_freshness_never_waits_the_merge(
     """
     lagged: list[tuple[str, str]] = [('success', 'uv.lock pins every floated sibling within the window')]
     monkeypatch.setattr(forgeheadgate, 'lag_verdict', lambda *_a: lagged[0])
-    assert _gate(tmp_path, _renders(None)) == ['session-branch: success', 'pr-current: success', 'lock/lag: success']
+    assert _gate(tmp_path, _renders(None)) == [
+        'session-branch: success',
+        'pr-current: success',
+        'lock/lag: success',
+        'hooks-wired: success',
+    ]
     contexts = {context for context, _state, _text in statuses.posts[_SHA]}
-    assert contexts == {'session-branch', 'pr-current', 'lock/lag'}, 'the head carries one lock status'
+    assert contexts == {'session-branch', 'pr-current', 'lock/lag', 'hooks-wired'}, 'the head carries one lock status'
     assert forgeheadgate.gates_wait(statuses.listed(None, _SHA)) is None, 'merge-ready waits on no freshness'
     lagged[0] = ('failure', 'dev-lab: 40 commits behind its line')
     assert _gate(tmp_path, _renders()) == ['lock/lag: failure'], 'CONTROL: past the band reds lock/lag'
     statuses.posts.clear()
     unrendered = ('failure', f'{NOT_RENDERED}: run the door')
     lagged[0] = ('success', 'within')
-    assert _gate(tmp_path, _renders(unrendered))[-1] == 'lock/lag: failure'
+    assert 'lock/lag: failure' in _gate(tmp_path, _renders(unrendered))
     assert _gate(tmp_path, _renders()) == [], 'CONTROL: an unrendered lock stays red without a second check'
 
 
@@ -329,3 +341,24 @@ def test_the_gate_runs_after_the_tick_work_within_a_budget_oldest_first(tmp_path
     gated = next(i for i, line in enumerate(done.lines) if 'lock/lag' in line)
     published = max(i for i, line in enumerate(done.lines) if ' -- ' in line)
     assert gated > published, 'the gate runs after every child is published'
+
+
+def test_a_head_commit_without_the_commit_stage_stamp_is_named_by_sha(tmp_path: Path) -> None:
+    """HOOKS-ARE-WIRED's forge backstop (v1 FAM-14). PLANTED CONTROL: a stamped commit passes, a bare one is named."""
+    work = tmp_path / 'work'
+    work.mkdir()
+    run_git(work, 'init', '-q', '-b', 'main')
+    run_git(work, 'commit', '-q', '--allow-empty', '-m', 'base')
+    run_git(work, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    run_git(work, 'commit', '-q', '--allow-empty', '-m', 'feat: stamped', '-m', 'Forge-Host: box/a')
+    stamped = git_out(work, 'rev-parse', 'HEAD').strip()
+    assert forgeheadgate.stamped_verdict(work, stamped, 'integrate/main')[0] == 'success'
+    run_git(work, 'commit', '-q', '--allow-empty', '-m', 'feat: made unwired')
+    bare = git_out(work, 'rev-parse', 'HEAD').strip()
+    state, said = forgeheadgate.stamped_verdict(work, bare, 'integrate/main')
+    assert state == 'failure'
+    assert bare[:12] in said
+    assert stamped[:12] not in said
+    assert forgeheadgate.stamped_verdict(work, bare, 'no/such')[0] == 'error'
+    assert forgeheadgate.HOOKS_WIRED_CONTEXT in forgeheadgate.ALARMS
+    assert forgeheadgate.HOOKS_WIRED_CONTEXT not in forgeheadgate.GATES
