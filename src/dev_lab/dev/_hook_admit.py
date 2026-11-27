@@ -7,6 +7,11 @@ is the judge the agent guard's ``HOOKS-ARE-WIRED`` row (:mod:`dev_lab.dev._deny_
 ``python -m dev_lab.dev.hook_install --admit`` with the hook payload; :func:`payload_refusal` names the tree.
 
 A tree git or the table cannot read is never refused here (:func:`dev_lab.dev.hook_install.unwired`).
+
+A PROBE of which rule owns a shape (:func:`dev_lab.dev.famtests.agentguard.decision_for`) states every tree wired
+with :data:`ASSUME_WIRED`: wiring is the state of the box the probe runs on -- a hosted checkout declares stages it
+never installs -- as a live run is, and a sanctioned shape must not turn on it (dev-lab fa9d6f2b, every consumer's
+hosted famtest). The tool never sends the key, so no agent command can.
 """
 
 from __future__ import annotations
@@ -19,9 +24,11 @@ from typing import TYPE_CHECKING, Final, cast
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-__all__ = ['RULE_ID', 'WRITE_VERBS', 'payload_refusal', 'refusal', 'write_targets']
+__all__ = ['ASSUME_WIRED', 'RULE_ID', 'WRITE_VERBS', 'payload_refusal', 'refusal', 'write_targets']
 
 RULE_ID: Final = 'HOOKS-ARE-WIRED'
+#: The payload key a PROBE sets (``run_engine(assume_wired=True)``): every tree its verb targets is taken as wired.
+ASSUME_WIRED: Final = 'dev_lab_assume_wired'
 #: The git verbs that write history or publish it: each runs a declared stage (commit-msg, merge audit, pre-push).
 WRITE_VERBS: Final = ('commit', 'merge', 'push', 'cherry-pick', 'rebase')
 HAZARD: Final = 'its declared git hook stages are not live, so this verb would run none of the family checks.'
@@ -93,6 +100,8 @@ def payload_refusal(payload: object, unwired: Callable[[Path], bool], python: st
     if not isinstance(payload, dict):
         return None
     fields = cast('dict[str, object]', payload)
+    if fields.get(ASSUME_WIRED) is True:
+        return None
     tool_input = fields.get('tool_input')
     if not isinstance(tool_input, dict):
         return None

@@ -59,6 +59,19 @@ def test_a_wired_checkout_admits_every_verb(repo: Path, command: str) -> None:
     assert _hook_admit.payload_refusal(_payload(command, repo), hook_install.unwired, 'py') is None
 
 
+@pytest.mark.parametrize('command', _LINES)
+def test_a_shape_probe_states_its_trees_wired_and_is_admitted(repo: Path, command: str) -> None:
+    """A PROBE of which rule owns a shape (``famtests.agentguard``) judges the shape, never the probing tree's wiring.
+
+    PLANTED CONTROL: the same unwired tree without the key -- or with a value that is not ``True`` -- is refused.
+    """
+    probe = {**_payload(command, repo), _hook_admit.ASSUME_WIRED: True}
+    assert _hook_admit.payload_refusal(probe, hook_install.unwired, 'py') is None
+    assert _hook_admit.payload_refusal(_payload(command, repo), hook_install.unwired, 'py') is not None
+    loose = {**_payload(command, repo), _hook_admit.ASSUME_WIRED: 'true'}
+    assert _hook_admit.payload_refusal(loose, hook_install.unwired, 'py') is not None
+
+
 def test_the_tree_judged_is_the_one_the_verb_runs_in(repo: Path, tmp_path: Path) -> None:
     """``-C``, ``cd`` and netverb's ``--cwd`` name the tree; the session cwd is wired and admits nothing for it."""
     wired = tmp_path / 'wired'
