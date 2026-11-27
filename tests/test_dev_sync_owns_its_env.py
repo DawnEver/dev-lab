@@ -149,7 +149,7 @@ def test_a_bootstrap_rebuilds_an_environment_its_requires_python_refuses(tmp_pat
     (root / 'pyproject.toml').write_text('[project]\nname="e"\nrequires-python = ">=99.0"\n', encoding='utf-8')
     unfit = str(_own_env(root, 'version_info = 3.15'))
     monkeypatch.setattr(_dep_project.shutil, 'which', lambda _name: 'uv')
-    command = _dep_project.uv_command(root, unfit, (), syncing=True, upgrade_packages=(), frozen=True)
+    command = _dep_project.uv_command(root, unfit, (), frozen=True)
     assert command[command.index('--python') + 1] == '>=99.0'
 
 
