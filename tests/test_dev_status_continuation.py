@@ -21,9 +21,10 @@ from _forge_fake import Loopback, Recorder, answer, client, serve
 
 from dev_lab.dev._forgebackends import GITEA, GITHUB
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, CommitStatus, continued, status_history, status_list, status_post
+from dev_lab.dev.forgestatus import CommitStatus, status_history, status_list, status_post
 from dev_lab.dev.partfacts import RESULT, Part, parsed
 from dev_lab.dev.platformparts import parts_of
+from dev_lab.dev.statuscontinuation import DESCRIPTION_LIMIT, FORGE_CUT, continued
 
 _SHA = 'a' * 40
 _GITHUB = Forge('github.com', 'o', 'r')
@@ -66,7 +67,7 @@ def _part(classes: int) -> Part:
 
 def test_the_backends_declare_their_limits_and_the_tightest_is_the_one_status_budget() -> None:
     assert (GITHUB.description_limit, GITEA.description_limit) == (140, None)
-    assert DESCRIPTION_LIMIT == 140
+    assert (FORGE_CUT, DESCRIPTION_LIMIT) == (140, 139)  # one short: a whole text never reads as cut
 
 
 @pytest.mark.parametrize('classes', [11, 30])
@@ -77,7 +78,7 @@ def test_a_part_of_many_classes_posts_within_githubs_limit_and_reads_back_exactl
     answer('POST', f'/repos/o/r/statuses/{_SHA}', (201, {'context': 'tests/base', 'state': 'success'}))
     status_post(client(_GITHUB, Loopback(server)), _SHA, context='tests/base', state='success', description=description)
     sent = [one['body'] for one in Recorder.received]
-    assert all(len(body['description']) <= DESCRIPTION_LIMIT for body in sent)
+    assert all(len(body['description']) < FORGE_CUT for body in sent)
     assert [body['context'] for body in sent][-1] == 'tests/base'  # the head is posted LAST
     listed = [{**body, 'id': index + 1} for index, body in enumerate(sent)]
     answer('GET', f'/repos/o/r/commits/{_SHA}/statuses', (200, listed))
@@ -94,11 +95,11 @@ def test_gitea_stores_any_length_so_nothing_continues(server) -> None:
 
 
 def test_every_piece_continued_builds_fits_and_joins_back() -> None:
-    for length in range(DESCRIPTION_LIMIT - 2, 20 * DESCRIPTION_LIMIT):
+    for length in range(FORGE_CUT - 3, 20 * FORGE_CUT):
         text = ''.join(chr(ord('a') + n % 26) for n in range(length))
-        head, rest = continued(text, DESCRIPTION_LIMIT)
-        assert all(len(piece) <= DESCRIPTION_LIMIT for piece in (head, *rest)), length
-        if length < DESCRIPTION_LIMIT:
+        head, rest = continued(text, FORGE_CUT)
+        assert all(len(piece) < FORGE_CUT for piece in (head, *rest)), length
+        if length <= DESCRIPTION_LIMIT:
             assert (head, rest) == (text, ())
         else:
             assert head.rsplit(' >>', 1)[0] + ''.join(rest) == text, length
@@ -111,7 +112,7 @@ def _read(server: ThreadingHTTPServer, listed: list[dict[str, Any]]) -> tuple[Co
 
 def test_a_description_the_forge_cut_is_named_never_read_as_a_part(server) -> None:
     """PLANTED: what GitHub stored for document-lab's ``tests/base`` before this fix."""
-    cut = _part(11).description()[:DESCRIPTION_LIMIT]
+    cut = _part(11).description()[:FORGE_CUT]
     statuses = _read(server, [{'id': 1, 'context': 'tests/base', 'state': 'success', 'description': cut}])
     parts, problems = parts_of(statuses)
     assert parts == {}
@@ -160,14 +161,22 @@ def test_a_whole_text_of_exactly_the_limit_continues_on_every_backend_so_it_is_n
     """PLANTED: 140 characters is what a cut leaves, so a whole text of that length is never posted alone."""
     part = _part(11)
     whole = part.description()
-    text = whole[: DESCRIPTION_LIMIT - 4] + ' ' * 4 if len(whole) > DESCRIPTION_LIMIT else whole
-    assert len(text) == DESCRIPTION_LIMIT
+    text = whole[:FORGE_CUT]
+    assert len(text) == FORGE_CUT
     answer('POST', f'/api/v1/repos/o/r/statuses/{_SHA}', (201, {'context': 'tests/base', 'status': 'success'}))
     status_post(client(_GITEA, Loopback(server)), _SHA, context='tests/base', state='success', description=text)
     sent = [one['body'] for one in Recorder.received]
     assert len(sent) == 2
-    assert all(len(body['description']) < DESCRIPTION_LIMIT for body in sent)
+    assert all(len(body['description']) < FORGE_CUT for body in sent)
     listed = [{**body, 'status': body['state'], 'id': index + 1} for index, body in enumerate(sent)]
     answer('GET', f'/api/v1/repos/o/r/statuses/{_SHA}', (200, listed))
     (only,) = status_list(client(_GITEA, Loopback(server)), _SHA)
     assert only.description == text
+
+
+def test_a_free_text_cut_to_the_one_status_limit_is_one_status_on_github(server) -> None:
+    """PLANTED (CI 46070439811): a refusal cut to the old 140 posted a head and a ``#1``; cut to the limit it is one."""
+    text = ('refused: ' * 40)[:DESCRIPTION_LIMIT]
+    answer('POST', f'/repos/o/r/statuses/{_SHA}', (201, {'context': 'tests/base', 'state': 'error'}))
+    status_post(client(_GITHUB, Loopback(server)), _SHA, context='tests/base', state='error', description=text)
+    assert [one['body']['description'] for one in Recorder.received] == [text]

@@ -15,8 +15,9 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, NOT_PARTS
-from dev_lab.dev.forgestatus import CARRIED_FROM, CITED_FROM, DOCS_ONLY, SAME_TREE, incomplete, state_for
+from dev_lab.dev.forgestatus import CARRIED_FROM, CITED_FROM, DOCS_ONLY, SAME_TREE, state_for
 from dev_lab.dev.partrows import is_row
+from dev_lab.dev.statuscontinuation import incomplete
 from dev_lab.dev.verdictenv import POLICY_CHARS
 
 if TYPE_CHECKING:
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
 
     from dev_lab.dev.forgestatus import CommitStatus
 
-__all__ = ['RESULT', 'Part', 'facts_of', 'latest', 'parsed']
+__all__ = ['RESULT', 'Part', 'facts_of', 'latest', 'parsed', 'quoted']
 
 #: The forge state a settled part reads back as; ``error`` (INCONCLUSIVE) is never a settled part.
 RESULT: Final = {state_for(result): result for result in (Conclusion.PASS, Conclusion.FAIL)}
@@ -82,6 +83,11 @@ def latest(statuses: Sequence[CommitStatus]) -> list[CommitStatus]:
         latest.pop(status.context, None)
         latest[status.context] = status
     return list(latest.values())
+
+
+def quoted(description: str) -> str:
+    """*description* quoted for a problem line, naming why it is incomplete when it is (a cut, a lost continuation)."""
+    return f'{description!r}' + (f': {cut}' if (cut := incomplete(description)) else '')
 
 
 def parsed(status: CommitStatus) -> Part | None:

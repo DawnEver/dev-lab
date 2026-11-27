@@ -64,7 +64,7 @@ from lab_commons.hpc.cluster import local_runner
 from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev import harness
-from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
+from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, CommitStatus, status_history, status_post
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import ClusterPart, part_context
 from dev_lab.dev.producer import Owner, owned
@@ -74,7 +74,6 @@ __all__ = [
     'CLAIMABLE',
     'CLAIMED',
     'DEFAULT_LEASE',
-    'DESCRIPTION_LIMIT',
     'DONE',
     'MINE',
     'OPEN',
@@ -112,8 +111,6 @@ _CLAIM: Final = re.compile(
     r'^claim machine=(?P<machine>\S+) login=(?P<login>\S+) until=(?P<until>\S+) hpc=(?P<hpc>\S+)'
     r'(?: -- (?P<progress>.+))?$'
 )
-#: The longest status description every forge stores whole (GitHub's limit); progress is cut to fit.
-DESCRIPTION_LIMIT: Final = 140
 
 
 @dataclass(frozen=True)
