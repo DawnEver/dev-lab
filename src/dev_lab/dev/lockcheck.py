@@ -48,7 +48,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
 __all__ = [
-    'DOOR', 'FRESHENED', 'LOCK', 'NOT_RENDERED', 'REMEDY', 'TOOLCHAIN', 'UNRESOLVED', 'UV_PIN', 'UV_RELEASES',
+    'DOOR', 'FRESHENED', 'LOCK', 'NOT_RENDERED', 'REMEDY', 'RUST_RELEASES', 'TOOLCHAIN', 'UNRESOLVED', 'UV_PIN',
+    'UV_RELEASES',
     'lock_problems', 'mount_submodules', 'newest_stable', 'newest_uv', 'pin_stable', 'pin_uv', 'refreshable', 'stale',
     'toolchain_problems', 'unreasoned_holds', 'unrendered', 'uv_due', 'uv_policy', 'uv_version',
 ]  # fmt: skip
@@ -71,6 +72,8 @@ UV_PIN: Final = 'src/dev_lab/dev/uv.toml'
 FRESHENED: Final = (LOCK, TOOLCHAIN, UV_PIN)
 #: Where uv's releases are tagged; :func:`newest_uv` reads the highest ``X.Y.Z`` tag there.
 UV_RELEASES: Final = 'https://github.com/astral-sh/uv'
+#: Where Rust's stable releases are tagged; :func:`newest_stable` reads the highest ``X.Y.Z`` tag there.
+RUST_RELEASES: Final = 'https://github.com/rust-lang/rust'
 #: How every :func:`stale` sentence for a resolution that could not run begins -- a refusal, never an admission.
 UNRESOLVED: Final = 'the newest resolution could not run'
 #: The one remedy for a missing or stale lock.
@@ -99,12 +102,6 @@ _UV_PINNED: Final = re.compile(r'^(?P<lead>version\s*=\s*)"(?P<version>[^"\n]*)"
 #: A release tag ``ls-remote`` lists: ``<sha>\trefs/tags/0.13.7``; a pre-release tag has a suffix and never matches.
 _UV_FOLLOW: Final = re.compile(r'^follow\s*=\s*"(?P<policy>[^"\n]*)"', re.MULTILINE)
 _RELEASE_TAG: Final = re.compile(r'\trefs/tags/v?(?P<version>\d+\.\d+\.\d+)$', re.MULTILINE)
-#: ``rustup check``'s stable line: ``Up to date : <v> (...)`` or ``Update available : <old> (...) -> <v> (...)``.
-#: rustup's case and the space before the colon vary by release (1.29 on Linux prints ``update available:``).
-_STABLE: Final = re.compile(
-    r'^stable-\S+ - (?:up to date\s*:\s*|update available\s*:.*->\s*)(?P<version>\d+\.\d+\.\d+)\b',
-    re.MULTILINE | re.IGNORECASE,
-)
 
 
 def _git(root: Path, *argv: str, env: Mapping[str, str] | None = None) -> tuple[int, str]:
@@ -216,45 +213,34 @@ def unrendered(tree: Path, *, check: Callable[[Path], Report] = _lock_check) -> 
     return f'{UNRESOLVED} ({report.remedy}): {tail}'
 
 
-def _rustup_check() -> Report:
-    """``rustup check``; an attempt that printed the stable line is the answer, so it is never retried.
-
-    rustup exits 100 when an update is available (rustup 1.29 on Ada, measured 2026-10-26), which the
-    network door reads as a failure; the exit code says nothing the stable line does not.
-    """
-    rustup = shutil.which('rustup') or 'rustup'
-    return run_network_verb(
-        [rustup, 'check'], timeout=RESOLVE_TIMEOUT_S, before_retry=lambda attempt: not _STABLE.search(attempt.output)
-    )
+def _release_tags(repository: str) -> Report:
+    """``git ls-remote --tags --refs`` of *repository* through the network door: no API token, no rate limit."""
+    return run_network_verb([_GIT, 'ls-remote', '--tags', '--refs', repository], timeout=RESOLVE_TIMEOUT_S)
 
 
-def newest_stable(*, check: Callable[[], Report] = _rustup_check) -> str:
-    """The newest stable Rust version (``1.99.1``) as *check*, ``rustup check``, reports it; RAISES on none.
-
-    The OUTPUT is the answer, whatever the exit code (:func:`_rustup_check`).
-    """
-    report = check()
-    output = report.attempts[-1].output if report.attempts else ''
-    if not (found := _STABLE.search(output)):
-        msg = f'rustup check named no stable toolchain ({report.remedy}): {output.strip()[-200:]}'
-        raise OSError(msg)
-    return found['version']
-
-
-def _uv_tags() -> Report:
-    """``git ls-remote --tags --refs`` of uv's repository through the network door: no API token, no rate limit."""
-    return run_network_verb([_GIT, 'ls-remote', '--tags', '--refs', UV_RELEASES], timeout=RESOLVE_TIMEOUT_S)
-
-
-def newest_uv(*, check: Callable[[], Report] = _uv_tags) -> str:
-    """The newest uv release (``0.13.7``) among the tags *check* lists; RAISES on none."""
-    report = check()
+def _newest_tag(report: Report, repository: str, what: str) -> str:
+    """The highest ``X.Y.Z`` release tag *report* lists; RAISES naming *repository* when it lists none."""
     output = report.attempts[-1].output if report.attempts else ''
     versions = [tuple(int(part) for part in found['version'].split('.')) for found in _RELEASE_TAG.finditer(output)]
     if not report.ok or not versions:
-        msg = f'{UV_RELEASES} listed no uv release ({report.remedy}): {output.strip()[-200:]}'
+        msg = f'{repository} listed no {what} release ({report.remedy}): {output.strip()[-200:]}'
         raise OSError(msg)
     return '.'.join(str(part) for part in max(versions))
+
+
+def newest_stable(*, check: Callable[[], Report] = lambda: _release_tags(RUST_RELEASES)) -> str:
+    """The newest stable Rust release (``1.99.1``): the highest release tag of :data:`RUST_RELEASES`; RAISES on none.
+
+    Never ``rustup check`` (#996): it names the newest stable only on a host with a ``stable`` toolchain installed,
+    and a host carrying only the version-named toolchain its pin renders -- the retention pass removes every
+    unpinned one -- printed no stable line, so the relock failed after it had rewritten ``uv.lock``.
+    """
+    return _newest_tag(check(), RUST_RELEASES, 'Rust')
+
+
+def newest_uv(*, check: Callable[[], Report] = lambda: _release_tags(UV_RELEASES)) -> str:
+    """The newest uv release (``0.13.7``) among the tags *check* lists; RAISES on none."""
+    return _newest_tag(check(), UV_RELEASES, 'uv')
 
 
 def uv_version(root: Path | None = None) -> str:

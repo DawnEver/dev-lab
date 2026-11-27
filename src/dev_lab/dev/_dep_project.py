@@ -327,6 +327,8 @@ def lock_upgrade(
         return 1
     try:
         required = uv_due(root, newest()) if (root / UV_PIN).is_file() and not packages else uv_version(root)
+        # Read BEFORE anything is written (#996): a toolchain that cannot be resolved refuses a run that moved nothing.
+        toolchain = stable() if not packages and (root / TOOLCHAIN).is_file() else None
         command = lock_upgrade_command(root, python, required, packages)
     except (OtherUvRefused, ForeignEnvRefused, OSError) as exc:
         emit(f'REFUSED: {exc}')
@@ -335,8 +337,8 @@ def lock_upgrade(
         emit('would run: ' + ' '.join(command))
         return 0
     code = run_change(command, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment)
-    if code == 0 and not packages and (root / TOOLCHAIN).is_file():
-        pin_stable(root, stable())
+    if code == 0 and toolchain is not None:
+        pin_stable(root, toolchain)
     if code == 0 and not packages and (root / UV_PIN).is_file():
         moved = uvrelease.release(pin_file(root), required)
         pin_uv(root, required, {key: digest for key, (_asset, digest) in moved.assets.items()})
