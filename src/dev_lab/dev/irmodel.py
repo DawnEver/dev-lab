@@ -485,7 +485,7 @@ def _constant(name: str, row: dict[str, object]) -> Constant:
 
 def _external(alias: str, module_name: str) -> Module:
     generated = importlib.import_module(module_name)
-    return load_module(alias, generated.SCHEMA_TOML, module_name, resolved=getattr(generated, 'ENUM_VALUES', None))
+    return load_module(alias, generated.SCHEMA_TOML, module_name, resolved=generated.ENUM_VALUES)
 
 
 def parse(root: Path, read: Reader | None = None) -> IR | None:

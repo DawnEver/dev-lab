@@ -195,6 +195,13 @@ def _relabeled(client: Client, args: argparse.Namespace) -> Issue:
     return client.issue_view(args.number)
 
 
+def _labels(args: argparse.Namespace) -> Sequence[str]:
+    """The labels an issue verb names: ``label --add`` and ``list``/``create --label``; the other verbs name none."""
+    if args.verb == 'label':
+        return args.add
+    return args.label if args.verb in {'list', 'create'} else ()
+
+
 def _show(args: argparse.Namespace, result: Issue | PullRequest | Comment | tuple[Issue, ...], root: Path) -> None:
     """Print *result* (JSON with ``--json``); an issue verb that subscribed a task nobody hears says so."""
     items = result if isinstance(result, tuple) else (result,)
@@ -204,8 +211,7 @@ def _show(args: argparse.Namespace, result: Issue | PullRequest | Comment | tupl
     else:
         for item in items:
             emit(_render(item))
-    labels = getattr(args, 'add', None) or getattr(args, 'label', ())
-    if args.noun == 'issue' and (said := unheard_notice(root, labels)):
+    if args.noun == 'issue' and (said := unheard_notice(root, _labels(args))):
         emit(f'[forge] {said}', err=True)  # TASK-HEARS-ITS-FORGE-EVENTS: a subscription nobody hears is said
 
 

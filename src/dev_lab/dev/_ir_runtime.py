@@ -257,7 +257,7 @@ def post_init(record: object) -> None:
 
 def build(cls: type, kwargs: dict[str, object], path: str) -> object:
     """``cls(**kwargs)`` (keyed by WIRE name) whose validation errors read from *path* rather than from ``cls``."""
-    specs: tuple[F, ...] = getattr(cls, '_ir_fields', ())
+    specs: tuple[F, ...] = cls._ir_fields
     attrs: dict[str, str] = {spec.name: spec.attr for spec in specs if spec.attr}
     named: dict[str, object] = {attrs.get(str(name), str(name)): value for name, value in kwargs.items()}
     try:
