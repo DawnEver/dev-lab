@@ -13,10 +13,12 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import lab_commons.launch as _door
 import numpy as np
 import pytest
+from _cargo_probe import usable_cargo
 
 from dev_lab.dev import envreads, irpython, irrust, irschema
 from dev_lab.dev._ir_errors import IRSchemaError
@@ -24,7 +26,6 @@ from dev_lab.dev.ircheck import load
 from dev_lab.dev.venvpath import VENV_LAYOUTS
 
 FIXTURE = Path(__file__).parent / 'data' / 'ir_schema' / 'repo'
-CARGO = shutil.which('cargo')
 _OFFLINE_MARKERS = ('offline', 'no matching package', 'failed to select a version', 'failed to download')
 _MANIFEST = """[package]
 name = "ir_equivalence"
@@ -175,8 +176,9 @@ def _python_cases(repo: Path, work: Path, monkeypatch: pytest.MonkeyPatch) -> li
 
 
 def test_rust_and_python_agree_byte_for_byte(repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    if CARGO is None:
-        pytest.xfail('no cargo on this host: the Rust half of the equivalence cannot be built here')
+    cargo, unusable = usable_cargo()
+    if cargo is None:
+        pytest.xfail(f'no usable cargo on this host ({unusable}): the Rust half of the equivalence cannot build here')
     crate = tmp_path / 'crate'
     (crate / 'src').mkdir(parents=True)
     (crate / 'Cargo.toml').write_text(_MANIFEST, encoding='utf-8')
@@ -186,7 +188,7 @@ def test_rust_and_python_agree_byte_for_byte(repo: Path, tmp_path: Path, monkeyp
     assert any(expected.startswith('ERR Batch.samples[1].time.shape[0]') for *_, expected in cases)
     args = [a for record, path, _ in cases for a in (record, str(path))]
     done = _door.run(
-        [CARGO, 'run', '--offline', '-q', '--manifest-path', str(crate / 'Cargo.toml'), '--', *args],
+        [cargo, 'run', '--offline', '-q', '--manifest-path', str(crate / 'Cargo.toml'), '--', *args],
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -233,3 +235,36 @@ def test_the_build_script_finds_the_venv_interpreter_and_reads_only_out_dir() ->
 def test_the_cli_prints_the_build_script(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     assert irschema.main(['--root', str(tmp_path), 'build-rs']) == 0
     assert capsys.readouterr().out.strip() == irrust.build_rs().strip()
+
+
+_NO_TOOLCHAIN = (
+    "error: rustup could not choose a version of cargo to run, because one wasn't specified explicitly, "
+    "and no default is configured.\nhelp: run 'rustup default stable' to download the latest stable release"
+)
+
+
+@pytest.mark.parametrize(
+    ('found', 'code', 'stderr', 'why'),
+    [
+        (None, 0, '', 'no cargo on PATH'),
+        ('/bin/cargo', 1, _NO_TOOLCHAIN, '/bin/cargo cannot run: error: rustup could not choose a version'),
+        ('/bin/cargo', 0, '', ''),
+    ],
+)
+def test_a_cargo_that_cannot_run_is_no_usable_cargo_and_the_reason_says_which(
+    found: str | None, code: int, stderr: str, why: str
+) -> None:
+    """A rustup shim with no default toolchain IS no cargo: one xfail covers both, naming which.
+
+    PLANTED CONTROL: a cargo that answers ``--version`` is usable, so the build runs and its own result judges.
+    """
+    asked: list[list[str]] = []
+
+    def run(argv: list[str], **_kwargs: object) -> SimpleNamespace:
+        asked.append(argv)
+        return SimpleNamespace(returncode=code, stdout='cargo 1.91.0' if code == 0 else '', stderr=stderr)
+
+    cargo, unusable = usable_cargo(which=lambda _name: found, run=run)
+    assert (cargo is None) is bool(why), 'usable exactly when no reason is given'
+    assert unusable.startswith(why), unusable
+    assert asked == ([] if found is None else [[found, '--version']])
