@@ -64,7 +64,7 @@ def _credential(grant_id: str, when: float) -> tuple[str, float] | None:
     path = state_dir() / f'{grant_id}.json'
     try:
         found = verify(json.loads(path.read_text(encoding='utf-8')), public_key(), now=when)
-    except (ConsentRefused, ValueError, OSError):
+    except ConsentRefused, ValueError, OSError:
         return None
     minutes = found.params.get('minutes')
     if found.action != ACTION or not isinstance(minutes, int) or isinstance(minutes, bool):

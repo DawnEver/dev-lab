@@ -163,7 +163,7 @@ steps = [
     { use-steps = "setup" },
     # THE PART'S OWN EXTRAS (user, 2026-11-20: most parts need no torch): the declared extras plus those its need-set
     # maps to, from the repo's one declaration (dev_lab.dev.depneeds flags -> lab_commons.extras); never all of them.
-    { name = "Sync the part's extras", shell = "bash", run = 'uv sync --frozen $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")' },
+    { name = "Sync the part's extras", shell = "bash", run = 'uv sync --frozen @python@ $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")' },
     { name = "Produce and post the part", run = "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}" },
     # A red, hung or cancelled part kept no log, so its cause was unreadable (document-lab tests/windows, 2026-11-18):
     # the run's verify log is attached whatever ended the job (always(): a failure, a cancel, the job timeout).
@@ -403,7 +403,10 @@ setup = [
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
     # The repo's DECLARED extras only ([tool.dev_lab.dep] extras, rendered by ciworkflows.EXTRAS_PLACEHOLDER); a part
     # adds its need-set's own. No job syncs every extra: a rendered `--all-extras` is refused (ALL-EXTRAS-REFUSED).
-    { name = "Sync the environment", run = "uv sync --frozen@extras@" },
+    # THE FAMILY PYTHON on every runner (user ruling 2026-11-27, dev-lab #1045): `@python@` renders as
+    # dev_lab.dev.pythontoolchain.SYNC_FLAGS, a uv-managed interpreter uv fetches -- never the runner's own, which
+    # measured three minors on three OSes (Ubuntu's system one, Homebrew's newest, an older Windows one).
+    { name = "Sync the environment", run = "uv sync --frozen @python@@extras@" },
 ]
 # ci.yml's merge decision on its one PR and the smoke run its merge dispatches; merge-ready and merge-rejudge list
 # `setup` before it, so a repo that narrows `setup` narrows both -- never a copy.
@@ -862,6 +865,66 @@ export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CO
 ["merge.yml".jobs.merge.permissions]
 contents = "write"
 pull-requests = "write"
+
+# GITEA'S FAST GATES RUN ON THE LIGHT RUNNER (user ruling 2026-11-27, architecture v2 (b)): forge-a1's light runner
+# runs ONLY environment-free gates of a Gitea repo's PR head -- ruff check and format --check, typos, the structural
+# workflow check, the head gates (forge headgate: the lock render, the branch set) and the security scan -- moving
+# security and the head gates OFF the HPC login node's serve tick (forgeservesteps reads ciworkflows.light_gates).
+# NEVER pytest and NEVER cargo here: tests/base and tests/cargo are the cluster's (the Slurm test chain); a pinned
+# test refuses either word in this workflow.
+# pull_request_target, as the review: the BASE's workflow runs, so a PR can neither change what runs nor post its own
+# gate statuses; the head is DATA (read by ruff and typos, judged by the door's verbs), and the tools are the base
+# lock's door, typos at the version that door's own lock pins (its `test` extra).
+["gates.yml"]
+forge = "gitea"
+name = "Gates"
+
+["gates.yml".on.pull_request_target]
+types = ["opened", "synchronize", "reopened", "ready_for_review"]
+
+["gates.yml".concurrency]
+group = "gates-${{ github.event.pull_request.number }}"
+cancel-in-progress = true
+
+["gates.yml".env]
+HEAD_SHA = "${{ github.event.pull_request.head.sha }}"
+PR_NUMBER = "${{ github.event.pull_request.number }}"
+FAMILY_SOURCE = "https://github.com/DawnEver/"
+UV_PYTHON = "python3"
+UV_PYTHON_DOWNLOADS = "never"
+UV_CONCURRENT_INSTALLS = "1"
+UV_CONCURRENT_BUILDS = "1"
+
+["gates.yml".jobs.gates]
+role = "merge"  # its statuses are merge conditions: rendered where the family binds merge to ci (roles, D73)
+runs-on = "light"
+steps = [
+    { use-steps = "reach" },
+    { use-steps = "lean" },
+    { use-steps = "door" },
+    { name = "Check out the whole head", run = "git sparse-checkout disable" },
+    { name = "Install typos as the door's lock pins it", run = '''
+"$RUNNER_TEMP/review/bin/uv" export --no-config --project "$RUNNER_TEMP/dev-lab" --frozen --extra test --no-hashes --no-header --no-annotate --no-emit-project | grep -E '^typos==' > "$RUNNER_TEMP/typos.txt" || { echo "the door's lock pins no typos"; exit 1; }
+"$RUNNER_TEMP/review/bin/uv" pip install --no-config --no-deps --python "$RUNNER_TEMP/review/bin/python" -r "$RUNNER_TEMP/typos.txt"
+''' },
+    { name = "ruff check", run = '"$RUNNER_TEMP/review/bin/ruff" check --force-exclude .' },
+    { name = "ruff format --check", if = "${{ !cancelled() }}", run = '"$RUNNER_TEMP/review/bin/ruff" format --check --force-exclude .' },
+    { name = "typos", if = "${{ !cancelled() }}", run = '"$RUNNER_TEMP/review/bin/typos"' },
+    { name = "Structural: the rendered workflows", if = "${{ !cancelled() }}", run = '"$REVIEW_PYTHON" -I -m dev_lab.dev.ciworkflows check' },
+    { name = "head gates", if = "${{ !cancelled() }}", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+"$REVIEW_PYTHON" -I -m dev_lab.dev.forge headgate run --pr "$PR_NUMBER"
+''' },
+    { name = "tests/security", if = "${{ !cancelled() }}", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+"$REVIEW_PYTHON" -I -m dev_lab.dev.forge security run --pr "$PR_NUMBER"
+''' },
+]
+
+# Gitea has no `statuses` scope: POST /statuses/{sha} asks Code write (1.27), as the review job's block says.
+["gates.yml".jobs.gates.permissions]
+contents = "write"
+pull-requests = "read"
 
 # THE GITEA RUNNER LABELS, declared once (user ruling 2026-11-02); every Gitea job's runs-on is one of them.
 [_runners]

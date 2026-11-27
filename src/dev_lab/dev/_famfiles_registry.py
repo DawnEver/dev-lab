@@ -92,6 +92,10 @@ AUTODOORS: Final = Renderer(
 RUST_TOOLCHAIN: Final = Renderer('rusttoolchain', ('dev_lab.dev.rusttoolchain', 'render'), present_only=True)
 
 
+#: The family Python's two keys of pyproject.toml (requires-python, ruff target-version); the rest is untouched.
+PYTHON_TOOLCHAIN: Final = Renderer('pythontoolchain', ('dev_lab.dev.pythontoolchain', 'render'))
+
+
 #: The whole .claude/settings.json: hooks, the door allow rows (autodoors' source) and the env, plus the delta.
 CLAUDE_SETTINGS: Final = Renderer(
     'claudesettings', ('dev_lab.dev.claudesettings', 'render'), inputs=(('shell_doors', '--shell-door'),)
@@ -107,10 +111,6 @@ class ProjectFile:
     how: str
     generated: bool = False  # the mechanism writes the WHOLE file: a reviewer reads the generator, not this
     renderer: Renderer | None = None  # the command writing it, re-run after every relock (forge sync)
-
-
-def _m(path: str, how: str) -> ProjectFile:
-    return ProjectFile(path, MANAGED, how)
 
 
 def _g(path: str, how: str, renderer: Renderer | None) -> ProjectFile:
@@ -133,7 +133,13 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
             'famconfig RENDERED: the one repo-wide LF line, plus the repo Delta',
             FAMFILES,
         ),
-        _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
+        ProjectFile(
+            'pyproject.toml',
+            MANAGED,
+            'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED; '
+            'pythontoolchain renders the family Python`s keys',
+            renderer=PYTHON_TOOLCHAIN,
+        ),
         _g(
             '.claude/settings.json',
             'claudesettings RENDERED: hooks, door allow rows, MPLBACKEND=Agg, plus [tool.dev_lab.claude]',

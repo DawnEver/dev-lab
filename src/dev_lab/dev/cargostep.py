@@ -5,6 +5,12 @@ its own :class:`~dev_lab.dev.reports.StepReport` and so its own result in the ve
 ``cargo <command> <manifest>``. Formatting and lint drift are reds of their own (dev-lab#1033: an unformatted
 writer landed on integration and two later merges each re-formatted it), and the part is produced by a hosted
 Actions job (:func:`dev_lab.dev.jobparts.rows`), so merge-ready waits on it as on ``tests/base``.
+ON GITEA THE CLUSTER PRODUCES IT (user ruling 2026-11-27, architecture v2 (a)). No Actions job derives the part
+there, so the candidate source does (:func:`dev_lab.dev.forgeschedule.candidates`, :func:`workspaces_at`): a Gitea
+commit tracking a workspace needs ``tests/cargo``. Its cluster producer is an ITEM KIND of the lab-commons array --
+:data:`ITEM_ENTRY` run once per item :data:`ITEMS_ENTRY` lists in the prep job (``RunSpec.entry`` and
+``RunSpec.items``, :func:`dev_lab.dev.forgeslurm.entry_of`): exit 0 is a pass, any other exit a reject, a raise
+(no cargo on the node) an environment error.
 A pytest test that shells out to cargo hides the Rust suite inside one Python node id, prices a cargo build as
 one test, and is retired.
 
@@ -35,14 +41,19 @@ from dev_lab.dev.reports import StepReport
 __all__ = [
     'BANNER',
     'COMMANDS',
+    'ITEMS_ENTRY',
+    'ITEM_ENTRY',
     'PART',
     'argv',
     'handed',
+    'items',
     'node',
     'produce',
+    'run_item',
     'step',
     'tracked_workspaces',
     'workspaces',
+    'workspaces_at',
 ]
 
 BANNER: Final = '--- cargo test ---\n'
@@ -50,6 +61,10 @@ BANNER: Final = '--- cargo test ---\n'
 PART: Final = 'cargo'
 #: Each workspace's commands, cheapest first: formatting, lints (``-D warnings``), then the tests.
 COMMANDS: Final = ('fmt', 'clippy', 'test')
+#: The lab-commons array entry (``module:function``) that runs one :func:`items` entry on a compute node.
+ITEM_ENTRY: Final = 'dev_lab.dev.cargostep:run_item'
+#: The lab-commons prep entry (``module:function``, ``items(tree, sha)``) listing :data:`PART`'s array items.
+ITEMS_ENTRY: Final = 'dev_lab.dev.cargostep:items'
 
 
 def node(manifest: str, command: str) -> str:
@@ -71,6 +86,31 @@ def tracked_workspaces(root: Path) -> tuple[str, ...]:
     return workspaces(root, [one for one in listed.stdout.split('\0') if one])
 
 
+def workspaces_at(root: Path, sha: str) -> tuple[str, ...]:
+    """The :func:`workspaces` commit *sha* of *root* tracks, read from git alone; none when *sha* is unreadable."""
+    git = shutil.which('git') or 'git'
+
+    def read(*args: str) -> str | None:
+        done = _door.run([git, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8')
+        return None if done.returncode else done.stdout
+
+    listed = read('ls-tree', '-r', '-z', '--name-only', sha)
+    if listed is None:
+        return ()
+    manifests = [one for one in listed.split('\0') if PurePosixPath(one).name == 'Cargo.toml']
+    found = [one for one in manifests if 'workspace' in _table(read('show', f'{sha}:{one}'))]
+    if not found and 'Cargo.toml' in manifests:
+        found.append('Cargo.toml')
+    return tuple(sorted(found))
+
+
+def _table(text: str | None) -> dict[str, object]:
+    try:
+        return tomllib.loads(text or '')
+    except tomllib.TOMLDecodeError:
+        return {}
+
+
 def workspaces(root: Path, tracked: Iterable[str]) -> tuple[str, ...]:
     """The tracked manifests under *root* declaring a ``[workspace]``; else a root package manifest; else none."""
     manifests = sorted(path for path in tracked if PurePosixPath(path).name == 'Cargo.toml')
@@ -78,7 +118,7 @@ def workspaces(root: Path, tracked: Iterable[str]) -> tuple[str, ...]:
     for manifest in manifests:
         try:
             table = tomllib.loads((root / manifest).read_text(encoding='utf-8'))
-        except (OSError, tomllib.TOMLDecodeError):
+        except OSError, tomllib.TOMLDecodeError:
             continue
         if 'workspace' in table:
             found.append(manifest)
@@ -95,6 +135,26 @@ def argv(cargo: str, manifest: str, command: str) -> list[str]:
         'test': ['--workspace', '--locked'],
     }[command]
     return [cargo, command, '--manifest-path', manifest, *tail]
+
+
+def items(root: Path, sha: str) -> list[dict[str, str]]:
+    """The array items of commit *sha*'s cargo part: one per workspace and :data:`COMMANDS` entry, cheapest first."""
+    return [{'manifest': one, 'command': command} for one in workspaces_at(root, sha) for command in COMMANDS]
+
+
+def run_item(item: dict[str, str]) -> dict[str, object]:
+    """:data:`ITEM_ENTRY`: run one :func:`items` entry in the task's tree (its cwd); ``{'exit': code, 'node': id}``.
+
+    The array reads a non-zero ``exit`` as the item's ERROR (:mod:`lab_commons.hpc.worker`); no cargo on the node
+    raises, so the item is an ERROR naming the toolchain, never a pass.
+    """
+    cargo = shutil.which('cargo')
+    if cargo is None:
+        msg = 'no cargo on this compute node -- install the toolchain rust-toolchain.toml pins (rustup)'
+        raise FileNotFoundError(msg)
+    manifest, command = item['manifest'], item['command']
+    code = _door.run(argv(cargo, manifest, command), check=False).returncode
+    return {'exit': code, 'node': node(manifest, command)}
 
 
 def step(

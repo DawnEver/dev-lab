@@ -90,7 +90,7 @@ def _line(root: Path, sha: str) -> tuple[str, ...]:
     """The origin tracking refs of the integration line and trunk *sha* declares, the family defaults otherwise."""
     try:
         policy = policy_at(root, sha)
-    except (ValueError, OSError):
+    except ValueError, OSError:
         policy = Policy(integration=_INTEGRATION)
     return tuple(f'refs/remotes/origin/{branch}' for branch in dict.fromkeys((policy.integration, policy.trunk)))
 

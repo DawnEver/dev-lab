@@ -67,7 +67,7 @@ def read_session(dest: str) -> Session | None:
     path = state_path(dest)
     try:
         return Session(**json.loads(path.read_text(encoding='utf-8')))
-    except (OSError, ValueError, TypeError):
+    except OSError, ValueError, TypeError:
         return None
 
 

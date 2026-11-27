@@ -98,3 +98,19 @@ def test_the_workstation_door_runs_the_accounts_own_kit_on_its_declared_host(mon
     assert said == ['tick-stop: alpha: ... stopped']
     assert tickstop.stop('u1', 'a;rm -rf ~', connect=lambda _g: None, pin=pin, say=said.append) == 2, 'PLANTED'
     assert len(ran) == 1
+
+
+def test_the_accounts_one_tick_lock_is_found_by_any_repo_it_ticks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ONE-LOGIN-POLLER: one lock, ``tick.lock``, held by a tick of every repo; ``--repo`` picks it by any of them."""
+    since = (NOW - timedelta(minutes=63)).isoformat()
+    holder = tickholder.Holder(4242, None, since, 40 * 60.0, 'dev-lab alpha', 'serving alpha')
+    tickholder.write(tickholder.record_of(tmp_path / 'serve' / 'tick.lock'), holder)
+    command = '/r/repos/dev-lab/.venv/bin/python -m dev_lab.dev.hpcaccount tick dev-lab alpha --lock /r/serve/tick.lock'
+    code, killed, _said = _stop(tmp_path, monkeypatch, command=command)
+    assert (code, killed) == (0, [(4242, signal.SIGTERM)])
+    monkeypatch.setattr(tickholder, 'alive', lambda _h: True)
+    said: list[str] = []
+    assert tickstop.stop_here(tmp_path, 'beta', now=lambda: NOW, say=said.append) == 0, 'planted: a repo it never ticks'
+    assert said == [f'tick-stop: no tick holds a lock under {tmp_path}/serve for beta']

@@ -156,7 +156,7 @@ def owners(root: Path, files: Iterable[str]) -> tuple[Owner, ...]:
         try:
             trees[name] = ast.parse(source)
             edges[name] = import_edges(source, name, is_package=rel.endswith('__init__.py'))
-        except (SyntaxError, ImportError):
+        except SyntaxError, ImportError:
             continue
     graph = {name: _leaves(frozenset(e for e in found if e in trees and e != name)) for name, found in edges.items()}
     paths = _call_paths(graph)

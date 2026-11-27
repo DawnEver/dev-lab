@@ -320,7 +320,7 @@ def read_imports(name: str, text: str) -> FileReading:
     """
     try:
         tree = ast.parse(text)
-    except (SyntaxError, ValueError):
+    except SyntaxError, ValueError:
         return FileReading(name=name, uses=(), parse_error=True)
     uses: list[Use] = []
     _walk(tree.body, uses, guarded=False, skipped=frozenset())

@@ -76,7 +76,7 @@ def _record(client: Client, status: CommitStatus) -> Mapping[str, Any] | None:
         return None
     try:
         return json.loads(gzip.decompress(client.download(status.url)).decode('utf-8'))
-    except (ForgeCallFailed, OSError, ValueError, EOFError):
+    except ForgeCallFailed, OSError, ValueError, EOFError:
         return None
 
 
@@ -96,7 +96,7 @@ def unreached(
     """
     try:
         scarce = frozenset(vocabulary_at(root, head).scarce)
-    except (ValueError, subprocess.SubprocessError):
+    except ValueError, subprocess.SubprocessError:
         return frozenset()
     wanted = scarce_parts({row_part(name) for name in derived(statuses)}, scarce)
     settled = [one for one in statuses if one.context == part_context(BASE) and one.state in _SETTLED]
@@ -120,7 +120,7 @@ def _waived(
     try:
         prints = Footprints.at(root, head)
         changed = resolve_lock(root, fork, head, changed)
-    except (ValueError, subprocess.SubprocessError):
+    except ValueError, subprocess.SubprocessError:
         return frozenset()
     return frozenset(
         part
@@ -142,7 +142,7 @@ def red_alarms(
         return []
     try:
         scarce = frozenset(vocabulary_at(root, tip).scarce)
-    except (ValueError, subprocess.SubprocessError):
+    except ValueError, subprocess.SubprocessError:
         return []
     if not scarce:
         return []

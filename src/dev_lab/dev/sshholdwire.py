@@ -98,7 +98,7 @@ def ping(session: Session) -> bool:
     """Whether *session*'s holder answers AND its ssh connection still runs (the holder ends itself when not)."""
     try:
         return request(session, {'verb': 'ping'}, CONNECT_S).get('ok') is True
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return False
 
 

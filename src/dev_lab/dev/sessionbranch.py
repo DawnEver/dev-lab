@@ -255,7 +255,7 @@ def _bound_slug() -> str | None:
     """The slug of the open task the cwd's branch works on, or ``None`` (no task branch, or none open)."""
     try:
         task = task_of(Path.cwd())
-    except (ValueError, LookupError):
+    except ValueError, LookupError:
         return None
     return None if task is None else slug_of(task)
 
@@ -328,7 +328,7 @@ def _deletion_rev(root: Path) -> str:
     """
     try:
         policy = policy_at(root, 'HEAD')
-    except (ValueError, OSError, subprocess.CalledProcessError):
+    except ValueError, OSError, subprocess.CalledProcessError:
         return 'HEAD'
     for name in (policy.integration, policy.trunk):
         rev = f'refs/remotes/origin/{name}'
@@ -348,7 +348,7 @@ def _trusted(root: Path, pushed: Policy | None, old: str) -> Policy | None:
         return pushed
     try:
         held = policy_at(root, old)
-    except (ValueError, subprocess.CalledProcessError):
+    except ValueError, subprocess.CalledProcessError:
         return pushed
     return held if pushed is None or held.integration != pushed.integration else pushed
 

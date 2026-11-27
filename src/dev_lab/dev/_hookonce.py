@@ -36,7 +36,7 @@ def first_runs(wires: Sequence[Wire], payload: dict[str, Any], git_dir: Path | N
     ledger = git_dir / LEDGER_NAME
     try:
         seen = json.loads(ledger.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         seen = {}
     seen = seen if isinstance(seen, dict) else {}
     ran = set(seen.get(session) or ()) if isinstance(seen.get(session), list) else set()

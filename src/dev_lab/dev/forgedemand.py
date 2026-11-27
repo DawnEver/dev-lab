@@ -64,7 +64,7 @@ def refresh(repo: str, client: Client | None, *, limit: int = LIMIT) -> int:
     for attachment in fresh:
         try:
             record = json.loads(gzip.decompress(client.download(attachment.url)).decode('utf-8'))
-        except (ForgeCallFailed, OSError, ValueError):
+        except ForgeCallFailed, OSError, ValueError:
             continue
         learned.learn_record(repo, attachment.name, record)
         count += 1

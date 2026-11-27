@@ -16,7 +16,7 @@ import pytest
 
 from dev_lab.dev import lockcheck, uvfollow
 from dev_lab.dev.family import watch
-from dev_lab.dev.hpcaccount import checks, tick
+from dev_lab.dev.hpcaccount import checks
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report, classify, is_retryable
 from dev_lab.dev.uvfollow import follow
 from dev_lab.ops import upgrade
@@ -30,17 +30,6 @@ def _recorder(said: str) -> tuple[list[tuple[str, str]], object]:
         return said
 
     return calls, follow
-
-
-def test_a_cluster_tick_moves_the_hosts_uv_to_the_pin(monkeypatch: pytest.MonkeyPatch) -> None:
-    """On the kit's tick only (the host checkout's one writer). PLANTED CONTROL: another repo's tick never does."""
-    calls, follow = _recorder('')
-    monkeypatch.setattr(tick, 'follow_pin', follow)
-    monkeypatch.setattr(tick.shutil, 'which', lambda _name: '/opt/tools/uv')
-    assert tick.follow_uv('dev-lab') == ''
-    assert calls == [('/opt/tools/uv', tick.uv_version())]
-    assert tick.follow_uv('some-repo') == ''
-    assert len(calls) == 1
 
 
 def test_a_cluster_deploy_moves_a_present_uv_to_the_pin(monkeypatch: pytest.MonkeyPatch) -> None:

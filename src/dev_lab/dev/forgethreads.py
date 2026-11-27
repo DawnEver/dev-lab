@@ -54,7 +54,7 @@ def read_json(path: Path) -> dict:
     """*path*'s JSON object, or ``{}`` when it is missing, unreadable or not an object."""
     try:
         found = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     return found if isinstance(found, dict) else {}
 

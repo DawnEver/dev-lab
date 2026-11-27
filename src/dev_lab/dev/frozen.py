@@ -264,7 +264,7 @@ def _frozen_of(path: Path) -> tuple[Path, Freeze] | None:
         return None
     try:
         return root, parse((root / FREEZE_FILE).read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
 
 
@@ -392,7 +392,7 @@ def main(argv: list[str] | None = None, *, stdin: BinaryIO | None = None, stdout
         try:
             payload = json.loads((stdin or sys.stdin.buffer).read().decode('utf-8'))
             reason = _shell_refusal(payload) if isinstance(payload, dict) else None
-        except (ValueError, OSError, RuntimeError):
+        except ValueError, OSError, RuntimeError:
             return 0
     elif args.mode == 'commit':
         problems = _problems(Path.cwd())
