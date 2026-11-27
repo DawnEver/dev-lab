@@ -324,7 +324,7 @@ HINT: the hazard is minutes, not harm.
 
 ## BASELINE-REWRITE-QUOTED
 
-- **Why it is refused.** a baseline a test compares against lives in the run store, and the repo's `tests/baselines.lock` names it by hash (`dev_lab.dev.baselines`). A rewrite -- a locked name whose hash moved -- is a claim that the new data agrees better, and a claim without both numbers is unchecked. The commit-msg row `baseline-rewrite-quoted` judges the STAGED lock against `HEAD`'s before the commit exists; `python -m dev_lab.dev.baselines verify --commit <sha>` judges a landed one. An added row is no rewrite.
+- **Why it is refused.** a baseline a test compares against lives in the run store, and the repo's `tests/baselines.lock` names it by hash (`dev_lab.dev.baselines`). A rewrite -- a locked name whose hash moved -- is a claim that the new data agrees better, and a claim without both numbers is unchecked. The commit-msg row `baseline-rewrite-quoted` judges the STAGED lock against `HEAD`'s before the commit exists; `python -m dev_lab.dev.baselines verify --commit <sha>` judges a landed one. An added row is no rewrite. A repo declaring `[tool.dev_lab.baselines] locks = [<glob>, ...]` (e.g. `data/cases/**/references.lock`, JSON rows with a `name`) has every declared lock judged the same way; a name outside `tests/baselines.lock` is qualified by its lock's directory.
 - **The exit.** Add one line per rewritten name to the message -- `baseline <name>: old <number> new <number>` -- and commit again.
 
 ## DOWNSTREAM-SYNCS-INTEGRATION
