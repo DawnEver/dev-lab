@@ -202,12 +202,13 @@ def test_a_non_artifact_is_refused_naming_the_egg_info_door(rules: Path, command
     assert 'rm -rf <pkg>.egg-info' in reason
 
 
-def test_the_egg_info_door_is_named_in_the_row_and_the_doc() -> None:
+def test_the_egg_info_permission_is_named_in_the_doc_not_the_remedy() -> None:
+    """An egg-info delete is never refused, so it is no door a refusal names; the doc says it is permitted."""
     rule = rules_by_id(DENY_RULES)['RECURSIVE-DELETE']
     section = (Path(__file__).resolve().parents[1] / disclosure.REFUSALS_DOC).read_text(encoding='utf-8')
     section = section.split('\n## RECURSIVE-DELETE\n', 1)[1].split('\n## ', 1)[0]
-    for text in (str(rule.remedy), section):
-        assert '.egg-info' in text
+    assert '.egg-info' in section
+    assert '.egg-info' not in str(rule.remedy)
 
 
 def _dead_doors(remedy: str) -> list[str]:
