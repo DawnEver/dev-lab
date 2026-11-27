@@ -80,6 +80,7 @@ from lab_commons.hpc.rclone import declared_remote, probe
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
+from dev_lab.dev import forgerunstate
 from dev_lab.dev.hpcaccount import femm, headroom, prep
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
 from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, merge_tree_refusal
@@ -196,8 +197,8 @@ def slurm_dirs() -> list[str] | str:
 #: (cron) and what it alone needs -- the serve tick's git. Rule ``SCHEDULER-ONLY-FOR-SERVING``. No phase builds on the
 #: login node (ONE-LOGIN-POLLER): ``prep`` and ``femm`` only ask Slurm jobs for what is not built yet.
 PHASES: Final = (
-    'credentials', 'reader', 'grant', 'store', 'serve-git', 'headroom', 'checkouts', 'login', 'prep', 'artifacts',
-    'femm', 'cron',
+    'credentials', 'reader', 'grant', 'store', 'runs', 'serve-git', 'headroom', 'checkouts', 'login', 'prep',
+    'artifacts', 'femm', 'cron',
 )  # fmt: skip
 SERVING_PHASES: Final = frozenset({'serve-git', 'cron'})
 
@@ -209,6 +210,18 @@ def phases_of(*, serves: bool) -> tuple[str, ...]:
     needs no cron).
     """
     return PHASES if serves else tuple(name for name in PHASES if name not in SERVING_PHASES)
+
+
+def runs(step: Step) -> int:
+    """The account's forge run files migrated once (FORMATS-MIGRATE-ONCE): a retired key renamed to its successor.
+
+    The deploy is the fleet's one door onto an account, so it runs :func:`dev_lab.dev.forgerunstate.migrate` there;
+    a dry run only names what it would rename. Each file is said; a clash is named and left for a person.
+    """
+    emit(f'[runs] the forge run files carry no retired key ({forgerunstate.directory()})')
+    for line in forgerunstate.migrate(apply=not step.dry):
+        emit(f'  {line}')
+    return 0
 
 
 def _cron(
@@ -387,6 +400,7 @@ def deploy(
         'reader': lambda: reader(spec, home, role or role_of, semantics=semantics),
         'grant': lambda: grant(step, path, args.grant_table),
         'store': lambda: store(step, spec, path),
+        'runs': lambda: runs(step),
         'serve-git': lambda: _serve_git(step, home, path, slurm, setup, root=spec.root, env=spec.env),
         'headroom': lambda: headroom.check(step, spec, home),
         'checkouts': lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),
