@@ -194,12 +194,11 @@ def test_an_egg_info_build_artifact_is_permitted(rules: Path, command: str) -> N
     'command',
     ['rm -rf src', 'rm -rf src/egg-info-notes', 'rm -rf src/pkg.egg-info/../..', 'rm -rf src/pkg.egg-info src'],
 )
-def test_a_non_artifact_is_refused_naming_the_egg_info_door(rules: Path, command: str) -> None:
-    """PLANTED CONTROL: the egg-info door opens nothing else, and the refusal names it."""
+def test_a_non_artifact_is_refused(rules: Path, command: str) -> None:
+    """PLANTED CONTROL: the egg-info permission opens nothing else (the doc, not the remedy, names it: #1020)."""
     reason = agenthooks.decide(command, rules)
     assert reason is not None, f'not refused: {command!r}'
     assert 'RECURSIVE-DELETE' in reason
-    assert 'rm -rf <pkg>.egg-info' in reason
 
 
 def test_the_egg_info_permission_is_named_in_the_doc_not_the_remedy() -> None:

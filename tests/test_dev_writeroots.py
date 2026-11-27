@@ -222,10 +222,15 @@ def test_an_unusable_declaration_refuses_by_name(monkeypatch: pytest.MonkeyPatch
         ('New-Item -ItemType File D:\\var\\x.txt', [('D:\\var\\x.txt', '')]),
         ('echo x 2>/dev/null > $null', []),
         ('cat /tmp/a | grep b', []),
+        # A backgrounded write in the bounded form BACKGROUND-SHELL-IS-BOUNDED itself asks for: the script is quoted.
+        ("timeout 5m bash -c 'cmd > /tmp/x.log 2>&1' &", [('/tmp/x.log', '')]),
+        ('nohup sh -c "cd /tmp && cmd > x.log" &', [('x.log', '/tmp')]),
+        ("cd /w && bash -lc 'cmd | tee out.txt'", [('out.txt', '/w')]),
+        ("CONTROL: bash -c 'cat /tmp/x.log'", []),
     ],
 )
 def test_the_shell_targets_are_every_place_a_line_writes(command: str, targets: list[tuple[str, str]]) -> None:
-    assert shell_targets(command) == targets
+    assert shell_targets(command.removeprefix('CONTROL: ')) == targets
 
 
 @pytest.mark.parametrize('target', ['D:/var/x.txt', 'C:\\tmp\\out.csv'])

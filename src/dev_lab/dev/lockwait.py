@@ -8,15 +8,29 @@ User ruling 2026-10-19: a unit lives in the VALUE, never the NAME, so the wait i
 from __future__ import annotations
 
 import argparse
+import re
 
-from lab_commons.quantity import parse
+from lab_commons.quantity import QuantityRefused, parse
 
 __all__ = ['lock_wait', 'lock_wait_arg']
+
+#: A number in ``m``: pint's METER, typed by a hand that meant minutes ("60m"). Still refused, but naming ``min``.
+_METERS = re.compile(r'\s*(\d+(?:\.\d+)?)\s*m\s*')
 
 
 def lock_wait(text: str) -> float:
     """``--lock-wait`` in seconds. The unit lives in the VALUE: a bare number, or a non-duration, is refused."""
-    return parse('--lock-wait', text, 'duration')
+    try:
+        return parse('--lock-wait', text, 'duration')
+    except QuantityRefused as exc:
+        meters = _METERS.fullmatch(text)
+        if meters is None:
+            raise
+        msg = (
+            f'--lock-wait = "{text}" is {meters[1]} meters (pint reads m as the meter), not a duration: '
+            f'write the minutes as "{meters[1]} min"'
+        )
+        raise QuantityRefused(msg) from exc
 
 
 def lock_wait_arg(text: str) -> float:
