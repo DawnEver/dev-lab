@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.hpc.needsets import BASE
@@ -56,17 +56,18 @@ _RECORD: Final = re.compile(r'^Red-On-Record:\s*(?P<part>\S+)\s+--\s*(?P<residua
 _PART_PREFIX: Final = 'tests/'
 
 
-def _ran_red(statuses: Sequence[CommitStatus]) -> dict[str, CommitStatus]:
+def _ran_red(statuses: Sequence[CommitStatus], *, hosted: Collection[str]) -> dict[str, CommitStatus]:
     """The hosted base parts that RAN and failed: a judged FAIL, or an error its own code caused (``class=code``).
 
-    Hand and requeued parts never hold a merge (:func:`red_checks` drops them), nor does ``tests/review``.
+    Hand and requeued parts never hold a merge (:func:`red_checks` drops them), nor does ``tests/review``; a
+    part in *hosted* is base's peer, put on record the same way.
     """
     latest = {status.context: status for status in statuses}
     return {
         c: latest[c]
-        for c in red_checks(statuses)
+        for c in red_checks(statuses, hosted=hosted)
         if c.startswith(_PART_PREFIX)
-        and row_part(c.removeprefix(_PART_PREFIX)) == BASE
+        and (row_part(c.removeprefix(_PART_PREFIX)) == BASE or c.removeprefix(_PART_PREFIX) in hosted)
         and (latest[c].state == 'failure' or 'class=code' in latest[c].description)
     }
 
@@ -75,31 +76,35 @@ def _recorded(record: str) -> frozenset[str]:
     return frozenset(found.group('part') for found in _RECORD.finditer(record))
 
 
-def off_record(statuses: Sequence[CommitStatus], record: str) -> list[str]:
+def off_record(statuses: Sequence[CommitStatus], record: str, *, hosted: Collection[str]) -> list[str]:
     """The wait for the test parts standing red in *statuses* that *record* (the PR body) does not put on record."""
-    if off := sorted(set(_ran_red(statuses)) - _recorded(record)):
+    if off := sorted(set(_ran_red(statuses, hosted=hosted)) - _recorded(record)):
         return [f'its red parts on record: add `{RECORD_LINE}` to the PR for {", ".join(off)}']
     return []
 
 
-def recorded_as_ran(statuses: Sequence[CommitStatus], record: str) -> tuple[CommitStatus, ...]:
+def recorded_as_ran(
+    statuses: Sequence[CommitStatus], record: str, *, hosted: Collection[str]
+) -> tuple[CommitStatus, ...]:
     """*statuses* with every red test part ON RECORD in *record* read as ran (``success``) -- integration only.
 
     User ruling RED-INTEGRATION-MERGES: integration MAY be red, so a part that RAN and failed is no wait once its
     residual is named. A pending or absent part is untouched and still waits; promote to the trunk never reads this.
     """
-    on = _ran_red(statuses).keys() & _recorded(record)
+    on = _ran_red(statuses, hosted=hosted).keys() & _recorded(record)
     return tuple(dataclasses.replace(s, state='success') if s.context in on and s.state in RED else s for s in statuses)
 
 
-def hand_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:
-    """The parts *statuses* derive that only a hand host produces: every part but :data:`BASE` and its OS rows.
+def hand_parts(statuses: Sequence[CommitStatus], *, hosted: Collection[str]) -> frozenset[str]:
+    """The parts *statuses* derive that only a hand host produces: all but :data:`BASE`, its OS rows and *hosted*.
 
     USER RULING 2026-11-10: such a part (``windows``, ``gpu``, ``vendor``...) is tested LATER, when a hand host has
-    room, and is never a merge condition; a hosted runner produces ``tests/base`` and each ``tests/base@<os>``.
+    room, and is never a merge condition; a hosted runner produces ``tests/base`` and each ``tests/base@<os>``, and
+    a hosted job each part in *hosted* (:func:`dev_lab.dev.hostedparts.pull_request_parts`): being in another part's
+    ``hands=`` makes none of those a hand part (dev-lab#1024).
     """
     parts, _ = parts_of(statuses)
-    return frozenset(name for name in {*derived(statuses), *parts} if row_part(name) != BASE)
+    return frozenset(name for name in {*derived(statuses), *parts} if row_part(name) != BASE and name not in hosted)
 
 
 def requeued_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:
@@ -112,12 +117,12 @@ def requeued_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:
     )
 
 
-def hand_note(statuses: Sequence[CommitStatus]) -> str | None:
+def hand_note(statuses: Sequence[CommitStatus], *, hosted: Collection[str]) -> str | None:
     """How *statuses*' hand parts stand, each by name (``tests/windows FAIL``), or ``None`` when there is none.
 
     It is said, never waited on: absent, unposted or red, a hand part is a later finding (:func:`hand_parts`).
     """
-    hands = hand_parts(statuses)
+    hands = hand_parts(statuses, hosted=hosted)
     if not hands:
         return None
     parts, _ = parts_of(statuses)
@@ -133,13 +138,13 @@ def hand_note(statuses: Sequence[CommitStatus]) -> str | None:
     return 'hand parts, tested later, never a merge condition: ' + ', '.join(said(name) for name in sorted(hands))
 
 
-def parts_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
+def parts_wait(head: str, statuses: Sequence[CommitStatus], *, hosted: Collection[str]) -> str | None:
     """Why *head*'s hosted test parts do not all stand PASS, or ``None``: the one :func:`standing` reading.
 
     Every hand part (:func:`hand_parts`) is waived -- an unproduced one and a secrets-hosted one (produced only on a
-    full run, never for a pull request) among them.
+    full run, never for a pull request) among them; a part in *hosted* a pull request's own job produces never is.
     """
-    parts = standing(statuses, head=head, waived=hand_parts(statuses) | requeued_parts(statuses))
+    parts = standing(statuses, head=head, waived=hand_parts(statuses, hosted=hosted) | requeued_parts(statuses))
     if parts.result is Conclusion.PASS:
         return None
     return '; '.join([f'they stand {parts.reading}', *parts.problems])
@@ -164,7 +169,7 @@ def checks_wait(checks: Sequence[str], statuses: Sequence[CommitStatus]) -> str 
     return '; '.join(said) or None
 
 
-def actions_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
+def actions_wait(head: str, statuses: Sequence[CommitStatus], *, hosted: Collection[str]) -> str | None:
     """Why the parts forge Actions post for *head* -- the base rows -- do not all stand PASS, or ``None``.
 
     A repo whose ``tests`` are bound to ``ci`` (:mod:`dev_lab.dev.roles`) has no serve host, so nothing here is
@@ -175,19 +180,25 @@ def actions_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
             f'forge Actions has not yet posted {part_context(BASE)} for {head[:12]}: its ci.yml run is still to come '
             '(a parts job that derives no matrix posts it red, naming why)'
         )
-    return parts_wait(head, statuses)
+    return parts_wait(head, statuses, hosted=hosted)
 
 
-def green_waits(head: str, statuses: Sequence[CommitStatus], *, tests: str) -> list[str]:
+def green_waits(head: str, statuses: Sequence[CommitStatus], *, tests: str, hosted: Collection[str]) -> list[str]:
     """Why *head* is not green as *tests* (its ``tests`` kind) posts it; break-glass reads green through this alone.
 
     :func:`actions_wait` for ``ci``, else the security check and the test parts a serve host posts.
     """
-    waits = [actions_wait(head, statuses)] if tests == CI else [security_wait(statuses), parts_wait(head, statuses)]
+    waits = (
+        [actions_wait(head, statuses, hosted=hosted)]
+        if tests == CI
+        else [security_wait(statuses), parts_wait(head, statuses, hosted=hosted)]
+    )
     return [wait for wait in waits if wait is not None]
 
 
-def status_waits(policy: Policy, head: str, statuses: Sequence[CommitStatus], *, tests: str) -> list[str]:
+def status_waits(
+    policy: Policy, head: str, statuses: Sequence[CommitStatus], *, tests: str, hosted: Collection[str]
+) -> list[str]:
     """What *head*'s posted statuses lack: the repo's declared merge checks, else what its *tests* executor posts.
 
     User ruling 2026-11-12: a repo declaring ``merge_checks`` waits on them IN PLACE of the test parts,
@@ -199,18 +210,18 @@ def status_waits(policy: Policy, head: str, statuses: Sequence[CommitStatus], *,
         checked = checks_wait(policy.merge_checks, statuses)
         return [] if checked is None else [f'its merge checks: {checked}']
     if tests == CI:
-        waited = actions_wait(head, statuses)
+        waited = actions_wait(head, statuses, hosted=hosted)
         return [] if waited is None else [f'its test parts: {waited}']
     said = [
         ('its security check', security_wait(statuses)),
         ('its head gates', gates_wait(statuses)),
-        ('its test parts', parts_wait(head, statuses)),
+        ('its test parts', parts_wait(head, statuses, hosted=hosted)),
     ]
     return [f'{what}: {why}' for what, why in said if why is not None]
 
 
-def red_checks(statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
+def red_checks(statuses: Sequence[CommitStatus], *, hosted: Collection[str]) -> tuple[str, ...]:
     """The contexts in *statuses* standing terminal red (``failure``/``error``), hand and requeued parts excluded."""
-    hands = {part_context(name) for name in hand_parts(statuses) | requeued_parts(statuses)}
+    hands = {part_context(name) for name in hand_parts(statuses, hosted=hosted) | requeued_parts(statuses)}
     latest = {status.context: status for status in statuses}
     return tuple(c for c, s in latest.items() if s.state in RED and c not in hands)

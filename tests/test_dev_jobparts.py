@@ -58,7 +58,7 @@ def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path
     """cc-market #29: the matrix came out empty, no part job ran, and merge-ready waited on tests/base forever."""
     (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
     forge = StateForge()
-    assert 'not yet posted' in forgemergewaits.actions_wait(SHA, status_list(forge, SHA)), 'PLANTED CONTROL'
+    assert 'not yet posted' in forgemergewaits.actions_wait(SHA, status_list(forge, SHA), hosted=()), 'PLANTED CONTROL'
 
     def broken(_expression: str) -> list[str]:
         msg = 'pytest collection failed with exit 2'
@@ -68,7 +68,7 @@ def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path
     monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
     monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
     assert jobparts.main(['matrix', '--root', str(tmp_path), '--event', 'pull_request']) == 1
-    waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA))
+    waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA), hosted=())
     assert waited is not None
     assert 'not yet posted' not in waited
     assert jobparts.NO_MATRIX in waited
@@ -502,9 +502,38 @@ def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part() -> None:
     PLANTED CONTROL: the same head with ``tests/base`` red still waits.
     """
     handed = [CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemergewaits.parts_wait('hosted', handed) is None
+    assert forgemergewaits.parts_wait('hosted', handed, hosted=()) is None
     red = [CommitStatus('tests/base', 'failure', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemergewaits.parts_wait('hosted', red) is not None, 'PLANTED CONTROL'
+    assert forgemergewaits.parts_wait('hosted', red, hosted=()) is not None, 'PLANTED CONTROL'
+
+
+def test_merge_ready_requires_a_hosted_part_another_part_hands_to() -> None:
+    """dev-lab#1024: document-lab#92 merged with hosted ``tests/corpus`` red because base ``hands=corpus:140``.
+
+    A hosted part a pull request's own job produces is base's peer: red, it holds the merge until put on record.
+    PLANTED CONTROL: the same statuses with ``corpus`` not hosted (an unproduced part) waive it, as before.
+    """
+    hosting = 'scope=full ran=3 hands=corpus:140'
+    statuses = [
+        CommitStatus('tests/base', 'success', hosting, ''),
+        CommitStatus('tests/corpus', 'failure', 'scope=full ran=140 hands=-', ''),
+    ]
+    held = forgemergewaits.parts_wait('h', statuses, hosted={'corpus'})
+    assert held is not None
+    assert 'FAIL' in held, held
+    assert 'corpus' not in forgemergewaits.hand_parts(statuses, hosted={'corpus'})
+    assert forgemergewaits.off_record(statuses, '', hosted={'corpus'}), 'its red asks for Red-On-Record'
+    record = 'Red-On-Record: tests/corpus -- t::x\n'
+    recorded = forgemergewaits.recorded_as_ran(statuses, record, hosted={'corpus'})
+    assert forgemergewaits.parts_wait('h', recorded, hosted={'corpus'}) is None, 'on record, it is no wait'
+    assert forgemergewaits.parts_wait('h', statuses, hosted=()) is None, 'PLANTED CONTROL: unproduced is waived'
+
+
+def test_a_pull_request_produces_a_hosted_part_with_no_secret_and_not_manual() -> None:
+    """:func:`hostedparts.pull_request_parts` names what a PR's run produces; a secret or ``manual`` part is not."""
+    assert hostedparts.pull_request_parts(SETUP_ONLY) == {'linux'}, 'live names a task, so a secret'
+    manual = SETUP_ONLY.replace('xvfb" }', 'xvfb", manual = true }')
+    assert hostedparts.pull_request_parts(manual) == set(), 'a manual part runs on a dispatch alone'
 
 
 _RUN_ENV = {'GITHUB_SERVER_URL': 'https://github.com', 'GITHUB_REPOSITORY': 'o/r', 'GITHUB_RUN_ID': '7'}
