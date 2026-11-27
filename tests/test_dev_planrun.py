@@ -176,7 +176,7 @@ def test_a_subject_the_host_derives_differently_is_blocked() -> None:
     host.subjects['config'] = 'c' * 64
     green, lines = planrunpreflight.preflight(PLAN, STEPS, lambda _dest: host)
     assert not green
-    assert 'derives subject cccccccccccc, the plan grants aaaaaaaaaaaa' in lines[1]
+    assert f'derives subject {"c" * 64}, the plan grants {"a" * 64}' in lines[1]  # full subjects (#1064)
 
 
 def test_the_door_check_names_the_credential_flag_the_run_will_pass() -> None:

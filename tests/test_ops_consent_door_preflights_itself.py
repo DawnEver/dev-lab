@@ -4,7 +4,7 @@ User ruling 2026-11-22, five codes lost that day. ``sshhold open --plan --code C
 only AFTER the code was given (its 30 s window then gone); ``consent grant --code C`` refused a lone request's
 receipt older than 300 s the same way. A code asked at the PROMPT is asked only after the door ran the no-code
 preflight itself, and what the host answers NOW decides. A code given IN ADVANCE is the first request on a fresh
-green, else it is refused unspent naming the preflight door (incident 2026-11-26; tests/test_ops_consent_code_first.py).
+green, else the door re-runs the preflight itself and uses it only on green (issue #1064).
 
 Every refusal has its PLANTED control: the same call with the one fault removed uses the code.
 """
@@ -15,7 +15,7 @@ import json
 import time
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from _ops_fixtures import NOW, code
@@ -29,7 +29,6 @@ from dev_lab.ops.consent.client import grant, preflight
 from dev_lab.ops.consent.credential import public_text
 from dev_lab.ops.consent.door import (
     CODE_PREFLIGHT_FRESH_S,
-    PLAN_PREFLIGHT_DOOR,
     PREFLIGHT_FRESH_S,
     RECEIPT_FRESH_S,
     preflighted_steps,
@@ -79,25 +78,33 @@ def _open(plan: Path, *more: str) -> int:
     return sshhold.main(['open', '--hours', '1', '--plan', str(plan), '--digest', 'abc', *more])
 
 
-def test_a_code_given_in_advance_on_a_stale_green_is_refused_unspent_not_re_run(
+def test_a_code_given_in_advance_on_a_stale_green_re_runs_the_preflight_then_is_used(
     issuer: Issuer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A re-run before a given code spent its 30 s step (incident 2026-11-26): the door refuses it instead.
+    """Issue #1064: a stale green is re-run by the door itself, then the given code is used.
 
-    PLANTED CONTROL: a green recorded inside the code window sends the given code with no re-run.
+    PLANTED CONTROLS: a host that blocks NOW refuses the given code, ``no code used``; a green recorded inside the
+    code window sends the given code with no re-run.
     """
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'home'))
     plan, steps = _files(tmp_path)
     record_preflight(STEPPED, steps=steps, now=time.time() - RERUN_AGE_S)
-    host = FakeHost()
-    spent = _door(monkeypatch, issuer, host)
+    blocked = FakeHost()
+    blocked.ready = cast(Any, (1, '[ops consent] not ready: no consent key'))
+    spent = _door(monkeypatch, issuer, blocked)
     assert _open(plan, '--code', code(0)) == 2
     said = capsys.readouterr().err
     assert 'no code used' in said
-    assert PLAN_PREFLIGHT_DOOR in said
+    assert 'no consent key' in said
     assert spent == []
-    assert host.commands == [], 'nothing ran before the refusal'
+    host = FakeHost()
+    spent = _door(monkeypatch, issuer, host)
+    assert _open(plan, '--code', code(0)) == 0
+    assert spent == [code(0)]
+    assert host.commands, 'the door re-ran the preflight on the host itself'
     record_preflight(STEPPED, steps=steps, now=time.time() - 1)
+    host = FakeHost()
+    spent = _door(monkeypatch, issuer, host)
     assert _open(plan, '--code', code(0)) == 0
     assert spent == [code(0)]
     assert host.commands == []
