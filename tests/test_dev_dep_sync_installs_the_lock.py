@@ -30,8 +30,11 @@ def _project(root: Path) -> bytes:
 
 
 def _runner(calls: list[tuple[str, ...]], *, sync: int = 0, check: int = 0) -> Callable[..., SimpleNamespace]:
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
+        env = kwargs.get('env')
+        if isinstance(env, dict) and argv[1] == 'sync' and env.get('UV_PROJECT_ENVIRONMENT'):
+            Path(env['UV_PROJECT_ENVIRONMENT']).mkdir(parents=True, exist_ok=True)  # what a real sync builds
         code = check if argv[1:3] == ['lock', '--check'] else sync if argv[1] == 'sync' else 0
         return SimpleNamespace(returncode=code, stdout='', stderr='')
 
