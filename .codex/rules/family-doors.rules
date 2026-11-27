@@ -221,6 +221,12 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "retarget"],
+    decision = "allow",
+    justification = "Moving a pull request onto the integration branch or a declared branch, its reason commented first (PRS-TARGET-INTEGRATION).",
+)
+
+prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "review", "carry"],
     decision = "allow",
     justification = "Recording the disposition of a finding a continuation pull request carries: resolved, or deferred with a required reason.",

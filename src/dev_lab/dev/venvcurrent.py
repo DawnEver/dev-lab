@@ -128,9 +128,17 @@ def publish(root: Path, env: Path, *, census: Census = processes) -> str:
     """Make *env* current: swap :data:`POINTER` to link to it; one line saying so.
 
     A plain ``.venv`` directory moves into :data:`HOME` first (:func:`_set_aside`); held, the publish is refused
-    by name and *env* stays built, unpublished.
+    by name and *env* stays built, unpublished. An *env* that does not exist is refused before anything moves: a
+    pointer to nothing is no environment (measured 2026-11-27: Windows raised a bare ``FileNotFoundError`` making
+    the junction, while POSIX published a dangling symlink).
     """
     root, env = Path(root), Path(env)
+    if not env.is_dir():
+        msg = (
+            f'{env} cannot be published: the build reported success and left no environment there. Rebuild it:\n'
+            f'{sys.executable} -m dev_lab.dev.dep --bootstrap {root}'
+        )
+        raise PublishRefused(msg)
     link = root / POINTER
     if link.is_dir() and not is_link(link) and (why := _set_aside(root, census=census)):
         msg = f'{env} built but not published: {why}'

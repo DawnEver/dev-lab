@@ -65,7 +65,7 @@ from dev_lab.dev.checkout import authority_for, git_out, linked, worktrees
 from dev_lab.dev.liverun import Census, describe, removal_holders
 from dev_lab.dev.reclaim import QUIET_S, blockers, reclaim, removed_approved, unlanded_work
 from dev_lab.dev.salvage import reap_orphans, salvage, salvaged
-from dev_lab.dev.scratchtree import discard, scratch
+from dev_lab.dev.scratchtree import discard, lane, scratch
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = ['HOOK_READ_S', 'RETIRED_ARCHIVE', 'blockers', 'hook_payload', 'main', 'prune', 'remove']
@@ -207,8 +207,9 @@ def hook_payload(stdin: TextIO, *, wait_s: float = HOOK_READ_S) -> dict[str, obj
 
 def _named(args: argparse.Namespace) -> int | None:
     """Run the doors that act on named trees or orphans; their exit code, or ``None`` when none was asked."""
-    if args.scratch or args.discard:
-        made = [scratch(args.root.resolve(), *args.scratch)] if args.scratch else []
+    if args.add or args.scratch or args.discard:
+        made = [lane(args.root.resolve(), *args.add)] if args.add else []
+        made += [scratch(args.root.resolve(), *args.scratch)] if args.scratch else []
         lines = made + [discard(args.root.resolve(), name) for name in args.discard]
         for line in lines:
             emit(line)
@@ -246,6 +247,13 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         default=[],
         metavar='NAME',
         help='remove worktree NAME (branch or detached) holding nothing unlanded, its outputs moved home first',
+    )
+    parser.add_argument(
+        '--add',
+        nargs=3,
+        metavar=('NAME', 'BRANCH', 'BASE'),
+        help='make the lane NAME under the worktree home on a new BRANCH from BASE, its venv bootstrapped and its '
+        'hooks wired (HOOKS-ARE-WIRED)',
     )
     parser.add_argument(
         '--scratch',

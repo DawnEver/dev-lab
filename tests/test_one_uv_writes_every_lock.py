@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _venv_fake import uv_child
 
 from dev_lab.dev import _dep_project, dep, toolrelease, uvrelease
 from dev_lab.dev.hpcaccount.checks import INSTALLERS
@@ -31,9 +32,9 @@ def _project(root: Path) -> None:
 def _recording() -> tuple[list[tuple[str, ...]], object]:
     calls: list[tuple[str, ...]] = []
 
-    def run(argv, **_kwargs: object) -> SimpleNamespace:
+    def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return uv_child(argv, kwargs)
 
     return calls, run
 

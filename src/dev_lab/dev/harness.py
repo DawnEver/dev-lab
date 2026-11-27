@@ -3,10 +3,12 @@
 Family policy 2026-11-25 (v1-migration D67/D68): a fact an external system offers only as an environment variable
 (class B) is read at ONE entry and turned into a typed record at once; host and scheduler facts are lab-commons',
 the agent harness's context is dev-lab's, and it is this module (``[tool.dev_lab.env] entry``). Nothing read here
-may change a numeric result. Two doors, and no third:
+may change a numeric result. Three doors, and no fourth:
 
 * :func:`context` -- the typed :class:`Harness` record of the facts dev-lab reads by NAME: which agent project
   directory a hook runs for, which machine a forge claim names, who ran a door;
+* :func:`actions_run` -- the typed :class:`ActionsRun` record of the CI run a job executes in, which a status it
+  posts links (``''`` outside a run, so the link is simply absent);
 * :func:`child_env` -- the environment a child process inherits, with overlays applied and keys dropped: passing
   the environment through is not reading a value from it.
 
@@ -24,13 +26,16 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
 __all__ = [
+    'ACTIONS_RUN_ENVS',
     'CLAUDE_CONFIG_ENV',
     'CODEX_HOME_ENV',
     'MACHINE_ENV',
     'PROJECT_DIR_ENV',
     'SUDO_USER_ENV',
     'USER_ENVS',
+    'ActionsRun',
     'Harness',
+    'actions_run',
     'child_env',
     'context',
 ]
@@ -46,6 +51,29 @@ MACHINE_ENV: Final = 'HARNESS_MACHINE'
 SUDO_USER_ENV: Final = 'SUDO_USER'
 #: The login name, as POSIX then Windows spell it.
 USER_ENVS: Final = ('USER', 'USERNAME')
+#: The GitHub Actions run a job executes in, as the runner names it: server, ``owner/repo``, run id.
+ACTIONS_RUN_ENVS: Final = ('GITHUB_SERVER_URL', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID')
+
+
+@dataclass(frozen=True, slots=True)
+class ActionsRun:
+    """The Actions run a job executes in; ``''`` where the runner does not say (outside a run)."""
+
+    server_url: str = ''
+    repository: str = ''
+    run_id: str = ''
+
+    @property
+    def url(self) -> str:
+        """The run's web URL, ``''`` unless the runner named all three."""
+        parts = (self.server_url, self.repository, self.run_id)
+        return '{}/{}/actions/runs/{}'.format(*parts) if all(parts) else ''
+
+
+def actions_run(env: Mapping[str, str] | None = None) -> ActionsRun:
+    """The :class:`ActionsRun` record of *env* (default: this process's environment, read now)."""
+    env = os.environ if env is None else env
+    return ActionsRun(*(env.get(name, '') for name in ACTIONS_RUN_ENVS))
 
 
 @dataclass(frozen=True, slots=True)
