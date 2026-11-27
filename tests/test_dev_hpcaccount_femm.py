@@ -170,7 +170,7 @@ def test_a_missing_compiler_is_refused_by_name_before_anything_is_fetched(
     assert _install(tmp_path, calls) == 2
     err = capsys.readouterr().err
     assert 'g++' in err
-    assert '[[hpc.grant]] setup' in err, 'the door: the grant setup that loads a compiler'
+    assert '([hpc.clusters.<name>] setup)' in err, 'the door: the cluster setup that loads a compiler'
     assert _builds(calls) == 0
     assert 'git clone' not in calls.read_text(encoding='utf-8')
 

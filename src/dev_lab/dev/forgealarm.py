@@ -137,14 +137,14 @@ PROMPTS: Final = (INTEGRATION, STALE_BRANCH)
 #: ``[alerts]`` keys retired by the 2026-11-25 ruling (the value carries its unit), refused with their new line.
 ALERTS_RENAMED: Final = {'repeat_hours': Renamed('repeat', 'h')}
 #: How long one delivery waits before it is delivered again when ``[alerts] repeat`` is undeclared.
-DEFAULT_REPEAT: Final = timedelta(hours=6)
+REPEAT_UNDECLARED: Final = timedelta(hours=6)
 
 
 def repeat_window(alerts: Mapping[str, Any]) -> timedelta:
     """How long one delivery waits before it is delivered again: ``[alerts] repeat`` (a duration), absent 6 h."""
     refuse_renamed('[alerts]', alerts, ALERTS_RENAMED)
     if 'repeat' not in alerts:
-        return DEFAULT_REPEAT
+        return REPEAT_UNDECLARED
     return timedelta(seconds=parse('[alerts] repeat', alerts['repeat'], 'duration', positive=True))
 
 
