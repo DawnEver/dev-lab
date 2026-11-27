@@ -17,8 +17,9 @@ from pathlib import Path
 
 from dev_lab.dev.disposable import disposable_base
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
+from dev_lab.dev.hook_install import unwired
 from dev_lab.dev.reclaim import reclaim
-from dev_lab.dev.scratchtree import discard, scratch
+from dev_lab.dev.scratchtree import discard, lane, scratch
 from dev_lab.dev.worktrees import main
 
 _GIT = shutil.which('git') or 'git'
@@ -159,3 +160,32 @@ def test_each_refusal_names_its_one_cause_and_its_door(tmp_path: Path) -> None:
     assert _refused(undeclared, 'not declared disposable'), undeclared
     assert '--remove plain' in undeclared, undeclared
     assert (tree / '.git').is_file()
+
+
+def test_a_tree_the_door_makes_is_wired_and_a_raw_git_worktree_add_is_not(tmp_path: Path) -> None:
+    """HOOKS-ARE-WIRED (v1 FAM-14). PLANTED CONTROL: the same repo's raw ``git worktree add`` stands unwired."""
+    work = _repo(tmp_path)
+    raw = work / '.claude' / 'worktrees' / 'raw'
+    _run(work, 'worktree', 'add', '-q', '--detach', str(raw), 'HEAD')
+    assert unwired(raw), 'the planted control reads wired: this check cannot say no'
+
+    assert scratch(work, 'base', 'HEAD').startswith('made'), 'the scratch door made its tree'
+    assert not unwired(work / '.claude' / 'worktrees' / 'base')
+
+    bootstrapped: list[Path] = []
+    made = lane(work, 'fam-lane', 'pr/x/fam-lane', 'HEAD', venv=lambda tree: bootstrapped.append(tree) or 0)
+    tree = work / '.claude' / 'worktrees' / 'fam-lane'
+    assert made.startswith('made'), made
+    assert bootstrapped == [tree]
+    assert not unwired(tree)
+    assert _run(tree, 'branch', '--show-current').strip() == 'pr/x/fam-lane'
+
+
+def test_a_lane_whose_bootstrap_fails_is_named_failed_with_both_doors(tmp_path: Path) -> None:
+    work = _repo(tmp_path)
+    made = lane(work, 'nolane', 'pr/x/nolane', 'HEAD', venv=lambda _: 3)
+    assert made.startswith('FAILED'), made
+    assert 'exited 3' in made
+    assert '-m dev_lab.dev.dep --bootstrap' in made
+    assert '-m dev_lab.dev.hook_install --repo' in made
+    assert lane(work, 'nolane', 'pr/x/other', 'HEAD', venv=lambda _: 0).startswith('refused'), 'it stands; not remade'
