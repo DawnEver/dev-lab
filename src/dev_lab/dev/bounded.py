@@ -39,6 +39,7 @@ import os
 import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 import lab_commons.launch as _door
 from lab_commons.box.run import BLAS_THREAD_VARS  # the one definition; set in every boxed child's environment
@@ -162,7 +163,7 @@ def run_bounded(
     encoding: str | None = None,
     errors: str | None = None,
     timeout: float | None = None,
-) -> subprocess.CompletedProcess:
+) -> subprocess.CompletedProcess[Any]:
     """``subprocess.run(capture_output=True, timeout=...)``, except the wall terminates the TREE.
 
     The parameters are SPELLED OUT rather than forwarded as ``**kwargs``, so this reads as the

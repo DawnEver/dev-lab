@@ -23,6 +23,7 @@ HOOKS_ARE_WIRED: dict[str, object] = {
         r'\s+(?:' + '|'.join(WRITE_VERBS) + r')(?=\s|$|[;&|)])'
     ),
     'matches': 'command',
+    'when': 'unwired',
     'asks': 'dev_lab.dev.hook_install',
     'hazard': HAZARD,
     'remedy': '{python} -m dev_lab.dev.dep --bootstrap <tree>, then '

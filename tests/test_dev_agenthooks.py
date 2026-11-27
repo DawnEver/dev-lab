@@ -250,9 +250,9 @@ def test_a_command_that_merely_contains_a_denied_word_is_not_denied(rules: Path)
 def _conditional_misses(rule_id: str, when: str, command: str, rules: Path) -> list[str]:
     """A ``when`` or ``asks`` row's refusal judged where its condition does and does not hold."""
     misses = []
-    if when == 'asks':
+    if when in {'asks', 'unwired'}:
         # These rules carry no checkout, so nobody can be asked: the row must ADMIT (its asked half is the judge's
-        # own suite, test_dev_journaldoor), never refuse on its prefilter alone.
+        # own suite, test_dev_journaldoor; an 'unwired' row's is test_dev_hook_admit), never refuse on its prefilter.
         decided = agenthooks.decide(command, rules)
         if decided is not None and decided.startswith(f'{rule_id}:'):
             misses.append(f'{rule_id}: refused on its prefilter with nobody asked on {command!r}')

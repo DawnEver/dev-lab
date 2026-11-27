@@ -92,9 +92,12 @@ SEVERITIES: Final = frozenset({'deny', 'hint'})
 #: WHEN a row binds, beyond its pattern. ``'live-run'``: only while the checkout the command targets has a
 #: live run (:mod:`dev_lab.dev.liverun`), which the engine asks after the pattern matched. ``'background'``: only
 #: on a Bash call the agent runs in the background (``run_in_background``). ``'declared-repo'``: only while the
-#: cloned url is a family repo this machine already checks out (:mod:`dev_lab.dev.familyrepos`). A closed set,
+#: cloned url is a family repo this machine already checks out (:mod:`dev_lab.dev.familyrepos`). ``'unwired'``:
+#: only while the tree the verb runs in declares hook stages that are not live (HOOKS-ARE-WIRED) -- the row's
+#: ``asks`` judge IS that condition in the engine, so it carries no branch there and requires an ``asks``; it is
+#: declared so a reader with no repo (:func:`denies`) knows the pattern alone refuses nothing. A closed set,
 #: because the engine reads an unknown condition as none, which widens the rule.
-WHENS: Final = frozenset({'live-run', 'background', 'declared-repo'})
+WHENS: Final = frozenset({'live-run', 'background', 'declared-repo', 'unwired'})
 #: WHAT A FIRING ROW STILL ADMITS, which only the filesystem can judge. ``'family-sibling-clone'``: a line
 #: that is one clone (after any ``cd``) of a repo into a NEW directory named for it, beside the family's
 #: checkouts, from a forge a sibling checkout already comes from. A closed set, because the engine reads an
@@ -198,6 +201,18 @@ class DenyRule:
             return ()
         return (self.admits,) if isinstance(self.admits, str) else tuple(self.admits)
 
+    def _check_when(self) -> None:
+        """Refuse a ``when`` outside :data:`WHENS`, and an ``'unwired'`` row with no ``asks`` judge to be it."""
+        if self.when is not None and self.when not in WHENS:
+            msg = f'{self.id}: when={self.when!r} is not one of {sorted(WHENS)}; the engine would read it as none.'
+            raise ValueError(msg)
+        if self.when == 'unwired' and self.asks is None:
+            msg = (
+                f"{self.id}: when='unwired' is judged by the row's asks module and it names none, "
+                'so the engine would refuse every match.'
+            )
+            raise ValueError(msg)
+
     def __post_init__(self) -> None:
         """Refuse an id that is not an UPPER-CASE slug, at construction."""
         if not _ID.fullmatch(self.id):
@@ -215,9 +230,7 @@ class DenyRule:
         if self.severity not in SEVERITIES:
             msg = f'{self.id}: severity={self.severity!r} is not one of {sorted(SEVERITIES)}; the engine denies on it.'
             raise ValueError(msg)
-        if self.when is not None and self.when not in WHENS:
-            msg = f'{self.id}: when={self.when!r} is not one of {sorted(WHENS)}; the engine would read it as none.'
-            raise ValueError(msg)
+        self._check_when()
         unknown = [one for one in self.admitted() if one not in ADMITS]
         if unknown:
             msg = f'{self.id}: admits={unknown[0]!r} is not one of {sorted(ADMITS)}; the engine would admit nothing.'
@@ -391,6 +404,7 @@ def denies(
     live: bool = False,
     background: bool = False,
     declared: bool = False,
+    unwired: bool = False,
 ) -> str | None:
     """The ID of the first rule that REFUSES *segment*, or ``None`` -- openings applied; a hint row refuses nothing.
 
@@ -398,8 +412,10 @@ def denies(
     :mod:`dev_lab.dev.liverun`; a ``when='live-run'`` row binds only then. *background* says the call runs in
     the background; a ``when='background'`` row binds only then. *declared* says whether the cloned url is a
     family repo this machine checks out (:mod:`dev_lab.dev.familyrepos`); a ``when='declared-repo'`` row binds
-    only then. An ``asks`` row is judged by its pattern alone, the prefilter: its judge needs a repo, so a
-    near-miss its pattern names reads as refused here.
+    only then. *unwired* says whether the tree the verb runs in declares hook stages that are not live, as the
+    engine asks :mod:`dev_lab.dev.hook_install`; a ``when='unwired'`` row binds only then. Any other ``asks``
+    row is judged by its pattern alone, the prefilter: its judge needs a repo, so a near-miss its pattern
+    names reads as refused here.
 
     An opening is tested against the whole text, as the engine tests it against the whole command:
     an ``allow`` is a statement about the invocation, not about the token the pattern landed on.
@@ -414,6 +430,7 @@ def denies(
             (rule.when == 'live-run' and not live)
             or (rule.when == 'background' and not background)
             or (rule.when == 'declared-repo' and not declared)
+            or (rule.when == 'unwired' and not unwired)
         ):
             continue
         if not fires(rule, segment):

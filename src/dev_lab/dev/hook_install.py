@@ -50,7 +50,7 @@ from typing import IO, BinaryIO, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev._hook_admit import admit
+from dev_lab.dev._hook_admit import wiring_refusal
 from dev_lab.dev._hook_shim import INSTALL_COMMAND, SHIM_MARKER, same_shim, shim
 from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.reports import StepReport
@@ -325,7 +325,7 @@ def _admit(stdin: BinaryIO, stdout: BinaryIO) -> int:
         payload = json.loads(stdin.read().decode('utf-8'))
     except (ValueError, OSError):
         return 0
-    reason = admit(payload, unwired, running_interpreter())
+    reason = wiring_refusal(payload, unwired, running_interpreter())
     if reason is None:
         return 0
     stdout.write(reason.encode('utf-8') + b'\n')

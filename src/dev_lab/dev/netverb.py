@@ -59,13 +59,12 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev._hook_admit import refusal, write_targets
 from dev_lab.dev._netverb_argv import NotANetworkVerb, spelled
 from dev_lab.dev._netverb_rows import REMEDIES, ROWS
 from dev_lab.dev.bounded import run_bounded
-from dev_lab.dev.hook_install import unwired
 from dev_lab.dev.pushwatch import heard_line, pushed_head
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -90,6 +89,9 @@ DEFAULT_ATTEMPTS: Final = 3
 #: DNS answer, not a server's maintenance window -- and a long backoff inside a five-minute deploy
 #: timer is a second way to miss the deploy.
 DEFAULT_BACKOFF_S: Final = 3.0
+
+#: Seconds the HOOKS-ARE-WIRED judge may take: the agent guard's own wall for an ``asks`` judge (15 s).
+_JUDGE_WALL_S: Final = 15.0
 
 
 class Diagnosis(StrEnum):
@@ -409,11 +411,26 @@ def _unwired_push(command: Sequence[str], cwd: Path) -> str | None:
     """HOOKS-ARE-WIRED: the refusal of a push from a checkout whose declared stages are not live, before the forge.
 
     This door is how an agent pushes; a push it ran from an unwired tree shipped with no pre-push stage (v1 FAM-14).
+    The judge is the one the agent guard asks, ``python -m dev_lab.dev.hook_install --admit`` with the hook payload,
+    run as a child rather than imported: this door sits in the light merge job, and the installer's table pulls in
+    packaging and tomlkit. As the guard does, a judge that cannot answer (no kit, a crash, the wall) refuses nothing.
     """
-    for tree in write_targets(shlex.join(command), cwd):
-        if tree.is_dir() and unwired(tree):
-            return refusal(tree.resolve(), running_interpreter())
-    return None
+    payload = {'tool_name': 'Bash', 'tool_input': {'command': shlex.join(command)}, 'cwd': str(cwd)}
+    try:
+        done = _door.run(
+            [running_interpreter(), '-m', 'dev_lab.dev.hook_install', '--admit'],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            check=False,
+            timeout=_JUDGE_WALL_S,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    said = done.stdout.strip()
+    return said if done.returncode == 1 and said else None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
