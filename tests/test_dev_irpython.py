@@ -7,6 +7,7 @@ import base64
 import hashlib
 import importlib
 import json
+import math
 import shutil
 import sys
 import tomllib
@@ -108,7 +109,7 @@ def test_every_generated_file_carries_its_fingerprint_and_is_ignored(repo: Path)
     written = irpython.write(ir)
     names = {p.name for p in written}
     templates = {'_ir_runtime.py', '_ir_surface.py', '_ir_codec.py'}
-    assert names == {*templates, '_ir_ids.py', '_ir_widgets.py', '_ir_samples.py', '.gitignore'}
+    assert names == {*templates, '_ir_ids.py', '_ir_constants.py', '_ir_widgets.py', '_ir_samples.py', '.gitignore'}
     first = (repo / 'src' / 'sample_pkg' / '_ir_widgets.py').read_text(encoding='utf-8').splitlines()[0]
     assert first == irpython.FINGERPRINT_PREFIX + irpython.fingerprint(ir, 'widgets')
     assert '_ir_*.py' in (repo / 'src' / 'sample_pkg' / '.gitignore').read_text(encoding='utf-8')
@@ -188,6 +189,27 @@ def test_a_declaration_without_a_unit_boundary_is_refused(repo: Path) -> None:
     pyproject.write_text(text.replace('boundary = "sample_units"\n', ''), encoding='utf-8')
     with pytest.raises(IRSchemaError, match='IR-NO-BOUNDARY'):
         load(repo)
+
+
+@pytest.mark.usefixtures('ir')
+def test_the_constants_module_carries_every_constant_in_absolute_si() -> None:
+    constants = importlib.import_module('sample_pkg._ir_constants')
+    assert 4e-7 * math.pi == constants.MU0
+    assert constants.BOLTZMANN == 1.380649e-23
+    assert constants.TURNS_RATIO == 2.0
+    row = constants.CONSTANTS['mu0']
+    assert (row['value'], row['unit'], row['expression']) == (constants.MU0, 'H/m', '4e-7 * pi')
+    assert row['citation']
+    assert 'FEMM' in row['reason']
+    assert set(constants.CONSTANTS) == {'mu0', 'boltzmann', 'turns_ratio'}
+
+
+def test_a_moved_constant_makes_the_constants_module_stale(ir: SimpleNamespace) -> None:
+    path = ir.root / 'ir' / 'quantities.toml'
+    path.write_text(path.read_text(encoding='utf-8').replace('4e-7 * pi', '4e-7 * pi * 1.0001'), encoding='utf-8')
+    _purge()
+    with pytest.raises(ImportError, match='IR-STALE-GENERATED'):
+        importlib.import_module('sample_pkg._ir_constants')
 
 
 def test_a_record_is_frozen_and_equal_by_content(ir: SimpleNamespace) -> None:

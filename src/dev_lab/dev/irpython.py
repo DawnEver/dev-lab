@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev import _ir_runtime
-from dev_lab.dev.irmodel import refuse
+from dev_lab.dev.irmodel import CONSTANTS_MODULE, refuse
 
 if TYPE_CHECKING:
     from dev_lab.dev.irmodel import IR, Field, Module, Record, TypeRef
@@ -26,6 +26,7 @@ __all__ = [
     'fingerprint',
     'generator_version',
     'refuse_unit_handling',
+    'render_constants',
     'render_module',
     'write',
 ]
@@ -56,11 +57,13 @@ def generator_version() -> str:
 
 def _sources(ir: IR, module: str) -> tuple[str, ...]:
     declaration = ir.declaration
+    if module == CONSTANTS_MODULE:
+        return (declaration.quantities,)
     return (declaration.modules[module], declaration.quantities)
 
 
 def fingerprint(ir: IR, module: str) -> str:
-    """``<sources hash>:<generator version>`` of one generated module."""
+    """``<sources hash>:<generator version>`` of one generated module (``constants``: the catalogue's constants)."""
     root = ir.declaration.root
     blobs = [(root / s).read_bytes() for s in _sources(ir, module)]
     return f'{_ir_runtime.sources_hash(ir.declaration.version_text, blobs)}:{generator_version()}'
@@ -225,6 +228,39 @@ def render_module(ir: IR, name: str) -> str:
     return '\n'.join(lines) + '\n'
 
 
+def render_constants(ir: IR) -> str:
+    """The source of ``_ir_constants.py``: one absolute-SI ``Final`` float per catalogue constant, and ``CONSTANTS``.
+
+    The value is written as ``repr`` (the shortest round-trip decimal), which Rust parses to the same ``f64``.
+    """
+    declaration = ir.declaration
+    root_up = len(Path(declaration.package_dir).parts)
+    sources = _sources(ir, CONSTANTS_MODULE)
+    print_ = fingerprint(ir, CONSTANTS_MODULE)
+    lines = [
+        f'{FINGERPRINT_PREFIX}{print_}',
+        f'"""GENERATED from {sources[0]} by dev_lab.dev.irschema: the catalogue constants; never edit or commit."""',
+        '',
+        '# ruff: noqa',
+        'from __future__ import annotations',
+        '',
+        'from typing import Final',
+        '',
+        'from . import _ir_runtime as _rt',
+        '',
+        f'_rt.check_fresh(__file__, {root_up}, "pyproject.toml", {sources!r}, {print_.split(":")[0]!r})',
+    ]
+    for c in ir.constants.values():
+        lines += ['', f'{c.name.upper()}: Final = {c.value!r}', f'"""{c.expression} [{c.unit}]: {c.reason}"""']
+    lines += ['', '#: name -> value (absolute SI), unit, the declared expression, citation and convention reason.']
+    lines.append('CONSTANTS: Final = {')
+    for c in ir.constants.values():
+        row = {'value': c.value, 'unit': c.unit, 'expression': c.expression, 'citation': c.citation, 'reason': c.reason}
+        lines.append(f'    {c.name!r}: {row!r},')
+    lines.append('}')
+    return _NEWLINE.join(lines) + _NEWLINE
+
+
 def _ids(ir: IR) -> list[str]:
     return [
         f'{record.name}Id'
@@ -290,6 +326,7 @@ def expected_files(ir: IR) -> dict[Path, str]:
     files = {directory / name: header + _template(ir, source) for name, source in _TEMPLATES.items()}
     files[directory / '.gitignore'] = _GITIGNORE
     files[directory / '_ir_ids.py'] = render_ids(ir)
+    files[directory / f'_ir_{CONSTANTS_MODULE}.py'] = render_constants(ir)
     for name in ir.modules:
         files[directory / f'_ir_{name}.py'] = render_module(ir, name)
     return files
