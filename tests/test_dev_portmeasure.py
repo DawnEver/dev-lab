@@ -58,3 +58,22 @@ def test_a_crate_without_a_measured_trailer_is_refused_and_with_one_is_admitted(
 def test_a_head_adding_no_crate_needs_no_record(tmp_path: Path) -> None:
     root, base = _repo(tmp_path)
     assert unmeasured(root, base, _commit(root, 'src/x.py', 'feat: x')) is None
+
+
+def test_a_native_first_repo_is_out_of_scope(tmp_path: Path) -> None:
+    """D151: a head whose ``pyproject.toml`` declares ``[tool.dev_lab.native]`` writes Rust from the first line.
+
+    There is no Python twin to measure against, so a crate it adds needs no record. PLANTED CONTROL: the same
+    crate under a pyproject WITHOUT the table is still refused.
+    """
+    root, base = _repo(tmp_path)
+    _commit(root, 'pyproject.toml', 'chore: manifest')
+    (root / 'pyproject.toml').write_text('[tool.dev_lab.other]\nx = 1\n', encoding='utf-8')
+    _commit(root, 'crates/fast/Cargo.toml', 'feat: fast')
+    _git(root, 'add', 'pyproject.toml')
+    _git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--no-verify', '-m', 'chore: other')
+    assert unmeasured(root, base, _git(root, 'rev-parse', 'HEAD')) is not None
+    (root / 'pyproject.toml').write_text('[tool.dev_lab.native]\norchestration = ["src/pkg"]\n', encoding='utf-8')
+    _git(root, 'add', 'pyproject.toml')
+    _git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--no-verify', '-m', 'chore: native')
+    assert unmeasured(root, base, _git(root, 'rev-parse', 'HEAD')) is None

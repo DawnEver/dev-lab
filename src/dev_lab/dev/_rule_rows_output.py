@@ -28,4 +28,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_secretlog.py',),
     ),
+    (
+        'SHARE-FOLDER-HOLDS-DATA',
+        (
+            # Why: moved from a consumer's invariants 2026-11-26 (v1 FAM-09, ruling D158): a figure rendered into a
+            # synced share folder races the live human session on the other end and cannot be told from data.
+            'A synced share folder holds DATA (csv/json/xlsx/npz) and, for every figure, the production command '
+            'that regenerates it -- never the rendered png/jpg/svg, which regenerates under output/. A source '
+            'image nothing can regenerate is INPUT and stays, declared by name. Each folder declares both in its '
+            '`share.toml`; the consumer assertion over its declared folders refuses a rendered image or a '
+            'command-less figure.'
+        ),
+        ('tests/test_dev_sharefolder.py',),
+    ),
 )

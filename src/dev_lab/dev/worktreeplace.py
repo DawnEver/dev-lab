@@ -38,6 +38,7 @@ __all__ = [
     'is_inside',
     'listed_worktrees',
     'misplaced_worktrees',
+    'nested_worktrees',
     'remedy',
     'work_root',
 ]
@@ -113,6 +114,25 @@ def misplaced_worktrees(root: Path) -> tuple[Misplaced, ...]:
         raise RuntimeError(msg)
     main, *linked = listed
     return tuple(Misplaced(path, main) for path in linked if not is_inside(path, main))
+
+
+def nested_worktrees(root: Path) -> tuple[Path, ...]:
+    """The linked worktrees of *root*'s repository that lie inside ANOTHER linked worktree (WORKTREES-DO-NOT-NEST).
+
+    The shape an isolated agent leaves when it adds a second tree from inside the one it was given: the relative
+    ``.claude/worktrees/<name>`` resolves under its own tree. The main checkout contains every tree and is no
+    container here.
+    """
+    listed = listed_worktrees(root)
+    if not listed:
+        msg = f'git listed no worktree at all for {root}, not even the main checkout'
+        raise RuntimeError(msg)
+    linked = [(path, _norm(path)) for path in listed[1:]]
+    return tuple(
+        path
+        for path, spelled in linked
+        if any(spelled.startswith(other + '/') for _, other in linked if other != spelled)
+    )
 
 
 def remedy(found: Misplaced) -> str:

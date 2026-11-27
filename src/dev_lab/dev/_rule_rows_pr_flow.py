@@ -109,7 +109,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'A port is priced on a MEASUREMENT, never an assumed speedup: a head that adds a crate (a `Cargo.toml`) '
             'carries, in one of its commits, a `Port-Measured:` trailer naming the measured numbers (both paths on '
             'one input, or the other measured grounds the port stands on); the merge decision refuses it otherwise '
-            '(`portmeasure`, `forgemerge`).'
+            '(`portmeasure`, `forgemerge`). A head declaring `[tool.dev_lab.native]` is out of scope (D151): it writes '
+            'a native stage in Rust from its first line, so no Python twin exists to measure against.'
         ),
         ('tests/test_dev_portmeasure.py', 'tests/test_dev_forgemerge.py'),
     ),

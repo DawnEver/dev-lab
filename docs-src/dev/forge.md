@@ -562,7 +562,9 @@ Agents read and write the forge only through `python -m dev_lab.dev.forge` (`FOR
 no `gh` or `tea` binary is needed.
 
 - Verbs: `issue list|view|create|comment|close|label|claim|status|comments`, `issue comments-since ISO8601`,
+  `issue view N --comments [--since ISO8601|--last K]` (the thread, oldest first, every page), `issue comment-view ID`,
   `pr create|view|close N --reason R` (the reason is commented first; no branch is deleted), `status post|list`. Every verb takes `--json` and returns the same shape on either forge.
+- A raw `client.call` path is absolute (`f'{client.repo}/issues/1/comments?page=2'`); a relative one is refused.
 - The backend is read off `origin`: `github.com` is GitHub REST, any other host is Gitea (`<host>/api/v1`).
 - When `HARNESS_MACHINE` and `HARNESS_AGENT` are set, every created body opens with
   `[<machine> · <agent> · <branch>]`, so a write says which agent made it.
