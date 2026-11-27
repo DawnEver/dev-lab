@@ -201,6 +201,12 @@ ALLOWED: Final[dict[Site, str]] = {
         'run(pdoc_argv(modules, out_dir, **options), cwd=root)',
     ): 'pdoc_argv takes `**options: object` so any caller option reaches it; run() is typed on str',
     (
+        'src/dev_lab/dev/netverb.py',
+        'PLC0415',
+        'from dev_lab.dev.hook_install import unwired',
+    ): 'netverb is imported by light doors (merge.yml runs forge and branchprune beside lab-commons only), and '
+    'hook_install pulls the hook table (packaging) and the reports (tomlkit); only a push through the CLI reads it',
+    (
         'src/dev_lab/dev/storage.py',
         'PLC0415',
         'from dev_lab.dev.artifactstores import ArtifactRefused, check_rclone_config',

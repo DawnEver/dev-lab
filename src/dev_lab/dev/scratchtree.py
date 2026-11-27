@@ -15,16 +15,18 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import lab_commons.launch as _door
+
 from dev_lab.dev.checkout import git_out, locked_trees, worktrees
 from dev_lab.dev.disposable import disposable_base, marker
 from dev_lab.dev.hook_install import HookInstallError, install
 from dev_lab.dev.reclaim import (
     _LIVE,
     _removed,
-    _scrap_unsaved,
     declared_generated,
     occupancy,
     repository_at,
+    scrap_unsaved,
 )
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.worktreeplace import home as worktree_home
@@ -95,7 +97,8 @@ BOOTSTRAP_TIMEOUT_S = 1800
 def bootstrap(tree: Path) -> int:
     """The tree's own venv, through the family door: ``<this python> -m dev_lab.dev.dep --bootstrap <tree>``."""
     argv = [running_interpreter(), '-m', 'dev_lab.dev.dep', '--bootstrap', str(tree)]
-    return 0 if subprocess.run(argv, cwd=tree, check=False, timeout=BOOTSTRAP_TIMEOUT_S).returncode == 0 else 1
+    done: subprocess.CompletedProcess[bytes] = _door.run(argv, cwd=tree, check=False, timeout=BOOTSTRAP_TIMEOUT_S)
+    return 0 if done.returncode == 0 else 1
 
 
 def lane(
@@ -151,7 +154,7 @@ def discard(root: Path, name: str, *, home: Path | None = None, occupied: Callab
             f'detached tree holding nothing unlanded goes by: --remove {name}'
         )
         or ('locked (git worktree unlock first)' if tree in locked else '')
-        or _scrap_unsaved(tree, base, declared_generated(main))
+        or scrap_unsaved(tree, base, declared_generated(main))
         or (_LIVE if (occupied or occupancy())(tree) else '')
     )
     if reason:
