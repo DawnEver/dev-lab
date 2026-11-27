@@ -1006,3 +1006,10 @@ def test_special_roles_on_excluded_old_ppid_foreign_branches_do_not_expand_the_a
     assert scene.stop(orphans=_ORPHANS)[0] == 0
     assert scene.killed == [30, 32, 31]
     assert {25, 26, 40} <= scene.table.keys()
+
+
+def test_a_venv_build_and_its_follow_are_runs_the_build_lock_wall_may_name() -> None:
+    """#1002: the build lock's wall names ``stoprun --pid <holder>``; a door that refused the holder taught nothing."""
+    assert identify('python.exe -m dev_lab.dev.dep --bootstrap D:/r/.claude/worktrees/w')
+    assert identify('python.exe -m dev_lab.dev.venvfollow --root D:/r/.claude/worktrees/w')
+    assert not identify('python.exe -m dev_lab.dev.depcites'), 'PLANTED CONTROL: a sibling module is no build'

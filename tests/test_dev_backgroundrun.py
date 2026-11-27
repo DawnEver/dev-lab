@@ -44,3 +44,26 @@ def test_a_detached_run_takes_the_current_environment(tmp_path: Path, monkeypatc
     link.unlink() if link.is_symlink() else link.rmdir()
     backgroundrun.detach_argv(root, ['-m', 'dev_lab.dev.reclaimrun'])
     assert started[-1][0] == str(legacy), 'PLANTED CONTROL: no .venv: unchanged'
+
+
+def test_a_run_left_inside_the_hooks_job_is_reported_as_not_outliving_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1002: Windows refusing the breakaway left the run in the hook's job, which ended it; the caller now hears so.
+
+    PLANTED CONTROL: a breakaway the job allows outlives the hook.
+    """
+    flags: list[int] = []
+
+    def popen(_argv: list[str], *, creationflags: int = 0, **_k: object) -> None:
+        flags.append(creationflags)
+        if refuse and creationflags & backgroundrun._BREAKAWAY:
+            raise PermissionError(5, 'Access is denied')
+
+    monkeypatch.setattr(backgroundrun._door, 'popen', popen)
+    monkeypatch.setattr(sys, 'platform', 'win32')
+    refuse = True
+    assert backgroundrun.detach_argv(tmp_path, ['-m', 'x']) is False
+    assert not flags[-1] & backgroundrun._BREAKAWAY, 'it still started, inside the job'
+    refuse = False
+    assert backgroundrun.detach_argv(tmp_path, ['-m', 'x']) is True

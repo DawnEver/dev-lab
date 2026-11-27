@@ -334,7 +334,7 @@ def main(
     if not syncing or args.dry_run:
         return _run(args, root, syncing=syncing, locking=locking, run=run, census=census)
     try:
-        with venvcurrent.exclusive_build(root):
+        with venvcurrent.exclusive_build(root, census=census):
             return _run(args, root, syncing=True, locking=locking, run=run, census=census)
     except venvcurrent.BuildBusy as exc:
         emit(f'REFUSED: {exc}')

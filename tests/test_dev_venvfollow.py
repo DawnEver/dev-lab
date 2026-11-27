@@ -195,3 +195,16 @@ def test_the_retired_pointer_file_makes_the_follow_due_and_is_migrated_once(tmp_
     assert not (root / venvpointer.RETIRED_POINTER).exists(), 'migrated once'
     assert venvpointer.named(root) == current.parents[1].resolve()
     assert not venvfollow.due(root)
+
+
+def test_a_follow_that_cannot_leave_the_hooks_job_says_so(tmp_path: Path, monkeypatch) -> None:
+    """#1002: the hook's follow died with git and said nothing. PLANTED CONTROL: one that outlives it is silent."""
+    root = _checkout(tmp_path)
+    out = io.StringIO()
+    monkeypatch.setattr(sys, 'stdout', out)
+    for outlives in (False, True):
+        monkeypatch.setattr(venvfollow, 'detach_argv', lambda _r, _a, o=outlives: o)
+        assert venvfollow.main(['--root', str(root), '--background']) == 0
+    said = out.getvalue()
+    assert said.count(venvfollow.DIES_WITH_THE_HOOK) == 1, said
+    assert f'--root {root}' in said
