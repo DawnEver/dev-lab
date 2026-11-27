@@ -151,3 +151,25 @@ def test_the_named_login_host_is_tried_first_and_a_failover_host_is_probed_brief
         ('alice@login01.example', 300.0, 'hostname'),
     ]
     assert transport.PROBE_S < 60
+
+
+def test_an_undeclared_reach_is_refused_before_any_ssh_or_held_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLANTED CONTROL: the same steps with ``direct`` declared go through; undeclared, none opens anything."""
+    from lab_commons.hpc import reach  # noqa: PLC0415 -- the declaration this test plants
+
+    ran = _hold(monkeypatch, recorded={_DEST}, alive=True)
+    clusters = {'clusters': {'ada': {'hosts': list(_GRANT.hosts)}}}
+    steps = (
+        lambda: transport.grant_runner(_GRANT),
+        lambda: transport.host_runner(_DEST),
+        lambda: transport.start(_DEST, 'x', io.StringIO()),
+    )
+    monkeypatch.setattr(reach, 'section', lambda _name: clusters)
+    for step in steps:
+        with pytest.raises(reach.ReachRefused, match=r'declares no reach.*\[dev\] hpc_reach'):
+            step()
+    assert ran == []
+    monkeypatch.setattr(reach, 'section', lambda _name: {**clusters, 'cluster_reach': {'ada': {'reach': 'direct'}}})
+    for step in steps:
+        step()
+    assert ran == [(_DEST, 'x', None)]
