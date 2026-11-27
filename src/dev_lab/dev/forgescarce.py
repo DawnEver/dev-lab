@@ -26,10 +26,9 @@ waives nothing: the part is produced, which only costs the run a waiver would ha
 
 from __future__ import annotations
 
-import gzip
-import json
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
+from functools import partial
 from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
@@ -40,7 +39,7 @@ from dev_lab.dev.footprint import Footprints
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgecarry import changed_paths
-from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgestatus import linked_record
 from dev_lab.dev.lockreach import resolve_lock
 from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import BASE, derived, part_context, parts_of
@@ -70,16 +69,6 @@ def files_by_part(record: Mapping[str, Any]) -> dict[str, frozenset[str]]:
     return {part: frozenset(files) for part, files in found.items()}
 
 
-def _record(client: Client, status: CommitStatus) -> Mapping[str, Any] | None:
-    """The run record *status* links, ``None`` when it links none or it cannot be read."""
-    if not status.url:
-        return None
-    try:
-        return json.loads(gzip.decompress(client.download(status.url)).decode('utf-8'))
-    except (ForgeCallFailed, OSError, ValueError, EOFError):
-        return None
-
-
 def unreached(
     root: Path,
     client: Client,
@@ -106,7 +95,8 @@ def unreached(
         return frozenset()
     key = (str(root), fork, head)
     if key not in _REACHED:
-        _REACHED[key] = _waived(root, fork, head, wanted, (record or (lambda one: _record(client, one)))(base_status))
+        read = record if record is not None else partial(linked_record, client)
+        _REACHED[key] = _waived(root, fork, head, wanted, read(base_status))
     return _REACHED[key]
 
 

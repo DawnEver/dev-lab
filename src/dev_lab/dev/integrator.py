@@ -48,8 +48,9 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgeschedule import load_schedule
-from dev_lab.dev.forgestatus import CommitStatus, status_list
+from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy, load_policy
+from dev_lab.dev.parthands import part_statuses
 from dev_lab.dev.platformparts import standing
 from dev_lab.supervise.notice import Context
 
@@ -249,7 +250,7 @@ def main(
         client = client_for(root)
 
         def statuses(sha: str) -> Sequence[CommitStatus]:
-            return status_list(client, sha)
+            return part_statuses(client, sha)
 
     queue = derive(root, policy, load_schedule(root), statuses)
     emit(json.dumps(dataclasses.asdict(queue), indent=2) if args.json else _render(queue))

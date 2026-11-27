@@ -59,13 +59,14 @@ from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgebreakglass import promote_trunk
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgestatus import CommitStatus, status_history
+from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.hostedparts import hosted_parts
 from dev_lab.dev.jobparts import off_gate
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.nightlycron import NIGHTLY_CRON
+from dev_lab.dev.parthands import part_history
 from dev_lab.dev.platformparts import UndeclaredPart, derived, required_at, standing
 from dev_lab.dev.roles import optional_needs_from, optional_parts
 from dev_lab.dev.trialmerge import contains, rev
@@ -160,7 +161,7 @@ def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
     if trunk is not None and not contains(root, found, trunk):
         why = f'{policy.trunk} ({trunk[:12]}) is not an ancestor of {found[:12]}: it cannot fast-forward'
         return Promotion('refused', found, (why,))
-    statuses = status_history(client, found)  # every fact: another env or policy never overwrote one
+    statuses = part_history(client, found)  # every fact: another env or policy never overwrote one
     off = _off_gate(root, client, found, statuses)
     try:
         required = required_at(root, found)

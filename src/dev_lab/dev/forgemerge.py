@@ -87,10 +87,11 @@ from dev_lab.dev.forgemergewaits import hand_note, off_record, recorded_as_ran, 
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
 from dev_lab.dev.forgereview_declared import load_review
 from dev_lab.dev.forgereview_gate import review_gate
-from dev_lab.dev.forgestatus import fingerprints_at, status_list
+from dev_lab.dev.forgestatus import fingerprints_at
 from dev_lab.dev.hostedparts import pull_request_parts
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
+from dev_lab.dev.parthands import part_statuses
 from dev_lab.dev.portmeasure import unmeasured
 from dev_lab.dev.reviewcap import unreviewed_waiver
 from dev_lab.dev.roles import REVIEW, TESTS, Unbound, roles_at
@@ -271,7 +272,7 @@ def hidden_reds(
 
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
-    statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
+    statuses = [one for one in part_statuses(client, head) if one.context != MERGE_READY_CONTEXT]
     try:
         reviewed = review_gate(client, base=policy.integration, by=roles_at(root).kind(REVIEW))
     except ValueError as config:  # a declaration that cannot gate is this PR's wait, never the tick's crash

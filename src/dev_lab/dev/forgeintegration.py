@@ -77,6 +77,7 @@ from dev_lab.dev.forgesync import upstreams
 from dev_lab.dev.forgework import GITEA, Client, PullRequest
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import Policy, load_policy
+from dev_lab.dev.parthands import part_statuses
 from dev_lab.dev.platformparts import CONTEXT_PREFIX, standing
 from dev_lab.dev.reviewturn import review_turn
 from dev_lab.dev.roles import CI, MERGE, roles_at
@@ -171,7 +172,7 @@ def _areas(client: Client, head: str) -> list[str]:
 def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
     """The integration text for *child*, from the object store and the forge; writes nothing."""
     base, trunk = f'{TRACKING}{policy.integration}', f'{TRACKING}{policy.trunk}'
-    statuses = status_list(child.client, child.head)
+    statuses = part_statuses(child.client, child.head)
     scarce = unreached(root, child.client, policy.integration, child.head, statuses) if child.pr else frozenset()
     waived = scarce | unproduced_waived(root, child.head, statuses)
     standing_now = standing(statuses, head=child.head, waived=waived)
@@ -345,7 +346,7 @@ def _noticed(root: Path, child: Child, policy: Policy, said: Feedback, *, number
     prior = next((c.body for c in comment_list(child.client, number) if line in c.body), '')
     block = forgenotice.read(prior)
     if now is not None:
-        statuses = status_list(child.client, child.head)
+        statuses = part_statuses(child.client, child.head)
         result = standing(statuses, head=child.head).result
         committed = int(read_git(root, 'show', '-s', '--format=%ct', child.head).strip() or now.timestamp())
         found = forgenotice.kinds(

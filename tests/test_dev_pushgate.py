@@ -117,7 +117,7 @@ def test_the_parser_reads_the_last_verdict_in_either_grammar() -> None:
 def _forge(monkeypatch: pytest.MonkeyPatch, statuses: list[CommitStatus]) -> None:
     monkeypatch.setattr(pushgate, '_head', lambda _root: HEAD)
     monkeypatch.setattr(pushgate, 'unprompted_client', lambda _root: None)
-    monkeypatch.setattr(pushgate, 'status_list', lambda _client, _sha: statuses)
+    monkeypatch.setattr(pushgate, 'part_statuses', lambda _client, _sha: statuses)
 
 
 def test_the_cli_reads_the_forge_and_routes_each_destination(tmp_path: Path, monkeypatch) -> None:
@@ -201,7 +201,7 @@ def test_a_push_publishing_many_unnamed_merges_does_no_audit_work(tmp_path: Path
     for name in ('audit', '_audit', 'unnamed', 'classify'):
         monkeypatch.setattr(mergeaudit, name, trap)
     monkeypatch.setattr(pushgate, 'unprompted_client', lambda _root: None)
-    monkeypatch.setattr(pushgate, 'status_list', lambda _client, _sha: [_status('base')])
+    monkeypatch.setattr(pushgate, 'part_statuses', lambda _client, _sha: [_status('base')])
     (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
     base = ['--root', str(tmp_path), '--trunk-ref', 'refs/heads/main']
     for ref in ('refs/heads/feat/x', 'refs/heads/integrate/main', 'refs/heads/main'):

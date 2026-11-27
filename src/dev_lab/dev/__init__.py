@@ -269,6 +269,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   (``base``, ``jmag``, ``femm+windows``...), each a ``tests/<part>`` status on the forge.
 * :mod:`dev_lab.dev.partfacts` -- one ``tests/<part>`` status read as a (part, env, policy) fact; a later post
   replaces only its own fact.
+* :mod:`dev_lab.dev.parthands` -- the parts a part's description cut from its ``hands`` to fit the forge's 140
+  characters, read back from the run record its status links when a reader fetches the statuses.
 * :mod:`dev_lab.dev.partrows` -- the name of an OS-qualified part row (``base@windows``): its part, its
   system, and this machine's platform.
 * :mod:`dev_lab.dev.partrefs` -- the refs a part is produced under, per resource and scope

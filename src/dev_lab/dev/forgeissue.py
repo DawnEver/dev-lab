@@ -42,10 +42,11 @@ from lab_commons.log import emit
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgestatus import CommitStatus, status_list
+from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import Client, Comment, Issue
 from dev_lab.dev.integrator import lane_ready
 from dev_lab.dev.issueref import CLOSING_VERBS, REF_VERBS
+from dev_lab.dev.parthands import part_statuses
 
 __all__ = [
     'DONE',
@@ -288,7 +289,7 @@ def issue_status(
     root: Path,
     number: int,
     *,
-    statuses: Callable[[Client, str], Sequence[CommitStatus]] = status_list,
+    statuses: Callable[[Client, str], Sequence[CommitStatus]] = part_statuses,
 ) -> IssueState:
     """Derive issue *number*'s state from *root*'s remote-tracking refs and the forge. Fetches nothing."""
     issue = client.issue_view(number)

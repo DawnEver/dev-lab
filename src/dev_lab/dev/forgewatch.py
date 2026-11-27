@@ -40,6 +40,7 @@ from dev_lab.dev.forgeclient import client_for, stored_client
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client
+from dev_lab.dev.parthands import part_statuses
 from dev_lab.dev.sessionpoll import TESTS, green, poll_session, pull_of, reds
 
 if TYPE_CHECKING:
@@ -103,7 +104,7 @@ def watch(
             say(why)
             return YIELDED
         for sha in shas:
-            statuses = status_list(client, sha)
+            statuses = part_statuses(client, sha)
             for status in statuses:
                 line = (
                     f'{sha[:12]} {status.context} {status.state}'

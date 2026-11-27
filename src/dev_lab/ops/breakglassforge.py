@@ -25,9 +25,10 @@ from dev_lab.dev.forgeapp import installation
 from dev_lab.dev.forgecred import authorization
 from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import pr_list
-from dev_lab.dev.forgestatus import CommitStatus, fingerprints_at, status_list
+from dev_lab.dev.forgestatus import CommitStatus, fingerprints_at
 from dev_lab.dev.forgework import Client, Transport, forge_transport
 from dev_lab.dev.harness import child_env
+from dev_lab.dev.parthands import part_statuses
 from dev_lab.dev.reviewgate import manifest_at
 from dev_lab.ops.config import Breakglass
 from dev_lab.ops.served import app_of_forge
@@ -135,8 +136,8 @@ class ClientForge:
         return found.state, found.base, found.head_sha
 
     def statuses(self, head: str) -> Sequence[CommitStatus]:
-        """The commit statuses *head* carries (:func:`dev_lab.dev.forgestatus.status_list`)."""
-        return status_list(self._client, head)
+        """The statuses *head* carries, a cut part completed (:func:`dev_lab.dev.platformparts.part_statuses`)."""
+        return part_statuses(self._client, head)
 
     def open_pulls(self) -> Sequence[Pull]:
         """Every open PR (:func:`dev_lab.dev.forgepulls.pr_list`)."""

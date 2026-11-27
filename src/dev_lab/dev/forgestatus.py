@@ -35,7 +35,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 from urllib.parse import quote, urlsplit
 
 import lab_commons.launch as _door
@@ -62,6 +62,7 @@ __all__ = [
     'head_sha',
     'known_fingerprints',
     'known_reds',
+    'linked_record',
     'main',
     'resolve_commit',
     'state_for',
@@ -276,6 +277,17 @@ def _red_lines(status: CommitStatus, client: Client, known: Mapping[str, frozens
         new = sum(1 for node in nodes if label(node) == '  NEW')
         tally = [f'  against the base: {len(nodes) - new} inherited, {new} new']
     return (f'  not ok: {len(nodes)} of {total} test(s)', *tally, *shown, *more, f'  record: {status.url}')
+
+
+def linked_record(client: Client, status: CommitStatus) -> Mapping[str, Any] | None:
+    """The run record *status* links as its target, decoded; ``None`` when it links none or it cannot be read."""
+    if not status.url or not urlsplit(status.url).path.endswith(RECORD_SUFFIX):
+        return None
+    try:
+        record = json.loads(gzip.decompress(client.download(status.url)).decode('utf-8'))
+    except (ForgeCallFailed, OSError, ValueError, EOFError):
+        return None
+    return cast('Mapping[str, Any]', record) if isinstance(record, Mapping) else None
 
 
 def known_fingerprints(client: Client, sha: str) -> Fingerprints:

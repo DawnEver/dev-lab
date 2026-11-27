@@ -112,7 +112,7 @@ from dev_lab.dev.famtests.alwayson import resource_nodes
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush, run_attempt
-from dev_lab.dev.partfacts import Part, facts_of, latest, parsed
+from dev_lab.dev.partfacts import Part, cut_problems, facts_of, latest, parsed
 from dev_lab.dev.partrows import is_row, needs_of_row, row_part
 from dev_lab.dev.producer import AUTHORS_RED, Owner, unreachable, whose
 from dev_lab.dev.verdictenv import POLICY_CHARS, verdict_policy_at
@@ -368,7 +368,10 @@ def parts_of(statuses: Sequence[CommitStatus], *, policy: str | None = None) -> 
 
 
 def derived(statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
-    """The parts a commit is known to need, sorted: :data:`BASE`, every posted part, and every part one hands to."""
+    """The parts a commit is known to need, sorted: :data:`BASE`, every posted part, and every part one hands to.
+
+    A cut ``hands`` names only what its description held; :mod:`dev_lab.dev.parthands` completes it at the fetch.
+    """
     parts, _ = parts_of(statuses)
     return tuple(sorted({BASE, *parts, *(name for part in parts.values() for name in part.hands)}))
 
@@ -416,7 +419,7 @@ def compose(parts: Mapping[str, Part], *, head: str, waived: frozenset[str] = fr
         if handing and name not in parts and name not in waived:
             by = ', '.join(f'{owner} hands {count}' for owner, count in sorted(handing.items()))
             problems.append(f'missing the {name} part ({by}); {_PRODUCE}')
-    return Composition(parts=ordered, result=result, problems=tuple(problems))
+    return Composition(parts=ordered, result=result, problems=(*problems, *cut_problems(ordered)))
 
 
 def required_at(root: Path, sha: str) -> frozenset[str]:
@@ -474,7 +477,8 @@ def standing(
     A *waived* part -- a scarce part a PR's diff does not reach (:mod:`dev_lab.dev.forgescarce`) -- is neither
     read nor required, and an unsettled status of it is no problem. Every *required* part (the commit's
     declaration, :func:`required_at`) must stand whether or not anything posted or handed to it. Under a
-    *policy* only facts of that policy are read (:func:`parts_of`), and each must name the env it ran in.
+    *policy* only facts of that policy are read (:func:`parts_of`), and each must name the env it ran in. A part whose
+    description cut its ``hands`` is completed at the fetch (:mod:`dev_lab.dev.parthands`), else it is a problem.
     """
     parts, unsettled = parts_of(statuses, policy=policy)
     unsettled = tuple(one for one in unsettled if not any(one.startswith(part_context(n) + ' ') for n in waived))

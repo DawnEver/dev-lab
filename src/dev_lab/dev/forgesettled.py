@@ -22,7 +22,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
 
-from dev_lab.dev.forgestatus import CommitStatus, status_history
+from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.parthands import part_history
 from dev_lab.dev.platformparts import derived, parts_of
 
 if TYPE_CHECKING:
@@ -50,7 +51,7 @@ class SettledHistories:
     """``history(sha)``: read once per reader, and never again once settled (module docstring)."""
 
     def __init__(
-        self, client: Client, *, read: Callable[[Client, str], tuple[CommitStatus, ...]] = status_history
+        self, client: Client, *, read: Callable[[Client, str], tuple[CommitStatus, ...]] = part_history
     ) -> None:
         """Load *client*'s repository cache; a client without a cache directory only memoizes."""
         self._client, self._read = client, read
