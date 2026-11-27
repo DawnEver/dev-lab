@@ -28,7 +28,7 @@ def _write(root: Path, rel: str, text: str = '') -> None:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = subprocess.run([_GIT, '-C', str(root), *args], check=True, capture_output=True, text=True)
+    done = subprocess.run([_GIT, '-C', str(root), *args], check=True, capture_output=True, text=True, encoding='utf-8')
     return done.stdout.strip()
 
 
