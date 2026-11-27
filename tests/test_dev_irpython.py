@@ -330,6 +330,20 @@ def test_an_edited_schema_makes_the_generated_module_refuse_to_import(ir: Simple
         importlib.import_module('sample_pkg._ir_widgets')
 
 
+def test_the_runtime_reads_no_manifest_the_module_embeds_its_declared_version(ir: SimpleNamespace) -> None:
+    """FAM-03 d: the copied runtime imports no ``tomllib``; the declared version is embedded in each module.
+
+    PLANTED CONTROL: the freshness check still refuses an edited schema (the test above); here an edited
+    ``pyproject.toml`` no longer reaches the import, while the embedded VERSION is what the hash is checked against.
+    """
+    package = ir.root / 'src' / 'sample_pkg'
+    assert 'tomllib' not in _imported((package / '_ir_runtime.py').read_text(encoding='utf-8'))
+    module = (package / '_ir_widgets.py').read_text(encoding='utf-8')
+    assert '_rt.check_fresh(__file__, ' in module
+    assert ', VERSION, (' in module
+    assert '"pyproject.toml"' not in module
+
+
 OWNER = """
 [record.Owner]
 doc = "Planted control: widgets holds a samples record by value and by id, while samples already holds widgets."

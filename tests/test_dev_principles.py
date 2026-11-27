@@ -51,7 +51,7 @@ def test_every_wall_teaches_names_the_gap_and_the_loop() -> None:
         'is a mechanism gap',
         'comes before the task',
         'Never route around a wall or hand the user a command.',
-        'docs-src/dev/feedback.md',
+        'docs-src/dev/feedback.md (dev-lab)',
     ):
         assert clause in wall.statement
 
@@ -63,7 +63,7 @@ def test_no_barrier_fan_out_lands_each_item_without_waiting() -> None:
         'each landed the moment it is done',
         'nothing waits for the slowest sibling',
         'unless a step truly needs every result',
-        'docs-src/dev/fanout.md',
+        'docs-src/dev/fanout.md (dev-lab)',
     ):
         assert clause in fan.statement
 

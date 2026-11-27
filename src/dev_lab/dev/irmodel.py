@@ -15,7 +15,7 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, NoReturn
+from typing import Any, Final, NoReturn, cast
 
 from lab_commons.quantity import registry
 
@@ -46,8 +46,22 @@ _DIMENSIONS: Final = ('[mass]', '[length]', '[time]', '[current]', '[temperature
 _UNIT_EPS: Final = 1e-12  # a coherent unit's base magnitude is exactly 1
 _POWER: Final = (1, 2, -3, 0, 0, 0, 0)
 _FIELD_KEYS: Final = frozenset(
-    {'type', 'optional', 'quantity', 'doc', 'dtype', 'shape', 'unique_by', 'csr_values', 'gauge_reference'}
-)
+    {
+        'type', 'optional', 'quantity', 'doc', 'dtype', 'shape', 'unique_by', 'csr_values', 'gauge_reference',
+        'default', 'default_consumer',
+    }
+)  # fmt: skip
+#: Rust's reserved words: a field so spelled is emitted as a raw identifier (``r#use``), its wire name unchanged.
+RUST_KEYWORDS: Final = frozenset({
+    'as', 'async', 'await', 'break', 'const', 'continue', 'dyn', 'else', 'enum', 'extern', 'false', 'fn', 'for',
+    'if', 'impl', 'in', 'let', 'loop', 'match', 'mod', 'move', 'mut', 'pub', 'ref', 'return', 'static', 'struct',
+    'trait', 'true', 'type', 'unsafe', 'use', 'where', 'while', 'abstract', 'become', 'box', 'do', 'final', 'gen',
+    'macro', 'override', 'priv', 'try', 'typeof', 'unsized', 'virtual', 'yield', 'self', 'super', 'crate',
+})  # fmt: skip
+#: Keywords a raw identifier cannot spell: such a field becomes ``<name>_`` with a serde rename.
+_RUST_UNRAW: Final = frozenset({'self', 'super', 'crate'})
+#: A default's Python types per kind: an optional field's ``default`` is carried, never filled on read (D135).
+_DEFAULT_TYPES: Final = {'bool': (bool,), 'int': (int,), 'float': (int, float), 'str': (str,), 'enum': (str,)}
 _UPPER: Final = re.compile(r'^[A-Z][A-Za-z0-9]*$')
 _LOWER: Final = re.compile(r'^[a-z][a-z0-9_]*$')
 _DOORS: Final = {
@@ -108,6 +122,21 @@ class Field:
     unique_by: str = ''
     csr_values: str = ''
     gauge_reference: str = ''
+    #: An optional field's declared default, CARRIED for its named consumer and never filled by the reader (D135).
+    default: object = None
+    default_consumer: str = ''
+
+    @property
+    def py_name(self) -> str:
+        """The generated Python attribute: a Python keyword gets a trailing ``_``; the wire name stays :attr:`name`."""
+        return f'{self.name}_' if keyword.iskeyword(self.name) else self.name
+
+    @property
+    def rust_name(self) -> str:
+        """The generated Rust field: a Rust keyword is raw (``r#use``); the wire name stays :attr:`name`."""
+        if self.name in _RUST_UNRAW:
+            return f'{self.name}_'
+        return f'r#{self.name}' if self.name in RUST_KEYWORDS else self.name
 
 
 @dataclass(frozen=True)
@@ -153,6 +182,7 @@ class Module:
     enums: dict[str, Enum]
     dims: dict[str, tuple[int | None, int | None]]
     python: str = ''  # the importable module holding its generated Python
+    terms: tuple[str, ...] = ()  # the terms files its enums read, repo-relative (a freshness source)
 
 
 @dataclass(frozen=True)
@@ -229,10 +259,10 @@ def _type(text: str, module: str, where: str) -> TypeRef:
     refuse('IR-UNKNOWN-TYPE', where, f'type {text!r} is not one of the declared types')
 
 
-def _field(module: str, record: str, name: str, row: dict) -> Field:
+def _field(module: str, record: str, name: str, row: dict[str, Any]) -> Field:
     where = f'{module}.{record}.{name}'
-    if not _LOWER.match(name) or keyword.iskeyword(name):
-        refuse('IR-FIELD-SPEC', where, 'a field name is lower_snake and not a Python keyword')
+    if not _LOWER.match(name):
+        refuse('IR-FIELD-SPEC', where, 'a field name is lower_snake (a keyword is escaped in generated code)')
     extra = sorted(set(row) - _FIELD_KEYS)
     if extra:
         refuse('IR-FIELD-SPEC', where, f'unknown key {extra[0]!r} (a required field has no default)')
@@ -241,6 +271,7 @@ def _field(module: str, record: str, name: str, row: dict) -> Field:
     if is_array != ('dtype' in row) or is_array != ('shape' in row):
         refuse('IR-FIELD-SPEC', where, 'dtype and shape belong to, and complete, an array')
     shape = tuple(row.get('shape', ()))
+    _check_default(row, kind, where)
     if is_array and (row['dtype'] not in DTYPES or not all(isinstance(d, (int, str)) for d in shape)):
         refuse('IR-FIELD-SPEC', where, f'dtype one of {DTYPES}, shape of ints and dim names')
     return Field(
@@ -254,27 +285,78 @@ def _field(module: str, record: str, name: str, row: dict) -> Field:
         unique_by=row.get('unique_by', ''),
         csr_values=row.get('csr_values', ''),
         gauge_reference=row.get('gauge_reference', ''),
+        default=cast('object', row.get('default')),
+        default_consumer=str(row.get('default_consumer', '')),
     )
 
 
-def load_module(name: str, source: str, python: str = '') -> Module:
-    """One schema file, parsed but not yet resolved against its neighbors."""
+def _check_default(row: dict[str, Any], kind: TypeRef, where: str) -> None:
+    """A ``default`` belongs to an OPTIONAL scalar or enum field, is of its type, and names its consumer."""
+    if 'default' not in row:
+        if 'default_consumer' in row:
+            refuse('IR-FIELD-SPEC', where, '`default_consumer` names who fills a `default`, and there is none')
+        return
+    value: object = row['default']
+    if not row.get('optional', False):
+        refuse('IR-FIELD-SPEC', where, 'a required field has no default; only an optional field carries one')
+    if not row.get('default_consumer'):
+        refuse('IR-FIELD-SPEC', where, 'a `default` names its consumer (`default_consumer`): the reader never fills it')
+    types = _DEFAULT_TYPES.get(kind.kind)
+    if types is None or isinstance(value, bool) is not (kind.kind == 'bool') or not isinstance(value, types):
+        refuse('IR-FIELD-SPEC', where, f'default {value!r} is not a {kind.kind} (a default is a scalar or enum value)')
+
+
+def _enum_values(where: str, row: dict[str, Any], read: Reader | None) -> tuple[str, ...]:
+    """An enum's values: listed (``values``), or the keys of a terms table (``terms`` file + dotted ``table``)."""
+    if ('values' in row) == ('terms' in row):
+        refuse('IR-FIELD-SPEC', where, 'an enum declares exactly one of `values` or `terms` + `table`')
+    if 'values' in row:
+        return tuple(str(v) for v in row['values'])
+    if not row.get('table') or read is None:
+        refuse('IR-FIELD-SPEC', where, '`terms = "<repo-relative toml>"` names its `table = "<dotted key>"`')
+    terms, table = str(row['terms']), str(row['table'])
+    node: Any = tomllib.loads(read(terms))
+    for key in table.split('.'):
+        node = cast('dict[str, Any]', node).get(key) if isinstance(node, dict) else None
+    if not isinstance(node, dict):
+        refuse('IR-FIELD-SPEC', where, f'{terms} has no table [{table}] to read the values from')
+    return tuple(str(key) for key in cast('dict[str, Any]', node))
+
+
+def load_module(
+    name: str, source: str, python: str = '', read: Reader | None = None, resolved: dict[str, list[str]] | None = None
+) -> Module:
+    """One schema file, parsed but not yet resolved against its neighbors.
+
+    *read* resolves a terms-table enum (``terms``); *resolved* gives an EXTERNAL module's enums as its generated
+    ``ENUM_VALUES`` holds them, since the owner's terms file is not in this tree.
+    """
     data = tomllib.loads(source)
-    enums = {}
+    enums: dict[str, Enum] = {}
     for enum_name, row in data.get('enum', {}).items():
-        values = tuple(row['values'])
+        if resolved is not None and enum_name in resolved:
+            values = tuple(resolved[enum_name])
+        else:
+            values = _enum_values(f'{name}.{enum_name}', row, read)
         bad = [v for v in values if not _LOWER.match(v) or keyword.iskeyword(v)]
         if not values or bad or len(set(values)) != len(values) or not _UPPER.match(enum_name):
             refuse('IR-FIELD-SPEC', f'{name}.{enum_name}', 'values: non-empty, unique, lower_snake')
         enums[enum_name] = Enum(name, enum_name, values)
-    records = {}
+    records: dict[str, Record] = {}
     for record_name, row in data.get('record', {}).items():
         if not _UPPER.match(record_name):
             refuse('IR-FIELD-SPEC', f'{name}.{record_name}', 'a record name is UpperCamel')
         fields = tuple(_field(name, record_name, f, r) for f, r in row.get('field', {}).items())
         records[record_name] = Record(name, record_name, fields, row.get('doc', ''))
+        for f in fields:
+            owner, _, enum = f.type.target.partition('.')
+            local = f.type.kind == 'enum' and owner == name and enum in enums
+            if local and f.default is not None and f.default not in enums[enum].values:
+                where = f'{name}.{record_name}.{f.name}'
+                refuse('IR-FIELD-SPEC', where, f'default {f.default!r} is not a value of {enum}')
     dims = {d: (row.get('min'), row.get('max')) for d, row in data.get('dim', {}).items()}
-    return Module(name, source, records, enums, dims, python)
+    terms = tuple(sorted({row['terms'] for row in data.get('enum', {}).values() if 'terms' in row}))
+    return Module(name, source, records, enums, dims, python, terms)
 
 
 def _catalogue(source: str) -> tuple[dict[str, Quantity], dict[str, tuple[str, str]]]:
@@ -307,7 +389,7 @@ def _catalogue(source: str) -> tuple[dict[str, Quantity], dict[str, tuple[str, s
 
 def _external(alias: str, module_name: str) -> Module:
     generated = importlib.import_module(module_name)
-    return load_module(alias, generated.SCHEMA_TOML, module_name)
+    return load_module(alias, generated.SCHEMA_TOML, module_name, resolved=getattr(generated, 'ENUM_VALUES', None))
 
 
 def parse(root: Path, read: Reader | None = None) -> IR | None:
@@ -321,7 +403,7 @@ def parse(root: Path, read: Reader | None = None) -> IR | None:
     if declaration is None:
         return None
     modules = {
-        name: load_module(name, read(path), f'{declaration.package}._ir_{name}')
+        name: load_module(name, read(path), f'{declaration.package}._ir_{name}', read)
         for name, path in declaration.modules.items()
     }
     external = {alias: _external(alias, target) for alias, target in declaration.external.items()}

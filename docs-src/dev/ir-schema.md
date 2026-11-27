@@ -43,6 +43,9 @@ min = 1                               # and/or max = <int>
 
 [enum.<Name>]
 values = ["a", "b"]                   # non-empty, unique, lower_snake
+# or, instead of values: the keys of a terms table, in file order
+# terms = "vocabulary/terms.toml"     # repo-relative
+# table = "finish"                    # dotted key of the table whose keys are the values
 
 [record.<Name>]
 doc = "..."
@@ -56,6 +59,8 @@ shape = ["n", 3]                      # arrays only: ints and symbolic dims
 unique_by = "id"                      # list:record:<R> only
 csr_values = "<array field>"          # int64 1-d array only: this is the CSR offsets of that field
 gauge_reference = "<float field>"     # pressure only: gauge at the boundary, relative to that field
+default = 293.15                      # optional fields only (bool, int, float, str, enum value): CARRIED, never filled
+default_consumer = "compile"          # required with default: the consumer that fills it; the reader never does
 ```
 
 | `type` | Python | Rust | Canonical JSON |
@@ -74,6 +79,11 @@ gauge_reference = "<float field>"     # pressure only: gauge at the boundary, re
 - A reference `<R>` or `<E>` is local, `<module>.<R>` for another module of this repo, or `<alias>.<R>`
   for an external one. The owner repo's version governs its records.
 - Records and enums are `UpperCamel`; fields and enum values are `lower_snake`.
+- A field spelled as a keyword (`from`, `with`, `use`) keeps its spelling in the TOML and on the wire; generated
+  code escapes it: a Python keyword becomes the attribute `from_`, a Rust keyword the raw identifier `r#use`
+  (`self`/`super`/`crate` become `self_`, with a serde rename).
+- A terms enum (`terms` + `table`) reads its values from that file, which joins the module's freshness sources;
+  the generated module carries them as `ENUM_VALUES`, so a consumer of an external module reads them there.
 - `dtype`: `bool`, `int32`, `int64`, `float32`, `float64`, `complex128`.
 - `id:<R>` needs `<R>` to have a field `id` of type `id:<R>`.
 - **Symbolic dims** are scoped to the whole top-record tree: every array under one top-level record that
@@ -222,23 +232,14 @@ build-backend = "hatchling.build"
 
 ## Rust output
 
-The consuming crate's `build.rs` runs the generator into `OUT_DIR`; nothing is committed.
+The consuming crate's `build.rs` runs the generator into `OUT_DIR`; nothing is committed. Print it with
+`python -m dev_lab.dev.irschema build-rs` (`irrust.build_rs`) and keep it as printed:
 
-```rust
-// build.rs
-fn main() {
-    let out = std::env::var("OUT_DIR").unwrap();
-    let python = std::env::var("PYTHON").unwrap_or_else(|_| "python".into());
-    let status = std::process::Command::new(python)
-        .args(["-m", "dev_lab.dev.irschema", "rust", "--root", "..", "--out", &out])
-        .status()
-        .expect("python -m dev_lab.dev.irschema rust");
-    assert!(status.success(), "IR generation failed; the line above names why");
-    println!("cargo:rerun-if-changed=../ir");
-    println!("cargo:rerun-if-changed=../pyproject.toml");
-}
-// lib.rs: include!(concat!(env!("OUT_DIR"), "/ir.rs"));
-```
+- It finds the interpreter by probing every `venvpath.VENV_LAYOUTS` spelling (`.venv/Scripts/python.exe`,
+  `.venv/bin/python`) upward from the crate, and runs the generator with that checkout as `--root`. No `PYTHON`
+  variable and no PATH guess; with no venv it panics naming the bootstrap door.
+- It reads only `OUT_DIR`, the build-script door of ENV-IS-READ-ONCE (`envreads.BUILD_SCRIPT`).
+- `lib.rs`: `include!(concat!(env!("OUT_DIR"), "/ir.rs"));`
 
 - One `mod ir_<module>` per schema module, written to `ir.rs`. Dependencies: `serde` (derive),
   `serde_json` and `ndarray`.
