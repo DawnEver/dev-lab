@@ -24,14 +24,14 @@ Now the relock lives on ONE branch, :data:`BRANCH`, with no sha in its name:
   other once its parts pass.
 
 THIRD-PARTY MOVES ON A CADENCE, IN-HOUSE MOVES AT ONCE (user ruling 2026-11-05). A moved package is IN-HOUSE when
-the lock sources it from git FOLLOWING a line -- no ``rev``/``tag`` pin (:func:`in_house`): exactly a floated
-family sibling, read off the lock, never listed. Everything else -- an index package, the Rust toolchain, the uv
-pin -- is third-party and moves only when :func:`third_party_due`: the newest relock commit on integration's
-history that carried the full upgrade (trailer :data:`SCOPE` ``full``) is at least the repo's declared
-``[tool.dev_lab.relock] third_party_every`` old (:func:`cadence`, default :data:`DEFAULT_CADENCE`). Declared in
-the REPO'S pyproject, not a host's serve config: every host serving the repo reads the one cadence at the tip it
-relocks. An in-house relock before the cadence upgrades only its sibling names (``--upgrade-package``), so a
-third-party move never rides early.
+the lock sources it from git FOLLOWING a line -- no ``rev``/``tag`` pin
+(:func:`~dev_lab.dev._relock_lockfile.in_house`): exactly a floated family sibling, read off the lock, never listed.
+Everything else -- an index package, the Rust toolchain, the uv pin -- is third-party and moves only when
+:func:`third_party_due`: the newest relock commit on integration's history that carried the full upgrade (trailer
+:data:`SCOPE` ``full``) is at least the repo's declared ``[tool.dev_lab.relock] third_party_every`` old
+(:func:`cadence`, default :data:`DEFAULT_CADENCE`). Declared in the REPO'S pyproject, not a host's serve config:
+every host serving the repo reads the one cadence at the tip it relocks. An in-house relock before the cadence
+upgrades only its sibling names (``--upgrade-package``), so a third-party move never rides early.
 
 A step that cannot finish RAISES :class:`RelockFailed` naming why (no integration branch, the resolution could
 not run, the door failed or moved nothing, the push lost its lease); the serve step alarms it and the next tick
@@ -42,19 +42,18 @@ from __future__ import annotations
 
 import contextlib
 import os
-import re
 import shutil
 import sys
 import tomllib
 from collections.abc import Callable, Iterator, Sequence
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, NamedTuple
-from urllib.parse import parse_qs
+from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 
 from dev_lab.dev._dep_project import OtherUvRefused, lock_writer, pin_file, uv_remedy
+from dev_lab.dev._relock_lockfile import canon, dist_of, in_house
 from dev_lab.dev.famfiles import due_renderers, render_repo
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
@@ -63,7 +62,6 @@ from dev_lab.dev.labsession import machine_env
 from dev_lab.dev.lockcheck import (
     FRESHENED,
     LOCK,
-    TOOLCHAIN,
     UV_PIN,
     mount_submodules,
     newest_stable,
@@ -84,22 +82,17 @@ if TYPE_CHECKING:
 __all__ = [
     'BRANCH',
     'DEFAULT_CADENCE',
-    'DEFAULT_LINE',
     'FULL',
     'IN_HOUSE',
     'SCOPE',
     'TITLE',
-    'Floated',
     'RelockFailed',
     'cadence',
     'carried',
     'carry',
     'chosen',
     'detached_worktree',
-    'dist_of',
     'door_upgrade',
-    'floated',
-    'in_house',
     'rerender',
     'siblings',
     'third_party_due',
@@ -113,8 +106,6 @@ TITLE: Final = 'build(deps): relock to the newest resolution'
 SCOPE: Final = 'Relock-Scope'
 FULL: Final = 'full'
 IN_HOUSE: Final = 'in-house'
-#: The line a floated sibling follows when its git source names no ``branch``.
-DEFAULT_LINE: Final = 'integrate/main'
 #: How often third-party moves land where the repo declares no ``[tool.dev_lab.relock] third_party_every``.
 DEFAULT_CADENCE: Final = timedelta(days=1)
 _TABLE: Final = 'relock'
@@ -127,96 +118,13 @@ SHORT: Final = 12
 #: How long the dependency door may take: a cold cache resolving every source, then a frozen sync.
 DOOR_TIMEOUT_S: Final = 1800.0
 
-#: The verbs a resolution's change line opens with, and where the distribution sits after one.
-_VERBS: Final = frozenset({'Update', 'Add', 'Remove'})
-_NAME_INDEX: Final = 2
-#: A full commit sha: the one ``rev`` that names a commit rather than a line.
-_FULL_SHA: Final = re.compile(r'[0-9a-f]{40}')
-#: An abbreviated commit sha: git's shortest unambiguous form is four hex digits.
-_HEX: Final = re.compile(r'[0-9a-f]{4,40}')
-
 
 class RelockFailed(OSError):
     """A relock that could not be carried, with the reason; the next tick tries afresh."""
 
 
-def dist_of(change: str) -> str:
-    """The distribution a :func:`~dev_lab.dev.lockcheck.stale` sentence names.
-
-    The sentence is ``uv.lock is not the newest resolution: Update pint v0.26.1 -> v0.26.2``; the word after
-    the verb is the distribution, a toolchain sentence answers ``'rust'``, a uv pin sentence ``'uv'``,
-    and a sentence of another shape answers ``'lock'`` rather than guessing.
-    """
-    if change.startswith(f'{TOOLCHAIN} '):
-        return 'rust'
-    if change.startswith(f'{UV_PIN} '):
-        return 'uv'
-    _, _, rest = change.partition('resolution: ')
-    words = rest.split()
-    name = words[1] if len(words) >= _NAME_INDEX and words[0] in _VERBS else ''
-    return name or 'lock'
-
-
-def _canon(name: str) -> str:
-    """PEP 503's normal form: the lock's and a change line's spellings meet here."""
-    return re.sub(r'[-_.]+', '-', name).lower()
-
-
-class Floated(NamedTuple):
-    """One sibling the lock sources from git FOLLOWING a line: its name, repository, line and locked commit."""
-
-    name: str
-    url: str
-    branch: str
-    sha: str
-
-
-def line_of(query: str, locked: str = '') -> str | None:
-    """The line a git source query *query* FOLLOWS; ``None`` when it HOLDS -- the one held-or-floated predicate.
-
-    Judged by what the ref IS, URL-decoded: a ``tag`` holds (a tag is declared a fixed point), a ``rev`` holds as a
-    full 40-hex commit sha, or as an abbreviation of the commit the lock resolved it to (*locked*, the locator's
-    ``#<sha>``: ``rev = "595b43eb"`` pins that commit and is never a branch to fetch) -- any other ``rev`` names a
-    branch and follows it, as ``branch`` does. No ref follows :data:`DEFAULT_LINE`.
-    """
-    refs = parse_qs(query)
-    if 'tag' in refs:
-        return None
-    rev = refs.get('rev', [''])[0]
-    if _FULL_SHA.fullmatch(rev.lower()) or (_HEX.fullmatch(rev.lower()) and locked.lower().startswith(rev.lower())):
-        return None
-    return refs.get('branch', [rev or DEFAULT_LINE])[0]
-
-
-def floated(lock: str) -> tuple[Floated, ...]:
-    """The packages lock text *lock* sources from git FOLLOWING a line (:func:`line_of`), in lock order.
-
-    An unreadable lock follows nothing.
-    """
-    try:
-        packages = tomllib.loads(lock).get('package', [])
-    except tomllib.TOMLDecodeError:
-        return ()
-    found = []
-    for entry in packages:
-        source = entry.get('source', {}) if isinstance(entry, dict) else {}
-        locator = source.get('git') if isinstance(source, dict) else None
-        if not isinstance(locator, str) or not isinstance(entry.get('name'), str):
-            continue
-        address, _, sha = locator.partition('#')
-        url, _, query = address.partition('?')
-        if (line := line_of(query, sha)) is not None:
-            found.append(Floated(_canon(entry['name']), url, line, sha))
-    return tuple(found)
-
-
-def in_house(lock: str) -> frozenset[str]:
-    """The names of :func:`floated`: the siblings an in-house relock moves off-cadence."""
-    return frozenset(one.name for one in floated(lock))
-
-
 def siblings(tree: Path) -> frozenset[str]:
-    """The floated siblings (:func:`in_house`) of *tree*'s lock; none where *tree* commits no lock."""
+    """The floated siblings of *tree*'s lock (:func:`~dev_lab.dev._relock_lockfile.in_house`); none without a lock."""
     return in_house((tree / LOCK).read_text(encoding='utf-8')) if (tree / LOCK).is_file() else frozenset()
 
 
@@ -225,7 +133,7 @@ def chosen(found: Sequence[str], siblings: frozenset[str], *, due: bool) -> tupl
 
     Every one when third-party moves are *due*; else only those moving a sibling of *siblings*.
     """
-    return tuple(found) if due else tuple(line for line in found if _canon(dist_of(line)) in siblings)
+    return tuple(found) if due else tuple(line for line in found if canon(dist_of(line)) in siblings)
 
 
 def cadence(manifest: str) -> timedelta:
@@ -474,7 +382,7 @@ def carry(
             )
             raise RelockFailed(msg)
         scope = FULL if due else IN_HOUSE
-        packages = () if due else tuple(sorted({_canon(dist_of(line)) for line in lines}))
+        packages = () if due else tuple(sorted({canon(dist_of(line)) for line in lines}))
         if (exited := upgrade(tree, packages)) != 0:
             msg = f'the dependency door exited {exited} relocking {policy.integration} at {tip[:SHORT]} ({scope})'
             raise RelockFailed(msg)

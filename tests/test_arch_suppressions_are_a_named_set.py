@@ -184,6 +184,12 @@ ALLOWED: Final[dict[Site, str]] = {
     ): 'call and the journaling door under it (the end of their wrapped signatures) return the parsed JSON '
     'answer, whose shape is the endpoint; each verb normalizes it into a typed Issue/Comment/PullRequest',
     (
+        'src/dev_lab/dev/_forgework_verbs.py',
+        'ANN401',
+        ') -> Any:',
+    ): "the verbs' declaration of Client.call (the end of its wrapped signature) returns what call returns: the "
+    'parsed JSON answer, whose shape is the endpoint',
+    (
         'src/dev_lab/dev/forgework.py',
         'ANN401',
         'def upload_raw(self, host: str, path: str, *, content: bytes, durable: Durable | None = None) -> Any:',
