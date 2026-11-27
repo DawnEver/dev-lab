@@ -164,7 +164,7 @@ the session's next prompt. No Monitor is armed and no `Stop` gate waits on a PR.
 - **Contract.** Every non-PASS names its owner class: code, environment, scheduling, vendor license, network, or
   status publishing; only a code failure is the author's red.
 - **Today.** One enum, `dev_lab.dev.producer::Owner` (`code`, `environment`, `scheduling`, `vendor-license`,
-  `network`, `status-publishing`). The forge keeps its four states; the owner is the `class=<owner>` field of an
+  `network`, `status-publishing`, `part-refusal`, `setup` -- a hosted part's declared setup failed, `hostedsetup`). The forge keeps its four states; the owner is the `class=<owner>` field of an
   `error` description (`producer.owned`, read by `producer.owner_of`, tolerant of other `key=value` fields). A
   `failure` part is `code`. Every release names its class: `release_reason` and `box_release_reason`
   (environment, scheduling), a declared outage (`producer.unreachable` network / environment / scheduling /

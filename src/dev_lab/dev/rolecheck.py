@@ -11,6 +11,7 @@ D73 (:mod:`dev_lab.dev.roles`). :func:`repo_refusals` reads a repo's working tre
 * ``tests`` on ``actions`` declares nothing only the serving hosts' queue reads (:data:`HPC_ONLY`): no host would
   ever read it -- ``[tool.lab_commons.hpc]`` is NOT among them: it says how a cluster BUILDS the repo, which dev-lab
   declares for the tooling it ships;
+* a GitHub repo's ``tests`` is bound to ``ci`` (GITHUB-TESTS-ON-ACTIONS, :mod:`~dev_lab.dev.githubtests`);
 * every required part (``base`` and ``[tool.dev_lab.parts] required``) is one the ``tests`` executor's kind posts
   (:func:`~dev_lab.dev.roles.producible`), and none needs an ``optional_needs`` resource.
 
@@ -29,6 +30,7 @@ from typing import Any, Final
 from lab_commons.compute.serves import SERVE_TABLE
 from lab_commons.hpc.needsets import BASE
 
+from dev_lab.dev import githubtests
 from dev_lab.dev.ciworkflows import placed
 from dev_lab.dev.ciworkflowshape import WORKFLOW_DIRS
 from dev_lab.dev.family import declared_table
@@ -87,7 +89,7 @@ def _ci_refusals(root: Path, text: str, origin: str, forge: str, roles: Roles) -
     return found
 
 
-def _required_refusals(text: str, origin: str, tests: str) -> list[str]:
+def _required_refusals(text: str, origin: str, tests: str, forge: str) -> list[str]:
     parts = declared_table(tomllib.loads(text), 'parts', {})
     required = {BASE, *parts.get('required', [])}
     optional = optional_needs_from(text)
@@ -95,6 +97,7 @@ def _required_refusals(text: str, origin: str, tests: str) -> list[str]:
     return [
         f'{origin}: the required part tests/{part} has no producer with tests bound to "{tests}"'
         + (' (CI posts base and hosted parts)' if tests == CI else ' (it needs an optional_needs resource)')
+        + (f' -- {githubtests.DOOR} ({githubtests.RULE})' if forge == githubtests.FORGE else '')
         for part in sorted(required)
         if not producible(tests, part, hosted=hosted, optional=optional)
     ]
@@ -113,6 +116,11 @@ def repo_refusals(root: Path, forge: str, roles: Roles | None = None) -> list[st
     except Unbound as unbound:
         return [*found, str(unbound)]
     tests = roles.kind(TESTS)
+    if forge == githubtests.FORGE and tests != CI:
+        found.append(
+            f'{origin}: a GitHub repo with tests bound to "{tests}" -- it is tested only by GitHub Actions '
+            f'({githubtests.RULE}): bind tests = "{CI}" in the family layer; {githubtests.DOOR}'
+        )
     found += _unrendered(root, text, origin, forge, roles)
     if tests == CI:
         found += _ci_refusals(root, text, origin, forge, roles)
@@ -122,7 +130,7 @@ def repo_refusals(root: Path, forge: str, roles: Roles | None = None) -> list[st
             for path, why in HPC_ONLY.items()
             if _declares(data, path)
         ]
-    return found + _required_refusals(text, origin, tests)
+    return found + _required_refusals(text, origin, tests, forge)
 
 
 def host_refusals(name: str, card: Mapping[str, Any]) -> list[str]:

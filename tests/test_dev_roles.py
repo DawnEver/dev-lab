@@ -285,10 +285,22 @@ def test_a_planted_clean_ci_repo_is_not_refused(tmp_path: Path) -> None:
 
 def test_a_workflow_nothing_renders_is_refused(tmp_path: Path) -> None:
     root = _repo(tmp_path, OWN, GITEA, rendered=False)
-    assert repo_refusals(root, 'github', GITEA) == []
-    (root / '.github' / 'workflows').mkdir(parents=True)
-    (root / '.github' / 'workflows' / 'stray.yml').write_text('{}\n', encoding='utf-8')
-    assert [line for line in repo_refusals(root, 'github', GITEA) if 'stray.yml' in line and 'nothing renders' in line]
+    assert repo_refusals(root, 'gitea', GITEA) == []
+    (root / '.gitea' / 'workflows').mkdir(parents=True)
+    (root / '.gitea' / 'workflows' / 'stray.yml').write_text('{}\n', encoding='utf-8')
+    assert [line for line in repo_refusals(root, 'gitea', GITEA) if 'stray.yml' in line and 'nothing renders' in line]
+
+
+def test_a_github_repo_whose_tests_are_off_ci_is_refused(tmp_path: Path) -> None:
+    """GITHUB-TESTS-ON-ACTIONS at the repo: tests bound to a cluster on github.com is refused, naming the door.
+
+    PLANTED CONTROL: the same binding on a Gitea repo is no such refusal.
+    """
+    root = _repo(tmp_path, OWN, GITEA, rendered=False)
+    refused = [line for line in repo_refusals(root, 'github', GITEA) if 'GITHUB-TESTS-ON-ACTIONS' in line]
+    assert refused, refused
+    assert '[tool.dev_lab.parts] hosted' in refused[0]
+    assert not [line for line in repo_refusals(root, 'gitea', GITEA) if 'GITHUB-TESTS-ON-ACTIONS' in line]
 
 
 def test_a_ci_repo_without_its_rendered_ci_is_refused(tmp_path: Path) -> None:
@@ -305,7 +317,9 @@ def test_a_ci_repo_declaring_what_only_the_hpc_queue_reads_is_refused(tmp_path: 
 def test_a_required_part_no_executor_posts_is_refused(tmp_path: Path) -> None:
     text = OWN.replace('[tool.dev_lab.parts]\n', '[tool.dev_lab.parts]\nrequired = ["jmag"]\n', 1)
     root = _repo(tmp_path, text, GITHUB)
-    assert [line for line in repo_refusals(root, 'github', GITHUB) if 'tests/jmag has no producer' in line]
+    found = [line for line in repo_refusals(root, 'github', GITHUB) if 'tests/jmag has no producer' in line]
+    assert found
+    assert 'declare them in [tool.dev_lab.parts] hosted (GITHUB-TESTS-ON-ACTIONS)' in found[0]
 
 
 def test_a_retired_placement_is_one_of_the_repo_refusals(tmp_path: Path) -> None:
