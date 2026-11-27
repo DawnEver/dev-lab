@@ -39,7 +39,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from lab_commons.box.providers import account_seats
 from lab_commons.compute import learned
@@ -62,7 +62,7 @@ from lab_commons.hpc.records import held_cells, run_shas
 from lab_commons.hpc.run import _STARTED as STARTED  # the one spelling of a started task's squeue states
 from lab_commons.hpc.run import NoRoom, cancel_run, job_name, load_state, submit_run, withdraw_pending
 from lab_commons.hpc.shell import INCREMENTAL, RunSpec
-from lab_commons.hpc.slurm import FORGE_SESSION
+from lab_commons.hpc.slurm import FORGE_SESSION, Snapshot
 from lab_commons.hpc.watch import PENDING, settle
 from lab_commons.resources import Engine
 
@@ -136,9 +136,11 @@ def _last_started(text: str, items: set[object]) -> str:
     last = ''
     for raw in text.splitlines():
         with contextlib.suppress(json.JSONDecodeError):
-            line = json.loads(raw)
-            if isinstance(line, dict) and line.get('item') in items and 'start' in line:
-                last = str(line['start'])
+            line: object = json.loads(raw)
+            if isinstance(line, dict):
+                entry = cast('dict[str, object]', line)  # a JSON object's keys are strings
+                if entry.get('item') in items and 'start' in entry:
+                    last = str(entry['start'])
     return last
 
 
@@ -355,7 +357,9 @@ class SlurmCluster:
         """
         shell = self.connect(self.machine.grants[0])
         lines = shell(_RUNNING, None).splitlines()
-        now, manifests, found = float(lines[0]), {}, []
+        now = float(lines[0])
+        manifests: dict[str, dict[str, Any]] = {}
+        found: list[Stalled] = []
         for row in lines[1:]:
             job_id, name, elapsed, run_dir = row.split('|', 3)
             index = job_id.partition('_')[2]
@@ -399,7 +403,7 @@ class SlurmCluster:
         measured = Measured.of(learned.learned(run.repo_url))
         cost, safety = self.config.cost, self.config.policy.safety
         manifests: dict[str, dict[str, Any]] = {}
-        tasks = []
+        tasks: list[Started] = []
         for row in lines[1:]:
             job_id, _, elapsed = row.partition('|')
             base, _, index = job_id.partition('_')
@@ -423,7 +427,8 @@ class SlurmCluster:
 
     def standing(self) -> Standing:
         """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota."""
-        read, probed = [], []
+        read: list[tuple[Snapshot, str]] = []
+        probed: list[tuple[Grant, Snapshot]] = []
         for grant in self.machine.grants:
             snapshot = probe(self.connect(grant), grant.slurm_account)
             read.append((snapshot, snapshot.quota.default_qos))
