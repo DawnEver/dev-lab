@@ -100,7 +100,7 @@ def _check(ir: IR, f: Field, ref: TypeRef, var: str, path: str) -> list[str]:  #
 
 
 def _validate(ir: IR, record: Record) -> list[str]:
-    lines = []
+    lines: list[str] = []
     for f in record.fields:
         path = f'p_{f.name}'
         var = f'x_{f.name}'
@@ -109,20 +109,20 @@ def _validate(ir: IR, record: Record) -> list[str]:
             continue
         lines.append(f'let {path} = format!("{{path}}.{f.name}");')
         if f.optional:
-            lines += [f'if let Some({var}) = &self.{f.name} {{', *(f'    {b}' for b in body), '}']
+            lines += [f'if let Some({var}) = &self.{f.rust_name} {{', *(f'    {b}' for b in body), '}']
         else:
-            lines += [f'let {var} = &self.{f.name};', *body]
+            lines += [f'let {var} = &self.{f.rust_name};', *body]
     for f in record.fields:
         if f.csr_values:
             lines.append(
-                f'ir_runtime::check_csr(&self.{f.name}, self.{f.csr_values}.shape()[0], '
+                f'ir_runtime::check_csr(&self.{f.rust_name}, self.{record.field(f.csr_values).rust_name}.shape()[0], '
                 f'&format!("{{path}}.{f.name}"))?;'
             )
     return lines
 
 
 def _canonicalize(ir: IR, record: Record, here: str) -> list[str]:
-    lines = []
+    lines: list[str] = []
     for f in record.fields:
         ref = f.type.item if f.type.kind == 'list' else f.type
         if ref.kind != 'record':
@@ -145,13 +145,15 @@ def _field_line(ir: IR, f: Field, here: str) -> list[str]:
     if f.type.kind == 'array':
         module = 'opt_array' if f.optional else 'array'
         attributes.append(f'with = "ir_runtime::{module}"')
+    if f.rust_name != f.name:
+        attributes.append(f'rename = "{f.name}"')
     if f.optional:
         attributes += ['default', 'skip_serializing_if = "Option::is_none"']
         rust = f'Option<{rust}>'
     lines = [f'    /// {f.doc}'] if f.doc else []
     if attributes:
         lines.append(f'    #[serde({", ".join(attributes)})]')
-    return [*lines, f'    pub {f.name}: {rust},']
+    return [*lines, f'    pub {f.rust_name}: {rust},']
 
 
 def _record(ir: IR, module: Module, record: Record) -> list[str]:

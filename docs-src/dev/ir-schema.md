@@ -43,6 +43,9 @@ min = 1                               # and/or max = <int>
 
 [enum.<Name>]
 values = ["a", "b"]                   # non-empty, unique, lower_snake
+# or, instead of values: the keys of a terms table, in file order
+# terms = "vocabulary/terms.toml"     # repo-relative
+# table = "finish"                    # dotted key of the table whose keys are the values
 
 [record.<Name>]
 doc = "..."
@@ -56,6 +59,8 @@ shape = ["n", 3]                      # arrays only: ints and symbolic dims
 unique_by = "id"                      # list:record:<R> only
 csr_values = "<array field>"          # int64 1-d array only: this is the CSR offsets of that field
 gauge_reference = "<float field>"     # pressure only: gauge at the boundary, relative to that field
+default = 293.15                      # optional fields only (bool, int, float, str, enum value): CARRIED, never filled
+default_consumer = "compile"          # required with default: the consumer that fills it; the reader never does
 ```
 
 | `type` | Python | Rust | Canonical JSON |
@@ -74,6 +79,11 @@ gauge_reference = "<float field>"     # pressure only: gauge at the boundary, re
 - A reference `<R>` or `<E>` is local, `<module>.<R>` for another module of this repo, or `<alias>.<R>`
   for an external one. The owner repo's version governs its records.
 - Records and enums are `UpperCamel`; fields and enum values are `lower_snake`.
+- A field spelled as a keyword (`from`, `with`, `use`) keeps its spelling in the TOML and on the wire; generated
+  code escapes it: a Python keyword becomes the attribute `from_`, a Rust keyword the raw identifier `r#use`
+  (`self`/`super`/`crate` become `self_`, with a serde rename).
+- A terms enum (`terms` + `table`) reads its values from that file, which joins the module's freshness sources;
+  the generated module carries them as `ENUM_VALUES`, so a consumer of an external module reads them there.
 - `dtype`: `bool`, `int32`, `int64`, `float32`, `float64`, `complex128`.
 - `id:<R>` needs `<R>` to have a field `id` of type `id:<R>`.
 - **Symbolic dims** are scoped to the whole top-record tree: every array under one top-level record that
