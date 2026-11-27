@@ -337,11 +337,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
-    'jobparts',
-    'hostedjobs',  # ORIGINAL: split from jobparts: a hosted part's own workflow job render (2026-11-21)
-    'hostedparts',  # ORIGINAL: split from jobparts: the hosted-part declaration reader (2026-11-17)
-    # ORIGINAL: no prior mechanism measured a pinned selection on hosted runners without producing a part (2026-11-15).
-    'jobmeasure',
     'native_session',  # ORIGINAL: one validated native harness identity, apart from worktree provenance (2026-11-15)
     'planrun',  # ORIGINAL: a consent plan's preflight and ordered run (2026-11-11)
     'planremote',  # ORIGINAL: split from planrun: the hosts a consent plan runs on (2026-11-11)

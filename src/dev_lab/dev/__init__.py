@@ -233,6 +233,8 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.hostedjobs` -- a declared hosted part's own workflow job: setup, key bundles, produce, forget.
 * :mod:`dev_lab.dev.hostedparts` -- ``[tool.dev_lab.parts] hosted``: the parts run in a hosted job of their own,
   read and refused by shape.
+* :mod:`dev_lab.dev.hostedsetup` -- a hosted part's declared setup, run by its job; a failure posts the part under
+  its own class (``network`` or ``setup``), naming the exit and the setup's last line.
 * :mod:`dev_lab.dev.native_session` -- the native harness's session identity, validated against one catalog and
   independent of worktree provenance and authorization.
 * :mod:`dev_lab.dev.forgepages` -- a forge listing read page by page up to the caller's limit.

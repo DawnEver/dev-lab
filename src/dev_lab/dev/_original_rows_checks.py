@@ -27,6 +27,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'tablequantity',  # ORIGINAL: 2026-11-25, durations and sizes in config tables read with their units
     'depcites',  # ORIGINAL: 2026-11-25, OWNER-DAG: a cited name needs a dependencies.toml row
     'renderedspelling',  # ORIGINAL: 2026-11-26, rendered family files pass the family typos check
+    'ruletext',  # ORIGINAL: 2026-11-27, BARE-PYTHON in prose: a rule page names its interpreter (W8, #646)
     'sharefolder',  # ORIGINAL: 2026-11-27, SHARE-FOLDER-HOLDS-DATA, a share folder keeps data and its figure command
     'typecheck',  # ORIGINAL: 2026-11-25, pyright as a family section with a per-owner ratchet
     'cargolints',  # ORIGINAL: 2026-11-25, every Rust workspace inherits one lint base

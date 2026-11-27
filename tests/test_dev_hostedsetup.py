@@ -64,6 +64,21 @@ def test_a_setup_that_passes_posts_nothing(tmp_path: Path, monkeypatch) -> None:
     assert not status_list(forge, SHA)
 
 
+def test_the_setup_s_output_is_echoed_through_the_one_console_writer(
+    tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The job log shows what the setup said, written by ``emit`` (a stream whose encoding the kit chose).
+
+    PLANTED CONTROL: a setup that says nothing echoes nothing -- no blank line is invented for it.
+    """
+    forge, _ran = _setup_exits(monkeypatch, tmp_path, 0, 'fetching 11 files\nok\n')
+    assert hostedsetup.run_setup(tmp_path, 'corpus', forge, run=RUN) == 0
+    assert capsys.readouterr().out == 'fetching 11 files\nok\n'
+    forge, _ran = _setup_exits(monkeypatch, tmp_path, 0, '')
+    assert hostedsetup.run_setup(tmp_path, 'corpus', forge, run=RUN) == 0
+    assert capsys.readouterr().out == ''
+
+
 def test_a_part_declaring_no_setup_is_refused_by_name(tmp_path: Path, monkeypatch) -> None:
     forge, ran = _setup_exits(monkeypatch, tmp_path, 0, '')
     with pytest.raises(ValueError, match=r"'linux' declares no setup"):
