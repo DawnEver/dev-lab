@@ -1927,6 +1927,19 @@ def test_the_lock_wait_is_a_duration_quantity(capsys: pytest.CaptureFixture[str]
     assert '--lock-wait "<duration>"' in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(('text', 'accepted'), [('60m', '"60 min"'), ('2.5 m', '"2.5 min"'), ('CONTROL-90 s', None)])
+def test_a_minute_spelled_m_is_refused_naming_its_accepted_form(text: str, accepted: str | None) -> None:
+    """``m`` is pint's METER: "60m" stays refused (the unit lives in the value), but the refusal names ``60 min``."""
+    text = text.removeprefix('CONTROL-')
+    if accepted is None:
+        assert lock_wait(text) == pytest.approx(90.0, abs=1e-9)  # s
+        return
+    with pytest.raises(ValueError, match='duration') as refused:
+        lock_wait(text)
+    assert accepted in str(refused.value)
+    assert 'meter' in str(refused.value)
+
+
 @pytest.mark.parametrize('producer', [True, False], ids=['producer', 'CONTROL-developer'])
 def test_a_box_with_no_room_releases_a_producers_claim_claimable(
     monkeypatch, tmp_path: Path, *, producer: bool
