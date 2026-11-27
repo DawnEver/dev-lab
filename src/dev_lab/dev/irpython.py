@@ -210,7 +210,7 @@ def render_module(ir: IR, name: str) -> str:
         f'SCHEMA_TOML = {module.source!r}',
         f'QUANTITIES_TOML = {ir.catalogue_source!r}',
         f'_BOUNDS = {module.dims!r}',
-        f'_rt.check_fresh(__file__, {root_up}, "pyproject.toml", {sources!r}, {fingerprint(ir, name).split(":")[0]!r})',
+        f'_rt.check_fresh(__file__, {root_up}, VERSION, {sources!r}, {fingerprint(ir, name).split(":")[0]!r})',
         '',
     ]
     for enum in module.enums.values():

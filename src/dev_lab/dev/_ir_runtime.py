@@ -14,7 +14,6 @@ import dataclasses
 import hashlib
 import json
 import math
-import tomllib
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import NamedTuple, NoReturn
@@ -371,16 +370,16 @@ def sources_hash(version: str, sources: list[bytes]) -> str:
     return digest.hexdigest()
 
 
-def check_fresh(module_file: str, root_up: int, version_source: str, sources: tuple[str, ...], expected: str) -> None:
-    """Raise IR-STALE-GENERATED when this module's sources are present and moved; silent without them."""
+def check_fresh(module_file: str, root_up: int, version: str, sources: tuple[str, ...], expected: str) -> None:
+    """Raise IR-STALE-GENERATED when this module's sources are present and moved; silent without them.
+
+    *version* is the declared IR version the module was generated under, EMBEDDED in it: the runtime reads no
+    manifest. A version bump in ``pyproject.toml`` alone is refused by ``irschema check`` (and ``verify``), not here.
+    """
     root = Path(module_file).resolve().parents[root_up]
-    files = [root / s for s in (version_source, *sources)]
+    files = [root / s for s in sources]
     if not all(f.is_file() for f in files):
         return
-    if sources_hash(_declared_version(files[0]), [f.read_bytes() for f in files[1:]]) != expected:
+    if sources_hash(version, [f.read_bytes() for f in files]) != expected:
         message = f'IR-STALE-GENERATED: {module_file} predates its schema -- {_GENERATE}'
         raise IRStaleError(message)
-
-
-def _declared_version(pyproject: Path) -> str:
-    return tomllib.loads(pyproject.read_text(encoding='utf-8'))['tool']['dev_lab']['ir_schema']['version']
