@@ -24,7 +24,7 @@ import pytest
 from lab_commons.hpc.cluster import Runner
 
 from dev_lab.dev.datedlog import FAMILY_KINDS
-from dev_lab.dev.hpcaccount import inventory, salvage, salvageread
+from dev_lab.dev.hpcaccount import inventory, salvage, salvageread, salvagerepo
 from dev_lab.dev.hpcaccount.fleet import Target
 from dev_lab.dev.layout import BACKUP_SUFFIXES
 
@@ -130,7 +130,7 @@ def _entry(account: SimpleNamespace, name: str) -> dict:
 
 
 def _branch(name: str, ref: str) -> str:
-    return salvage.branch_name(DAY, 'u1', f'src/{name}', ref)
+    return salvagerepo.branch_name(DAY, 'u1', f'src/{name}', ref)
 
 
 def test_a_path_is_one_segment_no_checkout_name_can_spell() -> None:
@@ -233,13 +233,13 @@ def test_a_dirty_tracked_change_lands_as_one_commit_on_its_head(
     monkeypatch: pytest.MonkeyPatch, account: SimpleNamespace
 ) -> None:
     assert _salvaged(monkeypatch, account, [], apply=True) == 0
-    branch = _branch('dirty', salvage.WORKTREE)
+    branch = _branch('dirty', salvagerepo.WORKTREE)
     local, dirty = account.local, account.home / 'src' / 'dirty'
     assert _git(local, 'rev-parse', f'{branch}^').strip() == _git(dirty, 'rev-parse', 'HEAD').strip()
     assert _git(local, 'show', f'{branch}:a.txt') == 'changed\n', 'the unstaged change'
     assert _git(local, 'show', f'{branch}:staged.txt') == 'staged\n', 'the staged new file'
     assert 'account u1 cleaned (test)' in _git(local, 'log', '-1', '--format=%B', branch), 'the reason rides along'
-    assert all(b['from'] != salvage.WORKTREE for b in _entry(account, 'ahead')['branches']), 'a clean tree: none'
+    assert all(b['from'] != salvagerepo.WORKTREE for b in _entry(account, 'ahead')['branches']), 'a clean tree: none'
 
 
 def test_an_untracked_file_lands_and_a_large_or_ignored_one_does_not(
@@ -247,7 +247,7 @@ def test_an_untracked_file_lands_and_a_large_or_ignored_one_does_not(
 ) -> None:
     said: list[str] = []
     assert _salvaged(monkeypatch, account, said, apply=True) == 0
-    branch = _branch('loose', salvage.WORKTREE)
+    branch = _branch('loose', salvagerepo.WORKTREE)
     files = set(_git(account.local, 'ls-tree', '-r', '--name-only', branch).split())
     assert files == {'.gitignore', 'a.txt', 'notes.md'}, 'big.bin is over the limit, out/ is ignored'
     assert _git(account.local, 'show', f'{branch}:notes.md') == 'a note\n'
@@ -345,7 +345,7 @@ def test_an_unmatched_repo_is_refused_by_name_and_nothing_lands(
     ('/srv/repos/beta-lab/', 'beta-lab'),
 ])  # fmt: skip
 def test_the_match_rule_is_the_repository_name(url: str, name: str) -> None:
-    assert salvage.repository_name(url) == name
+    assert salvagerepo.repository_name(url) == name
 
 
 def test_the_branch_name_is_derived_never_free_text_and_git_accepts_it(tmp_path: Path) -> None:
@@ -355,15 +355,15 @@ def test_the_branch_name_is_derived_never_free_text_and_git_accepts_it(tmp_path:
         ('src/a', 'refs/r2/solid'): f'salvage/{DAY}-u1-src+a-r2+solid',
         ('src/a', 'worktrees/wt/HEAD'): f'salvage/{DAY}-u1-src+a-worktrees+wt+HEAD',
         ('src/a/.claude/worktrees/w', 'HEAD'): f'salvage/{DAY}-u1-src+a+claude+worktrees+w-HEAD',
-        ('src/a', salvage.WORKTREE): f'salvage/{DAY}-u1-src+a-@worktree',
+        ('src/a', salvagerepo.WORKTREE): f'salvage/{DAY}-u1-src+a-@worktree',
         ('src/a', 'refs/heads/x~1:^?*[ y'): f'salvage/{DAY}-u1-src+a-x-1------y',
     }
     for (checkout, ref), branch in landed.items():
-        assert salvage.branch_name(DAY, 'u1', checkout, ref) == branch
+        assert salvagerepo.branch_name(DAY, 'u1', checkout, ref) == branch
         _git(tmp_path, 'check-ref-format', '--branch', branch)
     with pytest.raises(subprocess.CalledProcessError):
         _git(tmp_path, 'check-ref-format', '--branch', f'salvage/{DAY}-u1-src+a-x~1')  # the planted control
     with pytest.raises(ValueError, match='yyyymmdd'):
-        salvage.branch_name('2026-11-27', 'u1', 'src/a', 'HEAD')
+        salvagerepo.branch_name('2026-11-27', 'u1', 'src/a', 'HEAD')
     typed = {'branch', 'name', 'branch_name', 'ref'} & set(inspect.signature(salvage.salvage).parameters)
     assert not typed, 'no caller types a branch name'

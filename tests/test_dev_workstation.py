@@ -491,7 +491,9 @@ def test_deploy_drops_every_retired_capability_table_and_moves_a_runtime_path(
     assert declared['runtimes'] == {'olden': {'python': 'C:/rt/python.exe'}}
 
 
-G_RUNTIME: Final = '[capabilities.ai_lab]  # the review interpreter\npython = "C:/ai-lab/.venv/Scripts/python.exe"\n'
+#: The retired ai-lab runtime table, read from the registry that retires it (its one spelling).
+AI_LAB_TABLE: Final = next(name for name in RETIRED if name.endswith('.ai_lab'))
+G_RUNTIME: Final = f'[{AI_LAB_TABLE}]  # the review interpreter\npython = "C:/ai-lab/.venv/Scripts/python.exe"\n'
 
 
 def _g_shaped(box: Box) -> str:
@@ -503,15 +505,15 @@ def _g_shaped(box: Box) -> str:
 
 
 def test_a_dry_run_reports_the_runtime_move_it_would_make(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
-    """Live bug: the forge host's dry run said "declares every table" over a retired ``[capabilities.ai_lab]``."""
+    """Live bug: the forge host's dry run said "declares every table" over the retired ai-lab runtime table."""
     assert box.deploy() == 0
     held = _g_shaped(box)
     capsys.readouterr()
     assert box.deploy('--dry-run') == 0
     out = capsys.readouterr().out
     assert 'already declares every table' not in out
-    assert 'retired spelling moved: [capabilities.ai_lab] dropped: built from the ai-lab commit' in out
-    assert '-[capabilities.ai_lab]  # the review interpreter' in out
+    assert f'retired spelling moved: [{AI_LAB_TABLE}] dropped: built from the ai-lab commit' in out
+    assert f'-[{AI_LAB_TABLE}]  # the review interpreter' in out
     assert box.machine.read_text(encoding='utf-8') == held, 'a dry run writes nothing'
 
 

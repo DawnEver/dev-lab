@@ -1552,7 +1552,9 @@ _STOPPERS: Final = frozenset({'dev_lab.dev.stoprun', 'dev_lab.dev.stopapproved',
 
 def _loaded_stoppers(module: str) -> set[str]:
     probe = f'import sys, {module}; print(*sorted(sys.modules))'
-    done = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, timeout=120, check=True)
+    done = subprocess.run(
+        [sys.executable, '-c', probe], capture_output=True, text=True, encoding='utf-8', timeout=120, check=True
+    )
     return set(done.stdout.split()) & _STOPPERS
 
 
@@ -2255,7 +2257,7 @@ def test_a_repo_declares_its_selection_wall_and_the_box_holds_the_selection_to_i
 
 
 @pytest.mark.parametrize('sink', ['scratch/', 'work/sink/'])
-def test_the_ruff_steps_never_judge_the_declared_scratch_but_still_judge_code_beside_it(tmp_path, sink) -> None:
+def test_the_ruff_lints_never_judge_the_declared_scratch_but_still_judge_code_beside_it(tmp_path, sink) -> None:
     """#1037: OUTPUT-HOLDS-NO-CODE sends probes to scratch/, and verify's ruff then failed the verdict on them."""
     (tmp_path / 'layout.toml').write_text(f"scratch = '{sink}'\n", encoding='utf-8')
     (tmp_path / 'pyproject.toml').write_text('[tool.ruff.lint]\nselect = ["F401"]\n', encoding='utf-8')
@@ -2263,11 +2265,13 @@ def test_the_ruff_steps_never_judge_the_declared_scratch_but_still_judge_code_be
     for rel in (f'{sink}probe/x.py', 'src/pkg/kept.py'):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text(bad, encoding='utf-8')
-    ruff_steps = [arguments for name, arguments in verifysteps.LINT_STEPS if name.startswith('ruff')]
-    assert len(ruff_steps) == 2
-    for arguments in ruff_steps:
+    ruff_lints = [arguments for name, arguments in verifysteps.LINT_STEPS if name.startswith('ruff')]
+    assert len(ruff_lints) == 2
+    for arguments in ruff_lints:
         argv = [sys.executable, '-m', *verifysteps.lint_arguments(tmp_path, arguments)]
-        done = launch.run([*argv, '--no-cache'], cwd=tmp_path, capture_output=True, text=True, check=False)
+        done = launch.run(
+            [*argv, '--no-cache'], cwd=tmp_path, capture_output=True, text=True, encoding='utf-8', check=False
+        )
         said = done.stdout + done.stderr
         assert 'probe' not in said, said
         assert 'kept.py' in said, said  # PLANTED CONTROL: tracked code outside scratch is still judged

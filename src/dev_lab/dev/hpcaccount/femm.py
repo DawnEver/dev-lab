@@ -175,8 +175,8 @@ def install(
     if missing := _build_tools(step, environment):
         return _refuse(
             f'{", ".join(missing)} does not run (`--version`) in the tick environment (`{environment}`) and the deploy '
-            "cannot install it: add the module providing it to this account's [[hpc.grant]] setup in the family "
-            'file, and re-run'
+            "cannot install it: add the module providing it to the setup of this account's cluster "
+            '([hpc.clusters.<name>] setup) in the family file, and re-run'
         )
     what = f'build femm-qt {pin.tag} ({pin.commit[:12]}) from {pin.url}, {" ".join(TARGETS)}, into {final}'
     if step.dry:

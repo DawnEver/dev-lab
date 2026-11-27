@@ -48,7 +48,7 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   remote, and the tracked diff with the untracked files as one commit -- through the Runner's stdout, writing nothing
   on the account, as ``salvage/<yyyymmdd>-<name>`` branches of the local repo its origin's repository name matches;
   the caller pushes them through ``netverb``, and the invoking checkout's dated ``salvage`` output keeps a JSON
-  record only.
+  record only; the branch names and the git writes are :mod:`~dev_lab.dev.hpcaccount.salvagerepo`'s.
 * ``reclaim-foreign --account <user> <home-relative path> [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.reclaim`)
   removes the entries OTHER declared fleet accounts own under one account's home: grants each owner traverse,
   has each owner delete its own, removes the rest, revokes and re-reads every grant; without ``--apply`` the plan.

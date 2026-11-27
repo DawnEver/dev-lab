@@ -18,7 +18,7 @@ import tomllib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
-from lab_commons.box.machine import provided
+from lab_commons.box.machine import provided, withheld
 from lab_commons.compute.durable import durable_text
 from lab_commons.compute.serves import SERVE_TABLE
 from lab_commons.compute.toolchecks import CHECKS
@@ -82,7 +82,8 @@ ROLES: Final = {'light': Role(capabilities=(WORKSTATION,), refuses=HEAVY)}
 def capabilities(text: str) -> dict[str, dict[str, Any]]:
     """``--capabilities`` *text* (``name`` or ``name:seats``, comma-separated) as machine-file rows.
 
-    A ``jmag`` row also counts its seats in use by :data:`JMAG_SOLVER_IMAGES`.
+    A ``jmag`` row also counts its seats in use by :data:`JMAG_SOLVER_IMAGES`. A vendor tool without ``:<seats>``
+    is refused here: the machine file would keep it WITHHELD (lab-commons ``withheld``), a row that lends nothing.
     """
     out: dict[str, dict[str, Any]] = {}
     for item in filter(None, (part.strip() for part in text.split(','))):
@@ -93,9 +94,11 @@ def capabilities(text: str) -> dict[str, dict[str, Any]]:
         out[name] = {'seats': int(seats)} if seats else {}
         if name == 'jmag':
             out[name]['in_use'] = {'process': list(JMAG_SOLVER_IMAGES)}
+    if undeclared := [why for name, facts in out.items() if (why := withheld(name, declared='seats' in facts))]:
+        raise argparse.ArgumentTypeError('; '.join(undeclared))
     try:
         return provided(out)
-    except (ValueError, LookupError) as bad:  # LookupError: lab-commons' UndeclaredSeat, a vendor tool with no seats
+    except ValueError as bad:
         raise argparse.ArgumentTypeError(str(bad)) from None
 
 
