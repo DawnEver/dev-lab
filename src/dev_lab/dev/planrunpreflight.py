@@ -239,25 +239,28 @@ def _derived_here(granted: str, step: Step, readers: Readers) -> tuple[str, bool
     except UNREAD as unread:
         return f'BLOCKED -- the subject cannot be derived here ({unread})', True
     if derived != granted:
-        return f'BLOCKED -- derived here {derived[:12]} from {where}, the plan grants {granted[:12]}', True
+        return f'BLOCKED -- derived here {derived} from {where}, the plan grants {granted}', True
     return 'green (subject derived here)', False
 
 
 def _unsettled(plan: Plan, steps: Steps, index: int, readers: Readers) -> str | None:
-    """A blocker when an unreached host's config step assumes its live ``[ops.config]`` already declares the family.
+    """A blocker when an unreached host's config step needs its live ``[ops.config]`` to declare the family already.
 
-    That holds when no earlier step on that host grants the subject a host without the family derives.
-
-    Such a host fetches the host file alone (:func:`configdoor.unsettled_subject`), so the plan would stop at run,
-    after its code is spent. The door is the two-step plan: a ``config apply`` with no ``config_host`` granting that
-    subject first (it installs the family declaration), then this step.
+    Such a host fetches the host file alone (:func:`configdoor.unsettled_subject`), so a live table without the family
+    derives another subject and the plan would stop at run, after its code is spent. Nothing here can SEE the live
+    table, so it is never guessed (issue #1064: a host whose table already declared the family was blocked, and a
+    first apply demanded that it could never use): the issuer's read-only ``subject`` verb is asked first, and the
+    step blocks only when no earlier step on that host grants the no-family subject and the host does not answer the
+    granted one. The door is then the two-step plan: a ``config apply`` with no ``config_host`` granting that subject
+    first (it installs the family declaration), then this step.
     """
     step = steps.steps[index]
+    granted = plan.grants[index]['subject']
     try:
         first = configdoor.unsettled_subject(readers.config_source(), devhost.host_file(step.config_host), readers.text)
     except (*UNREAD, configdoor.ConfigRefused) as unread:
         return f'BLOCKED -- the subject a host without the family derives cannot be read here ({unread})'
-    if first is None or first == plan.grants[index]['subject']:
+    if first is None or first == granted:
         return None
     earlier = [
         plan.grants[i]['subject'] for i in range(index)
@@ -265,10 +268,17 @@ def _unsettled(plan: Plan, steps: Steps, index: int, readers: Readers) -> str | 
     ]  # fmt: skip
     if first in earlier:
         return None
+    try:
+        live, _ = readers.issued(step.dest, CONFIG_ACTION, list(step.argv))
+    except (ConsentRefused, OSError) as unread:
+        live = f'unread ({unread})'
+    if live == granted:
+        return None
     return (
-        f'BLOCKED -- the candidate declares an [ops.config] family; a host whose live table does not yet declares it '
-        f'derives {first[:12]}, not {plan.grants[index]["subject"][:12]}: plan two config applies on {step.dest} -- '
-        f'first one with no config_host granting {first[:12]}, then this one -- or hold a session so the host is read'
+        f'BLOCKED -- the candidate declares an [ops.config] family and the host does not answer the granted subject '
+        f'(the issuer read: {live}); a host whose live table does not yet declare it derives {first}, not {granted}: '
+        f'plan two config applies on {step.dest} -- first one with no config_host granting {first}, then this one -- '
+        f'or hold a session so the host is read'
     )
 
 
@@ -312,7 +322,7 @@ def _read_unreached(plan: Plan, steps: Steps, index: int, readers: Readers) -> C
     except (ConsentRefused, OSError) as unread:
         return f"BLOCKED -- its host is unreachable and its subject is the host's to derive ({unread})", True, ''
     if derived != grant['subject']:
-        why = f'the host derives subject {derived[:12]}, the plan grants {grant["subject"][:12]} (read)'
+        why = f'the host derives subject {derived}, the plan grants {grant["subject"]} (read)'
         return f'BLOCKED -- {why}', True, ''
     return _stands(refusal, plan, steps, index) or ('green (subject read from the host, no code)', False, '')
 
@@ -354,7 +364,7 @@ def _asked_of_host(plan: Plan, steps: Steps, index: int, remote: Remote, after: 
                 f'its subject, derived once step {after} applied{now}')  # fmt: skip
     if status or derived != granted:
         why = (f'the host could not derive the subject ({derived})' if status else
-               f'the host derives subject {derived[:12]}, the plan grants {granted[:12]}')  # fmt: skip
+               f'the host derives subject {derived}, the plan grants {granted}')  # fmt: skip
         return f'BLOCKED -- {why}', True, ''
     return _stands(refusal, plan, steps, index) or ('green', False, '')
 
