@@ -21,7 +21,15 @@ from dev_lab.dev.harness import child_env
 from dev_lab.dev.hpcaccount import selfclean
 from dev_lab.dev.hpcaccount.checkout import clone, converge
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
-from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab, uv_cache
+from dev_lab.dev.hpcaccount.spec import (
+    MARK,
+    Deployment,
+    Repo,
+    checkout_of,
+    crontab_refusal,
+    merge_crontab,
+    uv_cache,
+)
 
 __all__ = ['STAMP', 'Step', 'Tools', 'build', 'crontab', 'declared', 'env_key', 'login', 'prune_uv', 'update']
 
@@ -231,13 +239,20 @@ def update(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
 
 
 def crontab(step: Step, lines: Sequence[str]) -> int:
-    """Replace this tool's marked crontab lines with *lines*, every other line kept; each line dropped is printed."""
+    """Replace this tool's marked crontab lines with *lines*, every other line kept; each line dropped is printed.
+
+    Refused, nothing written, when the crontab it would write holds more than the one poller (ONE-LOGIN-POLLER,
+    :func:`~dev_lab.dev.hpcaccount.spec.crontab_refusal`): *lines* of more than one, or an unmarked family line kept.
+    """
     listed = step.read([*step.tools.crontab, '-l'])
     current = listed.stdout if listed.returncode == 0 else ''
     if listed.returncode and 'no crontab' not in listed.stderr:
         emit(f'  crontab -l exited {listed.returncode}: {listed.stderr.strip()}', err=True)
         return 2
     wanted = merge_crontab(current, lines)
+    if lines and (why := crontab_refusal(wanted)):
+        emit(f'  crontab refused, nothing written: {why}', err=True)
+        return 2
     if wanted == current:
         emit(f'  crontab: the {len(lines)} marked line(s) are already in place')
         return 0

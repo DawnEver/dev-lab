@@ -48,6 +48,7 @@ __all__ = [
     'Repo',
     'checkout_of',
     'cron_lines',
+    'crontab_refusal',
     'host_serve_argv',
     'load',
     'merge_crontab',
@@ -75,6 +76,9 @@ MARK: Final = '# lab-commons-deploy:'
 TICK_LINE: Final = 'tick'
 TICK_LOCK: Final = 'tick.lock'
 TICK_LOG: Final = 'tick.log'
+
+#: An UNMARKED crontab line running family code (the kit, lab-commons, a tick): a second poller the one line replaces.
+_FAMILY_CRON: Final = re.compile(r'dev_lab\.|lab_commons|hpcaccount')
 
 DEFAULT_PYTHON: Final = '3.13'
 
@@ -418,6 +422,28 @@ def serves_here(spec: Deployment, repo: Repo) -> bool:
     if not (checkout / 'pyproject.toml').is_file():
         return False
     return _bound_here(spec, roles_at(checkout))
+
+
+def crontab_refusal(text: str) -> str:
+    """``''`` when crontab *text* holds at most one marked line and no unmarked family line; else why, naming each.
+
+    ONE-LOGIN-POLLER (user ruling 2026-11-27): an HPC login node runs exactly one cron poller per account. Every door
+    that writes or reads the crontab asks this (``deploy`` and ``ci-resume`` through
+    :func:`dev_lab.dev.hpcaccount.steps.crontab`, ``look crontab``). A commented-out line runs nothing and is skipped.
+    """
+    live = [line for line in text.splitlines() if line.strip() and not line.lstrip().startswith('#')]
+    marked = [line for line in live if MARK in line]
+    strays = [line for line in live if MARK not in line and _FAMILY_CRON.search(line)]
+    named = [*(marked if len(marked) > 1 else []), *strays]
+    if not named:
+        return ''
+    each = '; '.join(f'`{line}`' for line in named)
+    return (
+        f'ONE-LOGIN-POLLER: an account runs exactly one cron poller, the line marked {MARK}{TICK_LINE}; this crontab '
+        f'holds {len(marked)} marked and {len(strays)} unmarked family line(s): {each} -- the door: `hpcaccount '
+        'deploy` writes the one line and drops every other marked one; an unmarked family line is deleted from the '
+        "account's crontab by its holder (`hpcaccount look --account <user> crontab` names it)"
+    )
 
 
 def merge_crontab(current: str, lines: Sequence[str]) -> str:
