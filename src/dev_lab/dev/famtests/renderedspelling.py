@@ -17,6 +17,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from dev_lab.dev import agentsection, autodoors, codexdeny, spelling
+from dev_lab.dev.agent_wiring import RULES_REL
 from dev_lab.dev.hook_adoption import HookAdoption, render
 
 __all__ = ['assert_a_planted_render_is_convicted', 'assert_rendered_files_pass_spelling', 'rendered_files']
@@ -25,7 +26,7 @@ __all__ = ['assert_a_planted_render_is_convicted', 'assert_rendered_files_pass_s
 def rendered_files() -> dict[str, str]:
     """Every family render that needs no consumer tree, by the path it lands on in a consumer."""
     return {
-        '.claude/hooks/deny-rules.json': render(HookAdoption(app_name='family')),
+        RULES_REL: render(HookAdoption(app_name='family')),
         codexdeny.CODEX_DENY_REL: codexdeny.codex_deny_rules(),
         autodoors.CODEX_RULES_REL: autodoors.codex_rules(),
         'AGENTS.md': agentsection.render_section(),
