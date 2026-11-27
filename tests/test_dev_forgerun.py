@@ -53,10 +53,10 @@ from dev_lab.dev.artifactfolder import FolderStore
 from dev_lab.dev.artifactindex import MemberFact
 from dev_lab.dev.artifactstores import RECORD_ARCHIVES, RECORD_INDEXES, manifest_of, run_id_of
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
-from dev_lab.dev.forgeclaim import DESCRIPTION_LIMIT, DONE, OPEN, Claim, Work, assess
+from dev_lab.dev.forgeclaim import DONE, OPEN, Claim, Work, assess
 from dev_lab.dev.forgecoalesce import DRAINING
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, CommitStatus
 from dev_lab.dev.forgework import GITEA
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart, PartRefusal, part_context

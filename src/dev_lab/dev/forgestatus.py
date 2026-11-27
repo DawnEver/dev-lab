@@ -20,6 +20,8 @@ which also raises when an attempted post fails).
 
 PROVENANCE-FREE ON PURPOSE. CommitStatus descriptions are machine lines, length-limited by the forge, so no
 ``[machine · agent · branch]`` stamp is prepended; the forge records the token's login as ``creator``.
+
+A DESCRIPTION LONGER THAN ITS FORGE STORES CONTINUES, never cut: :mod:`dev_lab.dev.statuscontinuation`.
 """
 
 from __future__ import annotations
@@ -49,6 +51,7 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import GITHUB, Client
+from dev_lab.dev.statuscontinuation import CONTINUATION, DESCRIPTION_LIMIT, continued, joined
 
 __all__ = [
     'CARRIED_FROM',
@@ -83,9 +86,6 @@ DOCS_ONLY: Final = 'docs-only'
 #: A part CITED from a stored record of the same tree ends ``cited from <sha12>: same tree`` (dev_lab.dev.verdictstore).
 CITED_FROM: Final = 'cited from'
 SAME_TREE: Final = 'same tree'
-
-#: GitHub's description limit, the tighter of the two forges; a longer one is cut, never sent.
-DESCRIPTION_LIMIT: Final = 140
 
 #: A commit named in full, used as given; anything else is resolved through git.
 _FULL_SHA: Final = re.compile(r'[0-9a-f]{40}')
@@ -157,12 +157,26 @@ def _commit(sha: str) -> None:
 def status_post(
     client: Client, sha: str, *, context: str, state: str, description: str, target_url: str = ''
 ) -> CommitStatus:
-    """Post one status on *sha*. The description is cut to :data:`DESCRIPTION_LIMIT`, never sent long."""
+    """Post one status on *sha*; a description past the backend's limit continues (module docstring), never cut."""
     _commit(sha)
     if state not in STATES:
         msg = f'a status state is one of {STATES}, not {state!r}'
         raise ValueError(msg)
-    body = {'state': state, 'context': context, 'description': description[:DESCRIPTION_LIMIT]}
+    head, rest = continued(description, client.backend.description_limit)
+    for number, chunk in enumerate(rest, start=1):  # continuations first: a head is never read before its rest
+        _post_one(client, sha, context=f'{context}{CONTINUATION}{number}', state=state, description=chunk)
+    posted = _post_one(client, sha, context=context, state=state, description=head, target_url=target_url)
+    return dataclasses.replace(posted, description=description) if rest and posted.description == head else posted
+
+
+def _post_one(
+    client: Client, sha: str, *, context: str, state: str, description: str, target_url: str = ''
+) -> CommitStatus:
+    limit = client.backend.description_limit
+    if limit is not None and len(description) > limit:  # continued() never builds one: a defect, refused by name
+        msg = f"a {len(description)}-character status description exceeds {client.backend.name}'s limit of {limit}"
+        raise ValueError(msg)
+    body = {'state': state, 'context': context, 'description': description}
     if target_url:
         body['target_url'] = target_url
     listed = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
@@ -182,18 +196,16 @@ def status_list(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """
     _commit(sha)
     path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
-    newest: dict[str, Mapping[str, Any]] = {}
-    for item in sorted(client.call('GET', path), key=lambda item: item.get('id') or 0):
-        newest[item.get('context') or ''] = item
-    raw = list(newest.values())
-    return tuple(sorted((_status(item) for item in raw), key=lambda status: status.context))
+    ordered = sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id)
+    newest = {status.context: status for status in joined(ordered)}
+    return tuple(sorted(newest.values(), key=lambda status: status.context))
 
 
 def status_history(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """EVERY status posted on *sha*, oldest first -- what a claim race is decided on (``id`` order)."""
     _commit(sha)
     path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
-    return tuple(sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id))
+    return tuple(joined(sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id)))
 
 
 def _git(root: Path, *args: str) -> str | None:
