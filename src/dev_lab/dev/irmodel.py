@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, cast
 
-from dev_lab.dev._ir_catalogue import LOWER, Constant, Quantity
+from dev_lab.dev._ir_catalogue import LOWER, Constant, Quantity, catalogue
 from dev_lab.dev._ir_errors import refuse
 
 __all__ = [
@@ -337,6 +337,6 @@ def parse(root: Path, read: Reader | None = None) -> IR | None:
         for name, path in declaration.modules.items()
     }
     external = {alias: _external(alias, target) for alias, target in declaration.external.items()}
-    catalogue = read(declaration.quantities)
-    quantities, domains, constants = catalogue(catalogue)
-    return IR(declaration, modules, quantities, catalogue, domains, external, constants)
+    source = read(declaration.quantities)
+    quantities, domains, constants = catalogue(source)
+    return IR(declaration, modules, quantities, source, domains, external, constants)
