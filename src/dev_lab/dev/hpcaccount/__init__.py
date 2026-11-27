@@ -35,7 +35,7 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   (:mod:`~dev_lab.dev.hpcaccount.credential`) places one minted forge token in the account's ``~/.git-credentials``
   (a role's named ``config_reader``: in its own ``~/.git-credentials.reader``) and confirms the forge answers as
   that login.
-* ``look --account <user> {processes|ticks|log <repo>|crontab|stuck <path>|inventory <path>}``
+* ``look --account <user> {processes|ticks|log|crontab|stuck <path>|inventory <path>}``
   (:mod:`~dev_lab.dev.hpcaccount.look`) is a READ-ONLY look at one account through its rate-limited key ssh: a closed
   set of reads, no free-form command; ``inventory`` judges every git checkout under a path pushed or NOT PUSHED
   (:mod:`~dev_lab.dev.hpcaccount.inventory`).

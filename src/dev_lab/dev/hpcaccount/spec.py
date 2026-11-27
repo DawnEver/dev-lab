@@ -40,6 +40,9 @@ __all__ = [
     'KIT',
     'MARK',
     'RESEARCH',
+    'TICK_LINE',
+    'TICK_LOCK',
+    'TICK_LOG',
     'VERIFICATION',
     'Deployment',
     'Repo',
@@ -64,8 +67,14 @@ __all__ = [
     'uv_cache',
 ]
 
-#: Every crontab line this tool owns ends with this comment plus the repo's name.
+#: Every crontab line this tool owns ends with this comment plus :data:`TICK_LINE`.
 MARK: Final = '# lab-commons-deploy:'
+
+#: What follows :data:`MARK` on an account's ONE cron line (ONE-LOGIN-POLLER, user ruling 2026-11-27): one tick that
+#: loops over every ticked repo under one lock, :data:`TICK_LOCK`, logging to :data:`TICK_LOG`.
+TICK_LINE: Final = 'tick'
+TICK_LOCK: Final = 'tick.lock'
+TICK_LOG: Final = 'tick.log'
 
 DEFAULT_PYTHON: Final = '3.13'
 
@@ -328,17 +337,19 @@ def cron_lines(
     slurm: Sequence[str] = (),
     setup: Sequence[str] = (),
 ) -> list[str]:
-    """One marked line per served repo and the kit, every ``[schedule] tick``, each tick under its own lock.
+    """The account's ONE marked line (ONE-LOGIN-POLLER): one tick of every ticked repo, every ``[schedule] tick``.
 
-    The minute offset is derived from *home* (one per account), so accounts sharing a forge tick staggered
-    rather than in lockstep; an unserved repo other than the kit gets no line (:class:`Repo`).
+    One login-node poller per account (user ruling 2026-11-27): the line runs ONE ``hpcaccount tick`` naming every
+    repo :func:`ticked` returns, under the one lock :data:`TICK_LOCK`; none ticked, no line. The minute offset is
+    derived from *home* (one per account), so accounts sharing a forge tick staggered rather than in lockstep.
     """
+    repos = ticked(spec, serves=serves)
+    if not repos:
+        return []
     step = spec.tick // 60
     minute = f'{zlib.crc32(str(home).encode()) % step}-59/{step}'
-    return [
-        f'{minute} * * * * {tick_command(spec, home, repo, log=True, slurm=slurm, setup=setup)} {MARK}{repo.name}'
-        for repo in ticked(spec, serves=serves)
-    ]
+    command = tick_command(spec, home, repos, log=True, slurm=slurm, setup=setup)
+    return [f'{minute} * * * * {command} {MARK}{TICK_LINE}']
 
 
 def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
@@ -412,29 +423,36 @@ def merge_crontab(current: str, lines: Sequence[str]) -> str:
 
 
 def tick_command(
-    spec: Deployment, home: Path, repo: Repo, *, log: bool, slurm: Sequence[str] = (), setup: Sequence[str] = ()
+    spec: Deployment,
+    home: Path,
+    repos: Sequence[Repo],
+    *,
+    log: bool,
+    slurm: Sequence[str] = (),
+    setup: Sequence[str] = (),
 ) -> str:
-    """The shell command of one tick of *repo*: :func:`tick_environment`, then the HOST's ``hpcaccount tick``.
+    """The shell command of ONE tick of *repos*: :func:`tick_environment`, then the HOST's ``hpcaccount tick``.
 
-    The tick takes its own lock, ``<serve>/<repo>.lock``, and runs within ``[schedule] tick_wall``
+    The tick takes the account's one lock, ``<serve>/tick.lock``, and runs within ``[schedule] tick_wall``
     (:mod:`dev_lab.dev.hpcaccount.tickwall`): the lock names its holder, which ``flock -n`` could not.
 
-    It runs from the kit (dev-lab) checkout's venv, never the repo's: the host refreshes the repo (and
-    itself), then serves it with its own kit (:func:`host_serve_argv`), so a stale repo venv blocks nothing.
-    With a grant *setup* the whole tick runs in ONE ``bash -lc`` (``module`` is a login-shell function), so
-    every tool it loads runs inside the environment that loaded it -- a module's binary does not run outside
-    it (Ada 2026-10-17: git 2.42 alone wants ``libiconv.so.2``).
+    It runs from the kit (dev-lab) checkout's venv, never a repo's: the host refreshes each repo, then serves it
+    with its own kit (:func:`host_serve_argv`), so a stale repo venv blocks nothing. With a grant *setup* the whole
+    tick runs in ONE ``bash -lc`` (``module`` is a login-shell function), so every tool it loads runs inside the
+    environment that loaded it -- a module's binary does not run outside it (Ada 2026-10-17: git 2.42 alone wants
+    ``libiconv.so.2``).
     """
     serve = Path(paths_of(spec, serves=True).root) / 'serve'
     lab = next(one for one in spec.repos if one.name == KIT)
+    names = ' '.join(shlex.quote(repo.name) for repo in repos)
     command = (
         f'{tick_environment(home, spec.root, slurm, setup, spec.env)}; '
         f'cd {shlex.quote(str(checkout_of(spec, lab)))} && '
-        f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)} '
-        f'--lock {shlex.quote(str(serve / f"{repo.name}.lock"))} --wall-minutes {spec.tick_wall // 60}'
+        f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {names} '
+        f'--lock {shlex.quote(str(serve / TICK_LOCK))} --wall-minutes {spec.tick_wall // 60}'
     )
     command = f'bash -lc {shlex.quote(command)}' if setup else command
-    return command + (f' >> {shlex.quote(str(serve / f"{repo.name}.log"))} 2>&1' if log else '')
+    return command + (f' >> {shlex.quote(str(serve / TICK_LOG))} 2>&1' if log else '')
 
 
 def tick_environment(

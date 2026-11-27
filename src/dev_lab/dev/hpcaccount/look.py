@@ -9,7 +9,8 @@ login host (where its crontab and its ticks live), ONE of a CLOSED set of reads 
 * ``processes`` -- this user's processes there: pid, parent, elapsed seconds, command line;
 * ``ticks`` -- every tick lock under ``<root>/serve`` and its holder record (pid, start, phase;
   :mod:`dev_lab.dev.tickholder`);
-* ``log <repo>`` -- the last :data:`LOG_LINES` lines of that repo's tick/cron log, ``<root>/serve/<repo>.log``;
+* ``log`` -- the last :data:`LOG_LINES` lines of the account's ONE tick/cron log, ``<root>/serve/tick.log``
+  (:data:`~dev_lab.dev.hpcaccount.spec.TICK_LOG`: one poller per account, ONE-LOGIN-POLLER);
 * ``crontab`` -- ``crontab -l``;
 * ``stuck <path>`` -- why entries under ``~/<path>`` cannot be removed (measured 2026-11-23: 206,412 entries kept
   with "Operation not permitted" and no read could say why): ``id``, the filesystem type, ``ls -ld`` and
@@ -41,6 +42,7 @@ from lab_commons.log import emit
 from dev_lab.dev.hpcaccount import inventory
 from dev_lab.dev.hpcaccount.division import reached_machine
 from dev_lab.dev.hpcaccount.fleet import declared_target
+from dev_lab.dev.hpcaccount.spec import TICK_LOG
 from dev_lab.dev.hpcaccount.storage import UNREACHABLE, Pin, on_host
 from dev_lab.dev.hpcaccount.transport import grant_runner
 
@@ -54,13 +56,13 @@ REPO_NAME: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]*')
 READS: Final = {
     'processes': "this user's processes on the declared login host",
     'ticks': 'every tick lock under <root>/serve and who holds it',
-    'log': "the tail of one repo's tick/cron log (log <repo>)",
+    'log': "the tail of the account's one tick/cron log",
     'crontab': 'crontab -l',
     'stuck': 'why entries under ~/<path> cannot be removed (stuck <path>)',
     'inventory': 'what ~/<path> holds: entries, and each git checkout pushed or not (inventory <path>)',
 }
-#: The reads that take an argument: ``log`` a repo name, ``stuck`` and ``inventory`` a home-relative path of such names.
-_TAKES = {'log': 'repo', 'stuck': 'path', 'inventory': 'path'}
+#: The reads that take an argument: ``stuck`` and ``inventory`` a home-relative path of such names.
+_TAKES = {'stuck': 'path', 'inventory': 'path'}
 _TIMEOUT_S: Final = 120.0
 
 
@@ -78,7 +80,7 @@ def home_path(path: str, what: str = 'path') -> str:
 
 
 def command_of(what: str, repo: str, root: str) -> str:
-    """The fixed shell line of read *what* (*repo* for ``log``) under *root*.
+    """The fixed shell line of read *what* (*repo*: the path of ``stuck`` and ``inventory``) under *root*.
 
     Raises:
         ValueError: not one of :data:`READS`, or a repo that is not a checkout name -- named, nothing run.
@@ -88,7 +90,7 @@ def command_of(what: str, repo: str, root: str) -> str:
         msg = f'look: {what!r} is not a read -- the reads are {", ".join(READS)}; there is no free-form command'
         raise ValueError(msg)
     if (what in _TAKES) != bool(repo):
-        msg = 'look: log takes exactly one repo, stuck and inventory one home-relative path; no other read takes one'
+        msg = 'look: stuck and inventory take one home-relative path; no other read takes one'
         raise ValueError(msg)
     if repo:
         home_path(repo, _TAKES[what])
@@ -102,7 +104,7 @@ def command_of(what: str, repo: str, root: str) -> str:
             'for f in *.lock; do [ -e "$f" ] || continue; echo "== $f"; '
             'if [ -s "$f.holder" ]; then cat "$f.holder"; echo; else echo "(no holder record)"; fi; done'
         ),
-        'log': f'tail -n {LOG_LINES} {shlex.quote(f"{root}/serve/{repo}.log")}',
+        'log': f'tail -n {LOG_LINES} {shlex.quote(f"{root}/serve/{TICK_LOG}")}',
         'crontab': 'crontab -l 2>&1',
         'stuck': (
             f'p="$HOME"/{shlex.quote(repo)}; echo "== id"; id; echo "== fs"; stat -f -c "%T" "$p" 2>&1; '
@@ -156,8 +158,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount look', description=__doc__.splitlines()[0])
     parser.add_argument('--account', required=True, help='one account of the fleet')
     parser.add_argument('what', help=f'one of: {", ".join(READS)}')
-    parser.add_argument(
-        'repo', nargs='?', default='', help='the repo of `log`, the home-relative path of `stuck` and `inventory`'
-    )
+    parser.add_argument('repo', nargs='?', default='', help='the home-relative path of `stuck` and `inventory`')
     args = parser.parse_args(list(argv or ()))
     return look(args.account, args.what, args.repo, connect=functools.partial(grant_runner, timeout=_TIMEOUT_S))

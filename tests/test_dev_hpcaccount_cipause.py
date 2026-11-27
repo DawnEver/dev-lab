@@ -22,7 +22,7 @@ from dev_lab.dev.devdeclared import layered
 from dev_lab.dev.hpcaccount import account, cimark, cipause, deploy, drift, tick
 from dev_lab.dev.hpcaccount.fleet import account_host, grant_slice
 from dev_lab.dev.hpcaccount.grantslice import REDEPLOY_DOOR, grant_setup, render_grant, without_hpc
-from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, load
+from dev_lab.dev.hpcaccount.spec import MARK, TICK_LINE, cron_lines, load
 from dev_lab.dev.hpcaccount.steps import Step
 from dev_lab.dev.roles import machine_layer
 
@@ -101,7 +101,7 @@ def test_resume_restores_exactly_the_declared_lines_and_clears_the_marker(tmp_pa
     lines = _cron(tmp_path).splitlines()
     assert lines[0] == MINE.strip()
     assert len(lines) == 2
-    assert lines[1].endswith(f'{MARK}dev-lab')
+    assert lines[1].endswith(f'{MARK}{TICK_LINE}')
     assert not cimark.marker((home.parent / 'root').as_posix()).exists()
 
 

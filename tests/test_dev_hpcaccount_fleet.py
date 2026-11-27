@@ -533,7 +533,7 @@ def test_a_declared_kit_ref_moves_the_kit_itself_never_through_the_stale_machine
     checkout = command.index('checkout -q -B integrate/main', moved)
     synced = command.index('uv sync --frozen', checkout)
     assert 'flock -w 600' in command
-    assert '/serve/dev-lab.lock' in command
+    assert '/serve/tick.lock' in command, "the account's one tick lock"
     assert synced < command.index('-m dev_lab.dev.devhost render')
     assert 'hpcaccount tick dev-lab' not in command
     unnamed = deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC)

@@ -68,7 +68,7 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   `forge queue` reads `tick held <age> in <phase>`. From the workstation: `python -m dev_lab.dev.hpcaccount
   tick-status --account <user>` reads every lock's holder; `tick-stop --account <user> [--repo R]` stops a tick
   older than its wall (verified a tick of that repo, this user's) and refuses a younger one by name;
-  `look --account <user> {processes|ticks|log <repo>|crontab|stuck <path>|inventory <path>}` is the closed set of
+  `look --account <user> {processes|ticks|log|crontab|stuck <path>|inventory <path>}` is the closed set of
   read-only looks; `inventory` lists each entry's files, bytes and newest change and judges every git checkout under
   the path pushed or NOT PUSHED (`dev_lab.dev.hpcaccount.inventory`).
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine

@@ -135,6 +135,18 @@ class Box:
         return self.calls.read_text(encoding='utf-8') if self.calls.exists() else ''
 
 
+def _ticked_names(lines: list[str]) -> set[str]:
+    """The repos the account's ONE marked line ticks (ONE-LOGIN-POLLER); asserts there is at most one."""
+    marked = [line for line in lines if deploy_spec.MARK in line]
+    assert len(marked) <= 1, f'one login poller per account, found {len(marked)}: {marked}'
+    if not marked:
+        return set()
+    assert marked[0].endswith(f'{deploy_spec.MARK}{deploy_spec.TICK_LINE}'), marked[0]
+    found = re.search(r'hpcaccount tick (.+?) --lock', marked[0])
+    assert found, marked[0]
+    return set(found.group(1).split())
+
+
 def _write(path: Path, text: str) -> Path:
     path.write_text(text, encoding='utf-8')
     return path
@@ -166,23 +178,21 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Box:
     return Box(home, tmp_path / 'machine' / 'config.toml', crontab, calls, tools, {}, [])
 
 
-def test_twice_gives_one_marked_line_per_repo_and_keeps_the_users_own(box: Box) -> None:
+def test_twice_gives_the_one_marked_line_and_keeps_the_users_own(box: Box) -> None:
     _write(box.crontab, '0 1 * * * echo mine\n')
     assert box.run(*DECLARE) == 0
     assert box.run() == 0  # the second run reads the declaration the first one stored
     lines = box.crontab.read_text(encoding='utf-8').splitlines()
     assert lines[0] == '0 1 * * * echo mine'
-    marked = [line for line in lines if deploy_spec.MARK in line]
-    assert {line.rsplit(deploy_spec.MARK, 1)[1] for line in marked} == {'dev-lab', 'alpha', 'beta'}
-    assert len(marked) == 3
-    alpha = next(line for line in marked if line.endswith('alpha'))
-    assert alpha.split(' ', 1)[0].endswith('-59/5'), 'the schedule default period'
-    assert 'flock -n' not in alpha, 'the tick takes its own lock, which names its holder'
-    lock = shlex.quote(str(box.root / 'serve' / 'alpha.lock'))
-    assert alpha.split(' >> ')[0].endswith(f'dev_lab.dev.hpcaccount tick alpha --lock {lock} --wall-minutes 40'), (
-        'the host ticks the repo under its lock and the default wall'
-    )
-    assert f'cd {shlex.quote(str(box.root / "repos" / "dev-lab"))} &&' in alpha, (
+    assert _ticked_names(lines) == {'dev-lab', 'alpha', 'beta'}
+    [line] = [line for line in lines if deploy_spec.MARK in line]
+    assert line.split(' ', 1)[0].endswith('-59/5'), 'the schedule default period'
+    assert 'flock -n' not in line, 'the tick takes its own lock, which names its holder'
+    lock = shlex.quote(str(box.root / 'serve' / deploy_spec.TICK_LOCK))
+    assert line.split(' >> ')[0].endswith(
+        f'dev_lab.dev.hpcaccount tick dev-lab alpha beta --lock {lock} --wall-minutes 40'
+    ), 'the host ticks every repo under the one lock and the default wall'
+    assert f'cd {shlex.quote(str(box.root / "repos" / "dev-lab"))} &&' in line, (
         "from the host's kit, never the repo's venv"
     )
     calls = box.logged()
@@ -200,16 +210,16 @@ def test_a_repo_declaring_a_retired_table_is_refused_alone_and_the_others_are_se
     _write(beta, f'[tool.lab_commons.hpc]\n{retired}\nx = 1\n')
     capsys.readouterr()
     assert box.run() == 2, 'a refused repo still fails the deploy -- after the others are served'
-    marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
-    served = {line.rsplit(deploy_spec.MARK, 1)[1] for line in marked}
+    served = _marked(box)
     assert served == {'dev-lab', 'alpha'}, 'the planted control keeps its line; the refused one loses its own'
     err = capsys.readouterr().err
     assert 'beta' in err
     assert f'{retired} is retired' in err
     assert [(repo, retired in body) for repo, _subject, body in box.alarms] == [(f'{URL}/beta.git', True)]
     calls = box.logged()
-    assert calls.count(str(Path('serve') / 'beta.lock')) == 1, 'the refused repo is not ticked on the second run'
-    assert calls.count(str(Path('serve') / 'alpha.lock')) == 2
+    ticks = [line for line in calls.splitlines() if 'hpcaccount tick' in line]
+    assert sum(' tick beta ' in line for line in ticks) == 1, 'the refused repo is not ticked on the second run'
+    assert sum(' tick alpha ' in line for line in ticks) == 2
 
 
 def test_a_repo_whose_hpc_declaration_is_invalid_is_refused_alone_and_the_others_are_served(
@@ -221,8 +231,7 @@ def test_a_repo_whose_hpc_declaration_is_invalid_is_refused_alone_and_the_others
     _write(beta, '[tool.lab_commons.hpc]\ndependency_inputs = ["uv.lock"]\n')
     capsys.readouterr()
     assert box.run() == 2, 'a refused repo still fails the deploy -- after the others are served'
-    marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
-    served = {line.rsplit(deploy_spec.MARK, 1)[1] for line in marked}
+    served = _marked(box)
     assert served == {'dev-lab', 'alpha'}, 'the planted control keeps its line; the refused one loses its own'
     assert 'dependency_inputs needs source_roots' in capsys.readouterr().err
     assert [repo for repo, _subject, _body in box.alarms] == [f'{URL}/beta.git']
@@ -612,12 +621,12 @@ def test_a_setup_with_spaces_semicolons_and_quotes_reaches_bash_verbatim(tmp_pat
     lab = deploy_spec.Repo(deploy_spec.KIT, f'{URL}/dev-lab.git', 'trunk')
     spec = deploy_spec.Deployment('h', '/r/src', '3.13', (lab,))
     setup = ("module load git/2.42; export X='a b'", 'echo "$HOME" `id`')
-    command = deploy_spec.tick_command(spec, tmp_path, lab, log=True, setup=setup)
+    command = deploy_spec.tick_command(spec, tmp_path, [lab], log=True, setup=setup)
     argv = shlex.split(command)
     assert argv[:2] == ['bash', '-lc']
     assert argv[2].startswith(deploy_spec.tick_environment(tmp_path, '/r/src', (), setup) + '; cd ')
-    assert argv[3:5] == ['>>', str(Path('/r/src') / 'serve' / 'dev-lab.log')], 'the tick log is the serve dir'
-    plain = deploy_spec.tick_command(spec, tmp_path, lab, log=False)
+    assert argv[3:5] == ['>>', str(Path('/r/src') / 'serve' / deploy_spec.TICK_LOG)], 'the one tick log'
+    plain = deploy_spec.tick_command(spec, tmp_path, [lab], log=False)
     assert plain.startswith(f'PATH={tmp_path / ".local/bin"}:')
     assert 'bash -lc' not in plain
 
@@ -840,7 +849,7 @@ def test_the_cron_period_is_the_schedule_tick_staggered_per_account(tmp_path: Pa
     offsets = set()
     for user in ('alice', 'bob', 'carol', 'dave', 'erin', 'frank'):
         lines = deploy_spec.cron_lines(spec, Path('/home') / user)
-        assert len({line.split(' ', 1)[0] for line in lines}) == 1, 'one account ticks its repos together'
+        assert len(lines) == 1, 'one account ticks its repos together, on its one line'
         minute = lines[0].split(' ', 1)[0]
         offset, _, step = minute.partition('-59/')
         assert step == '15', minute
@@ -916,8 +925,7 @@ def _as_role(box: Box, role: str | None) -> None:
 
 
 def _marked(box: Box) -> set[str]:
-    lines = box.crontab.read_text(encoding='utf-8').splitlines() if box.crontab.exists() else []
-    return {line.rsplit(deploy_spec.MARK, 1)[1] for line in lines if deploy_spec.MARK in line}
+    return _ticked_names(box.crontab.read_text(encoding='utf-8').splitlines() if box.crontab.exists() else [])
 
 
 def test_a_research_account_carries_no_serve_line_and_leaves_crontab_untouched(
@@ -1235,6 +1243,5 @@ def test_a_refused_femm_install_is_reported_and_the_repos_are_still_served(
     assert 'femm: refused -- the build does not verify' in err
     assert 'refused to install: femm' in err
     assert 'cmake --build' in box.logged()
-    marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
-    assert {line.rsplit(deploy_spec.MARK, 1)[1] for line in marked} == {'dev-lab', 'alpha', 'beta'}
+    assert _marked(box) == {'dev-lab', 'alpha', 'beta'}
     assert not (tmp_path / 'machinehome' / 'tools' / 'femm' / '5.0.20261112').exists(), 'nothing half installed'

@@ -20,8 +20,7 @@ a tracked file, since the forge, its repos and the login host are private to the
 
 The first run DECLARES it with ``--host <host> --repo <name>=<url>@<ref> ... --partition <p> ... --role <r>`` (written
 once; a later run with flags that disagree is refused, naming the file); every later run reads it.
-``dev-lab`` (the kit) is always among the repos: every tick RUNS it and its own line is the one writer of
-its checkout; whether this account also serves dev-lab's queue is that entry's ``serve``.
+``dev-lab`` (the kit) is always among the repos: every tick RUNS from it.
 
 STEPS, each one reporting, each one safe to repeat: refuse an undeclared ``role``; refuse off the declared host;
 check the account BEFORE anything changes (:mod:`dev_lab.dev.hpcaccount.account`: git's credential helper and
@@ -40,8 +39,8 @@ the key of its inputs (the lock's hash among them) is unchanged; warn, naming th
 artifact store this account's remote cannot reach (:func:`lab_commons.hpc.rclone.probe`; parts with outputs
 are then not claimed here); build and install the family's pinned FEMM 5 where the machine file declares
 ``[capabilities.femm]`` (:mod:`dev_lab.dev.hpcaccount.femm`; a refused install is reported, the deploy finishes and
-exits 2); replace this tool's marked crontab lines (one per served repo and the kit, every
-``[schedule] tick`` at a minute offset derived per account, each tick under its own lock and wall,
+exits 2); replace this tool's marked crontab lines with the account's ONE line (ONE-LOGIN-POLLER: one tick of
+every ticked repo, every ``[schedule] tick`` at a minute offset derived per account, under one lock and wall,
 :mod:`dev_lab.dev.hpcaccount.tickwall`)
 and touch no other line; run one tick of each and print it. ``--dry-run`` reads but changes nothing;
 ``--remove`` deletes the marked lines only. A ``research`` account gets every step but the serve: its marked
@@ -255,8 +254,10 @@ def _cron(
     slurm: Sequence[str],
     setup: Sequence[str],
 ) -> int:
-    """One marked line per repo not refused; a refused repo's line is removed, so a broken line never runs."""
-    emit(f'[cron] one marked line per served repo ({spec.role} account: {"serves" if serves else "never serves"})')
+    """The one marked line, ticking every repo not refused: a refused repo is left out, so a broken one never runs."""
+    emit(
+        f'[cron] the one marked line, every served repo ({spec.role} account: {"serves" if serves else "never serves"})'
+    )
     if not step.dry:
         (home / '.cache').mkdir(parents=True, exist_ok=True)
     healthy = replace(spec, repos=tuple(_healthy(spec, refused)))
@@ -280,7 +281,7 @@ def _tick(
     if repo not in ticked(spec, serves=serves):
         emit(f'  {repo.name}: not served by this {spec.role} account, not ticked')
         return 0
-    command = tick_command(spec, home, repo, log=False, slurm=slurm, setup=setup)
+    command = tick_command(spec, home, [repo], log=False, slurm=slurm, setup=setup)
     rc = step.change(f'tick {repo.name}: {command}', [*step.tools.sh, command])
     if not step.dry:
         busy = ' (held: another tick of this host runs -- the line above names it)' if rc == HELD else ''

@@ -70,7 +70,7 @@ from dev_lab.dev.devsource import config_source
 from dev_lab.dev.hpcaccount.cimark import paused_guard
 from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleetguard import deploy_root, serving_twice_refusal, stale_render
-from dev_lab.dev.hpcaccount.spec import KIT, paths_of_root, uv_cache
+from dev_lab.dev.hpcaccount.spec import KIT, TICK_LOCK, paths_of_root, uv_cache
 from dev_lab.dev.hpcaccount.transport import describe, start
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.venvpointer import shell_interpreter
@@ -380,7 +380,7 @@ def _move_kit(kit: PurePosixPath, ref: str) -> str:
         'UV_PROJECT_ENVIRONMENT="${py%/bin/python}" uv sync --frozen',
     ])  # fmt: skip
     serve = kit.parent.parent / 'serve'  # <root>/repos/dev-lab -> <root>/serve: the cron tick's own lock
-    lock = serve / f'{KIT}.lock'
+    lock = serve / TICK_LOCK  # the account's one tick lock (ONE-LOGIN-POLLER)
     return (
         f'( export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0; mkdir -p {serve}; cd {kit} && '
         f'flock -w 600 {lock} bash -c {shlex.quote(body)} )'
