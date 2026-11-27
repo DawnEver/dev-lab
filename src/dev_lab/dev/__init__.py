@@ -259,8 +259,8 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.relock` -- the serve tick relocks a stale integration lock through ONE pull request.
 * :mod:`dev_lab.dev.locklag` -- how far a lock's floated siblings lag their line, in TIME: one window for every door
 * :mod:`dev_lab.dev.drift` -- the serve tick alarms a lock pin left behind its dependency, or a host off its lock.
-* :mod:`dev_lab.dev.forgeheadgate` -- ``session-branch``, ``pr-current`` and ``lock/lag``
-  statuses on every open PR head, each naming its fix; the merge requires the first two.
+* :mod:`dev_lab.dev.forgeheadgate` -- ``session-branch``, ``pr-current``, ``lock/lag`` and ``hooks-wired``
+  statuses on every open PR head, each naming its fix; the merge requires ``session-branch``, the rest alarm.
 * :mod:`dev_lab.dev.lanepolicy` -- the branch names a repo declares in
   ``[tool.dev_lab.integrator]``, read by the queue, admission, the tick and the record attacher.
 * :mod:`dev_lab.dev.platformparts` -- a result COMPOSED of one part per need-set the suite derives
