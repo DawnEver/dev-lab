@@ -76,7 +76,7 @@ REPO_FLOOR: Final = 3
 #: is root-anchored unless the artifact genuinely appears at any depth, and each names what writes it.
 #: Tool caches (pytest, ruff, mypy, coverage, hypothesis) are not here: the family pyproject rows send
 #: them under `output/cache/<tool>/`. Retired with the old base, each for having no writer in every
-#: checkout: `**/.env`, the cache directories, `.coverage*`, `htmlcov/`, `*.egg-info/`, `*.spec`, `*.c`,
+#: checkout: `**/.env`, the cache directories, `.coverage*`, `htmlcov/`, `*.spec`, `*.c`,
 #: `**/log/*.log(.error)`, `/dumps/`, `/report/`, `**/ignore/`, `**/_meta.json`, `!**/attic/**` and the
 #: rem/tasks/sharp-review/agents/skills/commands/workflows/output-styles/docs re-inclusions.
 GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
@@ -85,6 +85,7 @@ GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
     '**/__pycache__/': 'the interpreter`s bytecode cache, beside every imported module at any depth.',
     '/build/': 'the build backend`s staging directory, at the root of every repo that builds a wheel.',
     '/dist/': 'the built wheels and sdists, at the root of every repo that builds one.',
+    '/src/*.egg-info/': 'the metadata every setuptools editable install (dep --bootstrap) writes beside the package.',
     '/src/**/__version__.py': 'the version file hatch-vcs / setuptools-scm write into the package at build time.',
     '/output/': 'the dated artifact tree (dev_lab.dev.datedlog) and every redirected tool cache.',
     '/temp/': 'the root temporary directory a run may create; a source package named `temp` is not it.',

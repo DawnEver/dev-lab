@@ -44,6 +44,9 @@ its door MERGE-OR-DELETE: land the work through its branch, or delete it; and TH
 refused, and inside one only the family's rows judge, so a repo's open ``<day>/*`` row never widens it. A repo
 lists only its own kinds.
 
+A setuptools repo's ``src/<pkg>.egg-info/`` (:data:`BUILD_METADATA`) is build output like ``__pycache__``: never
+judged, and ignored by the family ``.gitignore`` (#1031).
+
 FOUR EXEMPTIONS, ALL NAMED (user rulings 2026-11-24 and D95, 2026-11-25). A ``read_only`` path is user input of
 whatever format the user keeps: the scan never judges or descends it, and the write hook refuses any write into it.
 A tool in ``tool_caches`` owns ``output/cache/<tool>/`` (every tool cache lives there, never at the root): the scan
@@ -101,6 +104,7 @@ from dev_lab.dev.disclosure import details_for
 
 __all__ = [
     'BACKUP_SUFFIXES',
+    'BUILD_METADATA',
     'COPY_DOOR',
     'COPY_RULE_ID',
     'NO_COPY_ROOTS',
@@ -117,6 +121,9 @@ COPY_RULE_ID: Final = 'NO-BACKUP-COPIES'
 NO_COPY_ROOTS: Final = ('output', 'scratch')
 #: A file that is a parked copy of work rather than a product: a git bundle, a patch, a diff.
 BACKUP_SUFFIXES: Final = frozenset({'.bundle', '.patch', '.diff'})
+#: Build-backend metadata every setuptools editable install (``dep --bootstrap``, ``verify``'s seats) writes beside
+#: the package: regenerable, git-ignored by the family render, never judged (#1031); anywhere else it is named.
+BUILD_METADATA: Final = ('src/*.egg-info',)
 #: Agent state lives once, at the checkout root (user ruling 2026-11-23): a scoped ``.claude/`` below it is refused.
 _SCOPED: Final = '.claude'
 _SCOPED_CAUSE: Final = (
@@ -152,6 +159,7 @@ def _skipped(rel_dir: str, layout: Layout) -> bool:
         or layout.in_tool_cache(rel_dir)
         or layout.in_vendor_job(rel_dir)
         or layout.in_doc_site(rel_dir)
+        or _within(rel_dir, BUILD_METADATA)
     )
 
 
