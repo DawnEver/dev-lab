@@ -1482,10 +1482,15 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
     """THE SHELL'S VIEW of the lock-wait path: ``verify && push`` must stop, so the PROCESS exits 3.
 
     A child holds every core of a PRIVATE box ledger, and a second ``python -m dev_lab.dev.verify
-    --lock-wait "0 s"`` runs against that ledger: its pytest step is refused by the box. Its selection is its
-    own, so the run key differs from any enclosing verify and it cannot attach to it.
+    --lock-wait "0 s"`` runs against that ledger: its pytest step is refused by the box.
+
+    LIVE 2026-11-26/27: run in THIS checkout, the inner verify's whole-repo lint steps (pyright joined them that
+    day) ran inside the enclosing verify's box claim, and the box ended the whole producer run at ~79%
+    (``pytest exited 241``, tests/base INCONCLUSIVE). So it runs in a PLANTED git checkout of one probe file:
+    its steps judge that checkout alone, and its log lands in the planted output tree, never the producer's.
     """
     records = {'LAB_COMMONS_RESOURCE_DIR': str(tmp_path), BOX_ENV: str(tmp_path / 'box.sqlite')}
+    planted = _planted_checkout(tmp_path / 'repo')
     # stdout is the handshake channel; stderr (a box's low-disk watermark warning, say) goes to its own
     # file so a diagnostic line can never stand in front of 'held' -- and it is quoted when the handshake fails.
     diagnostics = tmp_path / 'holder.stderr'
@@ -1514,11 +1519,11 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
                 '--lock-wait',
                 '0 s',
                 '--',
-                'tests/test_dev_verify.py',
+                'tests/test_probe.py',
                 '-k',
                 'held_box_probe',
             ],
-            cwd=Path(__file__).resolve().parents[1],
+            cwd=planted,
             env={name: value for name, value in os.environ.items() if name not in {PRODUCING_VAR, INSIDE_ENV}}
             | records,
             capture_output=True,
@@ -1539,6 +1544,41 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
     assert done.returncode == ProducerExit.INCONCLUSIVE, done.stdout + done.stderr
     assert 'this box is held and nothing was measured' in done.stderr
     assert 'planted-holder' in done.stderr, 'the refusal names the holder'
+
+
+#: The modules that stop ANOTHER process tree by pid: a verify that loads none cannot signal an enclosing run.
+_STOPPERS: Final = frozenset({'dev_lab.dev.stoprun', 'dev_lab.dev.stopapproved', 'dev_lab.dev.shellreaper'})
+
+
+def _loaded_stoppers(module: str) -> set[str]:
+    probe = f'import sys, {module}; print(*sorted(sys.modules))'
+    done = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, timeout=120, check=True)
+    return set(done.stdout.split()) & _STOPPERS
+
+
+@pytest.mark.parametrize(('module', 'stops'), [('dev_lab.dev.verify', False), ('dev_lab.dev.shellreaper', True)])
+def test_a_nested_verify_loads_no_door_that_stops_another_tree(module: str, *, stops: bool) -> None:
+    """A verify run inside a producer's tree can end only its OWN children (stallwatch, the box it launched).
+
+    The 2026-11-26 producer deaths were the enclosing box's memory claim, not a signal: this pins that no
+    verify path can reach a pid-stopping door. PLANTED CONTROL: the shell reaper loads one, so the probe says no.
+    """
+    assert bool(_loaded_stoppers(module)) is stops, module
+
+
+def _planted_checkout(root: Path) -> Path:
+    """A git checkout of one lint-clean probe test: a real verify there judges it alone, never this repo."""
+    (root / 'tests').mkdir(parents=True)
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(root)], check=True, timeout=60)
+    (root / 'pyproject.toml').write_text(f'{_OUTPUT}\n[tool.pytest.ini_options]\n', encoding='utf-8')
+    (root / 'tests' / '__init__.py').write_text(_PROBE_DOC, encoding='utf-8')
+    (root / 'tests' / 'test_probe.py').write_text(_PROBE, encoding='utf-8')
+    return root
+
+
+#: The planted checkout's one test, lint-clean so the inner verify's own steps pass on it.
+_PROBE_DOC: Final = '"""The planted probe."""\n'
+_PROBE: Final = _PROBE_DOC + '\n\ndef test_held_box_probe() -> None:\n    """Never judged: the box is held."""\n'
 
 
 #: A child that claims EVERY core of its box ledger and holds them until killed.
