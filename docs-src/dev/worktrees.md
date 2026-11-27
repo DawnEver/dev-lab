@@ -61,6 +61,20 @@ trees outran an agent's 50-minute shell. The exact
 criteria are in [auto mode runs the doors](auto-doors.md).
 
 
+## A lane tree, wired
+
+`git worktree add` alone leaves a tree with no hook stages of its own (under `extensions.worktreeConfig`), and
+every commit, merge or push from it is refused by HOOKS-ARE-WIRED ([refusals](refusals.md#hooks-are-wired)). The
+door makes the tree, bootstraps its venv and installs its hooks in one act:
+
+```text
+<venv python> -m dev_lab.dev.worktrees --add <name> <branch> <base>   # e.g. fam-14 pr/toolchain/fam-14 origin/integrate/main
+```
+
+A tree it made but could not bootstrap or wire is reported `FAILED`, naming the two commands that finish it.
+`--scratch` below wires its tree too.
+
+
 ## A throwaway comparison tree
 
 A tree made only to compare against (a base sha to diff tests on) is never landed, so reclaim would keep it as
