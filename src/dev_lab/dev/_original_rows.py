@@ -51,14 +51,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'inflight',
     'runcache',
     'footprint',
-    'lockreach',
     'localpart',
     'workstationverdict',
     'verdictstore',
     'verdictenv',
     'workstationrevoke',
-    'lockpins',
-    'lockwait',
     'test_outcomes',
     'serialpass',
     'testtemp',
@@ -70,10 +67,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'claudesettings',
     # ORIGINAL: nothing refused a credential value reaching a log line (ruling C, 2026-11-24).
     'secretlog',
-    # ORIGINAL: each Rust repo pinned its own toolchain; the family fact had no source (2026-11-24).
-    'rusttoolchain',
-    # ORIGINAL: each repo and runner chose its own Python; the family interpreter had no source (2026-11-27).
-    'pythontoolchain',
     'cjk',
     'content',
     # ORIGINAL, and both halves are the reason. No consumer file is being replaced -- the mechanism
@@ -87,9 +80,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'docwidth',
     'famconfig',
     'branchnotices',
-    'lockcheck',
-    'relock',
-    'syncpins',
     'reviewturn',
     # ORIGINAL (2026-11-05): a host's ai-lab was a hand-built venv the machine file named; CI alone built it locked.
     'reviewruntime',
@@ -134,8 +124,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: no push read the milestone tags before the 2026-11-13 ruling.
     'milestonebase',
     'branchreview',
-    # ORIGINAL: how far a floated sibling's pin lags its line was never read; split from relock (2026-11-07).
-    'locklag',
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
     'mergeaudit',
     # ORIGINAL: how a conflict was resolved was never recorded; the rule was prose (NEWER-STRUCTURE).
@@ -174,8 +162,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'origin',
     # ORIGINAL: one parse of git's pre-push refspec lines for every pre-push row.
     'refspec',
-    # ORIGINAL: the lock PIN moved from a pre-push row into the repo's own forge-judged suite (2026-10-24).
-    'lockpin',
     # ORIGINAL: the door table and its two renderings are new (AUTO-MODE-RUNS-THE-DOORS).
     'autodoors',
     # ORIGINAL: the injected-text budget and its consumer body are new (INJECTED-TEXT-IS-PROGRESSIVE).
@@ -392,7 +378,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
     'purge',  # one door deletes one git-ignored, untracked named path (rulings 2026-11-23), new here
     'strayleaks',  # the leak families the suites left outside temp, removed only by proof, new here
-    'uvfollow',  # uv follows the version its pin needs, through the route it was installed by, new here
     'hpcusage',  # an HPC account's last day read from sacct, new here
     'security',
     # ORIGINAL: the blobless-clone prefetch and the review-code classification are
