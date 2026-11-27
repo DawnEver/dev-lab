@@ -12,6 +12,9 @@ A login host that asks a second factor (key + keyboard-interactive TOTP) can nev
   :func:`dev_lab.dev.remote.detached`); a host that answers ``Permission denied (keyboard-interactive)`` there is
   refused naming the door: open the held session first.
 
+BEFORE ANY OF IT, this machine's declared reach of the cluster (:func:`lab_commons.hpc.reach.require`): a cluster
+this machine declares no ``[dev] hpc_reach`` for is refused, no ssh attempted -- a held session included.
+
 :func:`grant_runner` / :func:`host_runner` are the reads (a :data:`Runner`), :func:`start` is the deploy-fleet launch.
 """
 
@@ -39,6 +42,13 @@ _SECOND_FACTOR: Final = 'keyboard-interactive'
 _TIMEOUT: Final = 300.0
 #: How long a failover host may take to answer ``true`` before it is skipped: ssh's connect bound plus a login shell.
 PROBE_S: Final = CONNECT_TIMEOUT + 15.0
+
+
+def require(dest: str) -> None:
+    """Refuse *dest* when it is a declared cluster's login host and this machine declares no reach of it."""
+    from lab_commons.hpc.reach import require as declared  # noqa: PLC0415 -- every kit import must not need it yet
+
+    declared(dest)
 
 
 def door(dest: str) -> str:
@@ -89,6 +99,7 @@ def _ssh(dest: str, timeout: float) -> Runner:
 
 def host_runner(dest: str, timeout: float = _TIMEOUT) -> Runner:
     """A runner pinned to *dest* (``user@host``): its held session when live, else key-only ssh."""
+    require(dest)
     return _held_runner(dest, timeout) if held(dest) else _ssh(dest, timeout)
 
 
@@ -128,6 +139,8 @@ def grant_runner(grant: Grant, timeout: float = _TIMEOUT, *, first: str = '') ->
     """
     order = ordered_targets(grant, first)
     for dest in order:
+        require(dest)
+    for dest in order:
         if held(dest):
             return _held_runner(dest, timeout)
     lead, *rest = order
@@ -148,6 +161,7 @@ def start(dest: str, command: str, log: IO[Any]) -> object:
     A live held session runs it in the foreground through the holder (bounded by :data:`DEPLOY_S`), its output and
     status written to *log*; otherwise one detached key-only ssh (:func:`dev_lab.dev.remote.detached`).
     """
+    require(dest)
     if held(dest):
         output, status = sshholdrun.run_command(dest, command, DEPLOY_S)
         log.write(f'{output}\n[held session {dest}] exit {status}\n')

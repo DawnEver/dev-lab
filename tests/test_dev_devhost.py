@@ -389,6 +389,47 @@ def test_a_host_declaring_no_hpc_renders_a_reach_of_none(tmp_path: Path) -> None
     assert rendered['hpc']['reach'] == []
 
 
+def _reach(by: str) -> str:
+    return HOST.replace('hpc = ["research"]\n', f'hpc = ["research"]\nhpc_reach = {{ c = "{by}" }}\n')
+
+
+def test_a_declared_hpc_reach_renders_with_the_direct_machines(tmp_path: Path) -> None:
+    """User ruling 2026-11-27: a vpn machine's render names the machines that reach the cluster directly."""
+    clone = _clone(tmp_path, _reach('vpn'))
+    _write(clone, 'hosts/near.toml', _reach('direct'))
+    _write(clone, 'hosts/far.toml', _reach('vpn'))
+    assert check_host(clone / 'hosts/ws.toml', clone / 'family.toml') == []
+    live = tomllib.loads(LOCAL)
+    rendered = tomllib.loads(devhost.render(clone, 'ws', live))
+    assert rendered['hpc']['cluster_reach'] == {'c': {'reach': 'vpn', 'direct': ['near']}}
+    assert tomllib.loads(devhost.render(clone, 'near', live))['hpc']['cluster_reach']['c']['reach'] == 'direct'
+
+
+def test_an_undeclared_hpc_reach_renders_none(tmp_path: Path) -> None:
+    """PLANTED CONTROL: undeclared renders nothing, so lab_commons.hpc.reach refuses the ssh by name."""
+    assert 'cluster_reach' not in tomllib.loads(devhost.render(_clone(tmp_path), 'ws', tomllib.loads(LOCAL)))['hpc']
+
+
+@pytest.mark.parametrize(
+    ('declared', 'defect'),
+    [
+        ('{ c = "campus" }', "hpc_reach.c = 'campus' must be one of ['direct', 'vpn']"),
+        ('{ nowhere = "direct" }', 'hpc_reach.nowhere names no family [hpc.clusters] cluster'),
+        ('"direct"', 'hpc_reach'),
+    ],
+)
+def test_configcheck_refuses_a_bad_hpc_reach_by_name(tmp_path: Path, declared: str, defect: str) -> None:
+    clone = _clone(tmp_path, HOST.replace('hpc = ["research"]\n', f'hpc = ["research"]\nhpc_reach = {declared}\n'))
+    found = check_host(clone / 'hosts/ws.toml', clone / 'family.toml')
+    assert any(defect in line for line in found), found
+
+
+def test_the_family_may_not_declare_an_hpc_reach(tmp_path: Path) -> None:
+    clone = _clone(tmp_path)
+    _write(clone, 'family.toml', FAMILY.replace('[dev]\n', '[dev]\nhpc_reach = { c = "direct" }\n', 1))
+    assert any('hpc_reach is one machine fact' in line for line in check_family(clone / 'family.toml'))
+
+
 DATED = """\
 [hpc.clusters.d.slurm_accounts.b.budget]
 since = 2026-09-01
