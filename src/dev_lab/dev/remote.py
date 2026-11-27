@@ -165,7 +165,7 @@ def ssh_argv(
     return ['ssh', *mode, *timeout, *hosts, target, f'bash -lc {shlex.quote(command)}']
 
 
-def detached(argv: Sequence[str], log: IO[Any]) -> object:
+def detached(argv: Sequence[str], log: IO[Any]) -> subprocess.Popen[Any]:
     """Start *argv* detached from this session, everything it prints into *log*; returns the process."""
     # The door adds CREATE_NO_WINDOW; DETACHED_PROCESS would leave the windowless console the serve child inherits.
     flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0

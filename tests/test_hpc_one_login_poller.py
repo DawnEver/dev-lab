@@ -31,6 +31,7 @@ ONE: Final = (
 )
 TWO: Final = f'7-59/15 * * * * cd /r/repos/dev-lab && python -m dev_lab.dev.hpcaccount tick beta {deploy_spec.MARK}beta'
 STRAY: Final = '*/5 * * * * cd /r/repos/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount tick alpha'
+FOREIGN: Final = '*/5 * * * * cd /r/lab-commons && .venv/bin/python -m lab_commons.hpc.poll'
 
 FAKE_CRONTAB: Final = r"""
 import pathlib, sys
@@ -83,21 +84,42 @@ def _step(tmp_path: Path, text: str | None) -> tuple[Step, Path]:
     return Step(Tools(crontab=(sys.executable, str(fake), str(state))), dry=False), state
 
 
-def test_the_crontab_writer_refuses_an_unmarked_family_poller_and_writes_nothing(
+def test_the_crontab_writer_refuses_a_foreign_family_line_and_writes_nothing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The door deploy and ci-resume both write through. PLANTED CONTROL: the user's own line alone is kept."""
+    """A family line no deploy wrote is its holder's: refused by name. PLANTED CONTROL: the user's own line is kept."""
     from dev_lab.dev.hpcaccount.steps import crontab  # noqa: PLC0415 -- the door under test
 
-    step, state = _step(tmp_path, f'{MINE}\n{STRAY}\n')
+    step, state = _step(tmp_path, f'{MINE}\n{FOREIGN}\n')
     assert crontab(step, [ONE]) == 2
     err = capsys.readouterr().err
-    assert STRAY in err
+    assert FOREIGN in err
     assert 'ONE-LOGIN-POLLER' in err
-    assert state.read_text(encoding='utf-8') == f'{MINE}\n{STRAY}\n', 'nothing written'
+    assert state.read_text(encoding='utf-8') == f'{MINE}\n{FOREIGN}\n', 'nothing written'
     step, state = _step(tmp_path, f'{MINE}\n')
     assert crontab(step, [ONE]) == 0
     assert state.read_text(encoding='utf-8') == f'{MINE}\n{ONE}\n'
+
+
+def test_planted_seven_marked_lines_become_exactly_the_one_tick(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ezztz 2026-11-27: seven per-repo marked lines from an older deploy. The deploy REPLACES them, never refuses.
+
+    An unmarked line running the deploy's own verb (``dev_lab.dev.hpcaccount``) is the deploy's too; the user's own
+    line stays. Each removed line is printed.
+    """
+    from dev_lab.dev.hpcaccount.steps import crontab  # noqa: PLC0415 -- the door under test
+
+    old = [
+        f'{n}-59/15 * * * * cd /r/dev-lab && python -m dev_lab.dev.hpcaccount tick r{n} {deploy_spec.MARK}r{n}'
+        for n in range(7)
+    ]
+    step, state = _step(tmp_path, '\n'.join([MINE, *old, STRAY]) + '\n')
+    assert crontab(step, [ONE]) == 0
+    assert state.read_text(encoding='utf-8') == f'{MINE}\n{ONE}\n'
+    out = capsys.readouterr().out
+    assert all(f'remove {line}' in out for line in [*old, STRAY]), out
 
 
 def test_the_crontab_writer_refuses_two_lines(tmp_path: Path) -> None:

@@ -43,7 +43,7 @@ from dev_lab.dev.hpcaccount.fleet import (
     layer_refusal,
     layer_target,
 )
-from dev_lab.dev.hpcaccount.transport import describe, start
+from dev_lab.dev.hpcaccount.transport import Started, describe, outcomes, start
 
 __all__ = ['consent_of', 'main_fleet', 'select', 'start_on_selected']
 
@@ -83,7 +83,9 @@ def start_on_selected(
     sourced: bool = True,
     consent: Consent | None = None,
 ) -> int:
-    """Start ``<verb> --from <clone> --host <name> <args>`` on each selected account; 2 when any is refused.
+    """Start ``<verb> --from <clone> --host <name> <args>`` on each selected account, then say each outcome.
+
+    2 when any is refused, else 1 when any remote did not exit 0 (:func:`~.transport.outcomes`), else 0.
 
     With *serving_only*, an account it rejects is skipped when a ``--cluster`` selected it and refused when named by
     ``--account``: a research account has no CI cron by design. *sourced* passes ``--from`` and ``--host``. With
@@ -109,6 +111,7 @@ def start_on_selected(
     if consent is not None and (why := consent([grant for grant, _ in ready])):
         say(f'{verb}-fleet: refused, no account started -- {why}')
         return 2
+    started: list[tuple[str, Path, int | Started]] = []
     for grant, target in ready:
         dest = f'{grant.user}@{target.host}'
         clone = account_clone(target, source).as_posix()
@@ -118,8 +121,9 @@ def start_on_selected(
         path = dated_log(home, f'{grant.user}.log', base=_BASE, kind=f'{verb}-fleet')
         say(f'{grant.user} ({grant.cluster_name}): started {describe(dest, command)}  log {path}')
         with path.open('a', encoding='utf-8') as log:
-            launch(dest, command, log)
-    return 2 if refused else 0
+            started.append((grant.user, path, launch(dest, command, log)))
+    broke = outcomes(started, say, kind=f'{verb}-fleet')
+    return 2 if refused else 1 if broke else 0
 
 
 def consent_of(verb: str, ident: str, redeem_with: cicron.Redeem | None = None) -> Consent:

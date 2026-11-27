@@ -50,6 +50,7 @@ __all__ = [
     'checkout_of',
     'cron_lines',
     'crontab_refusal',
+    'deployed',
     'host_serve_argv',
     'load',
     'merge_crontab',
@@ -80,6 +81,9 @@ TICK_LOG: Final = 'tick.log'
 
 #: An UNMARKED crontab line running family code (the kit, lab-commons, a tick): a second poller the one line replaces.
 _FAMILY_CRON: Final = re.compile(r'dev_lab\.|lab_commons|hpcaccount')
+#: An unmarked line a previous deploy wrote: it runs the deploy's own verb. The deploy replaces it; any other
+#: :data:`_FAMILY_CRON` line is FOREIGN, its holder's to delete.
+_DEPLOYED_CRON: Final = re.compile(r'dev_lab\.dev\.hpcaccount')
 
 #: ``[deploy] python`` when undeclared: the family Python (user ruling 2026-11-27), whose ``requires-python`` every
 #: served repo declares -- a cluster venv on any other minor would not install them.
@@ -444,14 +448,25 @@ def crontab_refusal(text: str) -> str:
     return (
         f'ONE-LOGIN-POLLER: an account runs exactly one cron poller, the line marked {MARK}{TICK_LINE}; this crontab '
         f'holds {len(marked)} marked and {len(strays)} unmarked family line(s): {each} -- the door: `hpcaccount '
-        'deploy` writes the one line and drops every other marked one; an unmarked family line is deleted from the '
-        "account's crontab by its holder (`hpcaccount look --account <user> crontab` names it)"
+        'deploy` writes the one line and replaces every line a deploy wrote (marked, or running '
+        "dev_lab.dev.hpcaccount); any other family line is foreign and deleted from the account's crontab by its "
+        'holder (`hpcaccount look --account <user> crontab` names it)'
     )
 
 
+def deployed(line: str) -> bool:
+    """Whether crontab *line* is one a deploy wrote: marked, or a live line running the deploy's own verb."""
+    live = line.strip() and not line.lstrip().startswith('#')
+    return MARK in line or bool(live and _DEPLOYED_CRON.search(line))
+
+
 def merge_crontab(current: str, lines: Sequence[str]) -> str:
-    """*current* without any line this tool marked, plus *lines*; every other line kept in place."""
-    kept = [line for line in current.splitlines() if MARK not in line]
+    """*current* without any line a deploy wrote (:func:`deployed`), plus *lines*; every other line kept in place.
+
+    An older deploy's lines (seven per-repo marked lines on ezztz, 2026-11-27) are REPLACED by the one tick, never
+    refused; a foreign family line survives the merge, so :func:`crontab_refusal` names it.
+    """
+    kept = [line for line in current.splitlines() if not deployed(line)]
     text = '\n'.join([*kept, *lines])
     return text + '\n' if text else ''
 

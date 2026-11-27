@@ -149,7 +149,7 @@ def _fleet(tmp_path: Path, clusters: tuple[str, ...], ident: str) -> tuple[int, 
     code = accountset.start_on_selected(
         FLEET, (), clusters, home=tmp_path, source=fleet_source(tmp_path), say=said.append, verb='ci-pause',
         serving_only=lambda target: target.role == 'verification', consent=accountset.consent_of('ci-pause', ident),
-        launch=lambda dest, command, _log: started.append(f'{dest} {command}'),
+        launch=lambda dest, command, _log: started.append(f'{dest} {command}') or 0,
     )  # fmt: skip
     return code, started, said
 
