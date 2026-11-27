@@ -262,7 +262,7 @@ def salvage(
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``salvage`` and run it; the record lands under the invoking checkout's dated ``salvage`` kind."""
-    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount salvage', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount salvage', description=(__doc__ or '').splitlines()[0])
     parser.add_argument('--account', required=True, help='one account of the fleet')
     parser.add_argument('path', help='a home-relative path of names on the account, or . for the home')
     parser.add_argument('--into', type=Path, help='the local repo the salvage branches land in (its origin matched)')
