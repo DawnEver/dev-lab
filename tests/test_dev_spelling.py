@@ -30,7 +30,22 @@ def _repo(at: Path, files: dict[str, str]) -> Path:
         path = at / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding='utf-8')
+    _track(at)
     return at
+
+
+def _track(root: Path) -> None:
+    subprocess.run([_GIT, '-C', str(root), 'add', '-A'], check=True, capture_output=True, timeout=60)
+
+
+def test_only_tracked_files_are_checked(tmp_path: Path) -> None:
+    """Issue #995: an untracked artifact (a bootstrap's egg-info) is never scanned; tracked, it still reds."""
+    root = _repo(tmp_path / 'r', {'notes.md': 'the color\n'})
+    (root / 'pkg.egg-info').mkdir()
+    (root / 'pkg.egg-info' / 'notes.txt').write_text('the colour\n', encoding='utf-8')  # spelling-ignore-line
+    assert _check(root) == spelling.CLEAN
+    _track(root)
+    assert _check(root) == spelling.FOUND
 
 
 def _check(root: Path) -> int:

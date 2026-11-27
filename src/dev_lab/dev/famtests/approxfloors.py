@@ -64,6 +64,7 @@ from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev import floors
 from dev_lab.dev.callorigins import call_origins
+from dev_lab.dev.privatemarkers import tracked_files
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -76,6 +77,7 @@ __all__ = [
     'UnreadableApproxSource',
     'approx_calls',
     'assert_every_tolerance_states_its_floor',
+    'assert_every_tracked_tolerance_states_its_floor',
     'assert_the_scanner_still_convicts',
     'is_approx',
     'take_scan',
@@ -342,3 +344,28 @@ def assert_the_scanner_still_convicts(plant_root: Path, *, bar: str) -> None:
             f'body answering the same for both would have no bar at all.'
         )
         raise AssertionError(msg)
+
+
+def assert_every_tracked_tolerance_states_its_floor(*, root: Path, bar: str, plant_root: Path) -> None:
+    """TOLERANCE-CARRIES-A-UNIT for a repo that has no test code yet: the whole tracked corpus, one call.
+
+    The corpus is git's tracked ``*.py`` under *root*, so it is never a guessed walk, and it may be EMPTY: a repo
+    adopting the rule before its first test is the adopter this exists for, and the two floors of
+    :func:`assert_every_tolerance_states_its_floor` would refuse it. What those floors guard against -- a matcher
+    that stopped matching -- is guarded instead by :func:`assert_the_scanner_still_convicts`, run first over
+    *plant_root* (the consumer's ``tmp_path``). A repo whose corpus has grown binds the floors as well.
+
+    Raises:
+        AssertionError: the planted control failed.
+        FloorlessTolerance: a tracked call fails *bar*; each is named ``path:line``.
+
+    """
+    assert_the_scanner_still_convicts(plant_root, bar=bar)
+    scan = take_scan([one for one in tracked_files(root) if one.suffix == '.py' and one.is_file()], root=root, bar=bar)
+    if scan.offenders:
+        msg = (
+            f'TOLERANCE-CARRIES-A-UNIT: {len(scan.offenders)} approx call(s) leave the absolute floor to the '
+            f'framework under the {bar!r} bar: {", ".join(scan.offenders)}. Door: state `abs=` in the unit of the '
+            f'compared quantity (`abs=0.0` on an exact site).'
+        )
+        raise FloorlessTolerance(msg)

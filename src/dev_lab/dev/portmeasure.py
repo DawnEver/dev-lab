@@ -11,18 +11,26 @@ one of its own commits, a :data:`TRAILER` line whose value holds a measured numb
 18.7 us/point -> rust 9.08 us/point, 2.1x``). :func:`unmeasured` is asked by the merge decision
 (:func:`dev_lab.dev.forgemerge.decide`), so no client can skip it. What it cannot see, stated rather than
 implied: a port that adds no crate (a function moved into an existing one) is not detected.
+
+SCOPE (user ruling D151, 2026-11-26). The rule guards a Python-first repo against porting a measured-fast path on
+an assumed speedup. A repo whose head declares ``[tool.dev_lab.native]`` (NATIVE-FIRST, :mod:`dev_lab.dev.nativefirst`)
+writes a native-owned stage in Rust from its first line: there is no Python twin to measure against, so its heads
+are out of scope. The declaration is read at the HEAD, so the commit that adopts it is the one a reviewer sees.
 """
 
 from __future__ import annotations
 
 import re
 import shutil
+import tomllib
 from pathlib import Path, PurePosixPath
 from typing import Final
 
 import lab_commons.launch as _door
 
-__all__ = ['RULE', 'TRAILER', 'added_crates', 'measured', 'unmeasured']
+from dev_lab.dev.family import declared_table
+
+__all__ = ['RULE', 'TRAILER', 'added_crates', 'measured', 'native_first', 'unmeasured']
 
 #: The rule this refuses for.
 RULE: Final = 'MEASURE-BEFORE-PORTING'
@@ -33,6 +41,9 @@ _MANIFEST: Final = 'Cargo.toml'
 #: A measurement names a number.
 _NUMBER: Final = re.compile(r'\d')
 _GIT_TIMEOUT_S: Final = 60
+#: The manifest whose ``[tool.dev_lab.native]`` table scopes a repo out (D151).
+_PYPROJECT: Final = 'pyproject.toml'
+_NATIVE_TABLE: Final = 'native'
 
 
 def _git(root: Path, *args: str) -> str:
@@ -58,10 +69,23 @@ def measured(values: list[str]) -> bool:
     return any(_NUMBER.search(value) for value in values)
 
 
+def native_first(root: Path, head: str) -> bool:
+    """Whether *head*'s ``pyproject.toml`` declares ``[tool.dev_lab.native]``; a missing manifest declares nothing."""
+    listed = _git(root, 'ls-tree', '--name-only', head, '--', _PYPROJECT)
+    if not listed.strip():
+        return False
+    try:
+        data = tomllib.loads(_git(root, 'show', f'{head}:{_PYPROJECT}'))
+    except tomllib.TOMLDecodeError as broken:
+        msg = f'{_PYPROJECT} at {head[:12]} is not TOML ({broken}), so whether it declares native-first is unknown'
+        raise ValueError(msg) from broken
+    return declared_table(data, _NATIVE_TABLE) is not None
+
+
 def unmeasured(root: Path, base: str, head: str) -> str | None:
-    """Why *head* may not merge for want of a measured port record, or ``None``."""
+    """Why *head* may not merge for want of a measured port record, or ``None`` (also for a native-first head)."""
     crates = added_crates(root, base, head)
-    if not crates:
+    if not crates or native_first(root, head):
         return None
     log = _git(root, 'log', f'--format=%(trailers:key={TRAILER},valueonly)', f'{base}..{head}')
     if measured([line.strip() for line in log.splitlines() if line.strip()]):

@@ -14,6 +14,7 @@ the root's own files), each value the list of what a file there may be -- a ``.s
     read_only = ['temp']                      # user-maintained input: never written, never cleaned, never judged
     tool_caches = ['pytest', 'ruff']          # output/cache/<tool>/ of each NAMED tool holds what the tool writes
     vendor_jobs = ['femm', 'matlab']          # output/logs/<yy>/<mm>/<dd>/vendor/<program>/: a NAMED program's jobs
+    doc_sites = ['pdoc', 'cargo-doc']         # output/docs/<site>/: a NAMED builder's site, its .js included
     [layout]
     '.' = ['.toml', '.md', '.lock', '.gitignore']
     src = ['.py', '.typed']
@@ -43,7 +44,7 @@ its door MERGE-OR-DELETE: land the work through its branch, or delete it; and TH
 refused, and inside one only the family's rows judge, so a repo's open ``<day>/*`` row never widens it. A repo
 lists only its own kinds.
 
-THREE EXEMPTIONS, ALL NAMED (user rulings 2026-11-24 and D95, 2026-11-25). A ``read_only`` path is user input of
+FOUR EXEMPTIONS, ALL NAMED (user rulings 2026-11-24 and D95, 2026-11-25). A ``read_only`` path is user input of
 whatever format the user keeps: the scan never judges or descends it, and the write hook refuses any write into it.
 A tool in ``tool_caches`` owns ``output/cache/<tool>/`` (every tool cache lives there, never at the root): the scan
 and the hook leave its files unjudged. Each entry is ONE tool's name -- a glob, a path or an empty name is refused,
@@ -52,7 +53,9 @@ as ``tool_caches``' are) owns its job tree ``output/logs/<yy>/<mm>/<dd>/vendor/<
 model and driver scripts its driver emits (``.py`` for AEDT, ``.lua`` for FEMM, ``.m`` for MATLAB) from disk beside
 its own files, so the scan leaves that tree unjudged, code suffixes included. The write hook sees an AGENT's tool
 call, never the driver writing at run time, so it cannot admit per writer: it refuses an agent's Write/Edit there
-whatever the suffix, naming the driver as the door (:mod:`dev_lab.dev._layout_vendor`).
+whatever the suffix, naming the driver as the door (:mod:`dev_lab.dev._layout_vendor`). A site in ``doc_sites``
+(FAM-08) owns ``output/docs/<site>/``: a built doc site (pdoc, ``cargo doc``) ships the ``.js`` its pages run, so
+the scan leaves it unjudged the same way, and the write hook refuses an agent's write there, naming the builder.
 
 ONE TABLE, ONE PREDICATE, THREE CALLERS: the scan :func:`layout_violations`, the write hook's
 :func:`refuse_layout`, and the scan entry :func:`main` that ``verify`` and every forge tick run.
@@ -92,7 +95,7 @@ from dev_lab.dev._layout_table import (
     family_kind,
     row_for,
 )
-from dev_lab.dev._layout_vendor import vendor_refusal
+from dev_lab.dev._layout_vendor import doc_site_refusal, vendor_refusal
 from dev_lab.dev.codeplace import FAMILY_HOMES, LAYOUT_FILE, PRUNED_NAMES
 from dev_lab.dev.disclosure import details_for
 
@@ -148,6 +151,7 @@ def _skipped(rel_dir: str, layout: Layout) -> bool:
         or _within(rel_dir, layout.read_only)
         or layout.in_tool_cache(rel_dir)
         or layout.in_vendor_job(rel_dir)
+        or layout.in_doc_site(rel_dir)
     )
 
 
@@ -322,8 +326,8 @@ def refuse_layout(path: Path) -> str | None:
     if (declared := declared_at(path)) is None:
         return None
     root, layout, rel = declared
-    if layout.in_vendor_job(rel):
-        return vendor_refusal(root, rel)
+    if layout.in_vendor_job(rel) or layout.in_doc_site(rel):
+        return vendor_refusal(root, rel) if layout.in_vendor_job(rel) else doc_site_refusal(root, rel)
     if _within(rel, layout.read_only):
         return (
             f'{RULE_ID}: {rel} -- {rel.split("/", 1)[0]}/ is declared read_only in '

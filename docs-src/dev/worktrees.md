@@ -18,6 +18,9 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 - The NAME is its own rule, `WORKTREE-NAMES-ITS-TASK` (user ruling 2026-11-22): `<name>` says what the tree does under
   its task, never a hash (`dev_lab.dev.worktreename`). The deny row of that ID refuses `worktree add|move` to a
   hash-like name; `assert_every_worktree_names_its_task(root=...)` detects one made any other way.
+- A tree never NESTS (`WORKTREES-DO-NOT-NEST`): an agent spawned with worktree isolation already has its tree and
+  adds no second one. `assert_no_worktree_nests(root=...)` reads git's list and names a tree lying inside another
+  linked tree with the move that puts it in the home.
 - A deny pattern reads text: it cannot tell whether a `.claude` in the target belongs to this repository. The
   detector reads git's own list, so the two halves are not duplicates.
 
