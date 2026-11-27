@@ -4,9 +4,11 @@ User ruling 2026-10-19: every change is a short-lived branch returning by a PR t
 which takes ONLY server-side merges. THE TEST PARTS GATE THAT MERGE (user ruling 2026-11-04, superseding
 2026-10-29's "parts never gate", after dev-lab#78 merged with ``tests/base`` FAILED and reddened integration): every
 part the head needs stands PASS (:func:`dev_lab.dev.platformparts.standing`, the reading promotion uses at scope full
-in :func:`dev_lab.dev.integrate.promote`); absent or pending waits, FAIL refuses -- every HOSTED part: a hand part
-(:func:`~dev_lab.dev.forgemergewaits.hand_parts`, user ruling 2026-11-10) is named and tested later, never waited
-on. Opted into by declaring ``[tool.dev_lab.integrator] pr_merges_since = "<sha>"``; from then on the integration
+in :func:`dev_lab.dev.integrate.promote`); absent or pending waits, FAIL refuses -- every GATING part (``base``, and
+the parts of each OS ``[tool.dev_lab.integrator] merge_systems`` names, Windows by default: user ruling 2026-11-27,
+:func:`~dev_lab.dev.forgemergewaits.gates`): a hand part (:func:`~dev_lab.dev.forgemergewaits.hand_parts`, user
+ruling 2026-11-10) is named and tested later, never waited on.
+Opted into by declaring ``[tool.dev_lab.integrator] pr_merges_since = "<sha>"``; from then on the integration
 tick (:func:`dev_lab.dev.forgeintegration.tick`) asks :func:`decide` of each open PR into integration and, when
 nothing is missing, asks the forge to merge it (:func:`dev_lab.dev.forgemergecall.merge`). A client push adding a
 commit to the branch is refused at pre-push (:mod:`dev_lab.dev.sessionbranch`, P5).
@@ -33,7 +35,8 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge (a 
 checks standing ``success`` (:func:`~dev_lab.dev.forgemergewaits.checks_wait`) IN PLACE of the first, fourth and
 fifth conditions, which a serve host posts):
 
-* its head's HOSTED test parts all stand PASS (:func:`~dev_lab.dev.forgemergewaits.parts_wait`); a hand part is
+* its head's GATING test parts all stand PASS (:func:`~dev_lab.dev.forgemergewaits.parts_wait`): ``tests/base``,
+  and ``tests/windows`` and ``tests/base@windows`` under the family's default ``merge_systems``; a hand part is
   named, never waited on (:func:`~dev_lab.dev.forgemergewaits.hand_parts`, user ruling 2026-11-10);
 * its review is ADVISORY and never a condition (user rulings 2026-11-11/12, both forges): the review still runs at
   the PR's first merge-ready head (:mod:`dev_lab.dev.reviewturn`) and posts its comment and ``tests/review``; a head
@@ -168,8 +171,8 @@ def decide(
     the decision carry it. *record* is the PR body: a red test part it puts on record (``Red-On-Record:``) reads
     as ran (RED-INTEGRATION-MERGES); every other red still waits, named with that door.
     """
-    unrecorded = off_record(statuses, record)
-    statuses = recorded_as_ran(statuses, record)
+    unrecorded = off_record(statuses, record, systems=policy.merge_systems)
+    statuses = recorded_as_ran(statuses, record, systems=policy.merge_systems)
     into = policy.integration
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
@@ -219,16 +222,18 @@ def decide(
         f'file and push the redone branch'
         for sha, problems in undeclared
     ]
-    waiting = len(missing) == len(waits) and not red_checks(statuses)  # the review is never in missing
-    return Decision(tuple(missing), message, unreviewed, waived, _notes(root, statuses), waiting)
+    # the review is never in missing
+    waiting = len(missing) == len(waits) and not red_checks(statuses, systems=policy.merge_systems)
+    notes = _notes(root, statuses, policy.merge_systems)
+    return Decision(tuple(missing), message, unreviewed, waived, notes, waiting)
 
 
-def _notes(root: Path, statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
+def _notes(root: Path, statuses: Sequence[CommitStatus], systems: Sequence[str]) -> tuple[str, ...]:
     """What the decision says without waiting on it: an undeclared message row, the hand parts and the alarms."""
     unjudged = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
     alarmed = alarms_said(statuses)
     alarm = f'alarms, never a merge condition: {alarmed}' if alarmed else None
-    return (*unjudged, *filter(None, [hand_note(statuses), alarm]))
+    return (*unjudged, *filter(None, [hand_note(statuses, systems=systems), alarm]))
 
 
 def external(client: Client, pull: PullRequest) -> bool:

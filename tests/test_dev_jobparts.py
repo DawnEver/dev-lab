@@ -17,6 +17,7 @@ from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN
+from dev_lab.dev.lanepolicy import FAMILY_MERGE_SYSTEMS
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.producer import OUTCOME_VAR, Owner, full_suite_refusal, owner_of, unreachable
 
@@ -58,7 +59,9 @@ def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path
     """cc-market #29: the matrix came out empty, no part job ran, and merge-ready waited on tests/base forever."""
     (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
     forge = StateForge()
-    assert 'not yet posted' in forgemergewaits.actions_wait(SHA, status_list(forge, SHA)), 'PLANTED CONTROL'
+    assert 'not yet posted' in forgemergewaits.actions_wait(
+        SHA, status_list(forge, SHA), systems=FAMILY_MERGE_SYSTEMS
+    ), 'PLANTED CONTROL'
 
     def broken(_expression: str) -> list[str]:
         msg = 'pytest collection failed with exit 2'
@@ -68,7 +71,7 @@ def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path
     monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
     monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
     assert jobparts.main(['matrix', '--root', str(tmp_path), '--event', 'pull_request']) == 1
-    waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA))
+    waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA), systems=FAMILY_MERGE_SYSTEMS)
     assert waited is not None
     assert 'not yet posted' not in waited
     assert jobparts.NO_MATRIX in waited
@@ -502,9 +505,9 @@ def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part() -> None:
     PLANTED CONTROL: the same head with ``tests/base`` red still waits.
     """
     handed = [CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemergewaits.parts_wait('hosted', handed) is None
+    assert forgemergewaits.parts_wait('hosted', handed, systems=FAMILY_MERGE_SYSTEMS) is None
     red = [CommitStatus('tests/base', 'failure', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemergewaits.parts_wait('hosted', red) is not None, 'PLANTED CONTROL'
+    assert forgemergewaits.parts_wait('hosted', red, systems=FAMILY_MERGE_SYSTEMS) is not None, 'PLANTED CONTROL'
 
 
 _RUN_ENV = {'GITHUB_SERVER_URL': 'https://github.com', 'GITHUB_REPOSITORY': 'o/r', 'GITHUB_RUN_ID': '7'}

@@ -15,8 +15,9 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
   let the forge refuse a red-on-record merge the serve host decided). The trunk requires the
   base part's rows the promotion event runs (``tests/base`` and, where workflows fan
   parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on -- and NO other part: a part a
-  declared resource derives (``tests/windows``) is a hand part, tested later and never a merge condition (user ruling
-  2026-11-10, :func:`dev_lab.dev.forgemergewaits.hand_parts`);
+  declared resource derives (``tests/windows``) exists only where the repo has such tests, so no rule can require
+  it; whether it gates a MERGE is merge-ready's decision (``merge_systems``, user ruling 2026-11-27,
+  :func:`dev_lab.dev.forgemergewaits.gates`), which the integration branch requires;
 * NO APPROVAL AND NO JUDGE CHECK is ever required: the judge's verdict is ADVISORY on every forge
   (:data:`~dev_lab.dev._forgebackends.ADVISORY`, user ruling 2026-11-11), so ``approvals`` above 0 is refused;
 * what THIS table declares, once, is the rest -- per forge host, the ONE bypass identity (break-glass) and the

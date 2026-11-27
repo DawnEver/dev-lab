@@ -74,7 +74,7 @@ from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR, is_held
 from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
-from dev_lab.dev.lanepolicy import policy_from
+from dev_lab.dev.lanepolicy import Policy, policy_from
 from dev_lab.dev.roles import TESTS, roles_of_url
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
@@ -84,7 +84,7 @@ from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.client import Register, redeem
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.statelock import exclusive
-from dev_lab.ops.wavesweep import integration_at, sweep
+from dev_lab.ops.wavesweep import policy_at_base, sweep
 
 __all__ = ['BreakglassRefused', 'ConsentWanted', 'Held', 'HeldBack', 'Server', 'merge_message']
 
@@ -122,14 +122,14 @@ def _labels_admit(forge: Forge, pr: int) -> None:
         raise Held(msg)
 
 
-def tests_at(posted: Sequence[CommitStatus], head: str, *, tests: str) -> str:
+def tests_at(posted: Sequence[CommitStatus], head: str, *, tests: str, systems: Sequence[str]) -> str:
     """*head*'s test state at merge time: ``passed``, ``red: <contexts>; <why>`` or ``untested: <why>``.
 
     User ruling 2026-11-11: break-glass waives the tests as well as the review -- the open wave is the authorization
     -- so this never refuses; it names what was waived, for the audit and the notice. The reading is merge-ready's
     own, by the repo's *producer* (:func:`dev_lab.dev.forgemergewaits.green_waits`).
     """
-    waits = green_waits(head, posted, tests=tests)
+    waits = green_waits(head, posted, tests=tests, systems=systems)
     if not waits:
         return 'passed'
     latest = {one.context: one.state for one in reversed(posted)}  # newest first: the newest write wins
@@ -299,10 +299,12 @@ class Server:
             msg = 'no break-glass wave is open: the user opens one (forge breakglass open, with their code)'
             raise BreakglassRefused(msg)
         repo, pr, head, reason = asked.repo, asked.pr, asked.head, asked.reason
-        forge, integration = self._admit(asked)
+        forge, policy = self._admit(asked)
+        integration = policy.integration
         hidden = hidden_reds(forge.fingerprints, head, integration, posted := forge.statuses(head))
         by = roles_of_url(self.role.repo(repo) or repo).kind(TESTS)
-        tests = tests_at(posted, head, tests=by) + (f'; {hidden}' if hidden else '')  # D18: on record
+        tests = tests_at(posted, head, tests=by, systems=policy.merge_systems)
+        tests += f'; {hidden}' if hidden else ''  # D18: on record
         forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}, '
                           f'{_merged(tests)}. Reason: {reason}. Tests: {tests}')  # fmt: skip
         forge.merge(pr, head=head, message=merge_message(pr, integration, reason, held.id))
@@ -338,7 +340,8 @@ class Server:
             policy = policy_from(forge.declaration(asked.sha), f'{asked.repo}@{asked.sha[:12]}:pyproject.toml')
         except ValueError as unread:
             raise BreakglassRefused(str(unread)) from unread
-        parts = tests_at(forge.statuses(asked.sha), asked.sha, tests=roles_of_url(url).kind(TESTS))
+        by = roles_of_url(url).kind(TESTS)
+        parts = tests_at(forge.statuses(asked.sha), asked.sha, tests=by, systems=policy.merge_systems)
         try:
             old = forge.fast_forward(policy.trunk, policy.integration, asked.sha)
         except NotFastForward as refused:
@@ -355,7 +358,7 @@ class Server:
             said += f'; the cap of {held.max_merges} ended the wave'
         return said
 
-    def _admit(self, asked: requests.Merge) -> tuple[Forge, str]:
+    def _admit(self, asked: requests.Merge) -> tuple[Forge, Policy]:
         url = self.role.repo(asked.repo)
         if url is None:
             msg = f'{asked.repo} is not a repository this host serves'
@@ -369,17 +372,17 @@ class Server:
             msg = f'#{asked.pr} is {state}, not open'
             raise BreakglassRefused(msg)
         try:
-            integration = integration_at(forge, base, asked.repo)
+            policy = policy_at_base(forge, base, asked.repo)
         except ValueError as unread:
             raise BreakglassRefused(str(unread)) from unread
-        if base != integration:
-            msg = f'#{asked.pr} targets {base}, not the integration branch {integration}'
+        if base != policy.integration:
+            msg = f'#{asked.pr} targets {base}, not the integration branch {policy.integration}'
             raise BreakglassRefused(msg)
         if found != asked.head:
             msg = f'#{asked.pr} head is {found[:12]}, not the {asked.head[:12]} you were shown: re-run the verb'
             raise BreakglassRefused(msg)
         _labels_admit(forge, asked.pr)
-        return forge, integration
+        return forge, policy
 
     def _close_verb(self, _asked: None) -> str:
         held = self._current()

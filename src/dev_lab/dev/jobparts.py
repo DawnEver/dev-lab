@@ -53,8 +53,8 @@ matrix job never runs it: :func:`dev_lab.dev.hostedjobs.hosted_jobs` renders it 
 setup step alone has the bundles in its environment and pipes each
 to ai-lab's loader on stdin -- never argv, never echoed -- before the part is produced. The render names
 a secret; it never holds a value, and it names no provider (ai-lab's routes say which a task uses).
-No pull request has its row, and a PR's merge gate waits on no part but base's rows
-(:func:`dev_lab.dev.forgemergewaits.hand_parts`); the full
+No pull request has its row, and a PR's merge gate waits on no part but the gating ones
+(:func:`dev_lab.dev.forgemergewaits.gates`: base and the merge systems' OS parts); the full
 run produces it, and ``integrate promote`` reads it there.
 """
 
