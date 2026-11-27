@@ -38,12 +38,14 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
 - **The same line is the upgrade.** The first run stores the declaration (`[deploy]` in the account's machine
   file: host, root, python, served repos, partitions, and `--slurm-account` when Slurm names several); later
   runs read it, and flags that disagree with it are refused. `[deploy] repos` lists the served repos and the kit;
-  the kit (`spec.KIT`, dev-lab) is the one row every tick runs, whether or not a role serves it there.
-- **The host refreshes; a repo never updates itself.** Each cron line runs the HOST's kit,
-  `python -m dev_lab.dev.hpcaccount tick <repo>` from the dev-lab checkout: it checks out `~/<root>/dev-lab`
-  and then the repo at their deployed refs, rebuilds the repo's venv where its inputs (its committed `uv.lock` among them) moved
-  (the deploy's own keyed steps), and only then serves it: THE HOST KIT's `forge serve` with the repo checkout
-  as its cwd. The repo's venv only runs its producers, in their trees, so one host runs one scheduler. A repo whose refresh fails is
+  the kit (`spec.KIT`, dev-lab) is the checkout every tick runs from; it is ticked only where a role serves it.
+- **The host refreshes; a repo never updates itself.** The account's one cron line runs the HOST's kit,
+  `python -m dev_lab.dev.hpcaccount tick <repo>...` from the dev-lab checkout: it checks out each repo at its
+  deployed ref and serves it only from an environment stamped with the key of its inputs (its committed `uv.lock`
+  among them; `dev_lab.dev.hpcaccount.prep.prepared`): THE HOST KIT's `forge serve` with the repo checkout as its
+  cwd. **The tick never builds** (ONE-LOGIN-POLLER, user ruling 2026-11-27): a key that moved is asked of a Slurm
+  PREP JOB (`dev_lab.dev.hpcaccount.prep.submit`, lab-commons' `submit_env_prep`: venv, native build, `needs`
+  probes and uv's pin all run there) and the repo is released for that tick, naming the key. The repo's venv only runs its producers, in their trees, so one host runs one scheduler. A repo whose refresh fails is
   released for that tick, its reason in its log; a kit that cannot move is reported and the repo serves with
   the kit it has. Only the crontab itself changes when you re-run the line.
 - **What it does** (`dev_lab.dev.hpcaccount.deploy`): refuses off the declared host; checks the account before changing
@@ -51,29 +53,34 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   `forge auth check` per repo (the API calls a tick makes: `GET /user`, push permission for commit statuses,
   the issue list); writes the account's own `[[hpc.grant]]` when it has none (user from `id -un`, account and
   `cpu=` limit from `sacctmgr`, this host, the declared partitions); clones or fast-forwards each checkout;
-  installs `uv` and the Rust toolchain from their official installers into `~/.local` and `~/.cargo` and
-  `cmake` through `uv tool` when one does not run (`<tool> --version` in the tick environment: a rustup shim
-  with no toolchain is not a cargo), and refuses any other missing `needs` by name; writes one marked line
-  (`# lab-commons-deploy:path`) putting `~/.local/bin:~/.cargo/bin` first on the PATH into `~/.bashrc` and
-  the login file bash reads (`.bash_profile`, else an existing `.bash_login`/`.profile`), once, each backed up
-  to `<file>.lab-deploy.bak` first, so the login shell runs what the tick runs; builds each `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native` build on a
-  uv-managed CPython (skipped while its inputs are unchanged) -- exactly what the repo's committed `uv.lock`
-  pins, with nothing installed over it, so a repo's producers import the lab-commons its commit was tested
-  with (PIN + FRESHNESS, user ruling 2026-10-17); where the machine file declares `[capabilities.femm]`, builds the
-  family's one FEMM 5 release from its pinned source (`dev_lab.dev.toolrelease.FEMM_QT`) on the login node and
-  installs it, with its `version.env`, into `<tools>/femm/<version>/bin` (`dev_lab.dev.hpcaccount.femm`: a current
-  install is skipped; a failed build is refused naming its log and keeps the install in place); replaces its own
-  marked crontab lines; runs one tick of each repo and prints it.
+  writes one marked line (`# lab-commons-deploy:path`) putting `~/.local/bin:~/.cargo/bin` first on the PATH into
+  `~/.bashrc` and the login file bash reads (`.bash_profile`, else an existing `.bash_login`/`.profile`), once, each
+  backed up to `<file>.lab-deploy.bak` first, so the login shell runs what the tick runs; replaces its own marked
+  crontab lines with the account's one line. **It builds nothing on the login node** (ONE-LOGIN-POLLER, user ruling
+  2026-11-27): each repo whose environment is not stamped with the key of its inputs gets its Slurm PREP JOB asked
+  (`dev_lab.dev.hpcaccount.prep`), which runs the kit's own `hpcaccount prep-build <repo>` on a compute node --
+  `uv` and the Rust toolchain from their official installers into `~/.local` and `~/.cargo`, `cmake` through
+  `uv tool`, any other missing `needs` refused by name (`<tool> --version` on the node: a rustup shim with no
+  toolchain is not a cargo), then the `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native`
+  build on a uv-managed CPython -- exactly what the repo's committed `uv.lock` pins, with nothing installed over it,
+  so a repo's producers import the lab-commons its commit was tested with (PIN + FRESHNESS, user ruling
+  2026-10-17). Where the machine file declares `[capabilities.femm]` and the family's one FEMM 5 release
+  (`dev_lab.dev.toolrelease.FEMM_QT`) is not installed, a Slurm job (`hpcaccount femm-build`) builds it from its
+  pinned source into `<tools>/femm/<version>/bin` (`dev_lab.dev.hpcaccount.femm`: a failed build is refused naming
+  its log and keeps the install in place). The first install of a kit with no venv, and the fleet's kit refresh,
+  sync it in a waited-for Slurm job (`sbatch --wait`, `dev_lab.dev.hpcaccount.fleet.in_job`). The one cron line
+  runs the first tick.
 - A grant's compute-node `setup` (e.g. `module load git`) is a cluster fact the deploy cannot read: add it to
   the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
-- **The crontab line** (the poller), per declared repo, every `[schedule] tick` (whole minutes dividing an
+- **The crontab line** -- exactly ONE per account (ONE-LOGIN-POLLER), ticking every served repo, every
+  `[schedule] tick` (whole minutes dividing an
   hour, default `"5 min"`; the host card is judged stale against the same number) at a minute offset derived from the
   account's home, so accounts never tick in lockstep. Each tick refreshes its repo and serves its queue only
   where the family binds a role of the repo to the account's grant (`[roles.<forge>]`, `dev_lab.dev.roles`, D73;
-  ruling 2026-11-16); a repo with no role bound there is checked out, installed and never served. The line:
-  `<offset>-59/<minutes> * * * * PATH=...; cd <root>/repos/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount tick <repo> --lock <root>/serve/<repo>.lock --wall-minutes <wall> >> <root>/serve/<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
-  The tick takes its own lock and writes who holds it beside it (`<lock>.holder`: pid, start, phase); it runs
+  ruling 2026-11-16). The line:
+  `<offset>-59/<minutes> * * * * PATH=...; cd <root>/repos/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount tick <repo>... --lock <root>/serve/tick.lock --wall-minutes <wall> >> <root>/serve/tick.log 2>&1 # lab-commons-deploy:tick`.
+  The tick takes the account's one lock and writes who holds it beside it (`<lock>.holder`: pid, start, phase); it runs
   within `[schedule] tick_wall` (whole minutes, default `"40 min"`) and past it ends its serve, releases the lock and prints
   `tick: ended at its wall after <s> s doing <phase>` -- the next tick resumes every run from its saved step
   (`dev_lab.dev.hpcaccount.tickwall`).
@@ -81,7 +88,7 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   `forge queue` reads `tick held <age> in <phase>`. From the workstation: `python -m dev_lab.dev.hpcaccount
   tick-status --account <user>` reads every lock's holder; `tick-stop --account <user> [--repo R]` stops a tick
   older than its wall (verified a tick of that repo, this user's) and refuses a younger one by name;
-  `look --account <user> {processes|ticks|log <repo>|crontab|stuck <path>|inventory <path>}` is the closed set of
+  `look --account <user> {processes|ticks|log|crontab|stuck <path>|inventory <path>}` is the closed set of
   read-only looks; `inventory` lists each entry's files, bytes and newest change and judges every git checkout under
   the path pushed or NOT PUSHED (`dev_lab.dev.hpcaccount.inventory`).
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine

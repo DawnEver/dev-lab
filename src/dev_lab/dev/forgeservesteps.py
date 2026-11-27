@@ -19,7 +19,7 @@ from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.hpc.account import ClusterAccount
 
-from dev_lab.dev import escapes, forgerunstate, forgeship, hostalarm, metrics, retention
+from dev_lab.dev import ciworkflows, escapes, forgerunstate, forgeship, hostalarm, metrics, retention
 from dev_lab.dev.branchpolicy import prune_duty
 from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.drift import step as drift_step
@@ -64,6 +64,7 @@ __all__ = [
     'demote_unreachable',
     'every_host',
     'exit_on_sigterm',
+    'gates_on_light',
     'host_failure',
     'hygiene',
     'pressed',
@@ -133,12 +134,14 @@ def prompt(
     try:
         found = observe(root, repo, statuses=lambda sha: status_list(built, sha))
         policy = load_policy(root)
-        ticked = integration_tick(root, built, policy, host=host)  # the host claims each auto-sync
+        light = gates_on_light(root, say=say)
+        ticked = integration_tick(root, built, policy, host=host, head_gates=not light)  # claims each auto-sync
         for line in ticked.lines:
             say(f'[serve] integration: {line}')
         for line in ready_when_current(root, built, policy.integration, judge=ready_refusals):
             say(f'[serve] ready-when: {line}')
-        security_step(root, built, say=say)  # tests/security on each unjudged head: a merge condition
+        if not light:
+            security_step(root, built, say=say)  # tests/security on each unjudged head: a merge condition
         glass = break_glass(root, policy, repo)
         red = scarce_red(root, policy.integration, repo, lambda sha: status_list(built, sha))
         for one in (
@@ -155,6 +158,22 @@ def prompt(
             alarm(one)
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         say(f'[serve] the integration queue was not derived: {failed}')
+
+
+def gates_on_light(root: Path, *, say: Callable[[str], None]) -> bool:
+    """Whether a Gitea light runner posts this repo's security and head gates (:func:`ciworkflows.light_gates`).
+
+    User ruling 2026-11-27: then this login-node tick runs neither. A render that cannot be read is said and the tick
+    keeps both -- a gate nobody posts would hold every merge.
+    """
+    try:
+        light = ciworkflows.light_gates(root)
+    except (OSError, ValueError) as unread:
+        say(f'[serve] the gates workflow was not read, so this tick runs security and the head gates: {unread}')
+        return False
+    if light:
+        say(f'[serve] security and the head gates are {ciworkflows.GATES} on the light runner, not this tick')
+    return light
 
 
 def review(root: Path, built: Client, *, say: Callable[[str], None], host: str) -> None:

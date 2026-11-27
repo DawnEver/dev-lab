@@ -108,6 +108,7 @@ from dev_lab.dev.verifybox import wall_of
 __all__ = [
     'BY_FORGE',
     'EXTRAS_PLACEHOLDER',
+    'GATES',
     'INTEGRATION_PLACEHOLDER',
     'LIGHT',
     'PART_MARGIN_MIN',
@@ -123,6 +124,7 @@ __all__ = [
     'declared_paths',
     'drift',
     'follow_checks',
+    'light_gates',
     'part_timeout_minutes',
     'placed',
     'refuse_everything',
@@ -141,6 +143,9 @@ SHARED: Final = '_steps'
 RUNNERS: Final = '_runners'
 #: The label of the small-memory runner every job that holds no review method nor key runs on.
 LIGHT: Final = 'light'
+
+#: The Gitea workflow running a PR head's environment-free gates on the :data:`LIGHT` runner (user ruling 2026-11-27).
+GATES: Final = 'gates.yml'
 
 #: In any base or layer string, the repo's declared integration branch (``[tool.dev_lab.integrator]``), at render.
 INTEGRATION_PLACEHOLDER: Final = '@integration@'
@@ -371,6 +376,16 @@ def refuse_everything(workflow: object, origin: str) -> None:
     elif isinstance(workflow, list):
         for item in workflow:
             refuse_everything(item, origin)
+
+
+def light_gates(root: Path) -> bool:
+    """Whether *root*'s Gitea Actions light runner posts its PR heads' fast gates: :data:`GATES` renders for it.
+
+    Then the security scan and the head gates are that workflow's, never the HPC serve tick's
+    (:func:`dev_lab.dev.forgeservesteps.prompt`). A GitHub repo, or a Gitea one whose ``merge`` role is not on ``ci``,
+    renders no :data:`GATES`.
+    """
+    return repo_forge(root) == 'gitea' and GATES in _placed(root)
 
 
 def workflows(root: Path) -> dict[str, dict[str, Any]]:
