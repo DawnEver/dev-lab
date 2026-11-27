@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.hpc.needsets import BASE
 from lab_commons.outcomes import Conclusion
 
+from dev_lab.dev import cargostep
 from dev_lab.dev.forgeheadgate import gates_wait
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.partrows import row_part
@@ -93,13 +94,14 @@ def recorded_as_ran(statuses: Sequence[CommitStatus], record: str) -> tuple[Comm
 
 
 def hand_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:
-    """The parts *statuses* derive that only a hand host produces: every part but :data:`BASE` and its OS rows.
+    """The parts *statuses* derive that only a hand host produces: every part but :data:`BASE`, its OS rows and cargo.
 
     USER RULING 2026-11-10: such a part (``windows``, ``gpu``, ``vendor``...) is tested LATER, when a hand host has
-    room, and is never a merge condition; a hosted runner produces ``tests/base`` and each ``tests/base@<os>``.
+    room, and is never a merge condition; a hosted runner produces ``tests/base``, each ``tests/base@<os>`` and
+    ``tests/cargo`` (dev-lab#1033: fmt and clippy drift landed on integration unchecked while cargo was a hand part).
     """
     parts, _ = parts_of(statuses)
-    return frozenset(name for name in {*derived(statuses), *parts} if row_part(name) != BASE)
+    return frozenset(name for name in {*derived(statuses), *parts} if row_part(name) not in {BASE, cargostep.PART})
 
 
 def requeued_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:
