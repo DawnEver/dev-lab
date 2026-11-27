@@ -1663,6 +1663,25 @@ def test_a_selection_runs_its_pytest_step_in_the_box_and_a_producer_never_twice(
     assert reboxed == (['py'], None), 'PLANTED CONTROL: a tree inside a live claim is not reboxed'
 
 
+@pytest.mark.parametrize(
+    ('selection', 'seats'),
+    [
+        (('-m', 'gpu and not vendor'), ['--seat=exclusive=1', '--seat=gpu=1']),
+        (('-m', 'not gpu and not vendor'), []),  # PLANTED CONTROL: excluding the GPU asks none
+        ((), []),  # PLANTED CONTROL: no part asks none
+    ],
+)
+def test_a_part_needing_a_gpu_asks_the_box_for_one(monkeypatch, selection: tuple[str, ...], seats: list[str]) -> None:
+    """dev-lab #1005: verify asked the box for cores and memory only, so a `gpu` part ran with no GPU granted.
+
+    The part's need-set is its marker expression (:func:`~dev_lab.dev.localpart.part_selection`): each device kind
+    it SELECTS is one device on the claim, which the box grants and names (``CUDA_VISIBLE_DEVICES``).
+    """
+    _boxed_on(monkeypatch, 2.0, xdist=True)
+    argv, _ = verifybox.boxed(Path('r'), ['py', '-m', 'pytest', *selection], queue_s=5, outcome=Path('o.json'))
+    assert [arg for arg in argv[: argv.index('--')] if arg.startswith('--seat=')] == seats
+
+
 def test_a_platform_with_no_box_enforcer_runs_its_step_unboxed_and_says_so(monkeypatch, capsys) -> None:
     """No box enforcer on macOS (``lab_commons.box`` refuses there): the step runs as given, judged by pytest."""
     _boxed_on(monkeypatch, 2.0, xdist=True)

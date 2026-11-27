@@ -296,6 +296,8 @@ class StateForge(Client):
         return self.pulls[number]
 
     def _edit_pull(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
+        if 'base' in body:  # both forges take the new base as a branch NAME and answer it as an object
+            body = body | {'base': self.pulls[number]['base'] | {'ref': body['base']}}
         self.pulls[number] |= body | {'touched': next(_TOUCHES)}
         return self.pulls[number]
 

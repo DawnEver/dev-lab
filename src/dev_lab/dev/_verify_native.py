@@ -85,5 +85,9 @@ def native_steps(
     tracked = _git_z(root, 'ls-files', '-z') or ()
     return [
         *steps,
-        *(cargostep.step(root, one, handle=handle, tee=tee) for one in cargostep.workspaces(root, tracked)),
+        *(
+            cargostep.step(root, one, command, handle=handle, tee=tee)
+            for one in cargostep.workspaces(root, tracked)
+            for command in cargostep.COMMANDS
+        ),
     ]

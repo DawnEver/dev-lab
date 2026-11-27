@@ -742,3 +742,39 @@ def test_a_part_the_list_shows_late_is_read_back_and_never_overwritten_with_erro
     forge = _producing(monkeypatch, posts, _LaggingForge(0))
     assert jobparts.produce(tmp_path, 'base@windows', forge, env={}) == (0 if states == ['success'] else 1)
     assert [s.state for s in status_list(forge, SHA)] == states
+
+
+def _rust_repo(root: Path, *, workspace: bool) -> Path:
+    """A git checkout with the femm/windows vocabulary; with *workspace*, a tracked Cargo ``[workspace]``."""
+    root.mkdir()
+    (root / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
+    if workspace:
+        (root / 'rust').mkdir()
+        (root / 'rust' / 'Cargo.toml').write_text('[workspace]\nmembers = []\n', encoding='utf-8')
+    run_git(root, 'init', '-q')
+    run_git(root, 'add', '-A')
+    run_git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x')
+    return root
+
+
+@pytest.mark.parametrize('event', ['pull_request', 'push'])
+def test_a_rust_workspace_gets_one_hosted_cargo_row_and_a_repo_without_rust_none(tmp_path: Path, event: str) -> None:
+    """dev-lab#1033: the cargo part (fmt --check, clippy -D warnings, test) is produced by an Actions job.
+
+    PLANTED CONTROL: the same checkout without a tracked workspace derives no cargo row.
+    """
+    rust = _rust_repo(tmp_path / 'rust', workspace=True)
+    plain = _rust_repo(tmp_path / 'plain', workspace=False)
+    collect = {'': ['t::a'], 'femm': [], 'windows': []}.__getitem__
+    found = jobparts.matrix(rust, collect=collect, event=event, hosted=True)['include']
+    assert [row for row in found if row['part'].startswith('cargo')] == [{'part': 'cargo', 'runs-on': 'ubuntu-latest'}]
+    assert jobparts.off_gate(['cargo'], {}) == frozenset(), 'the cargo part is on the GitHub gate'
+    without = jobparts.matrix(plain, collect=collect, event=event, hosted=True)['include']
+    assert not [row for row in without if row['part'].startswith('cargo')]
+
+
+def test_the_cargo_part_is_a_merge_condition_never_a_hand_part() -> None:
+    """dev-lab#1033: a hosted job produces tests/cargo, so merge-ready waits on it as on tests/base."""
+    hands = 'scope=full ran=3 hands=cargo:3,windows:2'
+    statuses = [CommitStatus(context='tests/base', state='success', description=hands, url='')]
+    assert forgemergewaits.hand_parts(statuses, hosted=()) == {'windows'}

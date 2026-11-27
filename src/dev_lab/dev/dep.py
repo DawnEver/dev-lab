@@ -390,6 +390,7 @@ def _run(
         publish_built(root, prefix, live, ok=False, census=census)
         return 1
     port = Port(name=str(root), anchor_paths=lambda: paths)
+    before = _dep_project.lock_text(root)
     try:
         result = _change(
             command,
@@ -410,7 +411,14 @@ def _run(
     emit(result.render())
     stale = publish_built(root, prefix, live, ok=not result.returncode, census=census)
     synced = syncing and not args.dry_run and not result.returncode
-    return result.returncode or (after_sync(root, python, run=run) if synced else 0) or stale
+    return result.returncode or (_synced(root, python, before, run=run) if synced else 0) or stale
+
+
+def _synced(root: Path, python: str, before: str, *, run: Callable[..., Any]) -> int:
+    """After a sync: say a relock it made (:func:`~dev_lab.dev._dep_project.relock_note`), then the after-sync step."""
+    if said := _dep_project.relock_note(root, before):
+        emit(said)
+    return after_sync(root, python, run=run)
 
 
 if __name__ == '__main__':
