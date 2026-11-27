@@ -80,11 +80,11 @@ def add_label(client: Client, number: int, name: str) -> None:
         'POST', f'{client.repo}/issues/{number}/labels', {'labels': [name if client.backend is GITHUB else ident]}
     )
     rows = cast('list[object]', answered) if isinstance(answered, list) else []
-    held = {str(cast('dict[str, object]', one).get('name')) for one in rows if isinstance(one, dict)}
-    if name not in held:
+    held = {cast('dict[str, object]', one).get('id'): one.get('name') for one in rows if isinstance(one, dict)}
+    if ident not in held:  # the label's repository id, which the write never sent to GitHub: not an echo
         msg = (
             f'{client.repo} #{number}: the forge answered the label write without {name!r} on the issue '
-            f'(it holds {sorted(held)}); read it back with `forge issue view {number} --json`'
+            f'(it holds {sorted(map(str, held.values()))}); read it back with `forge issue view {number} --json`'
         )
         raise LabelMissing(msg)
 
