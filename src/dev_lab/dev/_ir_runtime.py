@@ -162,7 +162,11 @@ def _scalar(spec: F, value: object, path: str) -> object:
 # -- arrays and dims ----------------------------------------------------------------------------------------
 
 
-def _bind(dims: dict[str, tuple[int, str]], name: str, extent: int, path: str, bounds: dict) -> None:
+#: Each dim name's declared (low, high), either side open.
+type _Bounds = dict[str, tuple[int | None, int | None]]
+
+
+def _bind(dims: dict[str, tuple[int, str]], name: str, extent: int, path: str, bounds: _Bounds) -> None:
     low, high = bounds.get(name, (None, None))
     if low is not None and extent < low:
         fail(path, f'{name} >= {low}', str(extent))
@@ -173,7 +177,7 @@ def _bind(dims: dict[str, tuple[int, str]], name: str, extent: int, path: str, b
     dims.setdefault(name, (extent, path))
 
 
-def _array(spec: F, value: object, path: str, dims: dict, bounds: dict) -> np.ndarray:
+def _array(spec: F, value: object, path: str, dims: dict[str, tuple[int, str]], bounds: _Bounds) -> np.ndarray:
     if not isinstance(value, np.ndarray):
         fail(path, 'ndarray', _type_name(value))
     if value.dtype != np.dtype(spec.dtype):
