@@ -46,7 +46,6 @@ from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount.division import reached_machine
 from dev_lab.dev.hpcaccount.look import home_path
-from dev_lab.dev.hpcaccount.storage import UNREACHABLE
 from dev_lab.dev.hpcaccount.transport import grant_runner
 
 __all__ = [
@@ -287,8 +286,6 @@ def _looked(
             mine,
             mine(f'{CENSUS_MARK}; find "$HOME"/{shlex.quote(path)} -printf "%u\\n" | sort | uniq -c', None),
         )
-    except Unreachable:
-        say(f'reclaim-foreign: {user}: refused -- {UNREACHABLE}')
     except (*_FAILED, PermissionError, LookupError, ValueError) as refused:
         say(f'reclaim-foreign: {user}: refused -- {refused}')
     return 2

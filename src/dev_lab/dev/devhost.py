@@ -109,6 +109,28 @@ def _sources(clone: Path, host: str) -> tuple[Path, Path]:
     return clone / 'family.toml', clone / host_file(host)
 
 
+def _reach_of(name: str, parsed: Mapping[str, Any], family: Mapping[str, Any]) -> dict[str, str]:
+    """A parsed host file's ``[dev] hpc_reach``; an account reaches its own grant's cluster directly (it runs there)."""
+    if accounthost.is_account(parsed):
+        cluster = (accounthost.grant_of(name, family) or {}).get('cluster')
+        return {cluster: 'direct'} if cluster else {}
+    return dict(parsed.get('dev', {}).get('hpc_reach', {}))
+
+
+def cluster_reach(clone: Path, own: Mapping[str, str], family: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """The machine file's ``[hpc.cluster_reach]``: per cluster *own* names, how it is reached, and the direct hosts.
+
+    The direct hosts are every host file declaring the cluster ``direct``. Read by
+    :func:`lab_commons.hpc.reach.require` before every ssh to a login host (user ruling 2026-11-27).
+    """
+    hosts = {path.stem: _read(path) for path in sorted((clone / 'hosts').glob('*.toml'))}
+    direct = {name: _reach_of(name, parsed, family) for name, parsed in hosts.items() if 'dev' in parsed}
+    return {
+        cluster: {'reach': by, 'direct': [name for name, reach in direct.items() if reach.get(cluster) == 'direct']}
+        for cluster, by in own.items()
+    }
+
+
 def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     """The machine file for *host*: family ⊕ host (``[dev]`` aside) ⊕ the *live* file's local-only tables."""
     family_file, host_file = _sources(clone, host)
@@ -119,6 +141,8 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     seats = {name: {'seats': vendor['seats']} for name, vendor in vendors.items() if vendor.get('seats')}
     layered = merge(layered, {'capabilities': seats} if seats else {})
     layered = merge(layered, {'hpc': {'reach': hpc_reach(parsed.get('dev', {}))}} if 'hpc' in layered else {})
+    reach = cluster_reach(clone, _reach_of(host, parsed, family), family) if 'hpc' in layered else {}
+    layered = merge(layered, {'hpc': {'cluster_reach': reach}} if reach else {})
     layered = merge(layered, accounthost.derived(host, family) if accounthost.is_account(parsed) else {})
     if not accounthost.is_account(parsed):
         dev = declared(host_file, family_file)

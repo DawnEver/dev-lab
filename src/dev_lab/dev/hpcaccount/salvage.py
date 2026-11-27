@@ -47,7 +47,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final, cast
 
-from lab_commons.hpc.cluster import Runner, Unreachable
+from lab_commons.hpc.cluster import Runner
 from lab_commons.log import emit
 
 from dev_lab.dev import gitdirs
@@ -58,7 +58,7 @@ from dev_lab.dev.hpcaccount.fleet import declared_target
 from dev_lab.dev.hpcaccount.inventory import sized
 from dev_lab.dev.hpcaccount.look import home_path
 from dev_lab.dev.hpcaccount.salvagerepo import JOIN, Refused, Where, fetched, matched, tree_entries, worktree_commit
-from dev_lab.dev.hpcaccount.storage import UNREACHABLE, Pin, on_host
+from dev_lab.dev.hpcaccount.storage import Pin, on_host
 from dev_lab.dev.hpcaccount.transport import grant_runner
 
 __all__ = [
@@ -232,7 +232,7 @@ def salvage(
         say(f'salvage: {user}: refused -- the plan ran past {slow.timeout:.0f} s; raise --timeout or narrow the path')
         return 2
     except (Refused, ValueError, PermissionError, LookupError, RuntimeError, OSError) as refused:
-        say(f'salvage: {user}: refused -- {UNREACHABLE if isinstance(refused, Unreachable) else refused}')
+        say(f'salvage: {user}: refused -- {refused}')
         return 2
     if plan.absent:
         say(f'salvage: {user}: refused -- {plan.path} does not exist on the account; nothing to salvage')
