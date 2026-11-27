@@ -75,6 +75,9 @@ FAMILY_ROWS: Final = {
     for shape, suffixes in shapes.items()
 }
 
+#: Directories the family RENDERS into every checkout (dev_lab.dev.vscodesettings): the family's rows, never a repo's.
+RENDERED_ROWS: Final = {'.vscode': frozenset({'.json'})}
+
 
 def family_kind(parts: list[str]) -> str | None:
     """The family kind a directory (or row pattern) *parts* is at or below, else ``None``.
@@ -98,7 +101,7 @@ def _with_family_rows(manifest: Path, rows: dict[str, frozenset[str]]) -> dict[s
                 f'(dev_lab.dev.datedlog.FAMILY_KINDS: {shapes}); drop the row -- a repo lists only its own kinds, '
                 f'and a family kind that needs another format changes in dev-lab',
             )
-    return {**dict.fromkeys(_DATED_LEVELS, frozenset()), **rows, **FAMILY_ROWS}
+    return {**dict.fromkeys(_DATED_LEVELS, frozenset()), **rows, **FAMILY_ROWS, **RENDERED_ROWS}
 
 
 class LayoutNotDeclared(LookupError):

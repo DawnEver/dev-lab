@@ -584,3 +584,33 @@ def test_a_family_kinds_declared_data_is_not_refused_as_output_code(tmp_path: Pa
     coded = _TABLE.replace("'output/logs' = []", "'output/logs' = ['.py']")
     with pytest.raises(LayoutNotDeclared, match='never holds'):
         declared_layout(_checkout(tmp_path / 'coded', coded))
+
+
+def test_setuptools_egg_info_beside_the_package_is_build_output_and_a_stray_dir_is_not(tmp_path) -> None:
+    """#1031: every setuptools editable install (dep --bootstrap, verify's seats) writes src/<pkg>.egg-info/.
+
+    It is regenerable build metadata, never judged; the planted control is a stray src/ directory and an egg-info
+    anywhere but directly under src/, both still named.
+    """
+    root = _checkout(tmp_path)
+    _plant(root, 'src/pkg.egg-info/PKG-INFO')
+    _plant(root, 'src/pkg.egg-info/SOURCES.txt')
+    assert layout_violations(root)[1] == []
+    assert refuse_layout(root / 'src/pkg.egg-info/PKG-INFO') is None
+    _plant(root, 'src/stray/notes.txt')
+    _plant(root, 'rust/pkg.egg-info/PKG-INFO')
+    assert layout_violations(root)[1] == [
+        f'rust/pkg.egg-info/: {layout._undeclared("rust/pkg.egg-info")}',
+        f'src/stray/notes.txt: .txt is not allowed under src/* (allowed: {sorted([".py"])})',
+    ]
+
+
+def test_the_rendered_editor_settings_are_a_family_row(tmp_path) -> None:
+    """#1031: the family renders .vscode/settings.json into every checkout, so .vscode/ is the family's row."""
+    root = _checkout(tmp_path)
+    _plant(root, '.vscode/settings.json')
+    assert layout_violations(root)[1] == []
+    _plant(root, '.vscode/launch.py')
+    assert layout_violations(root)[1] == [
+        f'.vscode/launch.py: .py is not allowed under .vscode (allowed: {sorted([".json"])})'
+    ]
