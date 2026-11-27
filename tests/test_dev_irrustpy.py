@@ -23,12 +23,12 @@ from pathlib import Path
 import lab_commons.launch as _door
 import numpy as np
 import pytest
+from _cargo_probe import usable_cargo
 
 from dev_lab.dev import irpython, irrust, irrustpy
 from dev_lab.dev.ircheck import load
 
 FIXTURE = Path(__file__).parent / 'data' / 'ir_schema' / 'repo'
-CARGO = shutil.which('cargo')
 _OFFLINE = ('offline', 'no matching package', 'failed to select a version', 'failed to download')
 _MANIFEST = f"""[package]
 name = "ir_ext"
@@ -94,7 +94,7 @@ def _purge() -> None:
         del sys.modules[name]
 
 
-def _build(crate: Path, target: Path) -> Path:
+def _build(cargo: str, crate: Path, target: Path) -> Path:
     env = {
         **os.environ,
         'CARGO_TARGET_DIR': str(target),
@@ -103,7 +103,7 @@ def _build(crate: Path, target: Path) -> Path:
         'PYO3_PYTHON': sys.executable,
     }
     done = _door.run(
-        [CARGO, 'build', '--offline', '-q', '--manifest-path', str(crate / 'Cargo.toml')],
+        [cargo, 'build', '--offline', '-q', '--manifest-path', str(crate / 'Cargo.toml')],
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -127,8 +127,9 @@ def _build(crate: Path, target: Path) -> Path:
 def test_pyo3_converts_field_by_field_and_reads_arrays_zero_copy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    if CARGO is None:
-        pytest.xfail('no cargo on this host: the pyo3 half cannot be built here')
+    cargo, unusable = usable_cargo()
+    if cargo is None:
+        pytest.xfail(f'no usable cargo on this host ({unusable}): the pyo3 half cannot be built here')
     repo = Path(shutil.copytree(FIXTURE, tmp_path / 'repo'))
     (repo / 'src' / 'sample_pkg').mkdir(parents=True)
     (repo / 'src' / 'sample_pkg' / '__init__.py').write_text('', encoding='utf-8')
@@ -139,7 +140,7 @@ def test_pyo3_converts_field_by_field_and_reads_arrays_zero_copy(
     (crate / 'Cargo.toml').write_text(_MANIFEST, encoding='utf-8')
     (crate / 'src' / 'lib.rs').write_text(_LIB, encoding='utf-8')
     irrust.write(ir, crate)
-    _build(crate, tmp_path / 'target')
+    _build(cargo, crate, tmp_path / 'target')
     monkeypatch.syspath_prepend(str(repo / 'src'))
     monkeypatch.syspath_prepend(str(crate))
     _purge()

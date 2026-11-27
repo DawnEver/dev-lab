@@ -36,6 +36,17 @@ that names nothing.
 red is on record (tested, not green). `main` moves only by `integrate promote`, a fast-forward to an integration
 commit that is green. Mechanism: [branch layers](branch-layers.md), [the integration branch](integration.md).
 
+## Who runs what, per forge
+
+The placement is data: `[roles.gitea]` and `[roles.github]` in the family file (`dev_lab.dev.roles`) bind each
+role to a host or a grant role; which machine holds each is the [topology](topology.md)'s fact. The shape (user
+ruling 2026-11-27, architecture v2):
+
+| forge | tests | fast gates | review | merge / prune | break-glass, promote |
+|---|---|---|---|---|---|
+| Gitea (business) | the verification account's ONE login cron tick, preparing, testing and gathering as Slurm jobs ([HPC clusters](hpc.md)) | the light-runner forge host | the review host (advisory) | the verification account | the forge host carrying `[ops.breakglass]` / `[ops.promote]` |
+| GitHub (toolchain) | Actions only | Actions | the review host (advisory) | Actions | break-glass on the forge host carrying `[ops.breakglass]`; promote is Actions |
+
 ## HPC: one pool, two uses
 
 The clusters are the compute pool for business-repo tests AND a research platform
