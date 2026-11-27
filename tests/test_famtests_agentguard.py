@@ -330,10 +330,9 @@ def test_this_repo_keys_its_doors_by_live_rules() -> None:
 # a probe judges the SHAPE, never the state of the box it runs on
 
 
-@pytest.fixture
-def live_repo(tmp_path: Path) -> Iterator[Path]:
-    """A repo with the REAL guard and the FULL family registry, its venv this interpreter, and a run in it."""
-    root = tmp_path / 'live'
+def _family_repo(tmp_path: Path, name: str) -> Path:
+    """A repo with the REAL guard and the FULL family registry, its venv this interpreter, its hooks UNWIRED."""
+    root = tmp_path / name
     root.mkdir()
     subprocess.run([_GIT, 'init', '-q'], cwd=root, check=True, capture_output=True, timeout=60)
     install_guard(root)
@@ -344,6 +343,13 @@ def live_repo(tmp_path: Path) -> Iterator[Path]:
         subprocess.run([shell, '/c', 'mklink', '/J', str(root / '.venv'), sys.prefix], check=True, capture_output=True)
     else:
         (root / '.venv').symlink_to(sys.prefix, target_is_directory=True)
+    return root
+
+
+@pytest.fixture
+def live_repo(tmp_path: Path) -> Iterator[Path]:
+    """A :func:`_family_repo` with a run in it."""
+    root = _family_repo(tmp_path, 'live')
     sleeper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'], cwd=root)
     try:
         deadline = time.monotonic() + 60
@@ -366,6 +372,34 @@ def test_the_installed_guard_still_refuses_a_live_tree_by_its_live_run(live_repo
     reason = run_engine(live_repo / ENGINE_REL, 'git stash', live_repo / RULES_REL, cwd=live_repo)
     assert reason is not None
     assert reason.startswith('TREE-HAS-A-LIVE-RUN:'), reason
+
+
+def _unwired_repo(tmp_path: Path) -> Path:
+    """A :func:`_family_repo` DECLARING a hook stage it never installed -- a hosted checkout, as the runner has it."""
+    root = _family_repo(tmp_path, 'unwired')
+    (root / 'pyproject.toml').write_text(
+        '[[tool.dev_lab.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n',
+        encoding='utf-8',
+    )
+    return root
+
+
+@pytest.mark.parametrize('command', ['git push origin main', 'git commit -m x'])
+def test_a_probe_sanctions_a_shape_whatever_the_probing_tree_s_hook_wiring(tmp_path: Path, command: str) -> None:
+    """INCIDENT (dev-lab fa9d6f2b): HOOKS-ARE-WIRED refused every sanctioned push in a hosted consumer's famtest.
+
+    A hosted checkout declares hook stages it never installs. Wiring is the box's state, as a live run is; the
+    probe judges the shape.
+    """
+    assert_sanctioned(root=_unwired_repo(tmp_path), command=command)
+
+
+def test_the_installed_guard_still_refuses_a_history_verb_in_an_unwired_tree(tmp_path: Path) -> None:
+    """PLANTED CONTROL: production judges the tree's wiring; only the probe states it wired."""
+    root = _unwired_repo(tmp_path)
+    reason = run_engine(root / ENGINE_REL, 'git commit -m x', root / RULES_REL, cwd=root, live_run=False)
+    assert reason is not None
+    assert reason.startswith('HOOKS-ARE-WIRED:'), reason
 
 
 def test_a_remedy_for_a_checkout_without_a_venv_names_the_sessions_interpreter_not_a_missing_one(
