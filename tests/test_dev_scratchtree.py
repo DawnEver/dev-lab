@@ -167,6 +167,9 @@ def test_a_tree_the_door_makes_is_wired_and_a_raw_git_worktree_add_is_not(tmp_pa
     work = _repo(tmp_path)
     raw = work / '.claude' / 'worktrees' / 'raw'
     _run(work, 'worktree', 'add', '-q', '--detach', str(raw), 'HEAD')
+    # v1's state (FAM-14): under extensions.worktreeConfig the linked tree's OWN hooks dir is the one git reads, empty.
+    _run(raw, 'config', 'extensions.worktreeConfig', 'true')
+    _run(raw, 'config', '--worktree', 'core.hooksPath', (raw / '.git-hooks-none').as_posix())
     assert unwired(raw), 'the planted control reads wired: this check cannot say no'
 
     assert scratch(work, 'base', 'HEAD').startswith('made'), 'the scratch door made its tree'
