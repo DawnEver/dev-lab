@@ -578,6 +578,38 @@ def test_a_hosted_setup_runs_before_the_tests_and_only_a_secret_withholds_the_pu
     assert {'part-linux', 'part-live'} <= set(jobs['absent-parts']['needs'])
 
 
+_CACHED_HOSTED = """
+[tool.lab_commons.tests]
+resources = ["corpus", "linux"]
+
+[tool.dev_lab.parts.hosted]
+linux = { setup = "x" }
+corpus = { setup = "fetch", cache = { path = "output/cache/corpus", key = "corpus.lock" } }
+
+[tool.dev_lab.ci."ci.yml"]
+"""
+
+
+def test_a_declared_cache_renders_one_cache_step_keyed_on_its_file_just_before_the_setup(tmp_path: Path) -> None:
+    """dev-lab#998: a hosted part's pinned downloads are cached across runs, keyed on the file pinning them.
+
+    PLANTED CONTROL: ``linux`` declares no cache and its job has no cache step.
+    """
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _CACHED_HOSTED, encoding='utf-8')
+    jobs = workflows(tmp_path)['ci.yml']['jobs']
+    steps = jobs['part-corpus']['steps']
+    setup = next(i for i, step in enumerate(steps) if step.get('name') == 'Set up tests/corpus')
+    assert steps[setup - 1] == {
+        'name': 'Restore the tests/corpus download cache',
+        'uses': 'actions/cache@v4',
+        'with': {'path': 'output/cache/corpus', 'key': "corpus-${{ runner.os }}-${{ hashFiles('corpus.lock') }}"},
+    }
+    assert [step for step in steps if 'actions/cache' in step.get('uses', '')] == [steps[setup - 1]], 'one step'
+    assert not any('actions/cache' in step.get('uses', '') for step in jobs['part-linux']['steps']), (
+        'PLANTED CONTROL: no cache declared, no cache step'
+    )
+
+
 def _forgets_keys(job: dict[str, Any]) -> bool:
     """Whether *job* stops its key cache AFTER the step that sets it, on every outcome (``always()``)."""
     names = [step.get('run', '') for step in job['steps']]

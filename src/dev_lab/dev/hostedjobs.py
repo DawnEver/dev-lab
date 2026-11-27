@@ -1,8 +1,9 @@
 """A DECLARED HOSTED PART'S OWN WORKFLOW JOB -- rendered from the matrix ``part`` job (:mod:`dev_lab.dev.jobparts`).
 
 Each part ``[tool.dev_lab.parts] hosted`` declares (:mod:`dev_lab.dev.hostedparts`) gets a ``part-<name>`` job:
-its ``setup`` command, then for a part naming tasks a key step piping each bundle to ai-lab's loader, before
-the produce step, and a teardown forgetting the keys after it. The render names secrets, never holds a value.
+its declared download ``cache`` restored, its ``setup`` command, then for a part naming tasks a key step piping
+each bundle to ai-lab's loader, before the produce step, and a teardown forgetting the keys after it. The render
+names secrets, never holds a value.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from dev_lab.dev.taskkeys import loader, secret_name
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from dev_lab.dev.hostedparts import Hosted
+    from dev_lab.dev.hostedparts import Cache, Hosted
 
 __all__ = ['hosted_jobs']
 
@@ -47,6 +48,16 @@ _FORGET_KEYS: Final = {
 }
 
 
+def _cache_step(name: str, cache: Cache) -> dict[str, Any]:
+    """The step restoring part *name*'s *cache* before its setup, saved after the job; keyed on file hash and OS."""
+    key = f"{name}-${{{{ runner.os }}}}-${{{{ hashFiles('{cache.key}') }}}}"
+    return {
+        'name': f'Restore the tests/{name} download cache',
+        'uses': 'actions/cache@v4',
+        'with': {'path': cache.path, 'key': key},
+    }
+
+
 def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dict[str, Any]:
     """*workflow* with one ``part-<name>`` job per *declared* part, cut from its matrix ``part`` job. PURE.
 
@@ -65,8 +76,9 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
     added = {}
     for name, part in sorted(declared.items()):
         one = json.loads(template.replace('${{ matrix.part }}', name))
-        before = [{'name': f'Set up tests/{name}', 'run': part.setup}] if part.setup else []
-        after = []
+        before: list[dict[str, Any]] = [_cache_step(name, part.cache)] if part.cache else []
+        before += [{'name': f'Set up tests/{name}', 'run': part.setup}] if part.setup else []
+        after: list[dict[str, Any]] = []
         if part.tasks:
             loads = (
                 f"""printf '%s' "${secret_name(task)}" | uv run --no-sync {shlex.join(loader('python', task))}"""

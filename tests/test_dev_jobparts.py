@@ -46,7 +46,7 @@ def test_a_failed_collection_cannot_publish_a_partial_matrix(tmp_path: Path, mon
     )
     forge = StateForge()
     monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
-    monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
+    monkeypatch.setattr(jobparts, 'head_sha', lambda _root: SHA)
     assert jobparts.main(['matrix', '--root', str(tmp_path)]) == 1
     assert capsys.readouterr().out == '', 'a failed collection must not become a complete workflow manifest'
     (posted,) = status_list(forge, SHA)
@@ -66,7 +66,7 @@ def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path
 
     monkeypatch.setattr(jobparts, 'pytest_collector', lambda _root: broken)
     monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
-    monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
+    monkeypatch.setattr(jobparts, 'head_sha', lambda _root: SHA)
     assert jobparts.main(['matrix', '--root', str(tmp_path), '--event', 'pull_request']) == 1
     waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA), hosted=())
     assert waited is not None
@@ -452,6 +452,12 @@ def test_a_hosted_part_gets_one_push_only_linux_row_carrying_only_its_secrets(
         'hosted = { live = { setup = "" } }',
         'hosted = { live = { setup = ["apt-get install x"] } }',
         'hosted = { live = { setup = "x", runner = "ubuntu-latest" } }',
+        'hosted = { live = { cache = { path = "c", key = "k" } } }',
+        'hosted = { live = { setup = "x", cache = "c" } }',
+        'hosted = { live = { setup = "x", cache = { path = "c" } } }',
+        'hosted = { live = { setup = "x", cache = { path = "", key = "k" } } }',
+        "hosted = { live = { setup = 'x', cache = { path = 'c', key = \"k's\" } } }",
+        'hosted = { live = { setup = "x", cache = { path = "c", key = "k", ttl = 1 } } }',
     ],
 )
 def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_part_is_refused(
@@ -462,6 +468,10 @@ def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_p
         hostedparts.hosted_parts(text)
     assert 'setup = "<shell command>"' in str(refused.value), 'the refusal names the fix: the accepted shape'
     assert hostedparts.hosted_parts(HOSTED) == {'live': hostedparts.Hosted(('live',))}
+    cached = 'hosted = { live = { setup = "x", cache = { path = "c", key = "k" } } }'
+    assert hostedparts.hosted_parts(text.replace(declaration, cached))['live'].cache == hostedparts.Cache('c', 'k'), (
+        'PLANTED CONTROL: the well-formed cache is read'
+    )
     assert hostedparts.Hosted(('live', 'pr-review')).secrets == ('AI_LAB_KEYS_LIVE', 'AI_LAB_KEYS_PR_REVIEW')
 
 
