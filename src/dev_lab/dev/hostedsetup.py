@@ -12,7 +12,6 @@ line, under its own class: :data:`EX_TEMPFAIL` (sysexits' "a third-party source 
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -23,6 +22,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgestatus import status_post
+from dev_lab.dev.harness import child_env
 from dev_lab.dev.hostedparts import hosted_parts
 from dev_lab.dev.jobparts import head_sha, run_url
 from dev_lab.dev.platformparts import part_context
@@ -68,7 +68,7 @@ def run_setup(root: Path, part: str, client: Client, *, env: Mapping[str, str] |
     owner = Owner.NETWORK if done.returncode == EX_TEMPFAIL else Owner.SETUP
     description = owned(owner, f'setup exited {done.returncode}: {last}')
     context = part_context(part)
-    given = os.environ if env is None else env
+    given = child_env() if env is None else env
     status_post(
         client, head_sha(root), context=context, state='error', description=description, target_url=run_url(given)
     )
