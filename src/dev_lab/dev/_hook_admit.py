@@ -4,7 +4,7 @@
 commit there (v1 FAM-14, 2026-11-27: under ``extensions.worktreeConfig`` every ``git worktree add`` started
 with no ``core.hooksPath``, and every lane committed, merged and pushed with zero family stages). This module
 is the judge the agent guard's ``HOOKS-ARE-WIRED`` row (:mod:`dev_lab.dev._deny_hookswired_row`) asks through
-``python -m dev_lab.dev.hook_install --admit`` with the hook payload; :func:`admit` names the tree.
+``python -m dev_lab.dev.hook_install --admit`` with the hook payload; :func:`payload_refusal` names the tree.
 
 A tree git or the table cannot read is never refused here (:func:`dev_lab.dev.hook_install.unwired`).
 """
@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Final, cast
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-__all__ = ['RULE_ID', 'WRITE_VERBS', 'admit', 'refusal', 'write_targets']
+__all__ = ['RULE_ID', 'WRITE_VERBS', 'payload_refusal', 'refusal', 'write_targets']
 
 RULE_ID: Final = 'HOOKS-ARE-WIRED'
 #: The git verbs that write history or publish it: each runs a declared stage (commit-msg, merge audit, pre-push).
@@ -88,7 +88,7 @@ def write_targets(command: str, cwd: Path) -> list[Path]:
     return found
 
 
-def admit(payload: object, unwired: Callable[[Path], bool], python: str) -> str | None:
+def payload_refusal(payload: object, unwired: Callable[[Path], bool], python: str) -> str | None:
     """The refusal of a shell hook *payload* whose write verb targets an *unwired* tree; ``None`` admits."""
     if not isinstance(payload, dict):
         return None

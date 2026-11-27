@@ -45,7 +45,7 @@ def _payload(command: str, cwd: Path) -> dict[str, object]:
 @pytest.mark.parametrize('command', _LINES)
 def test_an_unwired_checkout_is_refused_by_name_for_each_verb(repo: Path, command: str) -> None:
     """PLANTED CONTROL: nothing installed -- every history-writing verb is refused, naming both doors."""
-    said = _hook_admit.admit(_payload(command, repo), hook_install.unwired, 'py')
+    said = _hook_admit.payload_refusal(_payload(command, repo), hook_install.unwired, 'py')
     assert said is not None
     assert said.startswith(f'{_hook_admit.RULE_ID}: {repo.resolve().as_posix()}')
     assert f'py -m dev_lab.dev.dep --bootstrap {repo.resolve().as_posix()}' in said
@@ -56,7 +56,7 @@ def test_an_unwired_checkout_is_refused_by_name_for_each_verb(repo: Path, comman
 @pytest.mark.parametrize('command', _LINES)
 def test_a_wired_checkout_admits_every_verb(repo: Path, command: str) -> None:
     hook_install.install(repo)
-    assert _hook_admit.admit(_payload(command, repo), hook_install.unwired, 'py') is None
+    assert _hook_admit.payload_refusal(_payload(command, repo), hook_install.unwired, 'py') is None
 
 
 def test_the_tree_judged_is_the_one_the_verb_runs_in(repo: Path, tmp_path: Path) -> None:
@@ -71,13 +71,13 @@ def test_the_tree_judged_is_the_one_the_verb_runs_in(repo: Path, tmp_path: Path)
         f'cd {repo.as_posix()} && git commit -m x',
         f'python -m dev_lab.dev.netverb --cwd {repo.as_posix()} -- git push',
     ):
-        assert _hook_admit.admit(_payload(command, wired), hook_install.unwired, 'py') is not None, command
-    assert _hook_admit.admit(_payload('git commit -m x', wired), hook_install.unwired, 'py') is None
+        assert _hook_admit.payload_refusal(_payload(command, wired), hook_install.unwired, 'py') is not None, command
+    assert _hook_admit.payload_refusal(_payload('git commit -m x', wired), hook_install.unwired, 'py') is None
 
 
 @pytest.mark.parametrize('command', ['git status', 'git log -n 3', 'git fetch origin', 'echo git commit'])
 def test_a_verb_that_writes_no_history_is_never_judged(repo: Path, command: str) -> None:
-    assert _hook_admit.admit(_payload(command, repo), hook_install.unwired, 'py') is None
+    assert _hook_admit.payload_refusal(_payload(command, repo), hook_install.unwired, 'py') is None
 
 
 def test_the_admit_door_exits_one_with_the_refusal(repo: Path) -> None:
