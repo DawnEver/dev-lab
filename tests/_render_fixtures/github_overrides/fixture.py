@@ -6,9 +6,16 @@ from dev_lab.dev.famconfig import Delta
 
 #: The fixture's ``pyproject.toml``: its ``[tool.dev_lab.ci]`` declarations.
 PYPROJECT = """\
-# A GitHub repo layering its own job permissions over the base CI, and its own ignore lines.
+# A GitHub repo layering its own job permissions over the base CI, its own ignore lines, and native wheels.
 [project]
 name = "overrides"
+
+[build-system]
+requires = ["maturin>=1.7"]
+build-backend = "maturin"
+
+[tool.dev_lab.native]
+wheels = ["linux", "windows", "macos"]
 
 [tool.dev_lab.ci."ci.yml".jobs.review.permissions]
 issues = "read"
