@@ -194,21 +194,13 @@ def follow_pin(uv: str, required: str) -> str:
     return follow(uv, required, version_of=installed_uv_version)
 
 
-def uv_command(
-    root: Path,
-    python: str,
-    selected: Sequence[str],
-    *,
-    syncing: bool,
-    upgrade_packages: Sequence[str],
-    frozen: bool = False,
-) -> list[str]:
-    """One target-addressed command: a sync installs exactly the committed ``uv.lock`` and never writes it.
+def uv_command(root: Path, python: str, selected: Sequence[str], *, frozen: bool = False) -> list[str]:
+    """One target-addressed ``uv sync``: it installs exactly the committed ``uv.lock`` and never writes it.
 
     A *frozen* sync builds the lock without asking whether it still matches ``pyproject.toml`` -- a bootstrap, and
     the sync that follows a relock. Every other sync is ``--locked``: it refuses a lock that no longer matches
     (:func:`stale_lock_note` names the door), so ``dep --sync`` leaves ``uv.lock`` byte-identical (user ruling
-    2026-11-27). Moving a family kit is a relock: ``--lock-upgrade ROOT --upgrade-package <kit>``.
+    2026-11-27). The one writer of a lock is :func:`lock_upgrade_command`; a family kit moves through it.
     Only a frozen sync with no environment yet -- a bootstrap -- builds
     one under the target's ``requires-python`` (:func:`bootstrap_python`); every other command
     runs under the checkout's own (:func:`own_interpreter`).
@@ -217,25 +209,13 @@ def uv_command(
     if uv is None:
         msg = 'bootstrap/sync requires uv on PATH'
         raise FileNotFoundError(msg)
-    first = syncing and frozen and not Path(python).is_file()
+    first = frozen and not Path(python).is_file()
     interpreter = bootstrap_python(root) if first else own_interpreter(root, python)
-    command = [
-        uv,
-        'sync' if syncing else 'lock',
-        '--project',
-        str(root),
-        '--python',
-        interpreter,
-    ]
-    if syncing:
-        command.append('--compile-bytecode')  # D24: the first hook after a relock never compiles its imports
-        for extra in selected:
-            command.extend(('--extra', extra))
-        return [*command, '--frozen' if frozen else '--locked']
-    command[0] = lock_writer(uv, uv_version(root), pin_file(root))  # a lock rewrites uv.lock
-    for package in sorted(with_family_floor(set(upgrade_packages))):
-        command.extend(('--upgrade-package', package))
-    return command
+    command = [uv, 'sync', '--project', str(root), '--python', interpreter]
+    command.append('--compile-bytecode')  # D24: the first hook after a relock never compiles its imports
+    for extra in selected:
+        command.extend(('--extra', extra))
+    return [*command, '--frozen' if frozen else '--locked']
 
 
 def lock_check_command(sync: Sequence[str]) -> list[str]:

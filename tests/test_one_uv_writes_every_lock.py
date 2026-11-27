@@ -54,7 +54,7 @@ def _no_download(monkeypatch: pytest.MonkeyPatch, base: Path) -> list[str]:
     return asked
 
 
-@pytest.mark.parametrize('argv', [['--lock-upgrade'], ['--upgrade-package', 'peer']])
+@pytest.mark.parametrize('argv', [['--lock-upgrade'], ['--lock-upgrade', '.', '--upgrade-package', 'peer']])
 def test_another_path_uv_never_writes_the_lock_the_pinned_one_does(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str]
 ) -> None:
@@ -91,7 +91,7 @@ def test_a_pinned_uv_that_cannot_be_had_is_refused_by_name_and_nothing_runs(
     assert '--lock-upgrade' in out
 
 
-@pytest.mark.parametrize('argv', [['--lock-upgrade'], ['--upgrade-package', 'peer']])
+@pytest.mark.parametrize('argv', [['--lock-upgrade'], ['--lock-upgrade', '.', '--upgrade-package', 'peer']])
 def test_the_declared_uv_writes_the_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> None:
     """PLANTED CONTROL: a PATH uv that IS the pinned version writes the lock itself; nothing is installed."""
     _project(tmp_path)
