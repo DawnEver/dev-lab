@@ -7,6 +7,20 @@ from __future__ import annotations
 
 ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
+        'ONE-LOGIN-POLLER',
+        (
+            # Why: user ruling 2026-11-27 (Gitea collaboration architecture v2) -- an HPC login node is shared, and
+            # one tick per repo per account, each building venvs there, was the load the cluster refused.
+            'An HPC login node runs exactly ONE cron poller per account and nothing else unapproved. Its one tick '
+            'does only git fetch, the forge, claims, sbatch/squeue/sacct/scancel, reading what jobs wrote and '
+            'deciding merges; every build (venv, native, needs probes) runs in a Slurm prep job. `deploy`, '
+            '`ci-resume` and `look crontab` refuse a crontab holding more than one marked line or any unmarked family '
+            'line, naming each. The door: `hpcaccount deploy` writes the one line; an unmarked family line is '
+            "deleted by the account's holder."
+        ),
+        ('tests/test_hpc_one_login_poller.py',),
+    ),
+    (
         'SCHEDULER-ONLY-FOR-SERVING',
         (
             # Why: user, 2026-11-20 -- "why would a research host need cron?"; a crontab call on a research deploy

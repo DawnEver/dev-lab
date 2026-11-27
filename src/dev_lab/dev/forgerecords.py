@@ -320,7 +320,7 @@ def serve_prune(
     try:
         if now - datetime.fromisoformat(stamp.read_text(encoding='utf-8').strip()) < PRUNE_EVERY:
             return ()
-    except (OSError, ValueError):
+    except OSError, ValueError:
         pass  # never pruned, or an unreadable stamp: prune now
     stamp.parent.mkdir(parents=True, exist_ok=True)
     stamp.write_text(now.isoformat(), encoding='utf-8')

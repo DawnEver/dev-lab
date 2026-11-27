@@ -114,7 +114,10 @@ def diagnose(
     ]
     uv, spec = which('uv'), _requires_python(root)
     if uv is not None and spec and not python_found(uv, spec):
-        gaps.append(Gap(f'python {spec}', f'{root} declares requires-python {spec}', f'{uv} python install "{spec}"'))
+        fetch = f'{sys.executable} -m dev_lab.dev.netverb -- {uv} python install "{spec}"'  # a network verb
+        gaps.append(
+            Gap(f'python {spec}', f'{root} declares requires-python {spec}', f'{fetch} (dep --bootstrap runs it)')
+        )
     if _holds_rust(root) and _cargo(which, home or Path.home()) is None:
         gaps.append(Gap('cargo', f'{root} holds a Rust workspace', _REMEDIES['cargo']))
     return gaps

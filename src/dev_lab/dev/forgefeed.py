@@ -227,7 +227,7 @@ def heard(session: str, *, now: float | None = None) -> bool:
     try:
         fresh = clock - float(beat['at']) <= FRESH_S
         covers = {str(key) for key in beat['covers']}
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         return False
     return fresh and alive(beat) and {row.key for row in sessionprs.open_rows(session)} <= covers
 

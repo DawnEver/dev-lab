@@ -191,7 +191,7 @@ def _live_shas() -> set[str]:
     for path in sorted(run_files().glob('*.json')) if run_files().is_dir() else ():
         try:
             shas.add(str(json.loads(path.read_text(encoding='utf-8'))['sha']))
-        except (OSError, ValueError, KeyError, TypeError):
+        except OSError, ValueError, KeyError, TypeError:
             continue
     return shas
 

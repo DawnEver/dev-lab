@@ -136,7 +136,7 @@ def task_in(tasks: Path, slug: str) -> str:
         raise ValueError(msg)
     try:
         head = (tasks / slug / 'TASK.md').read_text(encoding='utf-8').split('---')[1]
-    except (OSError, IndexError):
+    except OSError, IndexError:
         msg = f'no task {slug} in the ledger {tasks.as_posix()}'
         raise ValueError(msg) from None
     fields = dict(line.split(':', 1) for line in head.splitlines() if ':' in line)

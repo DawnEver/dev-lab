@@ -72,7 +72,7 @@ def manifest_text(root: Path) -> tuple[str, str]:
     remote = (git_out(root, 'remote', 'get-url', 'origin') or '').strip()
     try:
         text = declaration(remote, live_config(None)) if remote else ''
-    except (OSError, ValueError):
+    except OSError, ValueError:
         text = ''
     if text:
         return text, f'[{FAMILY_TABLE}] row for {remote} in {machineconfig.config_path()}'

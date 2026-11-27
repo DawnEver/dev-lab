@@ -279,7 +279,7 @@ def _tracked_texts() -> dict[str, str]:
     for rel in filter(None, listed):
         try:
             texts[rel] = (root / rel).read_text(encoding='utf-8')
-        except (UnicodeDecodeError, OSError):
+        except UnicodeDecodeError, OSError:
             continue
     return texts
 

@@ -33,7 +33,7 @@ def fingerprint(auth_file: str) -> str:
         if len(parts) >= _FIELDS and parts[0] == 'publickey':
             try:
                 blob = base64.b64decode(parts[2], validate=True)
-            except (ValueError, binascii.Error):
+            except ValueError, binascii.Error:
                 continue
             return 'SHA256:' + base64.b64encode(hashlib.sha256(blob).digest()).decode().rstrip('=')
     return ''

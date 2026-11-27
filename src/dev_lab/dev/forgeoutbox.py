@@ -181,7 +181,7 @@ def queued(root: Path) -> tuple[Post, ...]:
                 Post(raw['sha'], raw['context'], raw['state'], raw['description'], raw.get('record', ''),
                      raw.get('repo', ''), int(raw.get('attempt', 1)))
             )  # fmt: skip
-        except (ValueError, KeyError, TypeError):
+        except ValueError, KeyError, TypeError:
             continue
     return tuple(found)
 

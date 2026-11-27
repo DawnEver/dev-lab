@@ -67,7 +67,7 @@ def required(root: Path) -> bool:
     """Whether *root*'s pyproject declares ``[tool.dev_lab.task] required = true``."""
     try:
         data = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError, tomllib.TOMLDecodeError:
         return False
     table = declared_table(data, _TABLE, {})
     return isinstance(table, dict) and table.get('required') is True

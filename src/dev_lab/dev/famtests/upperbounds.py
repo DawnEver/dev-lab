@@ -145,7 +145,7 @@ def take_scan(paths: Iterable[Path], *, root: Path, ecosystem: str) -> BoundScan
             text = path.read_text(encoding='utf-8')
             named = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
             found = requirements(text, ecosystem=ecosystem)
-        except (OSError, tomllib.TOMLDecodeError):
+        except OSError, tomllib.TOMLDecodeError:
             continue
         files += 1
         seen += len(found)

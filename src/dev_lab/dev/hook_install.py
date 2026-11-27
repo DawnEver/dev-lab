@@ -304,7 +304,7 @@ def unwired(repo: Path) -> bool:
     """*repo* declares a hook stage whose shim is absent or stale; ``False`` where git or the table cannot answer."""
     try:
         return hook_installation(repo).verdict == UNPROTECTED
-    except (subprocess.SubprocessError, OSError, ValueError):
+    except subprocess.SubprocessError, OSError, ValueError:
         return False
 
 
@@ -323,7 +323,7 @@ def _admit(stdin: BinaryIO, stdout: BinaryIO) -> int:
     """The agent guard's judge: exit 1 with the refusal when the payload's write verb targets an unwired tree."""
     try:
         payload = json.loads(stdin.read().decode('utf-8'))
-    except (ValueError, OSError):
+    except ValueError, OSError:
         return 0
     reason = payload_refusal(payload, unwired, running_interpreter())
     if reason is None:

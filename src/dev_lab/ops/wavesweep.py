@@ -44,11 +44,11 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.hostedparts import pull_request_parts
-from dev_lab.dev.lanepolicy import policy_from
+from dev_lab.dev.lanepolicy import Policy, policy_from
 from dev_lab.dev.roles import TESTS, roles_of_url
 from dev_lab.ops import request as requests
 
-__all__ = ['Listing', 'Pull', 'integration_at', 'reason_of', 'sweep']
+__all__ = ['Listing', 'Pull', 'policy_at_base', 'reason_of', 'sweep']
 
 
 @dataclass(frozen=True)
@@ -77,13 +77,13 @@ class Listing(Protocol):
         ...
 
 
-def integration_at(forge: Listing, base: str, repo: str) -> str:
-    """The integration branch *repo*'s declaration AT *base* names -- the branch a PR into *base* lands on.
+def policy_at_base(forge: Listing, base: str, repo: str) -> Policy:
+    """The ``[tool.dev_lab.integrator]`` *repo*'s declaration AT *base* holds: where a PR into *base* lands, on what.
 
     The ONE reading break-glass makes (admission and sweep): never the default branch, which may hold no declaration
     (2026-11-12: a member's ``main`` an old data commit, ``integrate/main`` the declared one).
     """
-    return policy_from(forge.declaration(base), f'{repo}@{base}:pyproject.toml').integration
+    return policy_from(forge.declaration(base), f'{repo}@{base}:pyproject.toml')
 
 
 def reason_of(wave: str) -> str:
@@ -91,7 +91,9 @@ def reason_of(wave: str) -> str:
     return f'wave {wave} lands what is green: the review is waived, its security and test parts stand green'
 
 
-def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str, *, tests: str, hosted: Collection[str]) -> bool:
+def _waits_for_the_wave(
+    posted: Sequence[CommitStatus], head: str, *, tests: str, systems: Collection[str], hosted: Collection[str]
+) -> bool:
     """Whether *head* is green as its *producer* posts it (:func:`green_waits`) yet REFUSED by the normal decision.
 
     Refused means its newest ``tests/merge-ready`` is ``failure`` and was posted after every other ``tests/`` status:
@@ -99,7 +101,7 @@ def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str, *, tests: str
     """
     if not _refused_on_current_parts(posted):
         return False
-    return not green_waits(head, posted, tests=tests, hosted=hosted)
+    return not green_waits(head, posted, tests=tests, systems=systems, hosted=hosted)
 
 
 def _refused_on_current_parts(posted: Sequence[CommitStatus]) -> bool:
@@ -111,12 +113,13 @@ def _refused_on_current_parts(posted: Sequence[CommitStatus]) -> bool:
     return newest.state == 'failure' and all(newest.id > part for part in parts)
 
 
-def _integrates(forge: Listing, base: str, url: str) -> bool:
-    """Whether *base* is the integration branch its own declaration names; unreadable there is ``False``."""
+def _integrating(forge: Listing, base: str, url: str) -> Policy | None:
+    """The policy at *base* when *base* is the integration branch it names; else, or unreadable there, ``None``."""
     try:
-        return integration_at(forge, base, url) == base
+        policy = policy_at_base(forge, base, url)
     except ValueError:
-        return False
+        return None
+    return policy if policy.integration == base else None
 
 
 def sweep(
@@ -135,11 +138,12 @@ def sweep(
             return said
         forge = forge_for(url)
         for pull in forge.open_pulls():
-            if pull.draft or not _integrates(forge, pull.base, url):
+            if pull.draft or (policy := _integrating(forge, pull.base, url)) is None:
                 continue
-            tests = roles_of_url(url).kind(TESTS)
+            tests, systems = roles_of_url(url).kind(TESTS), policy.merge_systems
             hosted = pull_request_parts(forge.declaration(pull.base))
-            if not _waits_for_the_wave(forge.statuses(pull.head), pull.head, tests=tests, hosted=hosted):
+            posted = forge.statuses(pull.head)
+            if not _waits_for_the_wave(posted, pull.head, tests=tests, systems=systems, hosted=hosted):
                 continue
             try:
                 landed = land(requests.Merge(forge_of_url(url).identity, pull.number, pull.head, reason_of(held)))
