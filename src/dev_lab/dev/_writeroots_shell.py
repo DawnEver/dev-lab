@@ -15,6 +15,9 @@ __all__ = ['shell_targets']
 _TOKEN: Final = re.compile(r"""\d?>>?|&>>?|\|\||&&|[|;&\n]|<<?|(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s|;&<>"'])+""")
 _HEREDOC: Final = re.compile(r"""<<-?\s*(["']?)([A-Za-z_][A-Za-z0-9_]*)\1""")
 _REDIRECT: Final = re.compile(r'\d?>>?|&>>?')
+#: A redirect's target word up to an unquoted ``)``, which closes a command substitution and is no part of the word
+#: (#1006: ``x=$(cmd 2>/dev/null)`` was read as a write to ``/dev/null)``).
+_TARGET_WORD: Final = re.compile(r"""(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^)"'])*""")
 _SEPARATORS: Final = frozenset({'|', '||', '&&', ';', '&', '\n'})
 _DISCARDS: Final = frozenset({'/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty', 'nul', '$null'})
 #: A shell whose ``-c`` script is a line of its own, read for its targets too.
@@ -119,7 +122,8 @@ def shell_targets(command: str) -> list[tuple[str, str]]:
         if redirect:
             redirect = False
             if not token.startswith('&'):
-                found.append((_unquote(token), cwd))
+                word = _TARGET_WORD.match(token)  # a `*` pattern: it always matches, possibly empty
+                found.append((_unquote(word.group(0) if word else token), cwd))
         elif _REDIRECT.fullmatch(token):
             redirect = True
         elif token in _SEPARATORS:

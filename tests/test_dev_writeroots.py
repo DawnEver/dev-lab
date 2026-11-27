@@ -227,6 +227,11 @@ def test_an_unusable_declaration_refuses_by_name(monkeypatch: pytest.MonkeyPatch
         ('nohup sh -c "cd /tmp && cmd > x.log" &', [('x.log', '/tmp')]),
         ("cd /w && bash -lc 'cmd | tee out.txt'", [('out.txt', '/w')]),
         ("CONTROL: bash -c 'cat /tmp/x.log'", []),
+        # #1006: a redirect target ends at the `)` closing its substitution.
+        ('j=$(timeout 120 python -m x --json 2>/dev/null); echo $j', []),
+        ('x=$(cmd 2>/dev/null); y=$(cmd2 >/dev/null)', []),
+        ('x=$(cmd > /c/elsewhere/f)', [('/c/elsewhere/f', '')]),
+        ('x=$(cmd > "/tmp/a)b")', [('/tmp/a)b', '')]),
     ],
 )
 def test_the_shell_targets_are_every_place_a_line_writes(command: str, targets: list[tuple[str, str]]) -> None:
