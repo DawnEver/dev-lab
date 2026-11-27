@@ -94,10 +94,9 @@ def test_the_window_is_short_beside_the_backstop() -> None:
 
 
 def test_the_line_that_sends_the_code_says_how_long_after_it_was_given(tmp_path: Path) -> None:
-    ticks = iter([100.0, 100.0])
     _, lines = sshholdplan.open_planned(
         1, '123456', _plan(tmp_path, age=None), 'abc', grant=lambda *_a: [], routes=lambda _dest: (),
-        opener=lambda dest, *_a, **_k: f'{dest}: open', clock=lambda: next(ticks), held=lambda _d: False,
+        opener=lambda dest, *_a, **_k: f'{dest}: open', clock=lambda: 100.0, held=lambda _d: False,
         received=87.5,
     )  # fmt: skip
-    assert lines[0] == 'code sent to the issuer 12.5 s after it was given'
+    assert lines[1] == 'code sent to the issuer 12.5 s after it was given'
