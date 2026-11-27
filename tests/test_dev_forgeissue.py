@@ -264,3 +264,28 @@ def test_comment_view_reads_one_comment_by_id_and_refuses_a_missing_one(server, 
     }
     assert main(['comment-view', '99'], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 2
     assert 'comment 99 does not exist on forge.example.org/o/r' in capsys.readouterr().err
+
+
+def _many(count: int) -> list[dict[str, object]]:
+    return [_raw(100 + n, 'https://forge.example.org/o/r/issues/5', f'c{n}') for n in range(count)]
+
+
+def test_a_forge_that_ignores_page_lists_each_comment_once(server, tmp_path: Path, capsys) -> None:
+    """Gitea's issue-comments listing has no paging: every page answers the WHOLE thread, so it repeated per page."""
+    repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git')
+    answer('GET', f'{_ROOT}/issues/5', (200, _ISSUE5))
+    answer('GET', f'{_ROOT}/issues/5/comments', (200, _many(120)))
+    assert (
+        main(['view', '5', '--comments', '--json'], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server))
+        == 0
+    )
+    shown = [c['id'] for c in json.loads(capsys.readouterr().out)['comments']]
+    assert shown == [100 + n for n in range(120)]
+
+
+def test_a_forge_that_pages_lists_every_page_once(server) -> None:
+    """PLANTED CONTROL: a real multi-page answer (50, 50, 20) still reads all three pages."""
+    rows = _many(120)
+    answer('GET', f'{_ROOT}/issues/5/comments', (200, rows[:50]), (200, rows[50:100]), (200, rows[100:]))
+    found = issue_comments(client(_FORGE, Loopback(server)), 5)
+    assert [c.id for c in found] == [100 + n for n in range(120)]
