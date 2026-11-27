@@ -29,6 +29,7 @@ __all__ = [
     'HELPERS',
     'HOOK_MODES',
     'HOST_ONLY',
+    'HPC_REACH',
     'MACHINE_TABLES',
     'RENAMED',
     'RESOURCES',
@@ -68,13 +69,19 @@ SCHEMA: Final = {
     'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
     'helpers': dict, 'channels': dict, 'bridge': dict, 'hooks': str, 'default': dict, 'apps': list,
     'client_keys': list, 'hostname': str, 'key_account': str, 'forge_reach': list, 'servers': dict,
-    'operates_servers': bool,
+    'operates_servers': bool, 'hpc_reach': dict,
 }  # fmt: skip
 #: ``[dev] forge_reach``: the transports this machine reaches the forge's approval doors (consent, break-glass) by,
 #: in its order of preference -- ``ssh`` (port 22) and/or ``https`` (443, :mod:`dev_lab.ops.httpsdoor`). Undeclared
 #: is ``["ssh"]``. Rendered as the machine file's ``[devhost] forge_reach``; read by
 #: :func:`dev_lab.ops.consent.door.endpoint_send`.
 FORGE_REACH: Final = ('ssh', 'https')
+#: ``[dev] hpc_reach = { <cluster> = "direct" | "vpn" }``: how this machine's network reaches each family
+#: ``[hpc.clusters]`` cluster's login hosts -- ``direct`` (its site network takes ssh from here) or ``vpn`` (only once
+#: the site VPN is connected). Rendered as the machine file's ``[hpc.cluster_reach.<cluster>]`` with the direct hosts
+#: (:func:`dev_lab.dev.devhost.render`); checked before every ssh to a login host by
+#: :func:`lab_commons.hpc.reach.require` (whose ``REACH`` this mirrors -- it cannot import dev-lab).
+HPC_REACH: Final = ('direct', 'vpn')
 #: ``[dev] bridge``: what the session bridge runs on this machine -- ``hpc`` (:data:`BRIDGE_HPC`), the HPC usage
 #: collector for the agents dashboard, rendered as the machine file's ``[bridge.hpc]``.
 BRIDGE: Final = {'hpc': dict}
@@ -95,8 +102,9 @@ FAMILY_ONLY: Final = ('default', 'apps', 'servers')
 #: ``client_keys`` -- the machine's ssh client public keys, from which a server derives who may reach its approval
 #: accounts (:mod:`dev_lab.ops.clientkeys`); ``hostname`` -- the machine's own host name, the part after ``@`` in
 #: every one of its key comments (:func:`key_comment_defects`); ``forge_reach`` -- the transports its own network lets
-#: it reach the forge by (:data:`FORGE_REACH`).
-HOST_ONLY: Final = ('channels', 'client_keys', 'hostname', 'forge_reach', 'operates_servers')
+#: it reach the forge by (:data:`FORGE_REACH`); ``hpc_reach`` -- how its network reaches each cluster
+#: (:data:`HPC_REACH`).
+HOST_ONLY: Final = ('channels', 'client_keys', 'hostname', 'forge_reach', 'operates_servers', 'hpc_reach')
 #: ``[dev]`` keys the family declares for every machine and a host may OVERRIDE with a different value: ``forges`` --
 #: the workstation login is one person's, so another person's machine names its own; ``key_account`` -- the account
 #: named before ``@`` in every client key comment, likewise one person's. A host restating the family's value is still
@@ -277,6 +285,8 @@ def _shape(table: Mapping[str, Any], where: str) -> list[str]:
     reach = table.get('forge_reach', list(FORGE_REACH[:1]))
     if not (isinstance(reach, list) and reach and len(set(reach)) == len(reach) and set(reach) <= set(FORGE_REACH)):
         found.append(f'{where}.forge_reach must list, once each and in preference order, some of {list(FORGE_REACH)}')
+    found += [f'{where}.hpc_reach.{cluster} = {by!r} must be one of {list(HPC_REACH)}'
+              for cluster, by in _table(table, 'hpc_reach').items() if by not in HPC_REACH]  # fmt: skip
     found += [f'{where}.{key} must be a non-empty name with no "@" or space' for key in ('hostname', 'key_account')
               if isinstance(table.get(key), str) and not _NAME.fullmatch(table[key])]  # fmt: skip
     found += _named_lists(table, 'detect', where, 'glob patterns')
@@ -342,6 +352,9 @@ def check(host: Mapping[str, Any], family: Mapping[str, Any] | None = None) -> l
     restated = _restated(host, shared)
     found += [f'{key} restates the family file; it lives there once' for key in restated]
     merged = {**shared.get('dev', {}), **host.get('dev', {})}
+    clusters = shared.get('hpc', {}).get('clusters', {})
+    found += [f'[dev].hpc_reach.{name} names no family [hpc.clusters] cluster; declared: {sorted(clusters)}'
+              for name in _table(host.get('dev', {}), 'hpc_reach') if name not in clusters]  # fmt: skip
     found += key_comment_defects(merged)
     found += [f'[dev].{key} is required (host or family file)' for key in REQUIRED if key not in merged]
     return found
@@ -435,3 +448,9 @@ def declared_channels(live: Mapping[str, Any] | None = None) -> dict[str, str]:
     if defects := channel_defects(channels, f'[{CHANNELS_TABLE}].channels'):
         raise ValueError('; '.join(defects))
     return dict(channels)
+
+
+def _table(table: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    """*table*'s *key* when it is a table, else empty (its type is refused by :func:`_typed`)."""
+    value = table.get(key)
+    return value if isinstance(value, dict) else {}
