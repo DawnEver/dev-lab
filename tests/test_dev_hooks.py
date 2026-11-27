@@ -298,6 +298,7 @@ ASKING_ROWS = {
     'USER-FROZEN-FILES': 'dev_lab.dev.frozen',
     'MACHINE-FILE-IS-RENDERED': 'dev_lab.dev.machineguard',
     'WRITES-STAY-IN-THE-TREE': 'dev_lab.dev.writeroots',
+    'HOOKS-ARE-WIRED': 'dev_lab.dev.hook_install',
 }
 
 

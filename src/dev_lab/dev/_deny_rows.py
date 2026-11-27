@@ -64,6 +64,7 @@ from dev_lab.dev._deny_familyrepo_row import FAMILY_REPO_IS_CHECKED_OUT
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
 from dev_lab.dev._deny_frozen_row import USER_FROZEN_FILES
 from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
+from dev_lab.dev._deny_hookswired_row import HOOKS_ARE_WIRED
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
 from dev_lab.dev._deny_journal_row import JOURNAL_CITES
@@ -127,6 +128,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     USER_FROZEN_FILES,
     MACHINE_FILE_IS_RENDERED,
     COMMIT_HOOKS_RUN,
+    HOOKS_ARE_WIRED,
     {
         'id': 'BARE-TEST-INVOCATION',
         # `uv\s+run\s+pytest` used to stand here as a third alternative. It is GONE because the
