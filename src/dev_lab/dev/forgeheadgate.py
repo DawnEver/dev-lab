@@ -19,6 +19,12 @@ by :func:`dev_lab.dev.forgemerge.decide`); the hook stays as early feedback only
   ``pr/`` head. A lock behind its siblings' heads but within the window is not a defect: A PR NEVER CHASES THE LOCK
   (user ruling 2026-10-28); the forge's relock pull request carries it (:mod:`dev_lab.dev.relock`). A check that
   cannot run is ``error`` with its diagnosis, never a pass.
+* :data:`HOOKS_WIRED_CONTEXT` -- HOOKS-ARE-WIRED's server-side backstop (v1 FAM-14): each commit the head adds over
+  ``origin/<integration>`` carries the ``Forge-Host`` trailer the ``forge-host`` commit-msg stage stamps
+  (:data:`dev_lab.dev.forgeorigin.ORIGIN_HOST`), so one without it was made where no family stage ran -- an unwired
+  checkout -- and is named by sha. An ALARM, never a gate: a commit made on the forge or cherry-picked from outside
+  the family carries no stamp either. No pre-push stage can stamp the pushed commit, so the commit-msg stamp is
+  the one admission mark a head carries.
 
 The other two push rows are not head statuses, by what they judge: ``merge-resolution``
 (:func:`dev_lab.dev.mergeresolution.unresolved`) is already a condition of the merge decision itself, on the same
@@ -49,6 +55,7 @@ from dev_lab.dev import prcurrent, sessionbranch
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgeorigin import ORIGIN_HOST
 from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_list, status_post
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.lockcheck import LOCK, NOT_RENDERED, RESOLVE_TIMEOUT_S, UNRESOLVED, unrendered
@@ -66,6 +73,7 @@ if TYPE_CHECKING:
 __all__ = [
     'ALARMS',
     'GATES',
+    'HOOKS_WIRED_CONTEXT',
     'LAG_CONTEXT',
     'PR_CURRENT_CONTEXT',
     'SESSION_BRANCH_CONTEXT',
@@ -81,16 +89,19 @@ __all__ = [
     'refused_verdict',
     'render_verdict',
     'run_pull',
+    'stamped_verdict',
 ]
 
 LAG_CONTEXT: Final = 'lock/lag'
 #: The push rows' own ids: the status a row's judge posts is named as the row is.
 SESSION_BRANCH_CONTEXT: Final = sessionbranch.HOOK_ID
 PR_CURRENT_CONTEXT: Final = prcurrent.HOOK_ID
+#: HOOKS-ARE-WIRED: every commit the head adds was made where the family's commit stages ran.
+HOOKS_WIRED_CONTEXT: Final = 'hooks-wired'
 #: The statuses the merge requires ``success`` (:func:`gates_wait`).
 GATES: Final = (SESSION_BRANCH_CONTEXT,)
 #: The statuses said beside the merge, never waited on (:func:`alarms_said`): freshness is no merge condition.
-ALARMS: Final = (PR_CURRENT_CONTEXT, LAG_CONTEXT)
+ALARMS: Final = (PR_CURRENT_CONTEXT, LAG_CONTEXT, HOOKS_WIRED_CONTEXT)
 #: The contexts judged on every pass, posted only on a change: their verdict reads a tip the head does not hold.
 VOLATILE: Final = frozenset({PR_CURRENT_CONTEXT, LAG_CONTEXT})
 #: The states that are a verdict; any other (``error``, ``pending``) is judged again.
@@ -124,6 +135,26 @@ def _git(root: Path, *argv: str) -> subprocess.CompletedProcess[str]:
         [_GIT, '-C', str(root), *argv],
         capture_output=True, text=True, encoding='utf-8', errors='replace', check=False, timeout=_GIT_TIMEOUT_S,
     )  # fmt: skip
+
+
+def stamped_verdict(root: Path, head: str, integration: str) -> Verdict:
+    """``failure`` naming each commit of *head* over ``origin/<integration>`` with no ``Forge-Host`` stamp."""
+    listed = _git(
+        root,
+        'log',
+        f'--format=%H %(trailers:key={ORIGIN_HOST},valueonly,separator=%x2C)',
+        f'origin/{integration}..{head}',
+    )
+    if listed.returncode != 0:
+        return 'error', f'the commits over origin/{integration} could not be listed: {listed.stderr.strip()[-200:]}'
+    rows = [line.partition(' ') for line in listed.stdout.splitlines() if line.strip()]
+    bare = [sha[:12] for sha, _, stamp in rows if not stamp.strip()]
+    if not bare:
+        return 'success', f'every commit over origin/{integration} carries {ORIGIN_HOST}: its commit stages ran'
+    return 'failure', (
+        f'{len(bare)} commit(s) carry no {ORIGIN_HOST} trailer, made where no family commit stage ran (an unwired '
+        f'checkout: hook_install --install there): {", ".join(bare)}'
+    )
 
 
 def render_verdict(root: Path, head: str, *, check: Callable[[Path], str | None] = unrendered) -> Verdict | None:
@@ -175,6 +206,7 @@ def judge(
             ),
         ),
         (LAG_CONTEXT, lambda: _lock_lag(root, head, latest.get(LAG_CONTEXT), render)),
+        (HOOKS_WIRED_CONTEXT, lambda: stamped_verdict(root, head, integration)),
     )
     lines = []
     for context, verdict in rows:
