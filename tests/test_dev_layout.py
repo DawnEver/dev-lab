@@ -568,19 +568,20 @@ def test_a_repo_glob_row_cannot_widen_a_family_kind(tmp_path) -> None:
     ], found
 
 
-def test_a_family_kinds_declared_data_is_not_refused_as_output_code(tmp_path: Path) -> None:
-    """2026-11-26: every layout was refused because the family ``salvage`` kind admits ``.bundle``/``.diff``.
+@pytest.mark.parametrize('name', ['work.bundle', 'work.diff', 'work.patch'])
+def test_a_backup_in_the_salvage_kind_is_refused_and_its_record_is_not(tmp_path: Path, name: str) -> None:
+    """#1039 (user ruling A, 2026-11-27): salvaged work is branches; the ``salvage`` kind holds a ``.json`` record.
 
-    The output-code refusal judges what a REPO declares; a family kind's suffixes are data dev-lab owns
-    (``datedlog.FAMILY_KINDS``). PLANTED CONTROLS: a repo row allowing ``.py`` under output/ is still refused, and
-    a ``.py`` planted in the salvage tree is still a violation.
+    No family kind is an exemption from NO-BACKUP-COPIES. PLANTED CONTROLS: the record is admitted, a bundle,
+    diff or patch beside it is refused by that rule, and a repo row allowing ``.py`` under output/ is still refused.
     """
     root = _checkout(tmp_path)
-    assert '.bundle' in declared_layout(root).rows['output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/salvage/*/*/*']
-    _plant(root, 'output/logs/26/11/26/salvage/u/r/c/work.bundle')
+    _plant(root, 'output/logs/26/11/27/salvage/20261127T000000Z-u1+src.json')
     assert layout_violations(root)[1] == []
-    _plant(root, 'output/logs/26/11/26/salvage/u/r/c/work.py')
-    assert any('work.py' in one for one in layout_violations(root)[1])
+    _plant(root, f'output/logs/26/11/27/salvage/{name}')
+    found = layout_violations(root)[1]
+    assert [line.split(':', 1)[0] for line in found] == [f'output/logs/26/11/27/salvage/{name}'], found
+    assert 'NO-BACKUP-COPIES' in found[0]
     coded = _TABLE.replace("'output/logs' = []", "'output/logs' = ['.py']")
     with pytest.raises(LayoutNotDeclared, match='never holds'):
         declared_layout(_checkout(tmp_path / 'coded', coded))
