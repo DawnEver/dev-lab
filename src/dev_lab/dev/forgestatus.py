@@ -285,7 +285,7 @@ def linked_record(client: Client, status: CommitStatus) -> Mapping[str, Any] | N
         return None
     try:
         record = json.loads(gzip.decompress(client.download(status.url)).decode('utf-8'))
-    except (ForgeCallFailed, OSError, ValueError, EOFError):
+    except ForgeCallFailed, OSError, ValueError, EOFError:
         return None
     return cast('Mapping[str, Any]', record) if isinstance(record, Mapping) else None
 
