@@ -32,6 +32,17 @@ from dev_lab.dev.uvfollow import follow
 from dev_lab.dev.venvpath import VENV_LAYOUTS
 from dev_lab.dev.venvpointer import current
 
+#: The package every family kit builds on: a kit moved without it imports modules its floor does not carry (#994).
+FAMILY_FLOOR: Final = 'lab-commons'
+_FAMILY_SUFFIX: Final = '-lab'
+
+
+def with_family_floor(packages: set[str]) -> set[str]:
+    """*packages* plus :data:`FAMILY_FLOOR` when any of them is a family kit (``*-lab``); else unchanged."""
+    if any(name.endswith(_FAMILY_SUFFIX) for name in packages):
+        return {*packages, FAMILY_FLOOR}
+    return set(packages)
+
 
 def _checkout(cwd: Path, git_binary: str) -> tuple[Path, Path] | None:
     result = _door.run(
@@ -225,7 +236,7 @@ def uv_command(
     upgrades = set(upgrade_packages)
     if syncing:
         upgrades.update(floating_requirements(root / 'pyproject.toml'))
-    for package in sorted(upgrades):
+    for package in sorted(with_family_floor(upgrades)):
         command.extend(('--upgrade-package', package))
     return command
 
@@ -241,7 +252,8 @@ def lock_upgrade_command(root: Path, python: str, required: str, packages: Seque
         raise FileNotFoundError(msg)
     interpreter = own_interpreter(root, python)
     uv = lock_writer(uv, required, pin_file(root))
-    moves = [part for package in packages for part in ('--upgrade-package', package)] or ['--upgrade']
+    moves = [part for package in sorted(with_family_floor(set(packages))) for part in ('--upgrade-package', package)]
+    moves = moves or ['--upgrade']
     return [uv, 'lock', *moves, '--project', str(root), '--python', interpreter]
 
 
