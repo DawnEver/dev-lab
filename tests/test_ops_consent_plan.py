@@ -212,7 +212,7 @@ def test_show_names_every_grant_and_the_digest(tmp_path: Path) -> None:
 
 
 def _open_two(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, refuse: str = '', late: bool = False, held: tuple[str, ...] = ()
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, refuse: str = '', held: tuple[str, ...] = ()
 ) -> tuple[bool, list[str], list[str]]:
     path, shown = _plan(tmp_path, {'hosts': [HOST, JUDGE], 'grants': [APPLY, REVOKE | {'host': JUDGE}]})
     order: list[str] = []
@@ -230,35 +230,38 @@ def _open_two(
             raise sshholdwire.HoldRefused(msg)
         return f'{dest}: open'
 
-    ticks = iter([0.0, sshholdplan.OPEN_WINDOW_S + 1 if late else 1.0])
     opened, lines = sshholdplan.open_planned(
-        1, '123456', path, shown, grant=grant, opener=opener, clock=lambda: next(ticks), routes=lambda _d: ('ssh',),
+        1, '123456', path, shown, grant=grant, opener=opener, routes=lambda _d: ('ssh',),
         held=lambda dest: dest in held,
     )  # fmt: skip
     return opened, lines, order
 
 
-def test_sshhold_grants_first_then_opens_every_plan_host_with_the_one_code(
+def test_sshhold_opens_every_unheld_plan_host_then_grants_with_the_one_code(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The planted control of the failure paths below."""
+    """Issue #1072: the hosts open FIRST, the issuer is sent the code only after every login. The planted control."""
     opened, lines, order = _open_two(tmp_path, monkeypatch)
     assert opened
-    assert order[0] == f'grant 123456 {HOST}'
-    assert sorted(order[1:]) == [f'open 123456 {HOST}', f'open 123456 {JUDGE}']
-    assert lines[-2:] == [f'{HOST}: open', f'{JUDGE}: open']
+    assert sorted(order[:2]) == [f'open 123456 {HOST}', f'open 123456 {JUDGE}']
+    assert order[2:] == [f'grant 123456 {HOST}']  # no code reaches the issuer before both logins succeeded
+    assert lines[:2] == [f'{HOST}: open', f'{JUDGE}: open']
+    assert lines[-1].startswith('consent granted: ')
     assert STEP == 30  # one code: every verifier accepts it inside the same step
 
 
-def test_a_host_unreachable_mid_open_is_reported_and_never_retried_with_the_code(
+def test_a_host_that_does_not_open_is_never_retried_and_the_code_never_reaches_the_issuer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Issue #1072: a login refused after the grant needed a second code; now a failed login spends none there."""
     opened, lines, order = _open_two(tmp_path, monkeypatch, refuse=JUDGE)
     assert not opened
     assert order.count(f'open 123456 {JUDGE}') == 1  # never retried
-    assert lines[-2] == f'{HOST}: open'  # the other host still opened
-    assert lines[-1].startswith(f'{JUDGE}: NOT opened')
-    assert f'sshhold open {JUDGE} --hours 1' in lines[-1]
+    assert not any(step.startswith('grant') for step in order)
+    assert lines[0] == f'{HOST}: open'  # the other host still opened, and stays held
+    assert lines[1].startswith(f'{JUDGE}: NOT opened')
+    assert 'NOT granted' in lines[-1]
+    assert f'opens {JUDGE} and grants the plan' in lines[-1]
 
 
 def test_a_plan_host_already_held_is_reused_and_the_plan_still_runs(
@@ -267,15 +270,16 @@ def test_a_plan_host_already_held_is_reused_and_the_plan_still_runs(
     """2026-11-16: a held host refused the open, so a granted plan read as failed. PLANTED CONTROL: the test above."""
     opened, lines, order = _open_two(tmp_path, monkeypatch, held=(HOST,))
     assert opened
-    assert order == [f'grant 123456 {HOST}', f'open 123456 {JUDGE}']  # the held host is never sent the code
-    assert lines[-2:] == [f'{HOST}: held session reused (no code sent)', f'{JUDGE}: open']
+    assert order == [f'open 123456 {JUDGE}', f'grant 123456 {HOST}']  # the held host is never sent the code
+    assert lines[:2] == [f'{HOST}: held session reused (no code sent)', f'{JUDGE}: open']
 
 
-def test_a_grant_past_the_window_sends_the_code_to_no_host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    opened, lines, order = _open_two(tmp_path, monkeypatch, late=True)
-    assert not opened
-    assert order == [f'grant 123456 {HOST}']
-    assert all('window' in line for line in lines[-2:])
+def test_every_plan_host_held_sends_the_one_code_to_the_issuer_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened, _lines, order = _open_two(tmp_path, monkeypatch, held=(HOST, JUDGE))
+    assert opened
+    assert order == [f'grant 123456 {HOST}']  # one code, no reopen
 
 
 def test_open_names_a_dest_or_a_plan_exactly_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

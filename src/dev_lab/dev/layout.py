@@ -95,7 +95,6 @@ from dev_lab.dev._layout_table import (
     allowed,
     declared_at,
     declared_layout,
-    family_kind,
     row_for,
 )
 from dev_lab.dev._layout_vendor import doc_site_refusal, vendor_refusal
@@ -197,8 +196,7 @@ def judge(rel: str, layout: Layout) -> str | None:
     top = rel_dir.split('/', 1)[0]
     if _SCOPED in rel_dir.split('/')[1:]:
         return f'{_SCOPED_CAUSE} ({rel_dir.split(f"/{_SCOPED}", 1)[0]}/{_SCOPED}/)'
-    # A family kind's own formats are data it declares (salvage keeps bundles): only its rows judge there.
-    if top in NO_COPY_ROOTS and suffix in BACKUP_SUFFIXES and family_kind(rel_dir.split('/')) is None:
+    if top in NO_COPY_ROOTS and suffix in BACKUP_SUFFIXES:
         return f'{COPY_RULE_ID}: a {suffix} under {top}/ is a parked backup'
     if _in_scratch(rel_dir, layout):
         return None  # the one-off sink: an experiment's layout is its own (#1034)

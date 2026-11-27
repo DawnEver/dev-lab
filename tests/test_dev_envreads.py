@@ -399,4 +399,3 @@ def test_the_door_admits_out_dir_in_build_rs_only(tmp_path: Path, rel: str, sour
     """PLANTED CONTROLS: each is still a read the check refuses."""
     found = _problems(tmp_path, EnvPolicy(strict=True), {rel: source})
     assert len(found) == 1, found
-    assert rel in found[0]

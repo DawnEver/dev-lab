@@ -208,7 +208,7 @@ ephemeral = ['pr/*']
 # on Windows and .venv/bin/python on POSIX -- in a worktree, the main checkout's.
 BARE-TEST-INVOCATION = "<venv python> -m dev_lab.dev.verify -- <paths>  (the measure door; a full run is the forge producer's; a hand-written pytest line has none)"
 PUSH-NO-VERIFY = "push without skipping the hook; no hook runs a test, and the forge produces the part"
-NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- <git push|fetch|pull|clone|ls-remote|submodule update ...  or  uv lock|add|remove ...>  (retries 3x, then reports a diagnosis); an environment change is <venv python> -m dev_lab.dev.dep --sync, which retries inside"
+NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- <git push|fetch|pull|clone|ls-remote|submodule update ...  or  uv lock|add|remove ...>  (retries 3x, then reports a diagnosis); an environment change is <venv python> -m dev_lab.dev.dep --sync (installs the committed lock) and a lock change <venv python> -m dev_lab.dev.dep --lock-upgrade . [--upgrade-package NAME], both retrying inside"
 
 [tool.dev_lab.render]
 # What the family renderers read from this repo (dev_lab.dev._famfiles_registry.RENDERERS); a relock re-runs each one due.
@@ -333,7 +333,7 @@ typeCheckingMode = "basic"
 
 # TYPES-RATCHET (dev_lab.dev.typecheck): pyright errors per owner, only ever lowered (measured 2026-11-25).
 [tool.dev_lab.typecheck]
-errors = {dev = 4196, dev_lab = 2, ops = 551, supervise = 192, tests = 1098}
+errors = {dev = 4190, dev_lab = 2, ops = 551, supervise = 192, tests = 1098}
 
 [tool.coverage.html]
 # Every tool cache and report under output/ (user ruling 2026-11-24): never htmlcov/ at the root.

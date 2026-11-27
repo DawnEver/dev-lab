@@ -13,11 +13,15 @@ forge's job, not yours.
   `lab-commons[dev]`:
 
   ```text
-  <available python> -m dev_lab.dev.dep --bootstrap <worktree> [--sync] [--extra <name> ...]
+  <available python> -m dev_lab.dev.dep --bootstrap <worktree> [--extra <name> ...]
   <worktree>/.venv/Scripts/python.exe -m dev_lab.dev.dep --root <worktree> --sync
   ```
 
   The target is always `<worktree>/.venv`, never an inherited `VIRTUAL_ENV`. Failures exit non-zero.
+- `--sync` installs exactly the committed `uv.lock` and never writes it (`uv sync --locked`); a lock that no longer
+  matches `pyproject.toml` is refused naming the relock. Moving the lock -- a family kit included -- is
+  `dep --lock-upgrade <tree> [--upgrade-package <kit>]`, which moves lab-commons with any `*-lab` kit and then
+  builds the new lock; commit the `uv.lock` it writes. The lock-lag check names that door when a kit falls behind.
 - Extras are installed ON DEMAND (D78). With no `--extra` and nothing declared, a sync installs the base
   dependencies and NO extra -- never every available one. A consumer declares the extras every worktree needs, and
   maps each test need (a resource marker, the need-set a part is named for) to the extra that serves it; explicit

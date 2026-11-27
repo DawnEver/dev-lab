@@ -8,7 +8,7 @@ named the remedy; nothing applied it. User ruling 2026-11-06: a mechanism guaran
 ONE SOURCE, ONE DOOR. The version is :func:`~dev_lab.dev.lockcheck.uv_version` (``uv.toml``), never restated here;
 the place it is enforced is the place a lock is written (:func:`dev_lab.dev._dep_project.lock_writer`) and the
 relock that raises the pin (:func:`dev_lab.dev.relock.carry`). Every host that writes a lock -- the serve tick's
-relock job, a workstation's ``--sync``/``--lock-upgrade`` on Ada, AMD-1/2, A1 -- passes through one of the two, so
+relock job, a workstation's ``--lock-upgrade`` on Ada, AMD-1/2, A1 -- passes through one of the two, so
 no poller and no second schedule is added.
 
 THE ROUTE IT WAS INSTALLED BY. uv updates through the installer that put it there, read from where the binary

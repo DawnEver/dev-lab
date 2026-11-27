@@ -127,6 +127,7 @@ class Owner(StrEnum):
     NETWORK = 'network'  # infrastructure it needs did not answer: a login host, the forge
     STATUS_PUBLISHING = 'status-publishing'  # the verdict exists but its status could not be posted (the outbox)
     PART_REFUSAL = 'part-refusal'  # it ran, but its part was refused (an inconclusive record, a refused post)
+    SETUP = 'setup'  # a hosted part's declared setup failed before its tests ran (hostedsetup, dev-lab#998)
 
 
 #: The description field naming a non-PASS's owner: ``class=<owner>``.

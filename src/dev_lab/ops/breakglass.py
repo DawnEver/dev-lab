@@ -59,7 +59,7 @@ the summary goes once however often the tick runs. Refusals, failures and a lock
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -74,6 +74,7 @@ from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR, is_held
 from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.hostedparts import pull_request_parts
 from dev_lab.dev.lanepolicy import Policy, policy_from
 from dev_lab.dev.roles import TESTS, roles_of_url
 from dev_lab.ops import request as requests
@@ -122,14 +123,16 @@ def _labels_admit(forge: Forge, pr: int) -> None:
         raise Held(msg)
 
 
-def tests_at(posted: Sequence[CommitStatus], head: str, *, tests: str, systems: Sequence[str]) -> str:
+def tests_at(
+    posted: Sequence[CommitStatus], head: str, *, tests: str, systems: Collection[str], hosted: Collection[str]
+) -> str:
     """*head*'s test state at merge time: ``passed``, ``red: <contexts>; <why>`` or ``untested: <why>``.
 
     User ruling 2026-11-11: break-glass waives the tests as well as the review -- the open wave is the authorization
     -- so this never refuses; it names what was waived, for the audit and the notice. The reading is merge-ready's
     own, by the repo's *producer* (:func:`dev_lab.dev.forgemergewaits.green_waits`).
     """
-    waits = green_waits(head, posted, tests=tests, systems=systems)
+    waits = green_waits(head, posted, tests=tests, systems=systems, hosted=hosted)
     if not waits:
         return 'passed'
     latest = {one.context: one.state for one in reversed(posted)}  # newest first: the newest write wins
@@ -303,7 +306,8 @@ class Server:
         integration = policy.integration
         hidden = hidden_reds(forge.fingerprints, head, integration, posted := forge.statuses(head))
         by = roles_of_url(self.role.repo(repo) or repo).kind(TESTS)
-        tests = tests_at(posted, head, tests=by, systems=policy.merge_systems)
+        hosted = pull_request_parts(forge.declaration(integration))
+        tests = tests_at(posted, head, tests=by, systems=policy.merge_systems, hosted=hosted)
         tests += f'; {hidden}' if hidden else ''  # D18: on record
         forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}, '
                           f'{_merged(tests)}. Reason: {reason}. Tests: {tests}')  # fmt: skip
@@ -340,8 +344,8 @@ class Server:
             policy = policy_from(forge.declaration(asked.sha), f'{asked.repo}@{asked.sha[:12]}:pyproject.toml')
         except ValueError as unread:
             raise BreakglassRefused(str(unread)) from unread
-        by = roles_of_url(url).kind(TESTS)
-        parts = tests_at(forge.statuses(asked.sha), asked.sha, tests=by, systems=policy.merge_systems)
+        by, hosted = roles_of_url(url).kind(TESTS), pull_request_parts(forge.declaration(asked.sha))
+        parts = tests_at(forge.statuses(asked.sha), asked.sha, tests=by, systems=policy.merge_systems, hosted=hosted)
         try:
             old = forge.fast_forward(policy.trunk, policy.integration, asked.sha)
         except NotFastForward as refused:

@@ -259,8 +259,8 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.relock` -- the serve tick relocks a stale integration lock through ONE pull request.
 * :mod:`dev_lab.dev.locklag` -- how far a lock's floated siblings lag their line, in TIME: one window for every door
 * :mod:`dev_lab.dev.drift` -- the serve tick alarms a lock pin left behind its dependency, or a host off its lock.
-* :mod:`dev_lab.dev.forgeheadgate` -- ``session-branch``, ``pr-current`` and ``lock/lag``
-  statuses on every open PR head, each naming its fix; the merge requires the first two.
+* :mod:`dev_lab.dev.forgeheadgate` -- ``session-branch``, ``pr-current``, ``lock/lag`` and ``hooks-wired``
+  statuses on every open PR head, each naming its fix; the merge requires ``session-branch``, the rest alarm.
 * :mod:`dev_lab.dev.lanepolicy` -- the branch names a repo declares in
   ``[tool.dev_lab.integrator]``, read by the queue, admission, the tick and the record attacher.
 * :mod:`dev_lab.dev.platformparts` -- a result COMPOSED of one part per need-set the suite derives
@@ -539,6 +539,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.memory` -- memory written (add, amend, redact, rename) and searched, at each repo root, no index.
 * :mod:`dev_lab.dev.remretired` -- REM-RETIRED: rem's leftovers refused; the repo migration, the machine uninstall.
 * :mod:`dev_lab.dev.ledgerguard` -- LEDGER-WRITES-THROUGH-ITS-DOOR: a task file is written by the ledger CLI alone.
+* :mod:`dev_lab.dev.nativewheels` -- ``[tool.dev_lab.native] wheels``: the opt-in one-wheel-per-OS workflow (#981).
 * :mod:`dev_lab.dev.rendergoldens` -- every family render of the declaration fixtures, pinned byte for byte as goldens.
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review again|takeover|cap|run``: the review's doors (takeover is advice).
 * :mod:`dev_lab.dev.forgereview_job` -- the forge's review job: ``review run --pr N`` on its one PR, and its exit.
@@ -776,6 +777,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgekeyfile` -- the forge key file `auth export` writes and `auth login --from-file` reads.
 * :mod:`dev_lab.dev.forgeverdict` -- a reported credential refusal, recorded; a later success with it logs a MISREAD.
 * :mod:`dev_lab.dev.machineroutes` -- MACHINES-MEET-ONLY-THROUGH-THE-FORGE: no host file routes to another machine.
+* :mod:`dev_lab.dev.githubtests` -- GITHUB-TESTS-ON-ACTIONS: no host produces a test part of a GitHub repo.
 * :mod:`dev_lab.dev.machinehome` -- where another account's machine home and machine file sit, overrides unset.
 * :mod:`dev_lab.dev.forgesecretnames` -- `secrets list`: the Actions secret NAMES a repo or its org holds, read only.
 * :mod:`dev_lab.dev.gitenv` -- the environment a git call against another repository runs in: no locator inherited.
@@ -796,8 +798,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   caught. NOT RE-EXPORTED -- ``read`` and ``write`` say nothing once flattened.
 * :mod:`dev_lab.dev.baselines` -- baselines live in the run store; the repo keeps ``tests/baselines.lock``; a
   rewrite quotes old and new numbers; tracked data under ``tests/`` is refused (``get|put|verify``).
-* :mod:`dev_lab.dev.cargostep` -- each cargo workspace's ``cargo test`` is its own verify step and result, run
-  natively beside pytest -- never wrapped in a pytest test.
+* :mod:`dev_lab.dev.cargostep` -- each cargo workspace's ``cargo fmt --check``, ``clippy -D warnings`` and ``test``:
+  each its own verify step and result, produced as ``tests/cargo`` by a hosted job -- never wrapped in a pytest test.
 * :mod:`dev_lab.dev.testcost` -- cost is DERIVED: the ledger against the host's ``[test_budget]`` runs what
   fits here (each with a deadline) and hands the rest; a hand-kept ``slow``/``heavy`` marker is refused.
 * :mod:`dev_lab.dev.famtests` -- the shared test BODIES a consumer parametrizes; no fact has a default.

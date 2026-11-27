@@ -330,12 +330,11 @@ def main(
     if why := _dep_cli.argv_error(args, locking=locking):
         parser.error(why)
     root = _dep_project.target_root(args.bootstrap or args.lock_upgrade or args.root, cwd or Path.cwd())
-    syncing = args.bootstrap is not None or args.sync or locking
-    if not syncing or args.dry_run:
-        return _run(args, root, syncing=syncing, locking=locking, run=run, census=census)
+    if args.dry_run:
+        return _run(args, root, locking=locking, run=run, census=census)
     try:
         with venvcurrent.exclusive_build(root, census=census):
-            return _run(args, root, syncing=True, locking=locking, run=run, census=census)
+            return _run(args, root, locking=locking, run=run, census=census)
     except venvcurrent.BuildBusy as exc:
         emit(f'REFUSED: {exc}')
         return 1
@@ -354,7 +353,6 @@ def _run(
     args: argparse.Namespace,
     root: Path,
     *,
-    syncing: bool,
     locking: bool,
     run: Callable[..., Any],
     census: Census,
@@ -366,7 +364,7 @@ def _run(
         msg = f'{base} does not execute in its own environment {live}'
         raise ValueError(msg)
     environment = child_env(drop=('VIRTUAL_ENV',))
-    if syncing and (why := init_submodules(root, dry_run=args.dry_run)):
+    if why := init_submodules(root, dry_run=args.dry_run):
         emit(f'REFUSED: {why}')
         return 1
     bootstrapping = args.bootstrap is not None and not args.dry_run
@@ -379,19 +377,17 @@ def _run(
         )
         if code:
             return code
-    prefix, python = venvcurrent.target(root, base, live, side_by_side=syncing and not args.dry_run)
+    prefix, python = venvcurrent.target(root, base, live, side_by_side=not args.dry_run)
     environment['UV_PROJECT_ENVIRONMENT'] = str(prefix)
     try:
         command = _dep_project.uv_command(
             root,
             base,
             selected,
-            syncing=syncing,
-            upgrade_packages=args.upgrade_package,
             frozen=args.bootstrap is not None or locking,
         )
         overlay = _dep_local.step(
-            root, args.local, syncing=syncing, uv=command[0], python=python, prefix=prefix, run=run, env=environment
+            root, args.local, uv=command[0], python=python, prefix=prefix, run=run, env=environment
         )
     except (
         _dep_project.OtherUvRefused,
@@ -403,7 +399,6 @@ def _run(
         publish_built(root, prefix, live, ok=False, census=census)
         return 1
     port = Port(name=str(root), anchor_paths=lambda: paths)
-    before = _dep_project.lock_text(root)
     try:
         result = _change(
             command,
@@ -423,15 +418,20 @@ def _run(
         return 1
     emit(result.render())
     stale = publish_built(root, prefix, live, ok=not result.returncode, census=census)
-    synced = syncing and not args.dry_run and not result.returncode
-    return result.returncode or (_synced(root, python, before, run=run) if synced else 0) or stale
+    _name_a_stale_lock(command, root, failed=bool(result.returncode), run=run, environment=environment)
+    synced = not args.dry_run and not result.returncode
+    return result.returncode or (after_sync(root, python, run=run) if synced else 0) or stale
 
 
-def _synced(root: Path, python: str, before: str, *, run: Callable[..., Any]) -> int:
-    """After a sync: say a relock it made (:func:`~dev_lab.dev._dep_project.relock_note`), then the after-sync step."""
-    if said := _dep_project.relock_note(root, before):
-        emit(said)
-    return after_sync(root, python, run=run)
+def _name_a_stale_lock(
+    command: Sequence[str], root: Path, *, failed: bool, run: Callable[..., Any], environment: dict[str, str]
+) -> None:
+    """After a failed ``--locked`` sync: when *root*'s lock no longer matches its manifest, name the relock door."""
+    if not failed or '--locked' not in command:
+        return
+    check = _dep_project.lock_check_command(command)
+    if run_change(check, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment):
+        emit(_dep_project.stale_lock_note(root))
 
 
 if __name__ == '__main__':

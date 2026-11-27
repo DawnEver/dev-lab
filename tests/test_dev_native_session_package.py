@@ -42,7 +42,9 @@ def test_the_built_wheel_installs_the_same_identity_catalog_beside_its_launcher(
         "assert native_session.session_of({'ANTIGRAVITY_CONVERSATION_ID': 'wheel-agy'}) == 'wheel-agy'\n"
         'agent_guard.install_guard(checkout)\n'
         "catalog = (checkout / agent_wiring.LAUNCHER_REL).with_name('native_session.json')\n"
-        "assert catalog.read_bytes() == pathlib.Path(native_session.__file__).with_suffix('.json').read_bytes()\n"
+        # the guard writes TEXT in the platform's newlines (agent_guard._text): CRLF on Windows, so compare as text
+        "shipped = pathlib.Path(native_session.__file__).with_suffix('.json')\n"
+        "assert catalog.read_text(encoding='utf-8') == shipped.read_text(encoding='utf-8')\n"
     )
     done = subprocess.run(
         [sys.executable, '-c', code, str(unpacked), str(tmp_path / 'consumer')],

@@ -105,6 +105,7 @@ _ENFORCED = {
         guard('tests/test_dev_reportplace.py'),
     ),
     'MACHINES-MEET-ONLY-THROUGH-THE-FORGE': (guard('tests/test_dev_machineroutes.py'),),
+    'GITHUB-TESTS-ON-ACTIONS': (guard('tests/test_dev_githubtests.py'), guard('tests/test_dev_roles.py')),
     # ENFORCED rather than declared absent, and the distinction is worth the line. This repo declares
     # no floating requirement -- it IS the kit -- so the cheap reading is "no subject here". But the
     # guard does not merely sit in this tree: it READS this manifest and these door files, so the day

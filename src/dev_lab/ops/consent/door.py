@@ -111,7 +111,7 @@ ISSUER_UPGRADE: Final = (
 PREFLIGHT_FRESH_S: Final = 24 * 3600.0
 #: How long a recorded green of the SAME plan digest admits a code given IN ADVANCE to ``sshhold open --plan``
 #: (ruling 2026-11-23: the ~11 s re-run spent a chat-delivered code's 30 s window). Short, so the green is still the
-#: plan's state; older, the door refuses before the code (2026-11-26), naming the plan preflight.
+#: plan's state; older, the door re-runs the preflight itself and sends the code only on green (#1064).
 CODE_PREFLIGHT_FRESH_S: Final = 300.0
 #: How long a lone request's green preflight admits the code the user gives for it, sent first with no re-run: the
 #: same 24 h, for the same reason (it was 300 s: a code given five minutes after the ask was refused, and lost).

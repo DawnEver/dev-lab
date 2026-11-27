@@ -136,6 +136,9 @@ WHAT IS HERE, one module per shared body:
   Its own-source arm takes the CONSUMER's file as a required argument, because the kit could only
   ever resolve its own module and both consumers were writing that other half by hand.
 
+* :mod:`dev_lab.dev.famtests.ruletext` -- an always-loaded page spells no bare ``python``/``py`` in a code
+  span: the page a turn copies verbatim never teaches the wall ``BARE-PYTHON`` hints (W8, dev-lab#646).
+
 * :mod:`dev_lab.dev.famtests.injectedwidth` -- every document an agent is handed fits the width,
   over :mod:`dev_lab.dev.docwidth`'s readings. The PAIR to ``trackedcjk``: each refuses the
   other's ledger shape, a ``path:line`` SITE here against a FILE there, which is what stops a

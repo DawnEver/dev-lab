@@ -8,6 +8,8 @@ neither spelling of a bare sync (raw, or behind ``netverb --``) is a door.
 
 from __future__ import annotations
 
+from dev_lab.dev.venvpath import venv_interpreter
+
 __all__ = ['ENVIRONMENT_THROUGH_DEP']
 
 #: The network door in front of a command, when present: ``<python> -m dev_lab.dev.netverb [opts] --``.
@@ -30,7 +32,7 @@ ENVIRONMENT_THROUGH_DEP: dict[str, object] = {
         'uv --directory .claude/worktrees/x sync',
         'C:/x/uv.EXE sync',
         'python -m dev_lab.dev.netverb -- uv sync',
-        '.venv/Scripts/python.exe -m dev_lab.dev.netverb --attempts 2 -- uv sync --frozen',
+        f'{venv_interpreter(os_name="nt")} -m dev_lab.dev.netverb --attempts 2 -- uv sync --frozen',
     ),
     'permits': (
         'python -m dev_lab.dev.dep --bootstrap .claude/worktrees/x',

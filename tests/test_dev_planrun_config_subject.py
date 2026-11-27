@@ -10,6 +10,7 @@ import json
 import shlex
 from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -266,3 +267,49 @@ def test_unsettled_subject_is_none_without_a_family() -> None:
     settled = SETTLED_TEXT
     assert configdoor.unsettled_subject(SOURCE, HOST_FILE, _reader({HOST_FILE: settled})) is None
     assert configdoor.unsettled_subject(SOURCE, HOST_FILE, _reader(REPO)) == configdoor.digest(HOST_TEXT)
+
+
+def test_an_unreached_host_already_declaring_the_family_is_asked_not_guessed(tmp_path: Path) -> None:
+    """Issue #1064: the issuer's subject read answers the granted subject, so the one-step plan is green.
+
+    PLANTED CONTROL: the same read answering the no-family subject blocks, naming both subjects IN FULL.
+    """
+    want = _host_rendered(tmp_path, REPO)
+    first = configdoor.digest(HOST_TEXT)
+    down = _Host(want, down=True)
+    remotes = cast(planrunsteps.Remotes, lambda _d: down)
+    asked: list[tuple[str, str, list[str]]] = []
+
+    def readers(answer: str) -> planrunpreflight.Readers:
+        def issued(dest: str, action: str, argv: list[str]) -> tuple[str, None]:
+            asked.append((dest, action, argv))
+            return answer, None
+
+        return planrunpreflight.Readers(text=_reader(REPO), config_source=lambda: SOURCE, issued=issued)
+
+    plan, steps = _plan(want, DEST), planrunsteps.Steps((_step(DEST),))
+    green, lines = planrunpreflight.preflight(plan, steps, remotes, readers=readers(want))
+    assert green, lines
+    assert asked == [(DEST, 'ops.config', list(steps.steps[0].argv))]
+    green, lines = planrunpreflight.preflight(plan, steps, remotes, readers=readers(first))
+    assert not green, lines
+    assert any(f'derives {first},' in line and f'granting {first},' in line and want in line for line in lines), lines
+
+
+def test_planrun_subject_account_reads_through_the_issuer(capsys: pytest.CaptureFixture[str]) -> None:
+    """``planrun subject --account`` prints the issuer's full subject; with no --dest it refuses, naming it."""
+    asked: list[tuple[str, str, list[str]]] = []
+
+    def issued(dest: str, action: str, argv: list[str]) -> tuple[str, str]:
+        asked.append((dest, action, argv))
+        return 'b' * 64, 'token name ci held'
+
+    readers = planrunpreflight.Readers(issued=issued)
+    assert planrun.main(['subject', '--account', 'ci', '--dest', DEST], readers=readers) == 0
+    said = capsys.readouterr()
+    assert said.out.strip() == 'b' * 64
+    assert 'token name ci held' in said.err
+    assert asked == [(DEST, 'ops.forge.account', ['forge', 'account', 'ensure', '--login', 'ci'])]
+    assert planrun.main(['subject', '--account', 'ci'], readers=readers) == 2
+    assert '--dest' in capsys.readouterr().err
+    assert planrun.main(['subject', '--account', 'ci', '--dest', DEST], readers=_readers()) == 2  # issuer refuses

@@ -174,6 +174,11 @@ def contradictions(settings: Path, rules: Path, *, cwd: Path, engine: Path | Non
     ALLOW a shape the shipped engine had refused since 2026-08-22, so a body judging the wheel goes
     green on precisely the checkout whose own guard has stopped working.
 
+    A ROW IS JUDGED BY ITS SHAPE, NEVER BY THE SCANNING BOX'S STATE: no live run
+    (``live_run=False``) and every tree hook-wired (``assume_wired=True``), as
+    :func:`dev_lab.dev.famtests.agentguard.decision_for` judges -- a hosted checkout declares hook stages it never
+    installs, and an allowed history verb is no contradiction there (dev-lab fa9d6f2b).
+
     Args:
         settings: the ``settings.json`` whose ``permissions.allow`` rows are the declaration.
         rules: the ``deny-rules.json`` those rows are judged against.
@@ -197,7 +202,7 @@ def contradictions(settings: Path, rules: Path, *, cwd: Path, engine: Path | Non
         if not command:
             continue
         probed.append(entry)
-        reason = run_engine(judge, command, rules, cwd=cwd, live_run=False)
+        reason = run_engine(judge, command, rules, cwd=cwd, live_run=False, assume_wired=True)
         if reason is not None:
             refused[entry] = reason
     return Scan(probed=tuple(probed), refused=refused)

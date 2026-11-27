@@ -41,4 +41,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_machineroutes.py',),
     ),
+    (
+        'GITHUB-TESTS-ON-ACTIONS',
+        (
+            # Why: user ruling 2026-11-27, repeated many times before it became a mechanism -- "A GitHub repo is
+            # ALWAYS tested only by GitHub Actions".
+            'A repo hosted on github.com is tested by GitHub Actions alone: no host -- HPC account, ops host or '
+            'workstation -- produces a test part of it. `configcheck` refuses a family `tests` binding off "ci" '
+            'for one and an account`s `[deploy] repos` row that would serve one (`githubtests`); `rolecheck` '
+            'refuses such a repo whose tests are off "ci" or whose required part GitHub Actions does not post. '
+            'The door: its parts come from GitHub Actions -- declare them in [tool.dev_lab.parts] hosted.'
+        ),
+        ('tests/test_dev_githubtests.py', 'tests/test_dev_roles.py'),
+    ),
 )

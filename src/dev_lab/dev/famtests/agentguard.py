@@ -126,8 +126,10 @@ def decision_for(*, root: Path, command: str) -> str | None:
     The engine and the rules are the repo's own files rather than the ones in this wheel -- see the
     module docstring for why that is the question. The engine fails OPEN by construction, so an
     unparsable payload or a broken rule shows up as ``None``, which is the truthful answer: nothing
-    was refused. It judges the SHAPE: ``when: 'live-run'`` rows see no live run, because the suite asking
-    is itself one in *root* (``run_engine(live_run=False)``).
+    was refused. It judges the SHAPE, never the state of the box it runs on: ``when: 'live-run'`` rows see
+    no live run, because the suite asking is itself one in *root* (``run_engine(live_run=False)``), and
+    ``HOOKS-ARE-WIRED`` sees a wired tree, because a hosted checkout declares hook stages it never installs
+    (``run_engine(assume_wired=True)``; dev-lab fa9d6f2b).
 
     Raises:
         GuardNotLive: the engine or the rules file is missing, so the command met no guard at all.
@@ -137,7 +139,7 @@ def decision_for(*, root: Path, command: str) -> str | None:
     for path in (engine, rules):
         if not path.is_file():
             _refuse(f'{path} is not there, so nothing in {root} judged {command!r}')
-    return run_engine(engine, command, rules, cwd=root, live_run=False)
+    return run_engine(engine, command, rules, cwd=root, live_run=False, assume_wired=True)
 
 
 def shipped_rules(*, root: Path) -> frozenset[str]:

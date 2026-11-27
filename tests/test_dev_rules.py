@@ -153,6 +153,7 @@ _IDS = frozenset(
         'NO-DETOUR',
         'ENV-IS-READ-ONCE',
         'MACHINES-MEET-ONLY-THROUGH-THE-FORGE',
+        'GITHUB-TESTS-ON-ACTIONS',
         'CONFIG-VALUES-CARRY-UNITS',
     }
 )

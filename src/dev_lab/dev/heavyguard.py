@@ -37,6 +37,7 @@ from lab_commons.hostenv import HEAVY_APPROVED_ENV
 
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.hooks import DenyRule
+from dev_lab.dev.venvpath import venv_interpreter
 
 if TYPE_CHECKING:
     import pytest
@@ -127,7 +128,7 @@ def pattern(heavy: Heavy) -> str:
 
 def _examples(heavy: Heavy) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """The commands the row refuses and permits, derived from the declaration: the row's own controls."""
-    python = '.venv/Scripts/python.exe'
+    python = venv_interpreter(os_name='nt')
     refuses = [f'{python} -m {m} run set.toml' for m in heavy.modules]
     refuses += [f'{python} {s}{"bench.py" if s.endswith("/") else ""} --flag' for s in heavy.scripts]
     refuses += [f'cargo run --release --bin {b}' for b in heavy.bins]

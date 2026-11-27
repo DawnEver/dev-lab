@@ -54,16 +54,28 @@ def test_a_failing_cargo_run_is_its_own_named_red_and_a_passing_one_its_own_gree
 
         return tee
 
-    green = cargostep.step(tmp_path, 'rust/Cargo.toml', handle=io.StringIO(), tee=run(0), cargo='cargo')
-    red = cargostep.step(tmp_path, 'rust/Cargo.toml', handle=io.StringIO(), tee=run(101), cargo='cargo')
+    green = cargostep.step(tmp_path, 'rust/Cargo.toml', 'test', handle=io.StringIO(), tee=run(0), cargo='cargo')
+    red = cargostep.step(tmp_path, 'rust/Cargo.toml', 'test', handle=io.StringIO(), tee=run(101), cargo='cargo')
     assert green.name == red.name == 'cargo test rust/Cargo.toml'
     assert (green.reported, green.failures) == ((green.name,), ())
     assert (red.reported, red.failures) == ((red.name,), (red.name,))
     assert argv_seen[0] == ['cargo', 'test', '--manifest-path', 'rust/Cargo.toml', '--workspace', '--locked']
 
 
+def test_rustfmt_and_clippy_are_steps_of_their_own_beside_cargo_test() -> None:
+    """dev-lab#1033: formatting and lint drift is a named red, never a later child's re-format."""
+    assert cargostep.COMMANDS == ('fmt', 'clippy', 'test')
+    assert cargostep.argv('cargo', 'Cargo.toml', 'fmt') == [
+        'cargo', 'fmt', '--manifest-path', 'Cargo.toml', '--all', '--', '--check'
+    ]  # fmt: skip
+    assert cargostep.argv('cargo', 'Cargo.toml', 'clippy') == [
+        'cargo', 'clippy', '--manifest-path', 'Cargo.toml', '--workspace', '--all-targets', '--locked',
+        '--', '-D', 'warnings',
+    ]  # fmt: skip
+
+
 def test_no_cargo_on_the_host_is_inconclusive_naming_the_door(tmp_path: Path) -> None:
-    report = cargostep.step(tmp_path, 'rust/Cargo.toml', handle=io.StringIO(), tee=None, cargo=None)
+    report = cargostep.step(tmp_path, 'rust/Cargo.toml', 'test', handle=io.StringIO(), tee=None, cargo=None)
     assert report.reported == ()
     assert any('cargo' in line and 'rust-toolchain' in line for line in report.truncated)
 
@@ -91,10 +103,13 @@ def test_the_cargo_part_posts_one_cell_per_workspace_as_tests_cargo(
     """PLANTED CONTROL, both sides: the part is red exactly when cargo is, and it is tests/cargo's own record."""
     posted: list[dict[str, Any]] = []
     _producing(monkeypatch, posted)
-    assert cargostep.produce(_repo(tmp_path), run=lambda _argv: code, cargo='cargo') == exit_code
+    fmt_only = cargostep.produce(_repo(tmp_path), run=lambda argv: code if argv[1] == 'fmt' else 0, cargo='cargo')
+    assert fmt_only == exit_code, 'an unformatted file alone reds the part'
     (record,) = posted
     assert record['platform'] == 'cargo'
-    assert record['cells']['cargo test rust/Cargo.toml']['status'] == status
+    assert record['cells']['cargo fmt rust/Cargo.toml']['status'] == status
+    assert record['cells']['cargo clippy rust/Cargo.toml']['status'] == 'ok'
+    assert record['cells']['cargo test rust/Cargo.toml']['status'] == 'ok'
 
 
 def test_the_cargo_part_is_refused_outside_its_producer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -105,5 +120,7 @@ def test_the_cargo_part_is_refused_outside_its_producer(tmp_path: Path, monkeypa
 def test_a_pytest_part_hands_each_workspace_to_the_cargo_part(tmp_path: Path) -> None:
     """How the forge DISCOVERS tests/cargo: the base part's record hands it the workspace cells."""
     tracked = _plant(tmp_path, {'rust/Cargo.toml': '[workspace]\n'})
-    assert cargostep.handed(tmp_path, tracked) == {'cargo test rust/Cargo.toml': 'cargo'}
+    assert cargostep.handed(tmp_path, tracked) == {
+        f'cargo {command} rust/Cargo.toml': 'cargo' for command in ('fmt', 'clippy', 'test')
+    }
     assert cargostep.handed(tmp_path, []) == {}

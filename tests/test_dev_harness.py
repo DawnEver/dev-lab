@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dev_lab.dev import harness
-from dev_lab.dev.harness import Harness
+from dev_lab.dev.harness import ActionsRun, Harness
 
 if TYPE_CHECKING:
     import pytest
@@ -22,6 +22,16 @@ def test_context_reads_each_named_fact_and_says_empty_where_the_environment_is_s
     }
     assert harness.context(env) == Harness('/p', '/c', '/x', 'box', 'win', 'admin')
     assert harness.context({}) == Harness()
+
+
+def test_actions_run_reads_the_run_and_links_it_only_when_the_runner_names_all_three() -> None:
+    env = {'GITHUB_SERVER_URL': 'https://github.com', 'GITHUB_REPOSITORY': 'o/r', 'GITHUB_RUN_ID': '7'}
+    run = harness.actions_run(env)
+    assert run == ActionsRun('https://github.com', 'o/r', '7')
+    assert run.url == 'https://github.com/o/r/actions/runs/7'
+    assert harness.actions_run({}) == ActionsRun()
+    for name in env:  # PLANTED CONTROL: a partial run links nothing rather than a broken URL
+        assert harness.actions_run({k: v for k, v in env.items() if k != name}).url == '', name
 
 
 def test_the_posix_login_name_wins_over_the_windows_one() -> None:

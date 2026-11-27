@@ -61,6 +61,9 @@ A HOSTED PART (a setup, secrets or both) gets its own job, cut from the matrix `
 (:func:`dev_lab.dev.hostedjobs.hosted_jobs`): the one place a repo's
 ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
+NATIVE WHEELS ARE OPT-IN: a repo's ``[tool.dev_lab.native] wheels`` adds :data:`~dev_lab.dev.nativewheels.WORKFLOW`
+(:mod:`dev_lab.dev.nativewheels`); a repo without it renders none.
+
 THE REVIEW TOOLING IS PINNED ONCE, BY LOCKS: the ``door`` steps install the dev-lab commit the BASE's ``uv.lock`` pins
 (dev-lab #18), and the ``method`` steps the ai-lab commit THAT dev-lab's lock pins (its ``review`` group) --
 never a floating branch, and never the PR head's own lock (F-76c85dbc4b77).
@@ -81,7 +84,7 @@ from typing import Any, Final, cast
 from lab_commons import extras
 from lab_commons.log import emit
 
-from dev_lab.dev import hostedjobs, hostedparts
+from dev_lab.dev import hostedjobs, hostedparts, nativewheels
 from dev_lab.dev._forgebackends import BACKENDS, JUDGE_HOST, backend_for, require_producer
 from dev_lab.dev.ciworkflowshape import (
     BASE_PATH,
@@ -229,6 +232,8 @@ def declared_paths(root: Path) -> frozenset[str]:
     forge = repo_forge(root)
     _, tables = _declared(root)
     names = base_names(forge) | {name for name, table in tables.items() if isinstance(table, dict)}
+    if nativewheels.wheels_workflow(_declared(root)[0], str(root / 'pyproject.toml')) is not None:
+        names.add(nativewheels.WORKFLOW)
     return frozenset((WORKFLOW_DIRS[forge] / name).as_posix() for name in names)
 
 
@@ -251,6 +256,7 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
         why = '; '.join(f'{name}: {RETIRED_WORKFLOWS[name]}' for name in stale)
         msg = f'{origin}: [tool.dev_lab.ci] declares a retired workflow -- {why}; delete the table and its file'
         raise ValueError(msg)
+    hosted_on = forge
     for name in base_names(forge):
         declared.setdefault(name, {})
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
@@ -277,6 +283,14 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
         rendered = cast('dict[str, Any]', _named(workflow, integration, timeout, extras_words))
         refuse_everything(rendered, f'[tool.dev_lab.ci."{name}"]')
         out[name] = (WORKFLOW_DIRS[forge], rendered)
+    if (wheels := nativewheels.wheels_workflow(text, origin)) is not None:
+        if hosted_on != 'github':
+            msg = (
+                f'{origin}: [tool.dev_lab.native] wheels renders on GitHub Actions only (no macOS or Windows '
+                f'runner on {hosted_on}) -- build the wheels from a GitHub mirror, or drop the declaration'
+            )
+            raise ValueError(msg)
+        out[nativewheels.WORKFLOW] = (WORKFLOW_DIRS['github'], wheels)
     return follow_checks(out)
 
 

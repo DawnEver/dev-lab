@@ -345,19 +345,6 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_installdoor.py', 'tests/test_dev_lockcheck.py'),
     ),
     (
-        'AGENT-GUARD',
-        (
-            'A hand-written test invocation and a stash are refused, and a bare network verb is hinted toward the '
-            'retry door (a repo raises it to a refusal in its adoption severities), by the shared deny machinery '
-            'rather than by prose, so the answer is identical in every repo that adopts it.'
-        ),
-        (
-            '.claude/hooks/deny-commands.js',
-            '.claude/hooks/deny-rules.json',
-            'tests/architecture/gate/test_agent_bash_guard.py',
-        ),
-    ),
-    (
         'NO-CJK-IN-TRACKED-SOURCE',
         (
             'No tracked CJK except under `attic/`, root `archived/`, and `<stem>.zh.md|toml|json` beside its English '

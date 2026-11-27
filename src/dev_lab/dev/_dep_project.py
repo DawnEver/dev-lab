@@ -16,7 +16,6 @@ from lab_commons.log import emit
 from dev_lab.dev import uvrelease
 from dev_lab.dev._dep_network import CHILD_WALL_S, run_change
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.installdoor import floating_requirements
 from dev_lab.dev.lockcheck import (
     TOOLCHAIN,
     UV_PIN,
@@ -260,19 +259,13 @@ def follow_pin(uv: str, required: str) -> str:
     return follow(uv, required, version_of=installed_uv_version)
 
 
-def uv_command(
-    root: Path,
-    python: str,
-    selected: Sequence[str],
-    *,
-    syncing: bool,
-    upgrade_packages: Sequence[str],
-    frozen: bool = False,
-) -> list[str]:
-    """One target-addressed command; a sync re-resolves every declared floating Git requirement.
+def uv_command(root: Path, python: str, selected: Sequence[str], *, frozen: bool = False) -> list[str]:
+    """One target-addressed ``uv sync``: it installs exactly the committed ``uv.lock`` and never writes it.
 
-    A *frozen* sync builds exactly the committed ``uv.lock`` (``--frozen``) and re-resolves nothing: how a
-    commit's own environment is materialized, so two hosts on two days build the same revisions.
+    A *frozen* sync builds the lock without asking whether it still matches ``pyproject.toml`` -- a bootstrap, and
+    the sync that follows a relock. Every other sync is ``--locked``: it refuses a lock that no longer matches
+    (:func:`stale_lock_note` names the door), so ``dep --sync`` leaves ``uv.lock`` byte-identical (user ruling
+    2026-11-27). The one writer of a lock is :func:`lock_upgrade_command`; a family kit moves through it.
     Only a frozen sync with no environment yet, or one built on an interpreter the target's ``requires-python``
     refuses -- a bootstrap -- builds under that requirement (:func:`bootstrap_python`); every other command
     runs under the checkout's own (:func:`own_interpreter`).
@@ -282,28 +275,27 @@ def uv_command(
         msg = 'bootstrap/sync requires uv on PATH'
         raise FileNotFoundError(msg)
     built = Path(python).is_file() and env_fits(root, python)
-    interpreter = bootstrap_python(root) if syncing and frozen and not built else own_interpreter(root, python)
-    command = [
-        uv,
-        'sync' if syncing else 'lock',
-        '--project',
-        str(root),
-        '--python',
-        interpreter,
-    ]
-    if syncing:
-        command.append('--compile-bytecode')  # D24: the first hook after a relock never compiles its imports
-        for extra in selected:
-            command.extend(('--extra', extra))
-    if frozen:
-        return [*command, '--frozen']
-    command[0] = lock_writer(uv, uv_version(root), pin_file(root))  # an unfrozen sync or lock may rewrite uv.lock
-    upgrades = set(upgrade_packages)
-    if syncing:
-        upgrades.update(floating_requirements(root / 'pyproject.toml'))
-    for package in sorted(with_family_floor(upgrades)):
-        command.extend(('--upgrade-package', package))
-    return command
+    interpreter = bootstrap_python(root) if frozen and not built else own_interpreter(root, python)
+    command = [uv, 'sync', '--project', str(root), '--python', interpreter]
+    command.append('--compile-bytecode')  # D24: the first hook after a relock never compiles its imports
+    for extra in selected:
+        command.extend(('--extra', extra))
+    return [*command, '--frozen' if frozen else '--locked']
+
+
+def lock_check_command(sync: Sequence[str]) -> list[str]:
+    """``uv lock --check`` under the same uv, project and interpreter as the *sync* command: read-only."""
+    at = list(sync).index('--project')
+    return [sync[0], 'lock', '--check', *sync[at : at + 4]]
+
+
+def stale_lock_note(root: Path) -> str:
+    """Why a ``--locked`` sync of *root* was refused, and the door that relocks it."""
+    return (
+        f'REFUSED: {root / "uv.lock"} no longer matches {root / "pyproject.toml"}, and dep --sync installs the '
+        f'committed lock and never writes it. Relock: {sys.executable} -m dev_lab.dev.dep --lock-upgrade {root} '
+        '[--upgrade-package NAME], then commit uv.lock'
+    )
 
 
 def lock_upgrade_command(root: Path, python: str, required: str, packages: Sequence[str] = ()) -> list[str]:
@@ -410,37 +402,3 @@ def lock_upgrade(
         moved = uvrelease.release(pin_file(root), required)
         pin_uv(root, required, {key: digest for key, (_asset, digest) in moved.assets.items()})
     return code
-
-
-def lock_text(root: Path) -> str:
-    """*root*'s ``uv.lock`` text; ``''`` when it has none."""
-    lock = root / 'uv.lock'
-    return lock.read_text(encoding='utf-8') if lock.is_file() else ''
-
-
-def relock_note(root: Path, before: str) -> str:
-    """What an unfrozen sync did to *root*'s ``uv.lock`` (*before*: its text first), or ``''`` when unchanged.
-
-    A plain ``--sync`` re-resolves the floating Git requirements and may add packages (dev-lab #1005): the lock it
-    leaves is a CHANGE in the worktree, so it is said, with each package moved and the door that only builds the
-    committed lock (a frozen ``--bootstrap``).
-    """
-    after = lock_text(root)
-    if before == after:
-        return ''
-    old, new = _locked(before), _locked(after)
-    moved = sorted(name for name in old.keys() | new.keys() if old.get(name) != new.get(name))
-    return (
-        f'dep --sync RELOCKED {root / "uv.lock"} ({", ".join(moved) or "its metadata"}): commit it or restore it; '
-        f'to build the committed lock unchanged: python -m dev_lab.dev.dep --bootstrap {root}'
-    )
-
-
-def _locked(text: str) -> dict[str, tuple[str, str]]:
-    """Each locked package's version and source, by name; an unreadable lock reads as none."""
-    try:
-        parsed: dict[str, Any] = tomllib.loads(text) if text else {}
-    except tomllib.TOMLDecodeError:
-        return {}
-    rows: list[dict[str, Any]] = parsed.get('package', [])
-    return {str(row.get('name', '')): (str(row.get('version', '')), str(row.get('source', ''))) for row in rows}

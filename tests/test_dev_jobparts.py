@@ -47,7 +47,7 @@ def test_a_failed_collection_cannot_publish_a_partial_matrix(tmp_path: Path, mon
     )
     forge = StateForge()
     monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
-    monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
+    monkeypatch.setattr(jobparts, 'head_sha', lambda _root: SHA)
     assert jobparts.main(['matrix', '--root', str(tmp_path)]) == 1
     assert capsys.readouterr().out == '', 'a failed collection must not become a complete workflow manifest'
     (posted,) = status_list(forge, SHA)
@@ -60,7 +60,7 @@ def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path
     (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
     forge = StateForge()
     assert 'not yet posted' in forgemergewaits.actions_wait(
-        SHA, status_list(forge, SHA), systems=FAMILY_MERGE_SYSTEMS
+        SHA, status_list(forge, SHA), systems=FAMILY_MERGE_SYSTEMS, hosted=()
     ), 'PLANTED CONTROL'
 
     def broken(_expression: str) -> list[str]:
@@ -69,9 +69,9 @@ def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path
 
     monkeypatch.setattr(jobparts, 'pytest_collector', lambda _root: broken)
     monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
-    monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
+    monkeypatch.setattr(jobparts, 'head_sha', lambda _root: SHA)
     assert jobparts.main(['matrix', '--root', str(tmp_path), '--event', 'pull_request']) == 1
-    waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA), systems=FAMILY_MERGE_SYSTEMS)
+    waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA), systems=FAMILY_MERGE_SYSTEMS, hosted=())
     assert waited is not None
     assert 'not yet posted' not in waited
     assert jobparts.NO_MATRIX in waited
@@ -455,6 +455,12 @@ def test_a_hosted_part_gets_one_push_only_linux_row_carrying_only_its_secrets(
         'hosted = { live = { setup = "" } }',
         'hosted = { live = { setup = ["apt-get install x"] } }',
         'hosted = { live = { setup = "x", runner = "ubuntu-latest" } }',
+        'hosted = { live = { cache = { path = "c", key = "k" } } }',
+        'hosted = { live = { setup = "x", cache = "c" } }',
+        'hosted = { live = { setup = "x", cache = { path = "c" } } }',
+        'hosted = { live = { setup = "x", cache = { path = "", key = "k" } } }',
+        "hosted = { live = { setup = 'x', cache = { path = 'c', key = \"k's\" } } }",
+        'hosted = { live = { setup = "x", cache = { path = "c", key = "k", ttl = 1 } } }',
     ],
 )
 def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_part_is_refused(
@@ -465,6 +471,10 @@ def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_p
         hostedparts.hosted_parts(text)
     assert 'setup = "<shell command>"' in str(refused.value), 'the refusal names the fix: the accepted shape'
     assert hostedparts.hosted_parts(HOSTED) == {'live': hostedparts.Hosted(('live',))}
+    cached = 'hosted = { live = { setup = "x", cache = { path = "c", key = "k" } } }'
+    assert hostedparts.hosted_parts(text.replace(declaration, cached))['live'].cache == hostedparts.Cache('c', 'k'), (
+        'PLANTED CONTROL: the well-formed cache is read'
+    )
     assert hostedparts.Hosted(('live', 'pr-review')).secrets == ('AI_LAB_KEYS_LIVE', 'AI_LAB_KEYS_PR_REVIEW')
 
 
@@ -505,9 +515,46 @@ def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part() -> None:
     PLANTED CONTROL: the same head with ``tests/base`` red still waits.
     """
     handed = [CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemergewaits.parts_wait('hosted', handed, systems=FAMILY_MERGE_SYSTEMS) is None
+    assert forgemergewaits.parts_wait('hosted', handed, systems=FAMILY_MERGE_SYSTEMS, hosted=()) is None
     red = [CommitStatus('tests/base', 'failure', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemergewaits.parts_wait('hosted', red, systems=FAMILY_MERGE_SYSTEMS) is not None, 'PLANTED CONTROL'
+    assert forgemergewaits.parts_wait('hosted', red, systems=FAMILY_MERGE_SYSTEMS, hosted=()) is not None, (
+        'PLANTED CONTROL'
+    )
+
+
+def test_merge_ready_requires_a_hosted_part_another_part_hands_to() -> None:
+    """dev-lab#1024: document-lab#92 merged with hosted ``tests/corpus`` red because base ``hands=corpus:140``.
+
+    A hosted part a pull request's own job produces is base's peer: red, it holds the merge until put on record.
+    PLANTED CONTROL: the same statuses with ``corpus`` not hosted (an unproduced part) waive it, as before.
+    """
+    hosting = 'scope=full ran=3 hands=corpus:140'
+    statuses = [
+        CommitStatus('tests/base', 'success', hosting, ''),
+        CommitStatus('tests/corpus', 'failure', 'scope=full ran=140 hands=-', ''),
+    ]
+    held = forgemergewaits.parts_wait('h', statuses, systems=FAMILY_MERGE_SYSTEMS, hosted={'corpus'})
+    assert held is not None
+    assert 'FAIL' in held, held
+    assert 'corpus' not in forgemergewaits.hand_parts(statuses, systems=FAMILY_MERGE_SYSTEMS, hosted={'corpus'})
+    assert forgemergewaits.off_record(statuses, '', systems=FAMILY_MERGE_SYSTEMS, hosted={'corpus'}), (
+        'its red asks for Red-On-Record'
+    )
+    record = 'Red-On-Record: tests/corpus -- t::x\n'
+    recorded = forgemergewaits.recorded_as_ran(statuses, record, systems=FAMILY_MERGE_SYSTEMS, hosted={'corpus'})
+    assert forgemergewaits.parts_wait('h', recorded, systems=FAMILY_MERGE_SYSTEMS, hosted={'corpus'}) is None, (
+        'on record, it is no wait'
+    )
+    assert forgemergewaits.parts_wait('h', statuses, systems=FAMILY_MERGE_SYSTEMS, hosted=()) is None, (
+        'PLANTED CONTROL: unproduced is waived'
+    )
+
+
+def test_a_pull_request_produces_a_hosted_part_with_no_secret_and_not_manual() -> None:
+    """:func:`hostedparts.pull_request_parts` names what a PR's run produces; a secret or ``manual`` part is not."""
+    assert hostedparts.pull_request_parts(SETUP_ONLY) == {'linux'}, 'live names a task, so a secret'
+    manual = SETUP_ONLY.replace('xvfb" }', 'xvfb", manual = true }')
+    assert hostedparts.pull_request_parts(manual) == set(), 'a manual part runs on a dispatch alone'
 
 
 _RUN_ENV = {'GITHUB_SERVER_URL': 'https://github.com', 'GITHUB_REPOSITORY': 'o/r', 'GITHUB_RUN_ID': '7'}
@@ -716,3 +763,39 @@ def test_a_part_the_list_shows_late_is_read_back_and_never_overwritten_with_erro
     forge = _producing(monkeypatch, posts, _LaggingForge(0))
     assert jobparts.produce(tmp_path, 'base@windows', forge, env={}) == (0 if states == ['success'] else 1)
     assert [s.state for s in status_list(forge, SHA)] == states
+
+
+def _rust_repo(root: Path, *, workspace: bool) -> Path:
+    """A git checkout with the femm/windows vocabulary; with *workspace*, a tracked Cargo ``[workspace]``."""
+    root.mkdir()
+    (root / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
+    if workspace:
+        (root / 'rust').mkdir()
+        (root / 'rust' / 'Cargo.toml').write_text('[workspace]\nmembers = []\n', encoding='utf-8')
+    run_git(root, 'init', '-q')
+    run_git(root, 'add', '-A')
+    run_git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x')
+    return root
+
+
+@pytest.mark.parametrize('event', ['pull_request', 'push'])
+def test_a_rust_workspace_gets_one_hosted_cargo_row_and_a_repo_without_rust_none(tmp_path: Path, event: str) -> None:
+    """dev-lab#1033: the cargo part (fmt --check, clippy -D warnings, test) is produced by an Actions job.
+
+    PLANTED CONTROL: the same checkout without a tracked workspace derives no cargo row.
+    """
+    rust = _rust_repo(tmp_path / 'rust', workspace=True)
+    plain = _rust_repo(tmp_path / 'plain', workspace=False)
+    collect = {'': ['t::a'], 'femm': [], 'windows': []}.__getitem__
+    found = jobparts.matrix(rust, collect=collect, event=event, hosted=True)['include']
+    assert [row for row in found if row['part'].startswith('cargo')] == [{'part': 'cargo', 'runs-on': 'ubuntu-latest'}]
+    assert jobparts.off_gate(['cargo'], {}) == frozenset(), 'the cargo part is on the GitHub gate'
+    without = jobparts.matrix(plain, collect=collect, event=event, hosted=True)['include']
+    assert not [row for row in without if row['part'].startswith('cargo')]
+
+
+def test_the_cargo_part_is_a_merge_condition_never_a_hand_part() -> None:
+    """dev-lab#1033: a hosted job produces tests/cargo, so merge-ready waits on it as on tests/base."""
+    hands = 'scope=full ran=3 hands=cargo:3,windows:2'
+    statuses = [CommitStatus(context='tests/base', state='success', description=hands, url='')]
+    assert forgemergewaits.hand_parts(statuses, systems=(), hosted=()) == {'windows'}, 'windows outside merge_systems'
