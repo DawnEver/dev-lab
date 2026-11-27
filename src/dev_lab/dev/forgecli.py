@@ -1,7 +1,8 @@
 """``python -m dev_lab.dev.forge <noun> <verb>`` -- the one noun dispatch over the ``forge*`` doors.
 
-``status`` for commit statuses, ``issue claim|status|comments|comments-since`` for derived issue
-state and comment reads, ``auth`` for the token, ``protect plan|check|apply`` for the declared branch protection,
+``status`` for commit statuses, ``issue claim|status|comments|comments-since|comment-view|view --comments``
+for derived issue state and comment reads, ``auth`` for the token, ``protect plan|check|apply`` for the declared
+branch protection,
 ``publish`` for the status outbox, ``records`` for
 run records, ``run show <sha>`` for what a cluster run published (each round's losses, the final
 failing ids), ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
@@ -136,7 +137,7 @@ PR_VERBS: dict[str, Callable[[list[str]], int]] = {
 }
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.
-ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since'})
+ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since', 'comment-view'})
 
 
 def main(argv: Sequence[str]) -> int:
@@ -158,9 +159,14 @@ def _route(args: list[str]) -> int:
         return NOUNS[args[0]](args[1:])
     if args[:1] == ['pr'] and args[1:2] and args[1] in PR_VERBS:
         return PR_VERBS[args[1]](args[2:])
-    if args[:1] == ['issue'] and args[1:2] and args[1] in ISSUE_VERBS:
+    if args[:1] == ['issue'] and ((args[1:2] and args[1] in ISSUE_VERBS) or _threaded(args)):
         return forgeissue.main(args[1:])
     return issue_and_pr(args)
+
+
+def _threaded(args: Sequence[str]) -> bool:
+    """``issue view N --comments``: the issue WITH its thread is :mod:`forgeissue`'s; the bare view stays here."""
+    return args[1:2] == ['view'] and '--comments' in args
 
 
 def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:

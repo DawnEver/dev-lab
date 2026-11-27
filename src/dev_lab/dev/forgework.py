@@ -156,6 +156,14 @@ class Client:
         accept: str = '', authed: bool = True, extra: Mapping[str, str] | None = None,
     ) -> Answer:  # fmt: skip
         backend = self.backend
+        if not path.startswith('/'):
+            # http.client writes the path into the request line as given: ``GET repos/o/r/... HTTP/1.1`` is no
+            # request target, and Gitea answers it 400 Bad Request whatever the query string holds.
+            msg = (
+                f'forge call {method} {path!r}: the path must be absolute -- start it with client.repo '
+                f'({self.repo!r}), e.g. f"{{client.repo}}/issues/1/comments?page=2"'
+            )
+            raise ValueError(msg)
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
         target = host or backend.host(self.forge)
         # authed: no credential follows a redirect; no token: an anonymous read of a public repo

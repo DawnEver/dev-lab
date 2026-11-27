@@ -32,8 +32,9 @@ import sys
 import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from http import HTTPStatus
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
@@ -42,7 +43,7 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list
-from dev_lab.dev.forgework import Client, Comment
+from dev_lab.dev.forgework import Client, Comment, Issue
 from dev_lab.dev.integrator import lane_ready
 from dev_lab.dev.issueref import CLOSING_VERBS, REF_VERBS
 
@@ -54,13 +55,16 @@ __all__ = [
     'Claim',
     'IssueComment',
     'IssueState',
+    'IssueThread',
     'Lane',
     'claim',
     'claims_of',
+    'comment_view',
     'comments_since',
     'derive',
     'issue_comments',
     'issue_status',
+    'issue_thread',
     'lanes_for',
     'main',
 ]
@@ -105,6 +109,14 @@ class IssueComment:
     author: str
     body: str
     created: str
+
+
+@dataclass(frozen=True)
+class IssueThread:
+    """An issue and its comments, oldest first: what ``issue view N --comments`` shows."""
+
+    issue: Issue
+    comments: tuple[IssueComment, ...]
 
 
 @dataclass(frozen=True)
@@ -206,16 +218,56 @@ def _comments(client: Client, number: int) -> tuple[Comment, ...]:
     return tuple(Comment(raw['id'], raw.get('body') or '', raw['html_url']) for raw in listed)
 
 
+def _comment(raw: Mapping[str, Any]) -> IssueComment:
+    matched = _ISSUE_OF.search(raw.get('issue_url') or '')
+    author = (raw.get('user') or {}).get('login') or ''
+    issue = int(matched.group(1)) if matched else 0
+    return IssueComment(issue, raw['id'], author, raw.get('body') or '', raw.get('created_at') or '')
+
+
+def _absent(failed: ForgeCallFailed, what: str, client: Client) -> ValueError | ForgeCallFailed:
+    """A 404 is the forge saying *what* does not exist: a refusal by name, never a retry report."""
+    if failed.report.attempts[-1].returncode != HTTPStatus.NOT_FOUND:
+        return failed
+    return ValueError(f'{what} does not exist on {client.forge.identity} (the forge answered 404)')
+
+
+def issue_thread(client: Client, number: int, *, since: str | None = None, last: int | None = None) -> IssueThread:
+    """Issue *number* and its comments, oldest first: those updated at or after *since*, or the newest *last*.
+
+    Raises:
+        ValueError: the issue does not exist.
+
+    """
+    try:
+        issue = client.issue_view(number)
+    except ForgeCallFailed as failed:
+        raise _absent(failed, f'issue #{number}', client) from failed
+    comments = issue_comments(client, number, since=since)
+    if last is not None:
+        comments = comments[len(comments) - max(last, 0) :]
+    return IssueThread(issue, comments)
+
+
+def comment_view(client: Client, comment: int) -> IssueComment:
+    """One issue comment by its *comment* id: ``issues/comments/{id}`` on GitHub and Gitea alike.
+
+    Raises:
+        ValueError: no comment has that id.
+
+    """
+    try:
+        return _comment(client.call('GET', f'{client.repo}/issues/comments/{comment}'))
+    except ForgeCallFailed as failed:
+        raise _absent(failed, f'comment {comment}', client) from failed
+
+
 def _listed(client: Client, collection: str, since: str | None) -> tuple[IssueComment, ...]:
     query = {client.backend.page_param: str(_COMMENT_PAGE)} | ({'since': since} if since else {})
     found: list[IssueComment] = []
     for page in range(1, _COMMENT_PAGES + 1):
         listed = client.call('GET', f'{client.repo}/{collection}?{urllib.parse.urlencode(query | {"page": page})}')
-        for raw in listed:
-            matched = _ISSUE_OF.search(raw.get('issue_url') or '')
-            author = (raw.get('user') or {}).get('login') or ''
-            issue = int(matched.group(1)) if matched else 0
-            found.append(IssueComment(issue, raw['id'], author, raw.get('body') or '', raw.get('created_at') or ''))
+        found.extend(_comment(raw) for raw in listed)
         if len(listed) < _COMMENT_PAGE:
             break
     return tuple(found)
@@ -276,6 +328,10 @@ def _render(state: IssueState) -> str:
     return '\n'.join(lines)
 
 
+def _shown(comment: IssueComment) -> str:
+    return f'--- #{comment.id} {comment.author} {comment.created}\n{comment.body}'
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge issue', description='derived issue state')
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -288,12 +344,27 @@ def _parser() -> argparse.ArgumentParser:
         sub.add_argument('number', type=int)
     wide = verbs.add_parser('comments-since')
     wide.add_argument('since')
-    for sub in (claiming, status, listing, wide):
+    view = verbs.add_parser('view', help='the issue and its comments, oldest first')
+    view.add_argument('number', type=int)
+    view.add_argument('--comments', action='store_true', required=True)
+    window = view.add_mutually_exclusive_group()
+    window.add_argument('--since', default=None, help='only comments updated at or after this ISO 8601 time')
+    window.add_argument('--last', type=int, default=None, metavar='K', help='only the newest K comments')
+    one = verbs.add_parser('comment-view', help='one comment by its id')
+    one.add_argument('id', type=int)
+    for sub in (claiming, status, listing, wide, view, one):
         sub.add_argument('--json', action='store_true', help='print the normalized result as JSON')
     return parser
 
 
-def _run(client: Client, root: Path, args: argparse.Namespace) -> Comment | IssueState | tuple[IssueComment, ...]:
+type _Result = Comment | IssueState | IssueThread | IssueComment | tuple[IssueComment, ...]
+
+
+def _run(client: Client, root: Path, args: argparse.Namespace) -> _Result:
+    if args.verb == 'view':
+        return issue_thread(client, args.number, since=args.since, last=args.last)
+    if args.verb == 'comment-view':
+        return comment_view(client, args.id)
     if args.verb == 'comments':
         return issue_comments(client, args.number, since=args.since)
     if args.verb == 'comments-since':
@@ -310,7 +381,10 @@ def main(
     env: Mapping[str, str] | None = None,
     transport: Transport = forge_transport,
 ) -> int:
-    """``python -m dev_lab.dev.forge issue claim|status|comments <N>`` | ``comments-since <ISO>``.
+    """The ``forge issue`` verbs this module owns: derived state, claims and comment reads.
+
+    ``claim|status|comments <N>`` | ``view <N> --comments [--since ISO|--last K]`` | ``comments-since <ISO>`` |
+    ``comment-view <id>``.
 
     Exit 1 on a forge failure, 2 on a refusal.
     """
@@ -332,6 +406,11 @@ def main(
         emit(json.dumps(rows, indent=2) if args.json else '\n'.join(lines))
     elif args.json:
         emit(json.dumps(dataclasses.asdict(result), indent=2))
+    elif isinstance(result, IssueThread):
+        head = f'#{result.issue.number} [{result.issue.state}] {result.issue.title}  {result.issue.url}'
+        emit('\n\n'.join([head, *map(_shown, result.comments)]))
+    elif isinstance(result, IssueComment):
+        emit(_shown(result))
     else:
         emit(result.url if isinstance(result, Comment) else _render(result))
     return 0
