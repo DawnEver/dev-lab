@@ -32,10 +32,11 @@ its run -- current, draining for a newer tip, or one no run file names -- is jud
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
@@ -279,9 +280,13 @@ class SlurmCluster:
             self.connect,
             cost=self.config.cost,
             policy=self.config.policy,
-            carry=lambda env: self.carry(run.sha, env, run.platform),
+            carry=functools.partial(self.carry_of, run),
         )
         return True
+
+    def carry_of(self, run: Run, env: str) -> dict[str, tuple[dict[str, Any], str, str]]:
+        """:meth:`carry` of *run*'s sha and part, for the env key its prep job's build reported."""
+        return self.carry(run.sha, env, run.platform)
 
     def killed(self, run: Run, record: Path | None = None) -> tuple[Killed, ...]:
         """*run*'s jobs Slurm killed for memory or time (:mod:`dev_lab.dev.slurmkilled`); an OOM's need is learned.
@@ -446,9 +451,10 @@ class SlurmCluster:
 
 def job_ids(state: dict[str, Any]) -> list[str]:
     """Every job id a run *state* records: its prep job's (``state['prep_job']['job_id']``), then each round's."""
-    prep = state.get('prep_job') or {}
-    rounds = [str(job) for one in state.get('rounds', ()) for job in one['job_ids']]
-    return [str(prep['job_id']), *rounds] if prep.get('job_id') else rounds
+    prep: Mapping[str, Any] = state.get('prep_job') or {}
+    rounds: list[dict[str, Any]] = state.get('rounds', [])
+    ids = [str(job) for one in rounds for job in one['job_ids']]
+    return [str(prep['job_id']), *ids] if prep.get('job_id') else ids
 
 
 def slurm_cluster(root: Path, seat: ClusterAccount | None) -> SlurmCluster:
