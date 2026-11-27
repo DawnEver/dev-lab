@@ -16,9 +16,10 @@ module is the client and the CLI::
 * The keyboard-interactive answer is the user's single-use code from THIS conversation
   (CONSENT-CODE-FROM-THE-USER). It reaches the holder on a pipe and the ssh child through ``SSH_ASKPASS``;
   never argv, disk or a log. An empty code is allowed (a host's trusted window accepts an empty answer).
-* ONE CODE, ONE PLAN (``--plan``): :mod:`dev_lab.dev.sshholdplan` -- the code buys the plan's credentials, then
-  opens every plan host not already held. Before the code is read the door runs the plan's preflight ITSELF (the
-  steps file its last green preflight recorded, or ``--steps``); not green now refuses ``no code used``.
+* ONE CODE, ONE PLAN (``--plan``): :mod:`dev_lab.dev.sshholdplan` -- the code first opens
+  every plan host not already held, then buys the plan's credentials. Before the code is read the door runs the
+  plan's preflight ITSELF (the steps file its last green preflight recorded, or ``--steps``); not green now
+  refuses ``no code used``.
 * THE KEY IS PROVEN FIRST, with no code (:mod:`dev_lab.dev.sshholdprobe`; alone: ``sshhold probe <dest>``): unless
   ssh says ``publickey`` partial success for the host, the open is refused before the code is read, naming the
   identity ssh offered and where the account's keys are registered (Cirrus: SAFE).
