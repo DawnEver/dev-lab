@@ -36,6 +36,7 @@ from dev_lab.dev._logdistil import distil_log
 from dev_lab.dev._verify_address import tree_address
 from dev_lab.dev._verify_coverage import cache_env, coverage_args, coverage_env, coverage_report, coverage_total
 from dev_lab.dev._verify_native import native_steps
+from dev_lab.dev.codeplace import scratch_placement
 from dev_lab.dev.commandtests import script_paths
 from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.envseat import EnvironmentSeat
@@ -77,6 +78,7 @@ __all__ = [
     'OUTCOME_PLUGIN',
     'PYTEST_ARGS',
     'build_verdict',
+    'lint_arguments',
     'run_verify',
 ]
 
@@ -98,6 +100,20 @@ LINT_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ('pyright', ('dev_lab.dev.typecheck',)),
     ('cargo lints', ('dev_lab.dev.cargolints',)),
 )
+
+
+def lint_arguments(root: Path, arguments: tuple[str, ...]) -> tuple[str, ...]:
+    """A lint step's module *arguments* for *root*: a ruff step never judges the declared scratch (#1037).
+
+    OUTPUT-HOLDS-NO-CODE sends an agent's one-off code to scratch, which is never committed
+    (SCRATCH-IS-NEVER-COMMITTED), so a ruff verdict over it judged what is no part of the tree. The sink is read
+    from the placement (one source) and excluded by absolute path, so a same-named directory elsewhere is judged.
+    """
+    if arguments[0] != 'ruff':
+        return arguments
+    sink = (root / scratch_placement(root).scratch).resolve()
+    return (*arguments, '--extend-exclude', sink.as_posix())
+
 
 #: What pytest is always given, before anything the caller forwards. None of these three letters is
 #: cosmetic; each one makes pytest NAME something it would otherwise only COUNT, and every check in
@@ -373,7 +389,11 @@ def run_verify(
             if hooks:
                 reports.append(read_hooks(root, handle=handle))
             for name, arguments in LINT_STEPS:
-                reports.append(read_lint(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
+                reports.append(
+                    read_lint(
+                        name, _tee([sys.executable, '-m', *lint_arguments(root, arguments)], cwd=root, handle=handle)
+                    )
+                )
             reports.extend(native_steps(root, pytest_args, scripts, handle=handle, cargo=cargo, tee=_tee))
             if not no_pytest:
                 handle.write(_PYTEST_BANNER)
