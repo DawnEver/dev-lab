@@ -15,8 +15,6 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import lab_commons.launch as _door
-
 from dev_lab.dev.checkout import git_out, locked_trees, worktrees
 from dev_lab.dev.disposable import disposable_base, marker
 from dev_lab.dev.hook_install import HookInstallError, install
@@ -97,7 +95,7 @@ BOOTSTRAP_TIMEOUT_S = 1800
 def bootstrap(tree: Path) -> int:
     """The tree's own venv, through the family door: ``<this python> -m dev_lab.dev.dep --bootstrap <tree>``."""
     argv = [running_interpreter(), '-m', 'dev_lab.dev.dep', '--bootstrap', str(tree)]
-    return 0 if _door.run(argv, cwd=tree, check=False, timeout=BOOTSTRAP_TIMEOUT_S).returncode == 0 else 1
+    return 0 if subprocess.run(argv, cwd=tree, check=False, timeout=BOOTSTRAP_TIMEOUT_S).returncode == 0 else 1
 
 
 def lane(
