@@ -35,7 +35,7 @@ from typing import Final
 
 import pytest
 from _box_fake import ended
-from lab_commons import box
+from lab_commons import box, launch
 from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Refused, hold, write_ended
 from lab_commons.compute import learned
 from lab_commons.compute.model import Resources
@@ -2233,3 +2233,23 @@ def test_a_repo_declares_its_selection_wall_and_the_box_holds_the_selection_to_i
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nwall_s = 7200\n', encoding='utf-8')
     with pytest.raises(ValueError, match=r'wall_s = 7200 is retired.*write wall = "7200 s"'):
         verifybox.declared_wall_s(tmp_path)
+
+
+@pytest.mark.parametrize('sink', ['scratch/', 'work/sink/'])
+def test_the_ruff_steps_never_judge_the_declared_scratch_but_still_judge_code_beside_it(tmp_path, sink) -> None:
+    """#1037: OUTPUT-HOLDS-NO-CODE sends probes to scratch/, and verify's ruff then failed the verdict on them."""
+    (tmp_path / 'layout.toml').write_text(f"scratch = '{sink}'\n", encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.ruff.lint]\nselect = ["F401"]\n', encoding='utf-8')
+    bad = 'import os\nx=1\n'  # F401 for ruff check, unformatted for ruff format --check
+    for rel in (f'{sink}probe/x.py', 'src/pkg/kept.py'):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(bad, encoding='utf-8')
+    ruff_steps = [arguments for name, arguments in verifysteps.LINT_STEPS if name.startswith('ruff')]
+    assert len(ruff_steps) == 2
+    for arguments in ruff_steps:
+        argv = [sys.executable, '-m', *verifysteps.lint_arguments(tmp_path, arguments)]
+        done = launch.run([*argv, '--no-cache'], cwd=tmp_path, capture_output=True, text=True, check=False)
+        said = done.stdout + done.stderr
+        assert 'probe' not in said, said
+        assert 'kept.py' in said, said  # PLANTED CONTROL: tracked code outside scratch is still judged
+    assert verifysteps.lint_arguments(tmp_path, ('dev_lab.dev.spelling',)) == ('dev_lab.dev.spelling',)

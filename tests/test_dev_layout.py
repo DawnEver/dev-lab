@@ -614,3 +614,35 @@ def test_the_rendered_editor_settings_are_a_family_row(tmp_path) -> None:
     assert layout_violations(root)[1] == [
         f'.vscode/launch.py: .py is not allowed under .vscode (allowed: {sorted([".json"])})'
     ]
+
+
+_NO_DEEP_SCRATCH = _TABLE.replace("'scratch/*' = ['*']\n'scratch/*/*' = ['*']\n'scratch/*/*/*' = ['*']\n", '')
+
+
+def test_scratch_content_is_the_declared_sink_at_any_depth_and_the_same_tree_outside_is_refused(tmp_path) -> None:
+    """#1034: an agent's experiment dir under scratch/ is never an undeclared directory nor a refused format."""
+    assert _NO_DEEP_SCRATCH != _TABLE
+    root = _checkout(tmp_path, _NO_DEEP_SCRATCH)
+    _plant(root, 'scratch/hbprobe1/a/b/c/d/probe.py')
+    _plant(root, 'scratch/hbprobe1/data.weird')
+    assert layout_violations(root)[1] == []
+    assert refuse_layout(root / 'scratch/x/y/z/w/v.py') is None
+    _plant(root, 'hbprobe1/a/probe.py')  # PLANTED CONTROL: the same experiment outside scratch is still judged
+    assert layout_violations(root)[1] == [f'hbprobe1/: {layout._undeclared("hbprobe1")}']
+
+
+def test_a_declared_scratch_elsewhere_is_the_sink_and_the_family_name_is_then_judged(tmp_path) -> None:
+    body = _NO_DEEP_SCRATCH.replace('[layout]', "scratch = 'sink/'\n[layout]") + "sink = ['*']\n"
+    root = _checkout(tmp_path, body)
+    _plant(root, 'sink/exp/deep/x.py')
+    _plant(root, 'scratch/exp/x.py')
+    assert layout_violations(root)[1] == [f'scratch/exp/: {layout._undeclared("scratch/exp")}']
+
+
+def test_a_copy_deep_in_scratch_is_still_named_with_the_discard_door_of_its_entry(tmp_path) -> None:
+    root = _checkout(tmp_path, _NO_DEEP_SCRATCH)
+    _plant(root, 'scratch/hbprobe1/a/b/.git')
+    refusal = scan_refusal(root)
+    assert refusal is not None
+    assert 'scratch/hbprobe1/a/b/: NO-BACKUP-COPIES' in refusal
+    assert 'python -m dev_lab.dev.scratch discard scratch/hbprobe1' in refusal

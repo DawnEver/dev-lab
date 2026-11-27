@@ -163,6 +163,19 @@ def _skipped(rel_dir: str, layout: Layout) -> bool:
     )
 
 
+def _in_scratch(rel_dir: str, layout: Layout) -> bool:
+    """Whether *rel_dir* is at or below the declared one-off sink: rows never judge there (#1034), copies still do."""
+    return _within(rel_dir, (layout.scratch,))
+
+
+def _scratch_door(rel_dir: str, layout: Layout) -> str:
+    """The door out of a copy at *rel_dir* inside scratch: discard its top-level entry; empty elsewhere."""
+    if not _in_scratch(rel_dir, layout) or rel_dir == layout.scratch:
+        return ''
+    entry = '/'.join(rel_dir.split('/')[: layout.scratch.count('/') + 2])
+    return f' An experiment of this session leaves by: python -m dev_lab.dev.scratch discard {entry}'
+
+
 def copy_marker(rel_dir: str, files: set[str], dirs: set[str]) -> str | None:
     """Why the directory *rel_dir* (holding *files* and *dirs*) is a copied checkout under a no-copy root, or None."""
     if rel_dir.split('/', 1)[0] not in NO_COPY_ROOTS:
@@ -187,6 +200,8 @@ def judge(rel: str, layout: Layout) -> str | None:
     # A family kind's own formats are data it declares (salvage keeps bundles): only its rows judge there.
     if top in NO_COPY_ROOTS and suffix in BACKUP_SUFFIXES and family_kind(rel_dir.split('/')) is None:
         return f'{COPY_RULE_ID}: a {suffix} under {top}/ is a parked backup'
+    if _in_scratch(rel_dir, layout):
+        return None  # the one-off sink: an experiment's layout is its own (#1034)
     return _row_verdict(rel_dir, name, layout)
 
 
@@ -270,14 +285,14 @@ def _scan_dir(rel_dir: str, folder: Path, layout: Layout) -> tuple[list[str], li
     """``(subdirectories to descend, violations)`` of one directory: a copy is named whole and not descended."""
     files, dirs = _listing(folder)
     if (why := copy_marker(rel_dir, set(files), set(dirs))) is not None:
-        return [], [f'{rel_dir}/: {COPY_RULE_ID}: {why}. {COPY_DOOR}']
+        return [], [f'{rel_dir}/: {COPY_RULE_ID}: {why}. {COPY_DOOR}{_scratch_door(rel_dir, layout)}']
     lines = _dir_verdicts(rel_dir, files, layout)
     if rel_dir != '.' and _SCOPED in dirs:
         lines.append(f'{rel_dir}/{_SCOPED}/: {_SCOPED_CAUSE}')
         dirs = [d for d in dirs if d != _SCOPED]
     for name in dirs:
         child = name if rel_dir == '.' else f'{rel_dir}/{name}'
-        if not _skipped(child, layout) and _declared_row(child, layout) is None:
+        if not _skipped(child, layout) and not _in_scratch(child, layout) and _declared_row(child, layout) is None:
             lines.append(f'{child}/: {_undeclared(child)}')
     return dirs, lines
 
@@ -291,8 +306,8 @@ def _declared_row(rel_dir: str, layout: Layout) -> tuple[str, frozenset[str]] | 
 
 
 def _descends(child: str, layout: Layout) -> bool:
-    """Whether the walk enters *child*: never a pruned one, nor an undeclared one (named whole by its parent)."""
-    return not _skipped(child, layout) and _declared_row(child, layout) is not None
+    """Whether the walk enters *child*: never a pruned one, nor an undeclared one outside scratch (named whole)."""
+    return not _skipped(child, layout) and (_in_scratch(child, layout) or _declared_row(child, layout) is not None)
 
 
 def layout_violations(root: Path, layout: Layout | None = None, *, incremental: bool = False) -> tuple[int, list[str]]:

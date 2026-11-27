@@ -29,8 +29,10 @@ declares it as a row of its own, naming both exits through :func:`staged_scratch
   NOTHING when there are none -- a reminder that never blocks and costs no tokens when clean.
 
 THE CLI, so a consumer needs no ``scripts/`` adopter: ``list`` (every untracked top-level entry, its size, age
-and owner, oldest first), ``discard <paths>`` (delete one-off files; anything outside scratch, or its README, is
-refused and nothing is deleted) and ``clear [NAME ...] [--keep NAME ...] [--approved WORDS] --yes`` -- THE door for
+and owner, oldest first), ``discard <paths>`` (delete one-off files, and a top-level
+entry DIRECTORY through :func:`clear_scratch` as this session -- its own always, another's under the same in-use
+rule (#1034: an experiment dir had no door out); anything else outside scratch, or its README, is refused and nothing
+is deleted) and ``clear [NAME ...] [--keep NAME ...] [--approved WORDS] --yes`` -- THE door for
 emptying scratch, named by RECURSIVE-DELETE: it deletes the named UNTRACKED top-level entries (this session's when
 none is named), never a tracked file and never outside scratch, refuses the whole clear when a link or junction
 inside an entry points out of scratch, and clears the read-only/hidden attributes Windows sets so a nested ``.git``
@@ -191,25 +193,36 @@ def scratch_reminder(root: Path) -> str | None:
     )
 
 
-def discard_scratch(paths: Iterable[str], *, root: Path) -> list[str]:
+def discard_scratch(paths: Iterable[str], *, root: Path, session: str = '') -> list[str]:
     """Delete one-offs under *root*'s declared scratch, returning them repo-relative; nothing is deleted on a refusal.
 
+    A file is unlinked; a top-level entry directory is cleared as *session* by :func:`clear_scratch`, so its own
+    entry always goes and another live session's, or a freshly touched one, is refused (:func:`in_use`).
+
     Raises:
-        ValueError: a path is outside scratch, is its README, or is not a file.
+        ValueError: a path is outside scratch, is its README, a directory below a top-level entry, or absent; or
+            :func:`clear_scratch` refuses a named directory (:class:`ScratchEscape`, :class:`ScratchInUse`).
 
     """
     scratch = (root / scratch_placement(root).scratch).resolve()
-    targets: list[Path] = []
+    files: list[Path] = []
+    entries: list[str] = []
     for raw in paths:
-        path = Path(raw) if Path(raw).is_absolute() else root / raw
-        path = path.resolve()
-        if not path.is_relative_to(scratch) or path == scratch / SCRATCH_README or not path.is_file():
-            msg = f'{raw}: discard deletes only a one-off file under {scratch}, never its {SCRATCH_README}'
+        path = (Path(raw) if Path(raw).is_absolute() else root / raw).resolve()
+        if path.parent == scratch and path.is_dir():
+            entries.append(path.name)
+        elif path.is_relative_to(scratch) and path != scratch / SCRATCH_README and path.is_file():
+            files.append(path)
+        else:
+            msg = (
+                f'{raw}: discard deletes only a one-off file or a top-level entry directory under {scratch}, never '
+                f'its {SCRATCH_README}'
+            )
             raise ValueError(msg)
-        targets.append(path)
-    for path in targets:
+    cleared = clear_scratch(root, entries, session=session) if entries else []
+    for path in files:
         path.unlink()
-    return [path.relative_to(root.resolve()).as_posix() for path in targets]
+    return [*cleared, *(path.relative_to(root.resolve()).as_posix() for path in files)]
 
 
 def _remind(stdin: TextIO | None) -> int:
@@ -247,7 +260,7 @@ def _verb(mode: str, rest: list[str], root: Path) -> int:
     if mode in {'list', 'clear'}:
         return _clear(rest, root) if mode == 'clear' else 0
     try:
-        for rel in discard_scratch(rest, root=root):
+        for rel in discard_scratch(rest, root=root, session=session_of()):
             emit(f'discarded {rel}')
     except ValueError as exc:
         emit(str(exc))
