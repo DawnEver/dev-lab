@@ -253,6 +253,7 @@ _ENFORCED = {
     'WORKTREES-STAY-INSIDE': (guard('tests/test_dev_worktreeplace.py'), guard('tests/test_dev_hooks.py')),
     # User ruling 2026-11-22: the deny row refuses a hash-like name (real engine); the family body detects one.
     'WORKTREE-NAMES-ITS-TASK': (guard('tests/test_dev_worktreename.py'), guard('tests/test_dev_hooks.py')),
+    'WORKTREES-DO-NOT-NEST': (guard('tests/test_dev_worktreeplace.py'),),
     # User ruling 2026-11-22: the Stop hook sends back a final message naming an image by a relative path.
     'IMAGES-BY-ABSOLUTE-PATH': (guard('tests/test_dev_imagepath.py'),),
     # User ruling 2026-11-20: worktree work was parked under output/. The deny row and the src/ scan refuse it.

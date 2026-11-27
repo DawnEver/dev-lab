@@ -14,12 +14,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dev_lab.dev import worktreename
-from dev_lab.dev.worktreeplace import WORKTREES_REL, listed_worktrees, misplaced_worktrees, remedy
+from dev_lab.dev.worktreeplace import WORKTREES_REL, listed_worktrees, misplaced_worktrees, nested_worktrees, remedy
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-__all__ = ['assert_every_worktree_names_its_task', 'assert_every_worktree_stays_inside']
+__all__ = ['assert_every_worktree_names_its_task', 'assert_every_worktree_stays_inside', 'assert_no_worktree_nests']
 
 
 def assert_every_worktree_stays_inside(*, root: Path) -> None:
@@ -58,5 +58,26 @@ def assert_every_worktree_names_its_task(*, root: Path) -> None:
         msg = (
             f'{len(found)} worktree(s) of this repository are named by a hash, not for their task '
             f'({worktreename.RULE}): {", ".join(item.name for item in found)}. Rename each one:\n{moves}'
+        )
+        raise AssertionError(msg)
+
+
+def assert_no_worktree_nests(*, root: Path) -> None:
+    """No linked worktree of *root*'s repository lies inside another linked worktree (WORKTREES-DO-NOT-NEST).
+
+    An agent spawned with worktree isolation already HAS its tree; a second one added from inside it nests under
+    it, outside the home every scan and reclaim reads. The floor is the same: an empty list is an unread one.
+    """
+    listed = listed_worktrees(root)
+    if not listed:
+        msg = f'git listed no worktree for {root}; the scan read nothing'
+        raise AssertionError(msg)
+    found = nested_worktrees(root)
+    if found:
+        names = ', '.join(path.as_posix() for path in found)
+        msg = (
+            f'{len(found)} worktree(s) of this repository were made inside another worktree (WORKTREES-DO-NOT-NEST): '
+            f'{names}. An isolated agent works in the tree it was given; move each one into the home: '
+            f'git -C "{listed[0].as_posix()}" worktree move <tree> "{listed[0].as_posix()}/{WORKTREES_REL}/<name>".'
         )
         raise AssertionError(msg)

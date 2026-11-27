@@ -18,7 +18,7 @@ import pytest
 
 from dev_lab.dev import agenthooks
 from dev_lab.dev.familyroot import family_root, main_checkout
-from dev_lab.dev.famtests.worktreeplace import assert_every_worktree_stays_inside
+from dev_lab.dev.famtests.worktreeplace import assert_every_worktree_stays_inside, assert_no_worktree_nests
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.venvpath import checkout_interpreter, current_os_name, venv_interpreter
 from dev_lab.dev.worktreeplace import (
@@ -26,6 +26,7 @@ from dev_lab.dev.worktreeplace import (
     is_inside,
     listed_worktrees,
     misplaced_worktrees,
+    nested_worktrees,
     remedy,
 )
 
@@ -186,3 +187,18 @@ def test_a_worktree_inside_finds_the_family_but_requires_its_own_venv(repo: Path
     own.parent.mkdir(parents=True)
     own.write_text('', encoding='utf-8')
     assert checkout_interpreter(inside, os_name=current_os_name()) == own
+
+
+def test_a_tree_made_inside_another_tree_is_reported_and_a_flat_one_is_not(repo: Path) -> None:
+    """WORKTREES-DO-NOT-NEST: a tree made inside another linked tree is named; a flat one is not.
+
+    FLOOR: the fixture's flat tree is not nested. PLANTED CONTROL: an isolated agent's
+    `git worktree add .claude/worktrees/<y>` run from inside its own tree lands under that tree, and is named.
+    """
+    assert nested_worktrees(repo) == ()
+    assert_no_worktree_nests(root=repo)
+    outer = repo / WORKTREES_REL / 'inside'
+    _git('worktree', 'add', '-q', '--detach', str(outer / WORKTREES_REL / 'second'), 'HEAD', cwd=outer)
+    assert [path.name for path in nested_worktrees(repo)] == ['second']
+    with pytest.raises(AssertionError, match='WORKTREES-DO-NOT-NEST'):
+        assert_no_worktree_nests(root=repo)
