@@ -449,4 +449,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'envreads',  # ORIGINAL: 2026-11-25, ENV-IS-READ-ONCE, the environment is read in a declared entry only
     'harness',  # ORIGINAL: 2026-11-25, dev-lab's ENV-IS-READ-ONCE entry, the harness context as a typed record
     'complexity',  # ORIGINAL: 2026-11-25, the per-owner complexity report (fan-out, call path, surface), not a gate
+    'branchcensus',  # the branch census and its two ref readers, split from branchset (2026-11-26)
+    'repodeltas',  # loading a repo's DELTAS module, split from famfiles (2026-11-26)
 )

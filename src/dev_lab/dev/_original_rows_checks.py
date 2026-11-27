@@ -23,4 +23,13 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'passthrough',  # ORIGINAL: 2026-11-25, NO-DETOUR: a forwarding module names what its hop adds
     'covreports',  # ORIGINAL: 2026-11-25, a coverage tool's JSON report (coverage.py, cargo llvm-cov) per file
     'ownercov',  # ORIGINAL: 2026-11-25, OWNER-COVERAGE: per-owner coverage bars and a ratcheting floor
+    'configkeys',  # ORIGINAL: 2026-11-25, CONFIG-VALUES-CARRY-UNITS, a config key never spells its unit
+    'tablequantity',  # ORIGINAL: 2026-11-25, durations and sizes in config tables read with their units
+    'depcites',  # ORIGINAL: 2026-11-25, OWNER-DAG: a cited name needs a dependencies.toml row
+    'renderedspelling',  # ORIGINAL: 2026-11-26, rendered family files pass the family typos check
+    'sharefolder',  # ORIGINAL: 2026-11-27, SHARE-FOLDER-HOLDS-DATA, a share folder keeps data and its figure command
+    'typecheck',  # ORIGINAL: 2026-11-25, pyright as a family section with a per-owner ratchet
+    'cargolints',  # ORIGINAL: 2026-11-25, every Rust workspace inherits one lint base
+    'sectionrender',  # ORIGINAL: 2026-11-25, a family section rendered into a repo's config file
+    'importtime',  # ORIGINAL: 2026-11-26, the per-module import-time report, heaviest first (F9)
 )
