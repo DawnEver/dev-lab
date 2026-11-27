@@ -22,7 +22,9 @@ A host file restating a family key is refused (:func:`check`). ``[dev]`` (:data:
 ``[capabilities.<vendor>] seats``, its one consumer-facing copy.
 
 Install homes are found ON each machine: ``detect`` globs the family's patterns locally and prints the host-file
-lines to propose through a pull request; a vendor with seats and no ``home`` is named by the drift notice.
+lines to propose through a pull request, and ``vendor-row`` (:mod:`dev_lab.dev.vendorrow`) writes a
+USER-CONFIRMED location row on a config-source branch for its pull request; a
+vendor with seats and no ``home`` is named by the drift notice.
 
 A machine with no host file renders the family's ``[dev.default]`` instead, stamped ``[devhost] unmanaged``
 (:mod:`dev_lab.dev.devprofile`); ``[dev] bridge.hpc`` renders as ``[bridge.hpc]``, ``[dev] hooks`` as
@@ -71,6 +73,7 @@ from dev_lab.dev import (
     forgeenroll,
     tomlleaves,
     vendordetect,
+    vendorrow,
     volumefloor,
 )
 from dev_lab.dev._devhost_layers import family_facts_stay_home
@@ -341,8 +344,19 @@ def _local_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -
     return 0
 
 
+def _vendor_row_verb(args: argparse.Namespace) -> int:
+    proposal = vendorrow.Proposal(args.host, args.program, args.program_version, args.home)
+    try:
+        tree, sha = vendorrow.write(args.clone, proposal, confirmed=args.confirmed, base=args.base)
+    except (vendorrow.Unconfirmed, ValueError, RuntimeError) as refused:
+        emit(f'refused: {refused}', err=True)
+        return 2
+    emit(f'vendor-row: {vendorrow.branch_for(proposal)} at {sha[:12]} in {tree}; push it and open its pull request')
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    """The verbs: drift, render, detect, session-start, channels, use-store, enroll, admit, bringup (each its help)."""
+    """The verbs: drift, render, detect, vendor-row, session-start, channels, use-store, enroll, admit, bringup."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -363,6 +377,9 @@ def main(argv: list[str] | None = None) -> int:
     forgecredential.add_use_store(verbs)
     forgeenroll.add_enroll(verbs)
     devhostadmit.add_admit(verbs)
+    vendorrow.add_vendor_row(
+        verbs.add_parser('vendor-row', help='write a CONFIRMED vendor location row on a config-source PR branch')
+    )
     checking = verbs.add_parser('bringup', help='list every wall a new workstation hits, each with its door')
     checking.add_argument('--check', action='store_true', required=True, help='read only; exit 1 while a wall stands')
     setting = verbs.add_parser('local', help='set or unset ONE local-layer key ([repos], [user]) and re-render')
@@ -396,6 +413,7 @@ def main(argv: list[str] | None = None) -> int:
         'drift': lambda: _drift(path, live, args.clone),
         'use-store': lambda: forgecredential.use_declared(declared_by(live.get(OWN_TABLE, {})), args.host),
         'bringup': lambda: bringup.main(live),
+        'vendor-row': lambda: _vendor_row_verb(args),
         'admit': lambda: devhostadmit.run(args, live, live.get(OWN_TABLE, {})),
         'enroll': lambda: forgeenroll.run(args, live.get(OWN_TABLE, {}), declared_by(live.get(OWN_TABLE, {}))),
     }

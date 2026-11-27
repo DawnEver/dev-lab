@@ -38,4 +38,15 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_worktreename.py', 'tests/test_dev_hooks.py'),
     ),
+    (
+        'WORKTREES-DO-NOT-NEST',
+        (
+            # Why: v1 family request FAM-10 (D158) -- an agent given an isolation worktree added a second one.
+            'An agent spawned with worktree isolation already HAS its tree and never adds a second: a tree added '
+            'from inside a linked worktree nests under it, outside the one home every scan and reclaim reads. '
+            'git`s own worktree list is read and a tree lying inside another linked tree is named with the move '
+            'that puts it in the home.'
+        ),
+        ('tests/test_dev_worktreeplace.py',),
+    ),
 )

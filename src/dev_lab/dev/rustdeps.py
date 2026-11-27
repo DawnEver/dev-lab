@@ -16,9 +16,10 @@ with the workspace's features. Refused, by manifest and name:
 * an external crate no ``[rust.external]`` row names, one the row does not allow in this crate, one of another
   kind (a ``normal`` row grants ``[dependencies]`` and ``[dev-dependencies]``, its ``dev_crates`` only the
   latter; ``build`` and ``dev`` only their own), or one missing a feature the row requires;
-* in the crate's ``src/`` (``#[cfg(test)]`` items, ``tests/``, ``benches/`` and ``build.rs`` are not judged), a
-  restricted ``[rust.std]`` path -- ``use`` trees expanded, ``core``/``alloc`` read as ``std``, the longest row
-  wins -- or token (``unsafe``, ``extern "C"``) outside the row's crates;
+* in the crate's ``src/`` (``#[cfg(test)]`` items, ``tests/`` and ``benches/`` are not judged), a restricted
+  ``[rust.std]`` path -- ``use`` trees expanded, ``core``/``alloc`` read as ``std``, the longest row wins -- or token
+  (``unsafe``, ``extern "C"``) outside the row's crates; a ``kind = "build"`` row judges the crate's ``build.rs``
+  (Cargo's default name; a custom ``build =`` path is not seen) instead, and a normal row never does;
 * a holder naming a crate neither in the tree nor declared by a layout.toml ``<crate dir>/Cargo.toml`` row (a crate
   not created yet is allowed, and named for its declared path like one that exists).
 
@@ -169,11 +170,20 @@ def _under(path: str, key: str) -> bool:
 
 
 def _std_problems(root: Path, decl: Declared, crate: Crate, files: Iterable[str]) -> list[str]:
-    paths = [k for k in decl.std if '::' in k]
-    tokens = [k for k in decl.std if '::' not in k]
-    prefix = f'{crate.directory}/src/' if crate.directory else 'src/'
+    """``src/`` against the normal ``[rust.std]`` rows, ``build.rs`` against the build rows."""
+    files = tuple(files)
+    base = f'{crate.directory}/' if crate.directory else ''
+    source = sorted(f for f in files if f.startswith(f'{base}src/') and f.endswith('.rs'))
+    build = [f for f in files if f == f'{base}build.rs']
+    return _std_hits(root, decl, crate, source, 'normal') + _std_hits(root, decl, crate, build, 'build')
+
+
+def _std_hits(root: Path, decl: Declared, crate: Crate, files: Iterable[str], kind: str) -> list[str]:
+    rows = {k: g for k, g in decl.std.items() if g.kind == kind}
+    paths = [k for k in rows if '::' in k]
+    tokens = [k for k in rows if '::' not in k]
     out: list[str] = []
-    for rel in sorted(f for f in files if f.startswith(prefix) and f.endswith('.rs')):
+    for rel in files:
         code = rustsource.code_of((root / rel).read_text(encoding='utf-8'))
         hits: dict[str, set[str]] = {}
         for used in rustsource.paths_used(code):
@@ -183,9 +193,9 @@ def _std_problems(root: Path, decl: Declared, crate: Crate, files: Iterable[str]
         hits.update({k: {k} for k in tokens if rustsource.has_token(code, k)})
         out += [
             f'{rel}: crate {crate.name} uses {", ".join(sorted(used))}, but [rust.std] {key} allows it only in '
-            f'{_only(decl.std[key])}'
+            f'{_only(rows[key])}'
             for key, used in sorted(hits.items())
-            if not _allowed(decl.std[key], crate.name)
+            if not _allowed(rows[key], crate.name)
         ]
     return out
 

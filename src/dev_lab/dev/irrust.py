@@ -1,7 +1,10 @@
 """THE RUST GENERATOR: one ``ir.rs`` holding the shared runtime and one ``mod ir_<module>`` per schema module.
 
-A crate's ``build.rs`` runs ``python -m dev_lab.dev.irschema rust --out $OUT_DIR`` and ``include!``s the file; nothing
-is committed (``docs-src/dev/ir-schema.md``, "Rust output"). Records derive serde with ``deny_unknown_fields``;
+A crate's ``build.rs`` (printed by ``python -m dev_lab.dev.irschema build-rs``, :func:`build_rs`) finds the checkout's
+venv interpreter by probing every :data:`dev_lab.dev.venvpath.VENV_LAYOUTS` spelling upward from the crate -- no
+``PYTHON`` variable, no PATH guess -- runs ``-m dev_lab.dev.irschema rust --out $OUT_DIR`` and ``include!``s the
+file; it reads only ``OUT_DIR``, ENV-IS-READ-ONCE's build-script door. Nothing is committed
+(``docs-src/dev/ir-schema.md``, "Rust output"). Records derive serde with ``deny_unknown_fields``;
 ``validate()`` reports the same ``<path>: expected <x>, got <y>`` as the Python; ``to_json()`` writes the canonical
 bytes the Python writes, so the two languages agree byte for byte on one value.
 """
@@ -16,13 +19,14 @@ from dev_lab.dev._irrust_runtime import RUNTIME_RS
 from dev_lab.dev.irmodel import CONSTANTS_MODULE, refuse
 from dev_lab.dev.irpython import FINGERPRINT_PREFIX, fingerprint
 from dev_lab.dev.irrustpy import PY_RUNTIME_RS, enum_py, id_py, record_py
+from dev_lab.dev.venvpath import VENV_LAYOUTS
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from dev_lab.dev.irmodel import IR, Field, Module, Record, TypeRef
 
-__all__ = ['UNIT_CRATES', 'render', 'write']
+__all__ = ['UNIT_CRATES', 'build_rs', 'render', 'write']
 
 #: Unit crates generated Rust never names: it carries SI ``f64``s, and a unit is read only at the consumer's boundary.
 UNIT_CRATES: Final = frozenset({'uom', 'dimensioned', 'measurements'})
@@ -100,7 +104,7 @@ def _check(ir: IR, f: Field, ref: TypeRef, var: str, path: str) -> list[str]:  #
 
 
 def _validate(ir: IR, record: Record) -> list[str]:
-    lines = []
+    lines: list[str] = []
     for f in record.fields:
         path = f'p_{f.name}'
         var = f'x_{f.name}'
@@ -109,20 +113,20 @@ def _validate(ir: IR, record: Record) -> list[str]:
             continue
         lines.append(f'let {path} = format!("{{path}}.{f.name}");')
         if f.optional:
-            lines += [f'if let Some({var}) = &self.{f.name} {{', *(f'    {b}' for b in body), '}']
+            lines += [f'if let Some({var}) = &self.{f.rust_name} {{', *(f'    {b}' for b in body), '}']
         else:
-            lines += [f'let {var} = &self.{f.name};', *body]
+            lines += [f'let {var} = &self.{f.rust_name};', *body]
     for f in record.fields:
         if f.csr_values:
             lines.append(
-                f'ir_runtime::check_csr(&self.{f.name}, self.{f.csr_values}.shape()[0], '
+                f'ir_runtime::check_csr(&self.{f.rust_name}, self.{record.field(f.csr_values).rust_name}.shape()[0], '
                 f'&format!("{{path}}.{f.name}"))?;'
             )
     return lines
 
 
 def _canonicalize(ir: IR, record: Record, here: str) -> list[str]:
-    lines = []
+    lines: list[str] = []
     for f in record.fields:
         ref = f.type.item if f.type.kind == 'list' else f.type
         if ref.kind != 'record':
@@ -145,13 +149,15 @@ def _field_line(ir: IR, f: Field, here: str) -> list[str]:
     if f.type.kind == 'array':
         module = 'opt_array' if f.optional else 'array'
         attributes.append(f'with = "ir_runtime::{module}"')
+    if f.rust_name != f.name:
+        attributes.append(f'rename = "{f.name}"')
     if f.optional:
         attributes += ['default', 'skip_serializing_if = "Option::is_none"']
         rust = f'Option<{rust}>'
     lines = [f'    /// {f.doc}'] if f.doc else []
     if attributes:
         lines.append(f'    #[serde({", ".join(attributes)})]')
-    return [*lines, f'    pub {f.name}: {rust},']
+    return [*lines, f'    pub {f.rust_name}: {rust},']
 
 
 def _record(ir: IR, module: Module, record: Record) -> list[str]:
@@ -287,3 +293,54 @@ def write(ir: IR, out: Path) -> Path:
         out.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding='utf-8', newline='\n')
     return target
+
+
+_BUILD_RS: Final = """// build.rs -- printed by `python -m dev_lab.dev.irschema build-rs`; edit there, not here.
+use std::path::PathBuf;
+use std::process::Command;
+
+/// Every venv layout, probed rather than switched on (dev_lab.dev.venvpath.VENV_LAYOUTS).
+const VENV_PYTHONS: [&str; __COUNT__] = [__PYTHONS__];
+
+/// The checkout holding a venv at or above this crate, and its interpreter.
+fn venv_python() -> (PathBuf, PathBuf) {
+    let here = std::env::current_dir().expect("Cargo runs a build script in its crate's directory");
+    for dir in here.ancestors() {
+        for rel in VENV_PYTHONS {
+            let candidate = dir.join(rel);
+            if candidate.is_file() {
+                return (dir.to_path_buf(), candidate);
+            }
+        }
+    }
+    panic!(
+        concat!(
+            "no venv interpreter ({}) at or above {}: bootstrap the checkout with ",
+            "`<any python with dev-lab> -m dev_lab.dev.dep --bootstrap <checkout>`",
+        ),
+        VENV_PYTHONS.join(", "),
+        here.display()
+    );
+}
+
+fn main() {
+    let out = std::env::var("OUT_DIR").expect("Cargo sets OUT_DIR for a build script");
+    let (root, python) = venv_python();
+    let status = Command::new(&python)
+        .args(["-m", "dev_lab.dev.irschema", "--root"])
+        .arg(&root)
+        .args(["rust", "--out", &out])
+        .status()
+        .expect("python -m dev_lab.dev.irschema rust");
+    assert!(status.success(), "IR generation failed; the line above names why");
+    println!("cargo:rerun-if-changed={}", root.join("ir").display());
+    println!("cargo:rerun-if-changed={}", root.join("pyproject.toml").display());
+}
+// lib.rs: include!(concat!(env!("OUT_DIR"), "/ir.rs"));
+"""
+
+
+def build_rs() -> str:
+    """The consuming crate's ``build.rs``: the venv interpreter found by layout, the IR written into ``OUT_DIR``."""
+    pythons = ', '.join(f'"{"/".join(parts)}"' for parts in VENV_LAYOUTS.values())
+    return _BUILD_RS.replace('__COUNT__', str(len(VENV_LAYOUTS))).replace('__PYTHONS__', pythons)
