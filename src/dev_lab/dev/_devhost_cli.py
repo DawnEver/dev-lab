@@ -1,6 +1,6 @@
 """The command line of :mod:`dev_lab.dev.devhost`: its verbs and their options, and nothing they do.
 
-:func:`dev_lab.dev.devhost.main` parses with :func:`parser` and dispatches; each verb's behaviour stays there or in
+:func:`dev_lab.dev.devhost.main` parses with :func:`parser` and dispatches; each verb's behavior stays there or in
 the module that adds the verb (``use-store``, ``enroll``, ``admit``, ``vendor-row``).
 """
 
