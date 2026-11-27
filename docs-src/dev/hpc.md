@@ -1,7 +1,19 @@
 # HPC clusters
 
-A Slurm cluster is one more `forge serve` host. Its login node pulls work from the forge over HTTPS, submits a
-commit's suite as a Slurm array, gathers the record and posts the `linux` part; nothing reaches it inbound.
+A Slurm cluster is one more `forge serve` host, shaped by one ruling (user, 2026-11-27, architecture v2):
+
+- **One login poller.** A verification account runs ONE cron tick on its one login host; the tick only polls the
+  forge over HTTPS and drives Slurm. Nothing reaches it inbound.
+- **Prep and tests are Slurm jobs.** The build, the test array and the gather run on compute nodes
+  ([Runs on the cluster](#runs-on-the-cluster)); the login node submits and reads, never computes.
+- **An account holds only what it serves**: the Gitea repos the family binds to its role
+  (`[roles.gitea]` in the family file, `dev_lab.dev.roles`) plus the kit (`dev_lab.dev.hpcaccount.spec.KIT`,
+  dev-lab, whose lock brings lab-commons). A GitHub-hosted repo is served by its Actions, never here.
+- **Reach** (who may open a session on the cluster, for a human's debugging only) is declared per machine
+  (`[dev] hpc` in `hosts/<machine>.toml`, rendered as `[hpc] reach`). A campus-network cluster is reached direct
+  from the workstations on that network and through the VPN from the others; a cluster with a public login is
+  reached direct from every one. Which machine is which lives in the config source, never on this page.
+
 To serve a cluster account, store your forge token there and paste the one deploy line below. To see what a
 cluster is doing, run `forge queue` from anywhere; ssh is only a human's debugging door.
 
@@ -25,7 +37,8 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
 
 - **The same line is the upgrade.** The first run stores the declaration (`[deploy]` in the account's machine
   file: host, root, python, served repos, partitions, and `--slurm-account` when Slurm names several); later
-  runs read it, and flags that disagree with it are refused. `dev-lab` (the kit) is always served: every tick runs it.
+  runs read it, and flags that disagree with it are refused. `[deploy] repos` lists the served repos and the kit;
+  the kit (`spec.KIT`, dev-lab) is the checkout every tick runs from; it is ticked only where a role serves it.
 - **The host refreshes; a repo never updates itself.** The account's one cron line runs the HOST's kit,
   `python -m dev_lab.dev.hpcaccount tick <repo>...` from the dev-lab checkout: it checks out each repo at its
   deployed ref and serves it only from an environment stamped with the key of its inputs (its committed `uv.lock`

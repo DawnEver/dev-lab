@@ -37,14 +37,14 @@ import subprocess
 from collections.abc import Callable, Sequence
 from typing import Final
 
-from lab_commons.hpc.cluster import Runner, Unreachable
+from lab_commons.hpc.cluster import Runner
 from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount import inventory
 from dev_lab.dev.hpcaccount.division import reached_machine
 from dev_lab.dev.hpcaccount.fleet import declared_target
 from dev_lab.dev.hpcaccount.spec import TICK_LOG, crontab_refusal
-from dev_lab.dev.hpcaccount.storage import UNREACHABLE, Pin, on_host
+from dev_lab.dev.hpcaccount.storage import Pin, on_host
 from dev_lab.dev.hpcaccount.transport import grant_runner
 
 __all__ = ['LOG_LINES', 'READS', 'REPO_NAME', 'command_of', 'home_path', 'look', 'main']
@@ -141,9 +141,6 @@ def look(
         out = pin(grant, target.host)(command_of(what, repo, target.root), None)
     except subprocess.TimeoutExpired as slow:
         say(f'look: {user}: refused -- the read ran past {slow.timeout:.0f} s')
-        return 2
-    except Unreachable:
-        say(f'look: {user}: refused -- {UNREACHABLE}')
         return 2
     except (ValueError, PermissionError, LookupError, RuntimeError, OSError) as refused:
         say(str(refused) if str(refused).startswith('look:') else f'look: {user}: refused -- {refused}')

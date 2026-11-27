@@ -42,6 +42,7 @@ from lab_commons.hpc.declared import OutdatedKit
 from lab_commons.hpc.needsets import declared_at
 from lab_commons.resources import admits
 
+from dev_lab.dev import cargostep
 from dev_lab.dev.forgeaffinity import DEFERRED
 from dev_lab.dev.forgecarry import docs_only, part_standing
 from dev_lab.dev.forgeclaim import (
@@ -68,11 +69,13 @@ from dev_lab.dev.forgerequest import (
 )
 from dev_lab.dev.forgerequesthost import untrusted
 from dev_lab.dev.forgeschedule import NO_HOST, NOT_ADMITTED, held, over_budget
-from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.forgestatus import CommitStatus, status_post
 from dev_lab.dev.forgewait import Box, Outlook
 from dev_lab.dev.forgework import Client
+from dev_lab.dev.partfacts import latest
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
+from dev_lab.dev.producer import Owner, owned
 from dev_lab.dev.testcost import Budget, beyond_budget, fits_nowhere, part_costs
 
 __all__ = ['ClaimPass', 'skips']
@@ -238,6 +241,8 @@ class ClaimPass:
             self.declarations[one.sha] = declared_at(self.root, one.sha)[1]
         if self.declarations[one.sha]:
             return one, f'{REFUSED_AT_COMMIT} {self.declarations[one.sha]}'
+        if self.serve.hpc and wanted.platform == cargostep.PART:
+            return self._cargo_gap(one), ''
         try:
             return _part_producer(self.root, one, hpc=bool(self.serve.hpc)), ''
         except (UndeclaredPart, FileNotFoundError) as here:
@@ -247,6 +252,17 @@ class ClaimPass:
                 return one, f'{REFUSED_AT_COMMIT} {NO_HOST} can produce {one.context}: {here}; {there}'
             self.unservable.add(wanted.key)
             return one, f'this host cannot produce {one.context}: {here}'
+
+    def _cargo_gap(self, one: Work) -> Work:
+        """The cargo part on a cluster seat: ``error`` naming :data:`~dev_lab.dev.cargostep.CLUSTER_GAP`, posted once.
+
+        Settled here (``DONE``) either way: nothing is claimed, and a gap already said is not said again.
+        """
+        description = owned(Owner.ENVIRONMENT, cargostep.cluster_gap())
+        said = [s for s in latest(self.history(one.sha)) if s.context == one.context]
+        if not self.dry_run and not (said and said[0].state == 'error' and said[0].description == description):
+            status_post(self.client, one.sha, context=one.context, state='error', description=description)
+        return dataclasses.replace(one, state=DONE)
 
     def _own_request(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
         """A request: refused at its commit when no host could ever reproduce it, waiting while THIS host cannot.

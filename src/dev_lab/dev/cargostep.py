@@ -5,6 +5,12 @@ its own :class:`~dev_lab.dev.reports.StepReport` and so its own result in the ve
 ``cargo <command> <manifest>``. Formatting and lint drift are reds of their own (dev-lab#1033: an unformatted
 writer landed on integration and two later merges each re-formatted it), and the part is produced by a hosted
 Actions job (:func:`dev_lab.dev.jobparts.rows`), so merge-ready waits on it as on ``tests/base``.
+ON GITEA THE CLUSTER PRODUCES IT (user ruling 2026-11-27, architecture v2 (a)). No Actions job derives the part
+there, so the candidate source does (:func:`dev_lab.dev.forgeschedule.candidates`, :func:`workspaces_at`): a Gitea
+commit tracking a workspace needs ``tests/cargo``. Its cluster producer is an ITEM KIND of the lab-commons array --
+:data:`ITEM_ENTRY` run once per :func:`items` entry, returning ``{'exit': code}`` -- and until the array takes a
+part's entry and items (:data:`CLUSTER_GAP`) a cluster seat posts the part ``error`` naming that gap
+(:func:`cluster_gap`), never leaving it silently absent; ``class=environment``, so it is no author's wait.
 A pytest test that shells out to cargo hides the Rust suite inside one Python node id, prices a cargo build as
 one test, and is retired.
 
@@ -34,15 +40,21 @@ from dev_lab.dev.reports import StepReport
 
 __all__ = [
     'BANNER',
+    'CLUSTER_GAP',
     'COMMANDS',
+    'ITEM_ENTRY',
     'PART',
     'argv',
+    'cluster_gap',
     'handed',
+    'items',
     'node',
     'produce',
+    'run_item',
     'step',
     'tracked_workspaces',
     'workspaces',
+    'workspaces_at',
 ]
 
 BANNER: Final = '--- cargo test ---\n'
@@ -50,6 +62,14 @@ BANNER: Final = '--- cargo test ---\n'
 PART: Final = 'cargo'
 #: Each workspace's commands, cheapest first: formatting, lints (``-D warnings``), then the tests.
 COMMANDS: Final = ('fmt', 'clippy', 'test')
+#: The lab-commons array entry (``module:function``) that runs one :func:`items` entry on a compute node.
+ITEM_ENTRY: Final = 'dev_lab.dev.cargostep:run_item'
+#: What the cluster path lacks to produce :data:`PART`: the lab-commons interface it needs, named.
+CLUSTER_GAP: Final = (
+    'no cluster producer: lab_commons.hpc.run.submit_run runs only pytest items -- it needs a per-part entry and '
+    f'items (entry={ITEM_ENTRY!r}, items=cargostep.items(tree, sha)) and gather reading each item result '
+    "{'exit': code} as the cell 'cargo <command> <manifest>'"
+)
 
 
 def node(manifest: str, command: str) -> str:
@@ -69,6 +89,31 @@ def tracked_workspaces(root: Path) -> tuple[str, ...]:
     if listed.returncode:
         return ()
     return workspaces(root, [one for one in listed.stdout.split('\0') if one])
+
+
+def workspaces_at(root: Path, sha: str) -> tuple[str, ...]:
+    """The :func:`workspaces` commit *sha* of *root* tracks, read from git alone; none when *sha* is unreadable."""
+    git = shutil.which('git') or 'git'
+
+    def read(*args: str) -> str | None:
+        done = _door.run([git, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8')
+        return None if done.returncode else done.stdout
+
+    listed = read('ls-tree', '-r', '-z', '--name-only', sha)
+    if listed is None:
+        return ()
+    manifests = [one for one in listed.split('\0') if PurePosixPath(one).name == 'Cargo.toml']
+    found = [one for one in manifests if 'workspace' in _table(read('show', f'{sha}:{one}'))]
+    if not found and 'Cargo.toml' in manifests:
+        found.append('Cargo.toml')
+    return tuple(sorted(found))
+
+
+def _table(text: str | None) -> dict[str, object]:
+    try:
+        return tomllib.loads(text or '')
+    except tomllib.TOMLDecodeError:
+        return {}
 
 
 def workspaces(root: Path, tracked: Iterable[str]) -> tuple[str, ...]:
@@ -95,6 +140,31 @@ def argv(cargo: str, manifest: str, command: str) -> list[str]:
         'test': ['--workspace', '--locked'],
     }[command]
     return [cargo, command, '--manifest-path', manifest, *tail]
+
+
+def items(root: Path, sha: str) -> list[dict[str, str]]:
+    """The array items of commit *sha*'s cargo part: one per workspace and :data:`COMMANDS` entry, cheapest first."""
+    return [{'manifest': one, 'command': command} for one in workspaces_at(root, sha) for command in COMMANDS]
+
+
+def run_item(item: dict[str, str]) -> dict[str, object]:
+    """:data:`ITEM_ENTRY`: run one :func:`items` entry in the task's tree (its cwd); ``{'exit': code, 'node': id}``.
+
+    The array reads a non-zero ``exit`` as the item's ERROR (:mod:`lab_commons.hpc.worker`); no cargo on the node
+    raises, so the item is an ERROR naming the toolchain, never a pass.
+    """
+    cargo = shutil.which('cargo')
+    if cargo is None:
+        msg = 'no cargo on this compute node -- install the toolchain rust-toolchain.toml pins (rustup)'
+        raise FileNotFoundError(msg)
+    manifest, command = item['manifest'], item['command']
+    code = _door.run(argv(cargo, manifest, command), check=False).returncode
+    return {'exit': code, 'node': node(manifest, command)}
+
+
+def cluster_gap() -> str:
+    """The ``tests/cargo`` ``error`` description a cluster seat posts while :data:`CLUSTER_GAP` stands."""
+    return f'no cluster producer: the lab-commons array runs only pytest items ({ITEM_ENTRY}, cargostep.CLUSTER_GAP)'
 
 
 def step(
