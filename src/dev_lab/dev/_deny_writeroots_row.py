@@ -59,6 +59,7 @@ WRITES_STAY_IN_THE_TREE: dict[str, object] = {
         'echo x > "D:/Sync/OneDrive - <org>/meeting/fig.png"',
         'cp fig.png $OneDriveCommercial/share/',
         'Set-Content -Path $env:OneDrive\notes.txt x',
+        "timeout 5m bash -c 'cmd > /tmp/x.log 2>&1' &",
     ),
     'permits': (
         'cat /tmp/probe.py',
@@ -69,5 +70,6 @@ WRITES_STAY_IN_THE_TREE: dict[str, object] = {
         'echo x 2>/dev/null',
         'cat "D:/Sync/OneDrive - <org>/meeting/data.csv"',
         'echo onedrive > output/logs/26/11/23/sync/note.txt',
+        "timeout 5m bash -c 'cmd > output/logs/26/11/27/run/x.log 2>&1' &",
     ),
 }
