@@ -258,7 +258,7 @@ def render_constants(ir: IR) -> str:
         '',
         'from . import _ir_runtime as _rt',
         '',
-        f'_rt.check_fresh(__file__, {root_up}, "pyproject.toml", {sources!r}, {print_.split(":")[0]!r})',
+        f'_rt.check_fresh(__file__, {root_up}, {declaration.version_text!r}, {sources!r}, {print_.split(":")[0]!r})',
     ]
     for c in ir.constants.values():
         lines += ['', f'{c.name.upper()}: Final = {c.value!r}', f'"""{c.expression} [{c.unit}]: {c.reason}"""']
