@@ -68,6 +68,10 @@ def parser() -> argparse.ArgumentParser:
     edits.add_argument(
         '--append-line', action='append', default=[], help='add this line after the current body (repeatable)'
     )
+    moving = _verb(pr, 'retarget')
+    moving.add_argument('number', type=int)
+    moving.add_argument('--base', required=True, help='the integration branch or a declared branch; nothing else')
+    moving.add_argument('--reason', required=True, help='why; posted as a comment before the move')
     opened = _verb(pr, 'create')
     opened.add_argument('--title', required=True)
     opened.add_argument('--body', default='')
@@ -100,6 +104,10 @@ def refused(
         parser.error('pr close: --reason must say why')
     if (args.noun, args.verb) == ('pr', 'create') and args.ready and args.ready_when_current:
         parser.error('pr create: --ready opens it ready; --ready-when-current opens a draft -- choose one')
+    if (args.noun, args.verb) == ('pr', 'retarget') and (
+        said := forgepr.retarget_refusal(args.number, args.base, forgepr.declared_bases(root))
+    ):
+        return said
     if (published := _PUBLISHED_TEXT.get((args.noun, args.verb))) is None:
         return None
     what, texts = published
@@ -117,6 +125,7 @@ _PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, Callable[[argparse.Namespace],
     ('pr', 'create'): ('PR title or body', lambda a: (a.title, a.body)),
     ('pr', 'close'): ('close reason', lambda a: (a.reason,)),
     ('pr', 'edit'): ('PR body', lambda a: (forgepr.edit_text(a),)),
+    ('pr', 'retarget'): ('retarget reason', lambda a: (a.reason,)),
     ('issue', 'create'): ('issue title or body', lambda a: (a.title, a.body)),
     ('issue', 'comment'): ('comment body', lambda a: (a.body,)),
     ('issue', 'label'): ('label names', lambda a: (*a.add, *a.remove)),

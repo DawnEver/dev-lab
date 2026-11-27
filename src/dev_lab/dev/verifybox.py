@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import itertools
 import math
 import os
 import sys
@@ -33,6 +34,7 @@ from lab_commons.box.ledger import holdings
 from lab_commons.box.supply import Reading, room
 from lab_commons.compute import learned
 from lab_commons.compute.model import Demand, Resources
+from lab_commons.dimensions import EXCLUSIVE, GPU, NPU
 from lab_commons.file_io import read_toml
 from lab_commons.log import emit
 from lab_commons.quantity import Renamed, parse, refuse_renamed
@@ -57,6 +59,7 @@ __all__ = [
     'selection_demand',
     'selection_files',
     'selection_mem_gb',
+    'selection_needs',
     'selection_producer',
     'selection_width',
     'selection_workers',
@@ -247,9 +250,31 @@ def claimed_width(argv: Sequence[str], cpu: str | None, *, xdist: bool) -> list[
     return ['-n', cpu]
 
 
-def selection_demand(workers: int, mem_gb: float) -> Demand:
-    """A selection's box claim: one core per worker (one when serial), its measured memory, its wall."""
-    return Demand(cpu=max(1, workers), mem_gb=mem_gb)
+def selection_demand(workers: int, mem_gb: float, needs: frozenset[str] = frozenset()) -> Demand:
+    """A selection's box claim: one core per worker (one when serial), its measured memory, a device per kind it needs.
+
+    Each accelerator kind in *needs* (``gpu``, ``npu``: :mod:`lab_commons.dimensions`) is one whole device (a GPU
+    taken exclusive) on the claim, which the box grants and names to the run (``CUDA_VISIBLE_DEVICES``); a box
+    that cannot read its devices refuses it, naming why (dev-lab #1005: a ``gpu`` part asked none and ran with none).
+    """
+    devices = {kind: 1 for kind in (GPU.name, NPU.name) if kind in needs}
+    if GPU.name in devices:  # a part states no GPU memory, so it takes its GPU whole (the box's EXCLUSIVE)
+        devices[EXCLUSIVE] = 1
+    return Demand({'cpu': max(1, workers), 'mem_gb': mem_gb, **devices})
+
+
+def selection_needs(argv: Sequence[str]) -> frozenset[str]:
+    """The markers every ``-m`` expression in *argv* REQUIRES: its positive ``and`` terms (a part's need-set).
+
+    A part selects as ``gpu and not vendor`` (:func:`lab_commons.hpc.needsets.selecting`); a term under ``not``,
+    or any expression with ``or`` or parentheses, requires nothing.
+    """
+    found: set[str] = set()
+    for flag, expression in itertools.pairwise(argv):
+        if flag != '-m' or ' or ' in f' {expression} ' or '(' in expression:
+            continue
+        found.update(term.strip() for term in expression.split(' and ') if not term.strip().startswith('not '))
+    return frozenset(found - {''})
 
 
 def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tuple[list[str], Path | None]:
@@ -270,7 +295,9 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
     declared = declared_worker_gb(root)
     per = selection_mem_gb(repo, files, 1, declared_gb=declared)
     workers, width = selection_workers(argv, free_room(size), files=len(files), per_gb=per, xdist=xdist_installed())
-    demand = selection_demand(workers, selection_mem_gb(repo, files, workers, declared_gb=declared))
+    demand = selection_demand(
+        workers, selection_mem_gb(repo, files, workers, declared_gb=declared), selection_needs(argv)
+    )
     run = [*argv, *width]
     return command(
         run,

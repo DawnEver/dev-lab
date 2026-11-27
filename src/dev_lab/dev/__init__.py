@@ -404,7 +404,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeprotect` -- ``forge protect plan|check|apply``: ``[tool.dev_lab.protection]`` rendered as a
   GitHub ruleset or a Gitea branch protection per branch role, contexts derived from the rendered workflows.
 * :mod:`dev_lab.dev.forgefailure` -- how a forge answer reads: an answer, transient, a refused call or credential.
-* :mod:`dev_lab.dev.forgepr` -- ``forge pr close|edit``: one PR's state or body written, a reason or text required.
+* :mod:`dev_lab.dev.forgepr` -- ``forge pr close|edit|retarget``: one PR's state, body or base written, a reason or
+  text required; a landing moves the PRs stacked on a head it deletes (#1003).
 * :mod:`dev_lab.dev.forgework` -- issue/PR verbs over Gitea/GitHub REST, no ``gh``/``tea``.
 * :mod:`dev_lab.dev.forgeclient` -- the one place a forge ``Client`` is built (``client_for``, ``stored_client``).
 * :mod:`dev_lab.dev.forgestamp` -- the ``HARNESS_*`` provenance line a created body opens with.

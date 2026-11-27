@@ -275,15 +275,17 @@ def anchor_paths(root: Path, anchors: object) -> tuple[Path, ...]:
 def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tuple[str, ...], tuple[Path, ...]]:
     """Validate target-owned environment, extras and anchors before mutation.
 
+    The extras are the repo's declared ones (``[tool.dev_lab.dep] extras``) followed by every *requested* one: a
+    named extra adds to the always-on set and never drops it.
+
     Anchors live in their own ``[tool.dev_lab.anchors] paths``: ``[tool.dev_lab.dep]`` is
     :mod:`lab_commons.extras`'s closed table, read by that one reader, which refuses any key it does not own.
     """
     manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
     available = manifest.get('project', {}).get('optional-dependencies', {})
-    selected = requested if requested is not None else extras.extras_for(manifest, (), str(root / 'pyproject.toml'))
-    if not isinstance(selected, (list, tuple)) or any(not isinstance(name, str) for name in selected):
-        msg = 'tool.dev_lab.dep.extras must be an array of declared extra names'
-        raise ValueError(msg)
+    declared = extras.extras_for(manifest, (), str(root / 'pyproject.toml'))
+    # A named extra ADDS to the always-on ones (dev-lab #1005): `--extra gpu` replacing `dev` left no dev_lab.
+    selected = tuple(dict.fromkeys([*declared, *(requested or ())]))
     unknown = set(selected) - set(available)
     if unknown:
         msg = f'unknown dependency extras: {sorted(unknown)}'
@@ -343,3 +345,37 @@ def lock_upgrade(
         moved = uvrelease.release(pin_file(root), required)
         pin_uv(root, required, {key: digest for key, (_asset, digest) in moved.assets.items()})
     return code
+
+
+def lock_text(root: Path) -> str:
+    """*root*'s ``uv.lock`` text; ``''`` when it has none."""
+    lock = root / 'uv.lock'
+    return lock.read_text(encoding='utf-8') if lock.is_file() else ''
+
+
+def relock_note(root: Path, before: str) -> str:
+    """What an unfrozen sync did to *root*'s ``uv.lock`` (*before*: its text first), or ``''`` when unchanged.
+
+    A plain ``--sync`` re-resolves the floating Git requirements and may add packages (dev-lab #1005): the lock it
+    leaves is a CHANGE in the worktree, so it is said, with each package moved and the door that only builds the
+    committed lock (a frozen ``--bootstrap``).
+    """
+    after = lock_text(root)
+    if before == after:
+        return ''
+    old, new = _locked(before), _locked(after)
+    moved = sorted(name for name in old.keys() | new.keys() if old.get(name) != new.get(name))
+    return (
+        f'dep --sync RELOCKED {root / "uv.lock"} ({", ".join(moved) or "its metadata"}): commit it or restore it; '
+        f'to build the committed lock unchanged: python -m dev_lab.dev.dep --bootstrap {root}'
+    )
+
+
+def _locked(text: str) -> dict[str, tuple[str, str]]:
+    """Each locked package's version and source, by name; an unreadable lock reads as none."""
+    try:
+        parsed: dict[str, Any] = tomllib.loads(text) if text else {}
+    except tomllib.TOMLDecodeError:
+        return {}
+    rows: list[dict[str, Any]] = parsed.get('package', [])
+    return {str(row.get('name', '')): (str(row.get('version', '')), str(row.get('source', ''))) for row in rows}
