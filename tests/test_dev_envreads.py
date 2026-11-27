@@ -371,3 +371,31 @@ def test_a_pending_test_switch_is_not_stale_and_the_census_records_it(tmp_path: 
     _write(tmp_path, 'tests/test_a.py', _SWITCH)
     files = ('tests/test_a.py', 'tests/test_b.py')
     assert envreads.census(tmp_path, EnvPolicy(), files) == ('tests/test_a.py',)
+
+
+# -- the build-script door: Cargo hands a build script OUT_DIR only through the environment (FAM-03 c) ---------------
+
+_OUT_DIR = 'fn main() {\n    let out = std::env::var("OUT_DIR").unwrap();\n}\n'
+
+
+@pytest.mark.parametrize('strict', [False, True])
+def test_a_build_script_reading_out_dir_passes_in_every_mode(tmp_path: Path, *, strict: bool) -> None:
+    """THE DOOR: ``env::var("OUT_DIR")`` / ``var_os("OUT_DIR")`` in a crate's ``build.rs`` is Cargo's contract."""
+    files = {'rust/crates/a/build.rs': _OUT_DIR, 'build.rs': 'fn main() { env::var_os( "OUT_DIR" ); }\n'}
+    assert _problems(tmp_path, EnvPolicy(strict=strict), files) == []
+
+
+@pytest.mark.parametrize(
+    ('rel', 'source'),
+    [
+        ('rust/crates/a/src/lib.rs', _OUT_DIR),  # OUT_DIR outside a build script
+        ('rust/crates/a/build.rs', 'fn main() { std::env::var("PYTHON").ok(); }\n'),  # another variable
+        ('rust/crates/a/build.rs', 'fn main() { env::var("OUT_DIR"); env::var("HOME"); }\n'),  # a second read
+        ('rust/crates/a/build_rs.rs', _OUT_DIR),  # only the file named build.rs
+    ],
+)
+def test_the_door_admits_out_dir_in_build_rs_only(tmp_path: Path, rel: str, source: str) -> None:
+    """PLANTED CONTROLS: each is still a read the check refuses."""
+    found = _problems(tmp_path, EnvPolicy(strict=True), {rel: source})
+    assert len(found) == 1, found
+    assert rel in found[0]

@@ -21,8 +21,9 @@ keys to the tables, never to an owner's name, so a repo renames its owners freel
     [rust.external]              # external crate -> crates; kind normal (default) | build | dev; features required;
     rayon = { crates = ["assemble"], reason = "..." }   # dev_crates: crates granted it for tests only
     serde_json = { crates = ["contracts"], dev_crates = ["*"], reason = "..." }
-    [rust.std]                   # restricted std paths or tokens (unsafe, extern "C") -> crates; unlisted = allowed
-    "std::env" = { crates = [], reason = "..." }
+    [rust.std]                   # restricted std paths or tokens (unsafe, extern "C") -> crates; unlisted = allowed;
+    "std::env" = { crates = [], reason = "..." }     # kind normal (default) judges src/, build judges build.rs only
+    "std::fs" = { crates = ["contracts"], kind = "build", reason = "the build writes OUT_DIR" }
 
 There is no crate table: a workspace crate lives at ``rust/crates/<owner path>`` (``rust/crates/compile/assemble``,
 named ``compile_assemble``), so it IS a stage of the Python owner graph, and its Cargo edges are judged by the same
@@ -52,6 +53,7 @@ __all__ = [
     'KINDS',
     'LOADS',
     'RETIRED',
+    'STD_KINDS',
     'Declared',
     'DependenciesError',
     'Edge',
@@ -68,6 +70,8 @@ ALL: Final = '*'
 #: What a hop may add (principle ``no-detour``): a translation, a policy, or one point of control.
 ADDS: Final = frozenset({'translation', 'policy', 'control'})
 KINDS: Final = frozenset({'normal', 'build', 'dev'})
+#: A ``[rust.std]`` row judges the crate's ``src/`` (normal) or its ``build.rs`` (build); tests are never judged.
+STD_KINDS: Final = frozenset({'normal', 'build'})
 #: When a Python package row's import runs: at module load (default), or only inside a function (heavy-optional).
 LOADS: Final = frozenset({'eager', 'deferred'})
 #: Tables a newer shape replaced, each with its door (refused by name, never read).
@@ -226,8 +230,9 @@ def _grant(table: str, name: str, row: object, holder: str, allowed: set[str]) -
     kind, features, load = spec.get('kind', 'normal'), _names(spec.get('features', [])), spec.get('load', 'eager')
     if not isinstance(load, str) or load not in LOADS:
         _refuse(f'[{table}] {name}: load {load!r}, not one of {sorted(LOADS)}')
-    if not isinstance(kind, str) or kind not in KINDS:
-        _refuse(f'[{table}] {name}: kind {kind!r}, not one of {sorted(KINDS)}')
+    kinds = STD_KINDS if table == 'rust.std' else KINDS
+    if not isinstance(kind, str) or kind not in kinds:
+        _refuse(f'[{table}] {name}: kind {kind!r}, not one of {sorted(kinds)}')
     if features is None:
         _refuse(f'[{table}] {name} features must be a list of feature names, not {spec.get("features")!r}')
     dev = _dev_crates(table, name, spec.get('dev_crates', []))
@@ -256,6 +261,8 @@ def _dev_crates(table: str, name: str, value: object) -> tuple[str, ...]:
 
 def _grants(table: str, rows: Mapping[str, Any], holder: str, *, rust_external: bool = False) -> dict[str, Grant]:
     allowed = {holder, 'reason', *(('kind', 'features', 'dev_crates') if rust_external else ())}
+    if table == 'rust.std':
+        allowed.add('kind')
     if table.startswith('python.'):
         allowed.add('load')
     return {name: _grant(table, name, row, holder, allowed) for name, row in rows.items()}
