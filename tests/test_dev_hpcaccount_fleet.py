@@ -477,8 +477,16 @@ def test_a_first_install_precedes_the_kits_tick_and_clones_the_layers_repos() ->
     assert command.index('[first-install]') < command.index('+refs/heads/main:refs/remotes/origin/main')
     assert f'[ -x {shell_interpreter("/r/src/repos/dev-lab")} ] ||' in command
     assert 'git clone -q --branch main https://forge.example/team/dev-lab.git /r/src/repos/dev-lab' in command
-    assert '( cd /r/src/repos/dev-lab && uv sync --frozen )' in command
-    assert 'https://astral.sh/uv/install.sh' in command
+    job = command.index('sbatch --wait')
+    assert command.index('git clone') < job < command.index('uv sync --frozen'), 'cloned here, synced in the job'
+    assert command.index('https://astral.sh/uv/install.sh') > job, "uv's install runs in the job too"
+
+
+#: A fake ``sbatch``: records its flags, then runs the ``--wrap`` script as the job would, returning its exit code.
+_SBATCH = (
+    '#!/bin/sh\necho sbatch "$@" >> "$HOME/calls"\n'
+    'while [ $# -gt 0 ]; do\n  if [ "$1" = --wrap ]; then sh -c "$2"; exit $?; fi\n  shift\ndone\nexit 2\n'
+)
 
 
 def _first_install(tmp_path: Path, *, venv: bool) -> str:
@@ -492,6 +500,8 @@ def _first_install(tmp_path: Path, *, venv: bool) -> str:
     for tool in ('uv', 'git', 'curl'):
         (stubs / tool).write_text(f'#!/bin/sh\necho {tool} "$@" >> "$HOME/calls"\n', encoding='utf-8', newline='\n')
         (stubs / tool).chmod(0o755)
+    (stubs / 'sbatch').write_text(_SBATCH, encoding='utf-8', newline='\n')
+    (stubs / 'sbatch').chmod(0o755)
     if venv:
         python = root / 'repos' / 'dev-lab' / '.venv' / 'bin' / 'python'
         python.write_text('#!/bin/sh\n', encoding='utf-8', newline='\n')
@@ -504,10 +514,14 @@ def _first_install(tmp_path: Path, *, venv: bool) -> str:
     return calls.read_text(encoding='utf-8') if calls.is_file() else ''
 
 
-def test_a_kit_with_no_venv_is_first_installed(tmp_path: Path) -> None:
+def test_a_kit_with_no_venv_is_first_installed_in_a_slurm_job(tmp_path: Path) -> None:
+    """ONE-LOGIN-POLLER (user ruling 2026-11-27): the sync runs in ONE waited-for Slurm job, never on the login node."""
     calls = _first_install(tmp_path, venv=False)
-    assert 'uv sync --frozen' in calls
-    assert 'curl' not in calls, 'a uv already on PATH is not reinstalled'
+    lines = calls.splitlines()
+    submitted = next(i for i, line in enumerate(lines) if line.startswith('sbatch --wait'))
+    synced = next(i for i, line in enumerate(lines) if line.startswith('uv sync --frozen'))
+    assert submitted < synced, 'the sync is the job'
+    assert not [line for line in lines if line.startswith('curl')], 'a uv already on PATH is not reinstalled'
 
 
 def test_a_kit_with_its_venv_skips_the_first_install(tmp_path: Path) -> None:
@@ -534,6 +548,7 @@ def test_a_declared_kit_ref_moves_the_kit_itself_never_through_the_stale_machine
     synced = command.index('uv sync --frozen', checkout)
     assert 'flock -w 600' in command
     assert '/serve/tick.lock' in command, "the account's one tick lock"
+    assert command.index('sbatch --wait') < synced, 'the re-sync runs in a Slurm job'
     assert synced < command.index('-m dev_lab.dev.devhost render')
     assert 'hpcaccount tick dev-lab' not in command
     unnamed = deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC)

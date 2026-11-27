@@ -37,7 +37,7 @@ from dev_lab.dev.forgefleet import serve_off
 from dev_lab.dev.forgehosts import card_host, mark_held
 from dev_lab.dev.forgeoutbox import unprompted_client
 from dev_lab.dev.hpcaccount import prep
-from dev_lab.dev.hpcaccount.checks import follow_uv, runs
+from dev_lab.dev.hpcaccount.checks import follow_uv, runs, tool_plan
 from dev_lab.dev.hpcaccount.grantslice import RERENDER
 from dev_lab.dev.hpcaccount.spec import (
     VERIFICATION,
@@ -48,8 +48,9 @@ from dev_lab.dev.hpcaccount.spec import (
     load,
     served,
     serves_here,
+    uv_cache,
 )
-from dev_lab.dev.hpcaccount.steps import Step, Tools, build, declared, env_key, update
+from dev_lab.dev.hpcaccount.steps import Step, Tools, build, declared, env_key, prune_uv, update
 from dev_lab.dev.hpcaccount.tickwall import WALL, Wall, within
 from dev_lab.dev.roles import Unbound
 from dev_lab.dev.tickholder import Holder
@@ -87,8 +88,11 @@ _runs = runs
 
 
 def prep_build(name: str, *, home: Path, config: Path | None = None, tools: Tools | None = None) -> int:
-    """The prep job's body, ON A COMPUTE NODE: uv to its pin, *name*'s ``needs`` probed, then its environment built.
+    """The prep job's body, ON A COMPUTE NODE: uv to its pin, *name*'s tools, its environment, the uv cache pruned.
 
+    The tools are ``uv``, ``rclone`` and the repo's ``needs``, each probed by its ``--version`` on the node and one
+    that does not run installed through its one installer (:func:`~dev_lab.dev.hpcaccount.checks.tool_plan`), else
+    refused by name; then :func:`~dev_lab.dev.hpcaccount.steps.build` and the account's ONE uv cache pruned.
     0 built (or already current); 2 refused, the reason printed -- the job's log is what the tick's next submit names.
     """
     path = config or config_path()
@@ -105,14 +109,26 @@ def prep_build(name: str, *, home: Path, config: Path | None = None, tools: Tool
     if lagging := follow_uv():
         emit(f'[prep-build] {lagging}', err=True)
     try:
-        lacking = [tool for tool in declared(checkout_of(spec, repo)).needs if not _runs(step.tools.sh, ':', tool)]
+        needs = declared(checkout_of(spec, repo)).needs
+        installs, lacking = tool_plan(needs, found=lambda tool: _runs(step.tools.sh, ':', tool))
+        cache = {'UV_CACHE_DIR': str(uv_cache(spec.root))}  # `uv tool install`: the ONE cache, not the user default
+        lacking += [
+            tool
+            for tool, script in installs
+            if step.change(f'install {tool}: {script}', [*step.tools.sh, script], env=cache)
+        ]
         if lacking:
-            emit(f'[prep-build] {name}: this node lacks {", ".join(lacking)} (`--version` does not run)', err=True)
+            emit(
+                f'[prep-build] {name}: this node lacks {", ".join(lacking)} and has no installer for it -- ask for it '
+                'on the compute nodes, or link it into ~/.local/bin; the next tick asks again',
+                err=True,
+            )
             return 2
-        return build(step, spec, home, repo)
+        rc = build(step, spec, home, repo)
     except REFUSALS as why:
         emit(f'[prep-build] {name} refused: {why}', err=True)
         return 2
+    return rc or prune_uv(step, spec)
 
 
 def _declared(name: str, path: Path) -> tuple[Deployment, Repo] | str:

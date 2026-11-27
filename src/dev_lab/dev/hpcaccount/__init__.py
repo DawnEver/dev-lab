@@ -15,6 +15,8 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   whose environment is not current is asked of a Slurm prep job.
 * ``prep-build <repo>`` (:func:`~dev_lab.dev.hpcaccount.tick.prep_build`) is that prep job's body, run ON A
   COMPUTE NODE: uv to its pin, the repo's ``needs`` probed, its environment built and published.
+* ``femm-build`` (:func:`~dev_lab.dev.hpcaccount.deploy.femm_in_job`) is the FEMM 5 build job's body, run ON A
+  COMPUTE NODE where the deploy found ``[capabilities.femm]`` declared and not installed.
 * ``allocate --until <iso> [name=cpus/mem_gb ...] [--borrow <direction>] | --show | --clear``
   (:mod:`~dev_lab.dev.hpcaccount.allocate`) writes, prints or deletes the ONE expiring allocation record on the forge
   (:mod:`lab_commons.hpc.allocation`); the forge's own submits read it (:mod:`dev_lab.dev.forgeslurm`).
@@ -96,7 +98,7 @@ _USAGE = (
     'archive [...] | archive-clean [...] | salvage [...] | '
     'reclaim-foreign [...] | storage-check [...] | '
     'tick-status [...] | tick-stop [...] | '
-    'tick <repo>... [--lock <path> --wall-minutes <m>] | prep-build <repo> | allocate [...]}'
+    'tick <repo>... [--lock <path> --wall-minutes <m>] | prep-build <repo> | femm-build | allocate [...]}'
 )
 
 
@@ -159,6 +161,8 @@ def main(argv: list[str] | None = None) -> int:
         from dev_lab.dev.hpcaccount.tick import prep_build  # noqa: PLC0415 -- the package imports no verb
 
         return prep_build(rest[0], home=Path.home())
+    if verb == 'femm-build' and not rest:
+        return deploy.femm_in_job(Path.home())
     emit(retired_refusal('dev_lab.dev.hpcaccount', verb) or _USAGE, err=True)
     return 2
 

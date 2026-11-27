@@ -111,6 +111,8 @@ class Box:
     tools: Tools
     refused_api: dict[str, str]
     alarms: list[tuple[str, ...]]
+    #: Every prep job the deploy asked: ``(checkout, key, script)``.
+    jobs: list[tuple[Path, str, str]] = field(default_factory=list)
     #: What the forge says the stored credential is on every repo (``auth role``): a reader by default.
     identity: dict[str, object] = field(default_factory=lambda: {'login': 'ro-login', 'push': False, 'admin': False})
 
@@ -129,7 +131,16 @@ class Box:
             api=lambda url, _home: next((why for name, why in self.refused_api.items() if f'/{name}.git' in url), ''),
             alarm=lambda *raised: self.alarms.append(raised),
             role=lambda _url, _home: dict(self.identity),
+            submit=self.submit,
         )
+
+    def submit(self, checkout: Path, key: str, **kw: str) -> str:
+        self.jobs.append((checkout, key, kw['script']))
+        return f'submitted job {len(self.jobs)}'
+
+    def prep(self, name: str) -> int:
+        """What the prep job of *name* runs on its compute node: the kit's own ``prep-build``."""
+        return tick.prep_build(name, home=self.home, config=self.machine, tools=self.tools)
 
     def logged(self) -> str:
         return self.calls.read_text(encoding='utf-8') if self.calls.exists() else ''
@@ -161,7 +172,10 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Box:
     monkeypatch.setenv('FAKE_ID', 'alice')
     monkeypatch.setenv('FAKE_SACCT', SACCT)
     monkeypatch.setattr(deploy, '_which', lambda name, **_kw: f'/x/{name}')
-    monkeypatch.setattr(deploy, '_runs', lambda _sh, _env, _tool: True)  # every tool runs unless a test says not
+    monkeypatch.setattr(
+        tick, '_runs', lambda _sh, _env, _tool: True
+    )  # every tool runs in the job unless a test says not
+    monkeypatch.setattr(tick, 'follow_uv', lambda: '')  # the job's uv is the pin unless a test says not
     monkeypatch.setattr(deploy, '_proves', lambda _git, _scratch: '')  # every git qualifies unless a test says not
     calls = tmp_path / 'calls.log'
     crontab = tmp_path / 'crontab.txt'
@@ -216,10 +230,7 @@ def test_a_repo_declaring_a_retired_table_is_refused_alone_and_the_others_are_se
     assert 'beta' in err
     assert f'{retired} is retired' in err
     assert [(repo, retired in body) for repo, _subject, body in box.alarms] == [(f'{URL}/beta.git', True)]
-    calls = box.logged()
-    ticks = [line for line in calls.splitlines() if 'hpcaccount tick' in line]
-    assert sum(' tick beta ' in line for line in ticks) == 1, 'the refused repo is not ticked on the second run'
-    assert sum(' tick alpha ' in line for line in ticks) == 2
+    assert 'hpcaccount tick' not in box.logged(), 'the deploy runs no tick: the one cron line does'
 
 
 def test_a_repo_whose_hpc_declaration_is_invalid_is_refused_alone_and_the_others_are_served(
@@ -293,17 +304,29 @@ def test_dry_run_touches_nothing_and_prints_every_action(box: Box, capsys: pytes
     assert [p.name for p in box.home.iterdir()] == ['.git-credentials'], 'only the token the fixture stored'
     reads = {'git ls-remote', 'git config', 'crontab -l', 'id -un', 'sacctmgr -nP'}
     assert {' '.join(line.split()[:2]) for line in box.logged().splitlines()} <= reads
-    for action in ('declare [deploy]', 'git clone', 'uv sync --extra dev', 'crontab', 'tick'):
+    for action in ('declare [deploy]', 'git clone', 'its prep job', 'crontab'):
         assert action in out
+    assert 'uv sync' not in out, 'nothing is built on the login node'
     assert '[[hpc.grant]]' in out
     assert out.count('[dry-run]') >= 7
 
 
-def test_the_venv_is_built_once_per_declaration(box: Box) -> None:
+def test_the_deploy_builds_nothing_and_asks_each_prep_job_once(box: Box) -> None:
+    """ONE-LOGIN-POLLER (user ruling 2026-11-27): no install on the login node; each repo's prep job builds it once.
+
+    PLANTED CONTROL: once built, the next deploy asks nothing.
+    """
     assert box.run(*DECLARE) == 0
+    assert 'uv sync' not in box.logged(), 'nothing is built on the login node'
+    assert sorted(path.name for path, _key, _script in box.jobs) == ['alpha', 'beta', 'dev-lab']
+    assert all(script.endswith(f'prep-build {path.name}') for path, _key, script in box.jobs)
+    for name in ('dev-lab', 'alpha', 'beta'):
+        assert box.prep(name) == 0
+    assert box.logged().count('uv sync --frozen --extra dev') == 3  # one per repo, in its job
+    assert box.logged().count('uv cache prune --cache-dir') == 3, 'the ONE cache is pruned after every build'
+    box.jobs.clear()
     assert box.run() == 0
-    assert box.logged().count('uv sync --frozen --extra dev') == 3  # one per repo, not per run
-    assert box.logged().count('uv cache prune --cache-dir') == 2, 'the ONE cache is pruned after every deploy'
+    assert box.jobs == [], 'every environment is current: no job is asked'
 
 
 def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(box: Box) -> None:
@@ -314,6 +337,7 @@ def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(b
     spares one a process runs from).
     """
     assert box.run(*DECLARE) == 0
+    assert box.prep('alpha') == 0
     alpha = box.root / 'repos' / 'alpha'
     first = venvpointer.named(alpha)
     assert first is not None, 'the build is published through the pointer'
@@ -322,7 +346,7 @@ def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(b
     pyproject.write_text(
         pyproject.read_text(encoding='utf-8').replace('extras = ["dev"]', 'extras = []'), encoding='utf-8'
     )
-    assert box.run() == 0
+    assert box.prep('alpha') == 0
     second = venvpointer.named(alpha)
     assert second is not None
     assert second != first, 'a moved key never syncs into the live environment'
@@ -342,7 +366,8 @@ def test_every_served_venv_is_exactly_its_committed_lock(box: Box) -> None:
     """
     assert box.run(*DECLARE) == 0
     (box.root / 'repos' / 'dev-lab' / '.git' / 'HEAD_SHA').write_text('b' * 40, encoding='utf-8')
-    assert box.run() == 0
+    for name in ('dev-lab', 'alpha', 'beta'):
+        assert box.prep(name) == 0
     assert _overlays(box) == []
 
 
@@ -411,32 +436,37 @@ def test_an_unset_credential_helper_is_refused_naming_the_fix(
 def test_a_missing_tool_is_installed_or_refused_by_name(
     box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The uv and cargo installers are the official ones, into ~/.local and ~/.cargo; cc cannot, so it is refused."""
-    monkeypatch.setattr(deploy, '_runs', lambda _sh, _env, tool: tool not in {'uv', 'cargo'})
-    monkeypatch.setattr(deploy, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
+    """In the prep job: the uv and cargo installers are the official ones, into ~/.local and ~/.cargo; cc cannot."""
     assert box.run(*DECLARE) == 0
-    installs = [line for line in box.logged().splitlines() if line.startswith('sh curl')]
+    monkeypatch.setattr(tick, '_runs', lambda _sh, _env, tool: tool not in {'uv', 'cargo'})
+    monkeypatch.setattr(tick, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
+    start = len(box.logged())
+    assert box.prep('alpha') == 0
+    installs = [line for line in box.logged()[start:].splitlines() if line.startswith('sh curl')]
     assert len(installs) == 2
     assert 'UV_NO_MODIFY_PATH=1' in installs[0]
     assert '--no-modify-path' in installs[1]
-    monkeypatch.setattr(deploy, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cc',)))
-    monkeypatch.setattr(deploy, '_runs', lambda _sh, _env, tool: tool != 'cc')
-    assert box.run() == 2
+    monkeypatch.setattr(tick, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cc',)))
+    monkeypatch.setattr(tick, '_runs', lambda _sh, _env, tool: tool != 'cc')
+    capsys.readouterr()
+    assert box.prep('alpha') == 2
     err = capsys.readouterr().err
     assert 'cc' in err
     assert '.local/bin' in err
 
 
-def test_a_tool_is_probed_by_its_version_in_the_tick_environment(box: Box, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Present is CAPABILITY: ``cargo --version`` under the tick's PATH and grant setup, never a PATH lookup."""
-    probed: list[tuple[str, str]] = []
-    monkeypatch.setattr(deploy, '_runs', lambda _sh, env, tool: probed.append((env, tool)) or True)
-    monkeypatch.setattr(deploy, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
+def test_a_tool_is_probed_by_its_version_on_the_jobs_node(box: Box, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Present is CAPABILITY: ``cargo --version`` where the build runs -- the prep job's node -- never a PATH lookup.
+
+    PLANTED CONTROL: the deploy itself probes nothing (ONE-LOGIN-POLLER).
+    """
+    probed: list[str] = []
+    monkeypatch.setattr(tick, '_runs', lambda _sh, _env, tool: probed.append(tool) or True)
+    monkeypatch.setattr(tick, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
     assert box.run(*DECLARE) == 0
-    assert {tool for _env, tool in probed} == {'uv', 'rclone', 'cargo'}
-    assert all(
-        env == deploy_spec.tick_environment(box.home, box.root.as_posix(), [str(Path('/x'))]) for env, _tool in probed
-    )
+    assert probed == [], 'the deploy probes no tool on the login node'
+    assert box.prep('alpha') == 0
+    assert set(probed) == {'uv', 'rclone', 'cargo'}
 
 
 def test_the_login_shell_gets_the_tick_user_installs_once_with_a_backup(box: Box) -> None:
@@ -684,6 +714,11 @@ def _prepared(box: Box, name: str) -> None:
 
 
 def _tick(box: Box, name: str, served: list[tuple[list[str], Path, str]]) -> int:
+    spec = deploy_spec.load(box.machine)
+    repo = next((one for one in spec.repos if one.name == name), None) if spec else None
+    if spec is not None and repo is not None and deploy_steps.declared(deploy_spec.checkout_of(spec, repo)).install:
+        _prepared(box, name)
+
     def run(argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
         served.append((argv, cwd, box.logged()))
         return _Done(0)
@@ -750,6 +785,7 @@ def test_a_tick_whose_refresh_spent_its_wall_serves_nothing_and_says_so(
 ) -> None:
     """PLANTED CONTROL beside it: the same tick with time left serves, handing the serve its wall."""
     assert box.run(*DECLARE) == 0
+    _prepared(box, 'alpha')
     record = tmp_path / 'alpha.lock.holder'
     tickholder.write(record, tickholder.Holder(1, None, '2026-11-23T09:57:00+00:00', 0.0, 'alpha'))
     served: list[object] = []
@@ -829,6 +865,7 @@ def test_a_tick_whose_lock_moved_asks_the_prep_job_and_never_builds(
         served.append((argv, cwd, ''))
         return _Done(0)
 
+    _prepared(box, 'alpha')
     stamp = venvpointer.current(alpha) / deploy_steps.STAMP
     stamp.write_text('a key the lock no longer has', encoding='utf-8')
     served: list[tuple[list[str], Path, str]] = []
@@ -1250,23 +1287,25 @@ def test_a_machine_file_without_a_root_deploys_at_the_root_its_grant_table_decla
         declaration(parser().parse_args([]), machine)
 
 
-def test_a_refused_femm_install_is_reported_and_the_repos_are_still_served(
-    box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_a_declared_femm_is_asked_of_a_slurm_job_and_never_built_on_the_login_node(
+    box: Box, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """``[capabilities.femm]`` builds FEMM 5 in the deploy (user ruling 2026-11-25); its refusal never unserves a repo.
+    """``[capabilities.femm]`` (user ruling 2026-11-25) is built in a Slurm job (ONE-LOGIN-POLLER, 2026-11-27).
 
-    The fake shell builds nothing, so the build "succeeds" and its stage does not verify: refused, exit 2, every
-    cron line written. PLANTED CONTROL: the same account without the capability deploys clean.
+    PLANTED CONTROLS: undeclared, no job is asked; installed, no job is asked either.
     """
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'machinehome'))
-    assert box.run(*DECLARE) == 0, 'PLANTED CONTROL: undeclared, nothing is built and the deploy is clean'
-    assert 'cmake --build' not in box.logged()
+    assert box.run(*DECLARE) == 0, 'undeclared, nothing is asked'
+    assert not [key for _path, key, _script in box.jobs if key.startswith('femm-')]
     box.machine.write_text(box.machine.read_text(encoding='utf-8') + '\n[capabilities.femm]\n', encoding='utf-8')
-    capsys.readouterr()
-    assert box.run() == 2
-    err = capsys.readouterr().err
-    assert 'femm: refused -- the build does not verify' in err
-    assert 'refused to install: femm' in err
-    assert 'cmake --build' in box.logged()
+    box.jobs.clear()
+    assert box.run() == 0
+    [(kit, key, script)] = [job for job in box.jobs if job[1].startswith('femm-')]
+    assert kit == box.root / 'repos' / 'dev-lab'
+    assert script.endswith('-m dev_lab.dev.hpcaccount femm-build')
+    assert 'cmake --build' not in box.logged(), 'nothing is built on the login node'
     assert _marked(box) == {'dev-lab', 'alpha', 'beta'}
-    assert not (tmp_path / 'machinehome' / 'tools' / 'femm' / '5.0.20261112').exists(), 'nothing half installed'
+    (tmp_path / 'machinehome' / 'tools' / 'femm' / key.removeprefix('femm-')).mkdir(parents=True)
+    box.jobs.clear()
+    assert box.run() == 0
+    assert not [job for job in box.jobs if job[1].startswith('femm-')], 'installed: no job'

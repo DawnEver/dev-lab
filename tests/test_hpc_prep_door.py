@@ -80,21 +80,24 @@ def test_the_job_runs_this_kits_prep_build_from_the_kit_checkout(tmp_path: Path)
     assert script.endswith('-m dev_lab.dev.hpcaccount prep-build alpha')
 
 
-def test_the_job_body_probes_needs_on_the_node_then_builds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_job_body_probes_its_tools_on_the_node_then_builds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The needs probe moved off the login node into the job (Ada 2026-10-25: a tool proven once was gone later).
 
     PLANTED CONTROL: a need that does not run refuses before any build; once it runs, the build runs.
     """
     _spec, machine = _deployed(tmp_path)
     built: list[str] = []
-    runs = {'cargo': False}
+    pruned: list[str] = []
+    runs = {'uv': True, 'rclone': True, 'cc': False}
     monkeypatch.setattr(tick, 'follow_uv', lambda: '')
-    monkeypatch.setattr(tick, 'declared', lambda _c: Builds(install='uv sync', needs=('cargo',)))
+    monkeypatch.setattr(tick, 'declared', lambda _c: Builds(install='uv sync', needs=('cc',)))
     monkeypatch.setattr(tick, '_runs', lambda _sh, _env, tool: runs[tool])
     monkeypatch.setattr(tick, 'build', lambda _step, _spec, _home, repo: built.append(repo.name) or 0)
-    assert tick.prep_build('alpha', home=tmp_path, config=machine) == 2
+    monkeypatch.setattr(tick, 'prune_uv', lambda _step, spec: pruned.append(spec.root) or 0)
+    assert tick.prep_build('alpha', home=tmp_path, config=machine) == 2, 'cc has no installer: refused by name'
     assert built == []
-    runs['cargo'] = True
+    runs['cc'] = True
     assert tick.prep_build('alpha', home=tmp_path, config=machine) == 0
     assert built == ['alpha']
+    assert pruned == ['/r/src'], 'the ONE uv cache is pruned after the build'
     assert tick.prep_build('gamma', home=tmp_path, config=machine) == 2, 'an undeclared repo is refused'

@@ -40,19 +40,23 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   `forge auth check` per repo (the API calls a tick makes: `GET /user`, push permission for commit statuses,
   the issue list); writes the account's own `[[hpc.grant]]` when it has none (user from `id -un`, account and
   `cpu=` limit from `sacctmgr`, this host, the declared partitions); clones or fast-forwards each checkout;
-  installs `uv` and the Rust toolchain from their official installers into `~/.local` and `~/.cargo` and
-  `cmake` through `uv tool` when one does not run (`<tool> --version` in the tick environment: a rustup shim
-  with no toolchain is not a cargo), and refuses any other missing `needs` by name; writes one marked line
-  (`# lab-commons-deploy:path`) putting `~/.local/bin:~/.cargo/bin` first on the PATH into `~/.bashrc` and
-  the login file bash reads (`.bash_profile`, else an existing `.bash_login`/`.profile`), once, each backed up
-  to `<file>.lab-deploy.bak` first, so the login shell runs what the tick runs; builds each `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native` build on a
-  uv-managed CPython (skipped while its inputs are unchanged) -- exactly what the repo's committed `uv.lock`
-  pins, with nothing installed over it, so a repo's producers import the lab-commons its commit was tested
-  with (PIN + FRESHNESS, user ruling 2026-10-17); where the machine file declares `[capabilities.femm]`, builds the
-  family's one FEMM 5 release from its pinned source (`dev_lab.dev.toolrelease.FEMM_QT`) on the login node and
-  installs it, with its `version.env`, into `<tools>/femm/<version>/bin` (`dev_lab.dev.hpcaccount.femm`: a current
-  install is skipped; a failed build is refused naming its log and keeps the install in place); replaces its own
-  marked crontab lines; runs one tick of each repo and prints it.
+  writes one marked line (`# lab-commons-deploy:path`) putting `~/.local/bin:~/.cargo/bin` first on the PATH into
+  `~/.bashrc` and the login file bash reads (`.bash_profile`, else an existing `.bash_login`/`.profile`), once, each
+  backed up to `<file>.lab-deploy.bak` first, so the login shell runs what the tick runs; replaces its own marked
+  crontab lines with the account's one line. **It builds nothing on the login node** (ONE-LOGIN-POLLER, user ruling
+  2026-11-27): each repo whose environment is not stamped with the key of its inputs gets its Slurm PREP JOB asked
+  (`dev_lab.dev.hpcaccount.prep`), which runs the kit's own `hpcaccount prep-build <repo>` on a compute node --
+  `uv` and the Rust toolchain from their official installers into `~/.local` and `~/.cargo`, `cmake` through
+  `uv tool`, any other missing `needs` refused by name (`<tool> --version` on the node: a rustup shim with no
+  toolchain is not a cargo), then the `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native`
+  build on a uv-managed CPython -- exactly what the repo's committed `uv.lock` pins, with nothing installed over it,
+  so a repo's producers import the lab-commons its commit was tested with (PIN + FRESHNESS, user ruling
+  2026-10-17). Where the machine file declares `[capabilities.femm]` and the family's one FEMM 5 release
+  (`dev_lab.dev.toolrelease.FEMM_QT`) is not installed, a Slurm job (`hpcaccount femm-build`) builds it from its
+  pinned source into `<tools>/femm/<version>/bin` (`dev_lab.dev.hpcaccount.femm`: a failed build is refused naming
+  its log and keeps the install in place). The first install of a kit with no venv, and the fleet's kit refresh,
+  sync it in a waited-for Slurm job (`sbatch --wait`, `dev_lab.dev.hpcaccount.fleet.in_job`). The one cron line
+  runs the first tick.
 - A grant's compute-node `setup` (e.g. `module load git`) is a cluster fact the deploy cannot read: add it to
   the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
