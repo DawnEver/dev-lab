@@ -286,6 +286,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'refuses': (
             'git push origin HEAD',
             'git fetch --all',
+            # #1036: the issue's own line (its chained form is the engine's: tests/test_dev_severity_override.py).
+            'git fetch -q origin',
             'git pull --rebase',
             'git ls-remote origin',
             'git clone https://example.invalid/x.git',

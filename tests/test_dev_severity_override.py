@@ -14,7 +14,8 @@ import pytest
 
 from dev_lab.dev import agenthooks
 from dev_lab.dev.hook_adoption import HookAdoption, render
-from dev_lab.dev.hooks import Remedy, UnremediedRule
+from dev_lab.dev.hooks import DENY_RULES, Remedy, UnremediedRule
+from dev_lab.dev.rules import RULES
 
 _RETRY = Remedy('retry-wrapper', 'sh scripts/hooks/with-retry.sh <verb> <args>')
 
@@ -48,3 +49,30 @@ def test_an_override_naming_no_row_no_severity_or_no_change_is_refused(severitie
     """A typo raises nothing and says so nowhere; a no-op override reads as a decision and is none."""
     with pytest.raises(UnremediedRule, match=why):
         render(HookAdoption('a', severities=severities))
+
+
+def test_agent_guard_says_the_network_verb_severity_the_family_ships(tmp_path: Path) -> None:
+    """#1036: AGENT-GUARD said a bare network git verb is REFUSED while the family row ships as a hint.
+
+    An agent read the statement, saw ``git fetch -q origin`` run, and filed a guard gap: the declaration lied, not
+    the engine, which hints on the issue's lines alone and chained. PLANTED CONTROL: raised to ``deny``, it refuses.
+    """
+    row = next(rule for rule in DENY_RULES if rule.id == 'NETWORK-VERB')
+    statement = next(rule.statement for rule in RULES if rule.id == 'AGENT-GUARD')
+    assert row.severity == 'hint'
+    assert 'network git verb and a stash are refused' not in statement, statement
+    assert 'hinted' in statement, statement
+    assert 'severities' in statement, statement
+    assert 'git fetch -q origin' in row.refuses
+    plain, raised = tmp_path / 'plain.json', tmp_path / 'raised.json'
+    plain.write_text(render(HookAdoption('a', remedies={'NETWORK-VERB': _RETRY})), encoding='utf-8')
+    raised.write_text(
+        render(HookAdoption('a', remedies={'NETWORK-VERB': _RETRY}, severities={'NETWORK-VERB': 'deny'})),
+        encoding='utf-8',
+    )
+    for line in ('git fetch -q origin', 'cd sub && git fetch -q origin'):
+        assert agenthooks.decide(line, plain) is None, line
+        hinted = agenthooks.decide(line, plain, hint=True)
+        assert hinted is not None, line
+        assert hinted.startswith('NETWORK-VERB:'), hinted
+        assert agenthooks.decide(line, raised) is not None, line
