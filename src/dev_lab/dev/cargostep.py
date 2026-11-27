@@ -8,9 +8,9 @@ Actions job (:func:`dev_lab.dev.jobparts.rows`), so merge-ready waits on it as o
 ON GITEA THE CLUSTER PRODUCES IT (user ruling 2026-11-27, architecture v2 (a)). No Actions job derives the part
 there, so the candidate source does (:func:`dev_lab.dev.forgeschedule.candidates`, :func:`workspaces_at`): a Gitea
 commit tracking a workspace needs ``tests/cargo``. Its cluster producer is an ITEM KIND of the lab-commons array --
-:data:`ITEM_ENTRY` run once per :func:`items` entry, returning ``{'exit': code}`` -- and until the array takes a
-part's entry and items (:data:`CLUSTER_GAP`) a cluster seat posts the part ``error`` naming that gap
-(:func:`cluster_gap`), never leaving it silently absent; ``class=environment``, so it is no author's wait.
+:data:`ITEM_ENTRY` run once per item :data:`ITEMS_ENTRY` lists in the prep job (``RunSpec.entry`` and
+``RunSpec.items``, :func:`dev_lab.dev.forgeslurm.entry_of`): exit 0 is a pass, any other exit a reject, a raise
+(no cargo on the node) an environment error.
 A pytest test that shells out to cargo hides the Rust suite inside one Python node id, prices a cargo build as
 one test, and is retired.
 
@@ -40,12 +40,11 @@ from dev_lab.dev.reports import StepReport
 
 __all__ = [
     'BANNER',
-    'CLUSTER_GAP',
     'COMMANDS',
+    'ITEMS_ENTRY',
     'ITEM_ENTRY',
     'PART',
     'argv',
-    'cluster_gap',
     'handed',
     'items',
     'node',
@@ -64,12 +63,8 @@ PART: Final = 'cargo'
 COMMANDS: Final = ('fmt', 'clippy', 'test')
 #: The lab-commons array entry (``module:function``) that runs one :func:`items` entry on a compute node.
 ITEM_ENTRY: Final = 'dev_lab.dev.cargostep:run_item'
-#: What the cluster path lacks to produce :data:`PART`: the lab-commons interface it needs, named.
-CLUSTER_GAP: Final = (
-    'no cluster producer: lab_commons.hpc.run.submit_run runs only pytest items -- it needs a per-part entry and '
-    f'items (entry={ITEM_ENTRY!r}, items=cargostep.items(tree, sha)) and gather reading each item result '
-    "{'exit': code} as the cell 'cargo <command> <manifest>'"
-)
+#: The lab-commons prep entry (``module:function``, ``items(tree, sha)``) listing :data:`PART`'s array items.
+ITEMS_ENTRY: Final = 'dev_lab.dev.cargostep:items'
 
 
 def node(manifest: str, command: str) -> str:
@@ -160,11 +155,6 @@ def run_item(item: dict[str, str]) -> dict[str, object]:
     manifest, command = item['manifest'], item['command']
     code = _door.run(argv(cargo, manifest, command), check=False).returncode
     return {'exit': code, 'node': node(manifest, command)}
-
-
-def cluster_gap() -> str:
-    """The ``tests/cargo`` ``error`` description a cluster seat posts while :data:`CLUSTER_GAP` stands."""
-    return f'no cluster producer: the lab-commons array runs only pytest items ({ITEM_ENTRY}, cargostep.CLUSTER_GAP)'
 
 
 def step(

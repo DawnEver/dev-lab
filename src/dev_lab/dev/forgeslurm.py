@@ -66,7 +66,7 @@ from lab_commons.hpc.slurm import FORGE_SESSION
 from lab_commons.hpc.watch import PENDING, settle
 from lab_commons.resources import Engine
 
-from dev_lab.dev import hpcusage, quotawatch
+from dev_lab.dev import cargostep, hpcusage, quotawatch
 from dev_lab.dev.diskusage import Usage, read_usage
 from dev_lab.dev.forgecarry import carry_from, env_carries, reached_tests, read_by
 from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_files, task_items
@@ -205,6 +205,7 @@ class SlurmCluster:
             pack_from=self.root,
             builds=builds_at(self.root, run.sha, python=''),
             only=scoped_files(self.root, run),
+            **entry_of(run.platform),
         )
         state = submit_run(
             spec,
@@ -447,6 +448,18 @@ class SlurmCluster:
     def scope(self) -> str:
         """What this account's supply is named: ``slurm:<user>``."""
         return f'slurm:{self.machine.grants[0].user}'
+
+
+def entry_of(part: str) -> dict[str, str]:
+    """``RunSpec`` ``entry`` and ``items`` of *part* -- the cargo part's own (:mod:`dev_lab.dev.cargostep`), else none.
+
+    A part whose items are not pytest ids runs one ``module:function`` per item, listed in the prep job
+    (lab-commons pr/toolchain/arch-part-entry): exit 0 passes, any other exit rejects, a raise is an environment
+    error. Every other part is pytest (``{}``).
+    """
+    if part == cargostep.PART:
+        return {'entry': cargostep.ITEM_ENTRY, 'items': cargostep.ITEMS_ENTRY}
+    return {}
 
 
 def job_ids(state: dict[str, Any]) -> list[str]:

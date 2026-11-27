@@ -17,12 +17,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from _roles_fixtures import EVERY_CI, HPC_REPO, carry
+from lab_commons.hpc.config import Config
 
-from dev_lab.dev import cargostep, ciworkflows, forgeschedule, forgeservesteps, forgetake
+from dev_lab.dev import cargostep, ciworkflows, forgeschedule, forgeservesteps, forgeslurm
 from dev_lab.dev._forgebackends import GITEA, GITHUB
-from dev_lab.dev.forgeclaim import DONE, Work
 from dev_lab.dev.forgestatus import CommitStatus
-from dev_lab.dev.producer import Owner, owner_of
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -78,25 +77,29 @@ def _status(state: str, description: str) -> CommitStatus:
     return CommitStatus(context='tests/cargo', state=state, description=description, url='')
 
 
-def test_an_unproduced_cargo_part_on_a_cluster_seat_posts_error_naming_the_gap_once(
-    monkeypatch: pytest.MonkeyPatch,
+def test_the_cluster_submits_the_cargo_part_with_its_own_entry_and_items(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Never silently absent, never the author's red, and never re-said every tick."""
-    posted: list[dict[str, Any]] = []
-    monkeypatch.setattr(forgetake, 'status_post', lambda _client, sha, **kw: posted.append({'sha': sha, **kw}))
-    history: list[CommitStatus] = []
-    seat = SimpleNamespace(history=lambda _sha: history, dry_run=False, client=None)
-    work = Work('pr/x', 'a' * 40, cargostep.PART, 'open')
-    settled = forgetake.ClaimPass._cargo_gap(cast('forgetake.ClaimPass', seat), work)
-    assert settled.state == DONE
-    (said,) = posted
-    assert (said['context'], said['state']) == ('tests/cargo', 'error')
-    assert 'no cluster producer' in said['description']
-    assert cargostep.ITEM_ENTRY in said['description']
-    assert owner_of('error', said['description']) is Owner.ENVIRONMENT
-    history.append(_status('error', said['description']))
-    forgetake.ClaimPass._cargo_gap(cast('forgetake.ClaimPass', seat), work)
-    assert len(posted) == 1, 'the gap already stands: not posted again'
+    """lab-commons pr/toolchain/arch-part-entry: the cargo part's items are cargostep's, never pytest ids.
+
+    PLANTED CONTROL: a pytest part is submitted with neither, so lab-commons collects its pytest ids.
+    """
+    seen: list[Any] = []
+    monkeypatch.setattr(forgeslurm, 'vocabulary_at', lambda _root, _sha: None)
+    monkeypatch.setattr(forgeslurm, 'builds_at', lambda _root, _sha, **_k: None)
+    monkeypatch.setattr(forgeslurm, 'scoped_files', lambda _root, _run: None)
+    # this kit's lab-commons predates RunSpec.entry/items (arch-part-entry): the spec's keywords are what is pinned
+    monkeypatch.setattr(forgeslurm, 'RunSpec', lambda **kw: SimpleNamespace(**{'entry': '', 'items': '', **kw}))
+    monkeypatch.setattr(forgeslurm, 'submit_run', lambda spec, *_a, **_k: seen.append(spec) or {'rounds': []})
+    cluster = forgeslurm.SlurmCluster(tmp_path, cast('Any', SimpleNamespace(grants=[])), Config(), lambda _g: None)
+    for part in (cargostep.PART, 'base'):
+        run: Any = SimpleNamespace(
+            sha='a' * 40, repo_url='https://g/o/r.git', collect='', platform=part, scope='', ref='pr/x'
+        )
+        cluster.submit(run)
+    cargo, base = seen
+    assert (cargo.entry, cargo.items) == ('dev_lab.dev.cargostep:run_item', 'dev_lab.dev.cargostep:items')
+    assert (base.entry, base.items) == ('', '')
 
 
 def test_the_cargo_item_runs_one_command_and_reports_its_exit(monkeypatch: pytest.MonkeyPatch) -> None:
