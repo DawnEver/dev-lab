@@ -104,6 +104,8 @@ def test_bootstrap_defaults_to_the_declared_full_extra_set_and_named_worktree(tm
 
     def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append((tuple(argv), kwargs))
+        if 'sync' in argv:  # uv sync creates the environment it is pointed at; the pointer is published onto it
+            Path(kwargs['env']['UV_PROJECT_ENVIRONMENT']).mkdir(parents=True)
         return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
