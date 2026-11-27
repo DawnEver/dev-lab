@@ -22,16 +22,17 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgestatus import status_post
-from dev_lab.dev.harness import child_env
+from dev_lab.dev.harness import actions_run
 from dev_lab.dev.hostedparts import hosted_parts
-from dev_lab.dev.jobparts import head_sha, run_url
+from dev_lab.dev.jobparts import head_sha
 from dev_lab.dev.platformparts import part_context
 from dev_lab.dev.producer import Owner, owned
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from dev_lab.dev.forgework import Client
+    from dev_lab.dev.harness import ActionsRun
 
 __all__ = ['EX_TEMPFAIL', 'main', 'run_setup']
 
@@ -39,11 +40,12 @@ __all__ = ['EX_TEMPFAIL', 'main', 'run_setup']
 EX_TEMPFAIL: Final = 75
 
 
-def run_setup(root: Path, part: str, client: Client, *, env: Mapping[str, str] | None = None) -> int:
+def run_setup(root: Path, part: str, client: Client, *, run: ActionsRun) -> int:
     """Run *part*'s declared setup at *root* under bash, echoing its output; its exit code.
 
     A non-zero exit posts the part ``error`` at HEAD naming the exit and the last line said, ``class=network``
-    for :data:`EX_TEMPFAIL`, else ``class=setup``. A part declaring no setup is refused by name.
+    for :data:`EX_TEMPFAIL`, else ``class=setup``, linking *run* (the job's Actions run, read once at the entry by
+    :func:`~dev_lab.dev.harness.actions_run`). A part declaring no setup is refused by name.
     """
     text = (root / 'pyproject.toml').read_text(encoding='utf-8')
     setup = hosted_parts(text).get(part)
@@ -68,10 +70,7 @@ def run_setup(root: Path, part: str, client: Client, *, env: Mapping[str, str] |
     owner = Owner.NETWORK if done.returncode == EX_TEMPFAIL else Owner.SETUP
     description = owned(owner, f'setup exited {done.returncode}: {last}')
     context = part_context(part)
-    given = child_env() if env is None else env
-    status_post(
-        client, head_sha(root), context=context, state='error', description=description, target_url=run_url(given)
-    )
+    status_post(client, head_sha(root), context=context, state='error', description=description, target_url=run.url)
     emit(f'[hostedsetup] {context}: error {description}', err=True)
     return done.returncode
 
@@ -84,7 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('part')
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout declaring the part')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    return run_setup(args.root, args.part, client_for(args.root))
+    return run_setup(args.root, args.part, client_for(args.root), run=actions_run())
 
 
 if __name__ == '__main__':

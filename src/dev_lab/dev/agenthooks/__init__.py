@@ -51,6 +51,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev._hook_admit import ASSUME_WIRED
 from dev_lab.dev.jsrun import node_path
 
 __all__ = [
@@ -138,6 +139,7 @@ def run_engine(
     agent_id: str | None = None,
     hint: bool = False,
     live_run: bool = True,
+    assume_wired: bool = False,
     metrics_root: Path | None = None,
     background: bool = False,
 ) -> str | None:
@@ -174,6 +176,10 @@ def run_engine(
             PROBE of which rule owns a shape passes ``False``: the probing suite is itself a run in the
             checkout it probes, so the state row would answer for every shape it covers (a downstream cutover,
             2026-10-25). The payload key carrying it is one the tool never sends, so no agent command can.
+        assume_wired: take every tree a history-writing verb targets as hook-wired, so ``HOOKS-ARE-WIRED`` judges
+            nothing. A shape PROBE passes ``True``: wiring is the probing box's state, and a hosted checkout
+            declares stages it never installs (dev-lab fa9d6f2b). The payload key carrying it
+            (:data:`dev_lab.dev._hook_admit.ASSUME_WIRED`) is one the tool never sends.
         background: send the call as ``run_in_background``, as the tool does for a background shell; a
             ``when: 'background'`` row binds only then.
         metrics_root: the checkout a refusal of this probe is logged in; ``None`` logs none. A probe is a
@@ -200,6 +206,7 @@ def run_engine(
         'cwd': str(cwd) if cwd is not None else '',
         **({'agent_id': agent_id} if agent_id is not None else {}),
         **({} if live_run else {LIVE_RUN_ABSENT: True}),
+        **({ASSUME_WIRED: True} if assume_wired else {}),
         METRICS_ROOT: str(metrics_root) if metrics_root is not None else '',
     }
     done = _door.run(

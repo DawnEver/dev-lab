@@ -161,6 +161,23 @@ def test_a_plain_venv_moves_aside_on_publish_and_a_held_one_refuses_by_name(tmp_
     assert [p.name.startswith('legacy-') for p in (root / venvpointer.HOME).iterdir()].count(True) == 1
 
 
+def test_an_environment_that_does_not_exist_is_refused_naming_the_rebuild(tmp_path) -> None:
+    """A build reporting success with no environment is refused on every OS, before anything moves.
+
+    Measured 2026-11-27: it was a bare FileNotFoundError on Windows (the junction) and a dangling symlink on POSIX.
+    PLANTED CONTROL: the same environment, once it exists, publishes.
+    """
+    root = tmp_path / 'main'
+    missing = root / venvpointer.HOME / 'never-built'
+    with pytest.raises(venvcurrent.PublishRefused, match='left no environment there') as refused:
+        venvcurrent.publish(root, missing, census=list)
+    assert f'\n{sys.executable} -m dev_lab.dev.dep --bootstrap {root}' in str(refused.value), 'the door, own line'
+    assert not (root / venvpointer.POINTER).exists(), 'nothing was linked'
+    missing.mkdir(parents=True)
+    assert venvcurrent.publish(root, missing, census=list).endswith(str(missing))
+    assert venvpointer.named(root) == missing.resolve()
+
+
 def test_the_retired_pointer_file_is_migrated_once(tmp_path) -> None:
     root = tmp_path / 'main'
     env = root / venvpointer.HOME / 'named'

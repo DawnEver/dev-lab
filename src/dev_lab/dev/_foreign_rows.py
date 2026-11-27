@@ -107,6 +107,10 @@ EVICTED: Final[dict[str, str]] = {
         'The machine rows of the same registry, split out of `_rule_rows.py` by concept (2026-11-26): their '
         'mechanism paths belong to that registry, under the same HEADLINE row and the same migration.'
     ),
+    'src/dev_lab/dev/_rule_rows_hooks.py::path': (
+        'The agent-hook rows of the same registry; AGENT-GUARD moved there from `_rule_rows.py` by concept '
+        '(2026-11-27): its mechanism paths belong to that registry, under the same HEADLINE row and migration.'
+    ),
     'src/dev_lab/dev/_rule_rows_units.py::path': (
         'The units rows of the same registry, split out of `_rule_rows.py` by concept (2026-11-26): their '
         'mechanism paths belong to that registry, under the same HEADLINE row and the same migration.'
