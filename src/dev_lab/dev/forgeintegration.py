@@ -283,12 +283,14 @@ def tick(
     sync: Callable[..., str] = forgeautosync.sync,
     gate: Callable[..., list[str]] = forgeheadgate.judge,
     monotonic: Callable[[], float] = time.monotonic,
+    head_gates: bool = True,
 ) -> Ticked:
     """One pass over every child branch on *origin*: its open PRs into integration, then the classed lanes.
 
     Given the serving *host* and ``pr_merges_since`` declared (auto-sync rides auto-merge), a PR the forge did not
     merge is auto-synced (:mod:`dev_lab.dev.forgeautosync`), and every open PR head carries its lock and branch-set
-    statuses (:mod:`dev_lab.dev.forgeheadgate`); ``forge integration`` passes no host and only reports.
+    statuses (:mod:`dev_lab.dev.forgeheadgate`) -- unless *head_gates* is off: a Gitea light runner posts them
+    (:func:`dev_lab.dev.ciworkflows.light_gates`). ``forge integration`` passes no host and only reports.
     """
     lines: list[str] = []
     said: list[tuple[Child, Feedback]] = []
@@ -327,7 +329,7 @@ def tick(
         said.append((child, one))
         where = f'#{child.pr}' if child.pr is not None else child.head[:12]
         lines.append(f'{child.branch} {where}: {one.summary} -- {_publish(child, one)}')
-    if host:
+    if host and head_gates:
         lines += forgeheadgate.judge_heads(
             root,
             origin,

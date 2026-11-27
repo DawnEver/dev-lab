@@ -56,7 +56,7 @@ _NO_MEASURE = "inputs.measurement_paths == '' && inputs.measurement_sha == ''"
 _JUDGE_REVIEW = '[tool.dev_lab.review]\njudge_login = "judge"\n'
 
 _GITHUB_BASE = {'ci.yml', 'continue.yml', 'merge-tick.yml', 'review-again.yml'}
-_GITEA_BASE = {'review.yml', 'merge.yml'}
+_GITEA_BASE = {'review.yml', 'merge.yml', 'gates.yml'}
 
 
 def _hosted(root: Path, url: str = 'https://github.com/o/r.git') -> Path:
@@ -1261,7 +1261,7 @@ def test_gitea_renders_no_promoter_because_the_host_s_ops_promote_role_owns_gite
     whose host deliberately does not promote it. GitHub keeps its promote job inside ci.yml.
     PLANTED CONTROL: the GitHub base still promotes.
     """
-    assert base_names('gitea') == {'review.yml', 'merge.yml'}
+    assert base_names('gitea') == {'review.yml', 'merge.yml', 'gates.yml'}
     gitea = _hosted(tmp_path / 'gitea', 'https://gitea.example/o/r.git')
     for name, workflow in workflows(gitea).items():
         assert 'integrate promote' not in render(workflow), name
