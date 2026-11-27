@@ -403,7 +403,9 @@ _V1 = Path(__file__).resolve().parent / '_ownerdag_fixtures' / 'v1'
 def test_the_v1_draft_declaration_is_read_and_judged_before_its_code_exists(tmp_path: Path) -> None:
     """ACCEPTANCE: a consumer's draft dependencies.toml and layout.toml (its v1 skeleton at 73772a1).
 
-    Private names are neutralized (the product and two family packages renamed); nothing else is edited.
+    Private names are neutralized (the product and two family packages renamed), and the two refused rows for the
+    lab-commons modules since removed (retired family-wide, ``lab_commons.hpc.retired``) are dropped; nothing else
+    is edited.
 
     No src/ and no crate exist yet: every path is a layout.toml row, deferred rows load, crate holders are the
     crates layout.toml declares under rust/crates/<owner path>, and Rust-owned compile children are siblings.
