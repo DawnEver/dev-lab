@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 
 __all__ = ['hosted_jobs']
 
+#: The setup step's command: the part's declared setup, a failure posted under its own class (dev-lab#998).
+_SETUP: Final = 'uv run --no-sync python -m dev_lab.dev.hostedsetup'
+
 #: The ``if`` of a secretless hosted part's job: every run that has a matrix, a pull request's included.
 _ANY_RUN: Final = "${{ needs.parts.outputs.matrix != '' }}"
 
@@ -77,7 +80,7 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
     for name, part in sorted(declared.items()):
         one = json.loads(template.replace('${{ matrix.part }}', name))
         before: list[dict[str, Any]] = [_cache_step(name, part.cache)] if part.cache else []
-        before += [{'name': f'Set up tests/{name}', 'run': part.setup}] if part.setup else []
+        before += [{'name': f'Set up tests/{name}', 'run': f'{_SETUP} {name}'}] if part.setup else []
         after: list[dict[str, Any]] = []
         if part.tasks:
             loads = (

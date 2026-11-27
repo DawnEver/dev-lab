@@ -569,11 +569,15 @@ def test_a_hosted_setup_runs_before_the_tests_and_only_a_secret_withholds_the_pu
     ), 'PLANTED CONTROL: a secret keeps it full-run only'
     produce = _produce_step(linux)
     setup = linux['steps'][linux['steps'].index(produce) - 1]
-    assert setup == {'name': 'Set up tests/linux', 'run': 'sudo apt-get install -y xvfb'}
+    assert setup == {'name': 'Set up tests/linux', 'run': 'uv run --no-sync python -m dev_lab.dev.hostedsetup linux'}, (
+        'the declared setup runs through its door, which posts a failure under its own class (dev-lab#998)'
+    )
     assert produce['run'].endswith('jobparts produce linux')
     assert not any('env' in step or 'credential' in step.get('run', '') for step in linux['steps']), 'no key store'
     runs = [step.get('run', '') for step in live['steps']]
-    assert runs.index('make x') < next(i for i, run in enumerate(runs) if run.endswith('jobparts produce live'))
+    assert runs.index('uv run --no-sync python -m dev_lab.dev.hostedsetup live') < next(
+        i for i, run in enumerate(runs) if run.endswith('jobparts produce live')
+    )
     assert _forgets_keys(live)
     assert {'part-linux', 'part-live'} <= set(jobs['absent-parts']['needs'])
 
