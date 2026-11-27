@@ -108,7 +108,7 @@ def add(root: Path, name: str, description: str, body: str, *, day: date | None 
             'or correct a wrong line with `amend`'
         )
         raise MemoryRefused(msg)
-    text = f'---\nname: {name}\ndescription: {description.strip()}\n---\n\n{entry.lf(body).strip()}\n'
+    text = f'{entry.frontmatter(name, description, day)}\n{entry.lf(body).strip()}\n'
     if problems := entry.shape_problems(_rel(root, path), text):
         raise MemoryRefused('\n'.join(problems))
     _write(path, text)

@@ -17,9 +17,10 @@ import lab_commons.launch as _door
 import numpy as np
 import pytest
 
-from dev_lab.dev import irpython, irrust
+from dev_lab.dev import envreads, irpython, irrust, irschema
 from dev_lab.dev.ircheck import load
 from dev_lab.dev.irmodel import IRSchemaError
+from dev_lab.dev.venvpath import VENV_LAYOUTS
 
 FIXTURE = Path(__file__).parent / 'data' / 'ir_schema' / 'repo'
 CARGO = shutil.which('cargo')
@@ -184,3 +185,23 @@ def test_rust_and_python_agree_byte_for_byte(repo: Path, tmp_path: Path, monkeyp
         pytest.xfail(f'the local cargo registry lacks a crate the equivalence needs: {done.stderr.strip()[-300:]}')
     assert done.returncode == 0, done.stderr
     assert done.stdout.splitlines() == [expected for *_, expected in cases]
+
+
+def test_the_build_script_finds_the_venv_interpreter_and_reads_only_out_dir() -> None:
+    """FAM-03 a: the generated ``build.rs`` probes every venv layout upward; no ``PYTHON`` variable, no PATH guess.
+
+    PLANTED CONTROL: the same text with a ``PYTHON`` read added is convicted by the env check it otherwise passes.
+    """
+    text = irrust.build_rs()
+    for parts in VENV_LAYOUTS.values():
+        assert '"' + '/'.join(parts) + '"' in text
+    assert 'dev_lab.dev.irschema' in text
+    assert 'dev_lab.dev.dep --bootstrap' in text, 'the panic names its door'
+    assert envreads.rust_reads(text, build_script=True) == ()
+    planted = text.replace('fn main() {', 'fn main() {\n    let _ = std::env::var("PYTHON");')
+    assert envreads.rust_reads(planted, build_script=True) != ()
+
+
+def test_the_cli_prints_the_build_script(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    assert irschema.main(['--root', str(tmp_path), 'build-rs']) == 0
+    assert capsys.readouterr().out.strip() == irrust.build_rs().strip()

@@ -34,6 +34,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import importedges, taskjournal
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.rangebase import NoMergeBaseError, log_range, range_base
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -171,11 +172,14 @@ def _git(root: Path, *args: str) -> str:
 
 def range_problems(root: Path, layers: Layers, base: str, head: str, ledger: Path) -> list[str]:
     """:func:`change_set_problems` of *head*'s change set since its merge-base with *base*, judged net."""
-    since = _git(root, 'merge-base', base, head).strip()
+    try:
+        since = range_base(root, base, head)
+    except NoMergeBaseError as error:
+        return [str(error)]
     paths = [
         p for p in _git(root, '-c', 'core.quotepath=off', 'diff', '--name-only', '-z', since, head).split('\0') if p
     ]
-    messages = [m for m in _git(root, 'log', '--format=%B%x00', f'{since}..{head}').split('\0') if m.strip()]
+    messages = [m for m in _git(root, 'log', '--format=%B%x00', *log_range(since, head)).split('\0') if m.strip()]
     return change_set_problems(layers, paths, messages, ledger)
 
 

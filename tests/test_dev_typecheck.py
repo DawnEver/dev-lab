@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import typecheck
-from dev_lab.dev.ownerdag import PythonTree
+from dev_lab.dev._ownerdag_tree import PythonTree
 
 TREE = PythonTree('pkg', 'src/pkg', 'pkg_native')
 

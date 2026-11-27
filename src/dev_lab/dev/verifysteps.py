@@ -56,6 +56,7 @@ from dev_lab.dev.test_outcomes import (
     RetiredOutcomes,
     outcomes_dir,
     read_cells,
+    recorded_diagnostics,
     recorded_failures,
 )
 from dev_lab.dev.testtemp import reclaim, script_temp_env
@@ -506,8 +507,9 @@ def run_verify(
         allowed=allowed,
         complete_census=complete_census,
     )
-    if report.truncated or cut:  # a run that did not settle still names what it recorded failing
+    if report.truncated or cut:  # a run that did not settle still names what it recorded failing, and what each said
         cut = (*cut, *recorded_failures(outcomes_dir(path)))
+        _publish_diagnostics(path, recorded_diagnostics(outcomes_dir(path)))
     report = replace(report, truncated=(*report.truncated, *scope_refusal, *vanished, *cut))
     reports.append(functools.reduce(lambda done, stage: stage.annotate(done), stages, report))
     return build_verdict(
@@ -517,3 +519,16 @@ def run_verify(
         spec=' '.join(('verify', *selection)),
         log=LogRef.of(path),
     )
+
+
+def _publish_diagnostics(log: Path, diagnostics: str) -> None:
+    """A cut run's recorded failure *diagnostics*, appended to its *log* and printed to stderr (a job log keeps it).
+
+    The log is the artifact a CI part keeps; stderr is what a hosted job's own log shows whether or not the
+    artifact was kept. Nothing recorded failing prints nothing.
+    """
+    if not diagnostics:
+        return
+    with log.open('a', encoding='utf-8') as handle:
+        handle.write(diagnostics)
+    emit(diagnostics, err=True)

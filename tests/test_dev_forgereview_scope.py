@@ -29,10 +29,12 @@ from dev_lab.dev.forgereview_scope import (
     Slice,
     lens_of,
     plan,
+    review_base,
     reviewable,
 )
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
+from dev_lab.dev.rangebase import DOOR, EMPTY_TREE, NoMergeBaseError
 from dev_lab.dev.reviewcode import CODE, NOT_CODE, ONLY_GENERATED, is_code
 
 
@@ -449,3 +451,51 @@ def test_the_family_budget_packs_a_mid_size_head_into_fewer_larger_slices(tmp_pa
     assert (len(old.slices), len(new.slices)) == (4, 2)
     assert new.unread == ()
     assert all(one.paths for one in new.slices)
+
+
+def _unrelated(tmp_path: Path, trunk: dict[str, str]) -> tuple[Path, str, str]:
+    """A repo whose ``trunk`` holds *trunk* and whose ``skeleton`` lane grows from its own unrelated root."""
+    root = tmp_path / 'unrelated'
+    root.mkdir()
+    for args in (('init', '-q', '-b', 'trunk'), ('config', 'user.email', 't@t'), ('config', 'user.name', 't')):
+        run_git(root, *args)
+
+    def commit(files: dict[str, str], message: str) -> str:
+        for name, text in files.items():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text(text, encoding='utf-8')
+        run_git(root, 'add', '-A')
+        run_git(root, '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '--allow-empty', '-m', message)
+        return git_out(root, 'rev-parse', 'HEAD')
+
+    base = commit(trunk, 'trunk root')
+    run_git(root, 'checkout', '-q', '--orphan', 'skeleton')
+    run_git(root, 'rm', '-rfq', '--ignore-unmatch', '.')
+    head = commit({'src/a.py': 'A = 1\n'}, 'skeleton')
+    return root, base, head
+
+
+def test_an_empty_root_trunk_reviews_the_whole_unrelated_head_from_the_empty_tree(tmp_path: Path) -> None:
+    root, base, head = _unrelated(tmp_path, {})
+    assert review_base(root, base, head) == EMPTY_TREE
+    scope = plan(root, base, head, _WIDE)
+    assert scope.range == f'{EMPTY_TREE}..{head}'
+    assert [s.paths for s in scope.slices] == [('src/a.py',)]
+
+
+def test_a_contentful_unrelated_trunk_is_refused_by_name_with_the_door(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the empty-tree answer is not a constant -- a trunk holding content has no range."""
+    root, base, head = _unrelated(tmp_path, {'README.md': 'trunk\n'})
+    with pytest.raises(NoMergeBaseError, match='NO-MERGE-BASE') as refused:
+        review_base(root, base, head)
+    assert DOOR in str(refused.value)
+
+
+def test_a_continuation_on_an_empty_root_trunk_reads_from_its_landed_head(tmp_path: Path) -> None:
+    root, base, landed = _unrelated(tmp_path, {})
+    (root / 'src' / 'b.py').write_text('B = 2\n', encoding='utf-8')
+    run_git(root, 'add', '-A')
+    run_git(root, '-c', 'core.hooksPath=/dev/null', 'commit', '-q', '-m', 'more')
+    head = git_out(root, 'rev-parse', 'HEAD')
+    assert review_base(root, base, head, since=landed) == landed
+    assert review_base(root, base, head, since='') == EMPTY_TREE

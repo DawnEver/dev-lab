@@ -59,6 +59,7 @@ from dev_lab.dev.blobfetch import fetch_blobs, is_partial, missing
 from dev_lab.dev.breakglass import BREAK_GLASS, empty_reason
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.lanepolicy import policy_at
+from dev_lab.dev.rangebase import NoMergeBaseError, merge_bases
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -309,7 +310,11 @@ def _audit(
         raise MergeAuditError(msg)
     if not roots:  # `test_roots = []` DECLARES no tests (a config-only repo gated by its merge_checks): nothing to lose
         return ()
-    bases = _git(root, 'merge-base', '--all', *parents).decode().split()
+    try:
+        bases = merge_bases(root, *parents)
+    except NoMergeBaseError as error:
+        msg = f'{merge}: {error}'
+        raise MergeAuditError(msg) from error
     shas = (*parents, merged, *bases)
     trees = [_test_blobs(root, sha, roots) for sha in shas]
     wanted = {oid for tree in trees for oid in tree.values()}

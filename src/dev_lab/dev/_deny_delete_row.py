@@ -5,7 +5,8 @@ INCIDENT 2026-10-27: an agent hand-built a delete list from ``git worktree list`
 unpushed work and ``output/``, past the recycle bin. The door that decides what is deletable --
 ``branchset --apply`` -> ``reclaim``, which refuses a main checkout and keeps real work -- existed and
 was bypassed. So every raw recursive delete is refused, in both shells, unless EVERY target it names
-is regenerable scratch: system temp, or a path inside an ``output/`` tree (no ``..`` segment).
+is regenerable scratch: system temp, a path inside an ``output/`` tree, or a ``*.egg-info`` build
+artifact (no ``..`` segment).
 """
 
 from __future__ import annotations
@@ -24,11 +25,13 @@ def _ci(word: str) -> str:
 
 
 #: A target that is PROVABLY scratch: one token with no whitespace inside its quotes and no `..` anywhere,
-#: under system temp or inside an `output/` tree.
+#: under system temp or inside an `output/` tree -- or a regenerable BUILD ARTIFACT (issue #995): a setuptools
+#: ``<pkg>.egg-info`` directory, which every (editable) install rewrites, a trailing separator allowed.
 _SCRATCH = (
-    r"""(?![^\s;&|()]*\.\.)["']?(?:/tmp/|\$\{?(?:TEMP|TMP|TMPDIR)\}?[\\/]|%(?:TEMP|TMP)%[\\/]|\$env:(?:TEMP|TMP)[\\/]"""
+    r"""(?:(?![^\s;&|()]*\.\.)["']?(?:/tmp/|\$\{?(?:TEMP|TMP|TMPDIR)\}?[\\/]|%(?:TEMP|TMP)%[\\/]|\$env:(?:TEMP|TMP)[\\/]"""
     r"""|(?:[^\s"';&|()]*[\\/])?""" + _ci('AppData') + r'[\\/]' + _ci('Local') + r'[\\/]' + _ci('Temp') + r'[\\/]'
     r"""|(?:[^\s"';&|()]*[\\/])?output[\\/])[^\s"'\\/;&|()][^\s"';&|()]*["']?(?=\s|$)"""
+    r"""|(?![^\s;&|()]*\.\.)["']?[^\s"';&|()]*\.egg-info[\\/]?["']?(?=\s|$))"""
 )
 #: An option word: `-x`, `--x`, or a cmd switch `/s` `/q`.
 _OPTION = r"""(?:-[^\s"';&|()]*|/[a-zA-Z])(?=\s|$)"""
@@ -73,7 +76,8 @@ RECURSIVE_DELETE: dict[str, object] = {
     'remedy': (
         f'{DOOR_SLOT} -m dev_lab.dev.scratch clear <NAME> --yes|{DOOR_SLOT} -m dev_lab.dev.branchset --apply'
         f'|--discard <branch> --approved <why>|{DOOR_SLOT} -m dev_lab.dev.worktrees --remove <name>|'
-        f'{DOOR_SLOT} -m dev_lab.dev.venvprune --apply|{DOOR_SLOT} -m dev_lab.dev.cloneremove <path> --approved <why>; '
+        f'{DOOR_SLOT} -m dev_lab.dev.venvprune --apply|rm -rf <pkg>.egg-info (a build artifact, permitted)|'
+        f'{DOOR_SLOT} -m dev_lab.dev.cloneremove <path> --approved <why>; '
         'else ask'
     ),
     'needs': None,
@@ -93,6 +97,8 @@ RECURSIVE_DELETE: dict[str, object] = {
         'git clean -fX',
         'git clean -df',
         'git clean -xf',
+        'rm -rf src/pkg.egg-info/../..',
+        'rm -rf src/egg-info-notes',
         'python -c \'import shutil; shutil.rmtree(r"C:/work/repo")\'',
     ),
     'permits': (
@@ -100,6 +106,7 @@ RECURSIVE_DELETE: dict[str, object] = {
         'Remove-Item -Recurse -Force $env:TEMP/probe',
         'rmdir /s /q %TEMP%/probe',
         'rm -rf output/logs/26',
+        'rm -rf src/pkg.egg-info',
         'rm notes.txt',
         'Remove-Item -Force file.txt',
         'rmdir empty-dir',

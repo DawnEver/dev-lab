@@ -36,13 +36,13 @@ from typing import IO, TYPE_CHECKING, Final
 import lab_commons.launch as _door
 import tomlkit
 
+from dev_lab.dev._ownerdag_tree import python_tree
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.ownerdag import python_tree
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from dev_lab.dev.ownerdag import PythonTree
+    from dev_lab.dev._ownerdag_tree import PythonTree
 
 __all__ = [
     'CLEAN',

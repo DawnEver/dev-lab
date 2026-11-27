@@ -36,6 +36,7 @@ from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
 from dev_lab.dev import (
+    _forgecli_args,
     branchnotices,
     forgeauth,
     forgebreakglass,
@@ -75,7 +76,6 @@ from dev_lab.dev import (
     pradmit,
     prcontinue,
     prcurrent,
-    privatemarkers,
     prlanded,
     prsuperseded,
     pushwatch,
@@ -88,7 +88,6 @@ from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed, within
 from dev_lab.dev.forgefeedstatus import unheard_notice
 from dev_lab.dev.forgelabels import LabelMissing, relabel
 from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest
-from dev_lab.dev.issuekind import KINDS
 from dev_lab.dev.labsession import ENV
 
 if TYPE_CHECKING:
@@ -170,72 +169,6 @@ def _threaded(args: Sequence[str]) -> bool:
     return args[1:2] == ['view'] and '--comments' in args
 
 
-def _verb(group: argparse._SubParsersAction, name: str) -> argparse.ArgumentParser:
-    sub = group.add_parser(name)
-    sub.add_argument('--json', action='store_true', help='print the normalized result as JSON')
-    return sub
-
-
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog='dev_lab.dev.forge',
-        description='issue and PR verbs on the forge',
-        epilog=(
-            'also: pr breakglass N --reason R, breakglass open|close|ack|status, pr close-landed [N...], '
-            'pr close-superseded N... --by <M|sha|ref>, '
-            'issue claim|status N, label create --name N --color C, status post|list SHA; token: auth login|status'
-        ),
-    )
-    nouns = parser.add_subparsers(dest='noun', required=True)
-    issue = nouns.add_parser('issue').add_subparsers(dest='verb', required=True)
-    listing = _verb(issue, 'list')
-    listing.add_argument('--state', choices=('open', 'closed', 'all'), default='open')
-    listing.add_argument('--limit', type=int, default=30)
-    listing.add_argument('--label', action='append', default=[], help='only issues carrying it (repeatable)')
-    for name in ('view', 'close'):
-        _verb(issue, name).add_argument('number', type=int)
-    create = _verb(issue, 'create')
-    create.add_argument('--title', required=True)
-    create.add_argument('--body', default='')
-    create.add_argument('--kind', required=True, choices=KINDS, help='an issue is a need, defect or decision')
-    create.add_argument('--label', action='append', default=[], help='also label it; a missing one is created')
-    label = _verb(issue, 'label')
-    label.add_argument('number', type=int)
-    label.add_argument('--add', nargs='+', default=[], help='labels to put on it; a missing one is created first')
-    label.add_argument('--remove', nargs='+', default=[], help='labels to take off it')
-    comment = _verb(issue, 'comment')
-    comment.add_argument('number', type=int)
-    comment.add_argument('--body', required=True)
-    pr = nouns.add_parser('pr').add_subparsers(dest='verb', required=True)
-    _verb(pr, 'view').add_argument('number', type=int)
-    closing = _verb(pr, 'close')
-    closing.add_argument('number', type=int)
-    closing.add_argument(
-        '--reason', required=True, help='why; posted as a comment before the close (no branch deleted)'
-    )
-    editing = _verb(pr, 'edit')
-    editing.add_argument('number', type=int)
-    edits = editing.add_mutually_exclusive_group(required=True)
-    edits.add_argument('--body-file', help='replace the body with this UTF-8 file')
-    edits.add_argument(
-        '--append-line', action='append', default=[], help='add this line after the current body (repeatable)'
-    )
-    opened = _verb(pr, 'create')
-    opened.add_argument('--title', required=True)
-    opened.add_argument('--body', default='')
-    opened.add_argument('--head', required=True)
-    opened.add_argument('--base', required=True)
-    opened.add_argument(
-        '--ready', action='store_true',
-        help='open it ready for review; the default is a DRAFT, marked ready by `forge pr ready N` (D53)',
-    )  # fmt: skip
-    opened.add_argument(
-        '--ready-when-current', action='store_true',
-        help=f'open a DRAFT the serve marks ready once its head is current (`{forgedraft.READY_WHEN}` in the body)',
-    )  # fmt: skip
-    return parser
-
-
 def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
     verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit, labels=args.label),
@@ -289,45 +222,6 @@ def _render(item: Issue | PullRequest | Comment) -> str:
     return f'#{item.number} [{item.state}] {item.title}  {item.url}'
 
 
-def _refused(
-    parser: argparse.ArgumentParser,
-    args: argparse.Namespace,
-    root: Path,
-    env: Mapping[str, str] | None,
-    transport: Transport,
-) -> str | None:
-    """Why the verb is refused before any write: a reasonless close, a PUBLIC repo's text naming a private value.
-
-    Every verb in :data:`_PUBLISHED_TEXT` publishes what a person typed; a private repository is where private
-    names belong, and an unreadable visibility is scanned (fail closed).
-    """
-    if (args.noun, args.verb) == ('pr', 'close') and not args.reason.strip():
-        parser.error('pr close: --reason must say why')
-    if (args.noun, args.verb) == ('pr', 'create') and args.ready and args.ready_when_current:
-        parser.error('pr create: --ready opens it ready; --ready-when-current opens a draft -- choose one')
-    if (published := _PUBLISHED_TEXT.get((args.noun, args.verb))) is None:
-        return None
-    what, texts = published
-    private, why = privatemarkers.repo_is_private(root, env=env, transport=transport)
-    if private:
-        return None
-    if why:
-        emit(f'[forge] scanning the {what} for private markers: {why}', err=True)
-    public = privatemarkers.public_names(root, env=env, transport=transport)
-    return privatemarkers.text_refusal('\n'.join(texts(args)), what, public=public)
-
-
-#: Each write verb that publishes typed text: what a refusal calls it, and the argument fields that hold it.
-_PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, Callable[[argparse.Namespace], tuple[str, ...]]]] = {
-    ('pr', 'create'): ('PR title or body', lambda a: (a.title, a.body)),
-    ('pr', 'close'): ('close reason', lambda a: (a.reason,)),
-    ('pr', 'edit'): ('PR body', lambda a: (forgepr.edit_text(a),)),
-    ('issue', 'create'): ('issue title or body', lambda a: (a.title, a.body)),
-    ('issue', 'comment'): ('comment body', lambda a: (a.body,)),
-    ('issue', 'label'): ('label names', lambda a: (*a.add, *a.remove)),
-}
-
-
 #: The whole time an issue verb (or ``pr view``) may wait on the forge: one full 30 s attempt and a cut second.
 #: v1 #2: reads hung 90-120 s without a word -- three 30 s socket timeouts and two backoffs, the retry loop's whole
 #: bound, while the forge did not answer. Past the budget the verb ends, naming what each attempt measured.
@@ -350,12 +244,12 @@ def issue_and_pr(
 
     An issue verb and ``pr view`` end within *budget_s* (:data:`READ_BUDGET_S`), naming the cause.
     """
-    parser = _parser()
+    parser = _forgecli_args.parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     if _budgeted(args.noun, args.verb):
         transport = within(transport, time.monotonic() + budget_s, f'forge {args.noun} {args.verb}', budget_s)
-    if (refused := _refused(parser, args, root, env, transport)) is not None:
+    if (refused := _forgecli_args.refused(parser, args, root, env, transport)) is not None:
         emit(refused, err=True)
         walls.refused_text(root, refused, reason=f'forge {args.noun} {args.verb}')
         return 1

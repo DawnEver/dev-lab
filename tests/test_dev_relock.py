@@ -38,6 +38,7 @@ from dev_lab.dev.relock import (
     carry,
     chosen,
     dist_of,
+    floated,
     in_house,
     line_of,
     rerender,
@@ -802,3 +803,35 @@ def test_lock_writer_for_never_moves_a_pip_installed_path_uv(monkeypatch, tmp_pa
         lambda wanted, uv, **_kw: str(placed) if uv == path_uv and wanted.version else pytest.fail(uv),
     )
     assert relock.lock_writer_for(tmp_path) == str(placed)
+
+
+_OTHER_SHA = 'fedcba9876543210fedcba9876543210fedcba98'
+
+
+@pytest.mark.parametrize(
+    ('rev', 'locked', 'line'),
+    [
+        (_A_SHA[:8], _A_SHA, None),
+        (_A_SHA[:12].upper(), _A_SHA, None),
+        (_A_SHA[:8], _OTHER_SHA, _A_SHA[:8]),
+        (_A_SHA[:8], '', _A_SHA[:8]),
+        ('main', 'main' + _A_SHA[4:], 'main'),
+    ],
+)
+def test_an_abbreviated_sha_rev_of_the_locked_commit_holds(rev: str, locked: str, line: str | None) -> None:
+    """``rev = "595b43eb"`` resolves to the commit it abbreviates: a pin, never a branch to fetch.
+
+    PLANTED CONTROLS: the same prefix against a different locked commit, or with no locked commit, still floats;
+    a non-hex rev never holds by prefix.
+    """
+    assert line_of(f'rev={rev}', locked) == line
+
+
+def test_the_lag_never_fetches_a_short_sha_pin_as_a_branch() -> None:
+    """The consumer defect: a ``?rev=<8-hex>`` git source was fetched as ``refs/heads/<8-hex>`` and read ref-absent."""
+    lock = (
+        '[[package]]\nname = "triangle"\nversion = "1"\n'
+        f'source = {{ git = "https://example.invalid/triangle?rev={_A_SHA[:8]}#{_A_SHA}" }}\n'
+    )
+    assert floated(lock) == ()
+    assert floating_lag(lock, _HOUR, behind=lambda *_: pytest.fail('a pin was fetched as a branch')) == ()

@@ -37,12 +37,13 @@ pre-push row (:func:`range_problems`) refuses a ``pending`` entry the pushed hea
 WHAT IT SEES, read off the source (nothing is imported or run): in Python, ``environ``, ``environb``, ``getenv``,
 ``getenvb``, ``putenv`` and ``unsetenv`` reached through a name bound to ``os`` (``import os``, ``import os as
 _os``) or imported from it (``from os import environ``); in Rust, a runtime ``env::var``/``var_os``/``vars``/
-``vars_os``/``set_var``/``remove_var`` on a line that is not a ``//`` comment. WHAT IT CANNOT SEE: an implicit
-read inside a library (``Path.home()``, ``shutil.which`` reading ``PATH``), ``os`` reached under a name assigned
-at run time, compile-time ``env!``, and a Rust ``use std::env::var`` called bare. As a SWITCH it cannot see a
-Rust test's switch (Rust is read by line), a test that returns early instead of skipping, a mode switch that
-changes what a test does rather than whether it runs, nor a read inside a helper another file calls: each is still a
-read, judged under ``strict``.
+``vars_os``/``set_var``/``remove_var`` on a line that is not a ``//`` comment -- except Cargo's ``OUT_DIR`` read in
+a ``build.rs``, the build-script door (the one way Cargo hands a build script its output directory). WHAT IT CANNOT
+SEE: an implicit read inside a library (``Path.home()``, ``shutil.which`` reading ``PATH``), ``os`` reached under a
+name assigned at run time, compile-time ``env!``, and a Rust ``use std::env::var`` called bare. As a SWITCH it
+cannot see a Rust test's switch (Rust is read by line), a test that returns early instead of skipping, a mode switch
+that changes what a test does rather than whether it runs, nor a read inside a helper another file calls: each is
+still a read, judged under ``strict``.
 """
 
 from __future__ import annotations
@@ -60,12 +61,14 @@ from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.lanepolicy import policy_at
+from dev_lab.dev.rangebase import NoMergeBaseError, range_base
 from dev_lab.dev.rules import tracked_files
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
 __all__ = [
+    'BUILD_SCRIPT',
     'DOOR',
     'RULE_ID',
     'SOURCE_TREES',
@@ -107,6 +110,9 @@ _DETAILS: Final = 'details: docs-src/dev/refusals.md#env-is-read-once (dev-lab)'
 _OS_NAMES: Final = frozenset({'environ', 'environb', 'getenv', 'getenvb', 'putenv', 'unsetenv'})
 _RUST_READ: Final = re.compile(r'\benv::(?:var|var_os|vars|vars_os|set_var|remove_var)\s*\(')
 _SUFFIXES: Final = ('.py', '.rs')
+#: THE BUILD-SCRIPT DOOR: Cargo hands a build script its output directory only as ``OUT_DIR`` (class B by contract).
+BUILD_SCRIPT: Final = 'build.rs'
+_OUT_DIR_READ: Final = re.compile(r'\benv::(?:var|var_os)\s*\(\s*"OUT_DIR"\s*\)')
 _TEST_DIRS: Final = frozenset({'tests', 'benches'})
 #: Where a checkout's population lives: a family checkout with none of these has nothing for the check to read.
 SOURCE_TREES: Final = ('src', 'rust', 'scripts')
@@ -252,12 +258,17 @@ def python_switches(source: str) -> tuple[int, ...]:
     return tuple(sorted(found))
 
 
-def rust_reads(source: str) -> tuple[int, ...]:
-    """The lines of *source* calling a runtime ``std::env`` reader or writer, ``//`` comment lines skipped."""
+def rust_reads(source: str, *, build_script: bool = False) -> tuple[int, ...]:
+    """The lines of *source* calling a runtime ``std::env`` reader or writer, ``//`` comment lines skipped.
+
+    In a *build_script* (a crate's ``build.rs``) a read of ``OUT_DIR`` is Cargo's contract, not a read: only another
+    read on the line counts.
+    """
     return tuple(
         number
         for number, line in enumerate(source.splitlines(), start=1)
-        if not line.lstrip().startswith('//') and _RUST_READ.search(line)
+        if not line.lstrip().startswith('//')
+        and _RUST_READ.search(_OUT_DIR_READ.sub('', line) if build_script else line)
     )
 
 
@@ -275,7 +286,7 @@ def _reads(root: Path, rel: str) -> tuple[int, ...]:
             return python_reads(source)
         except SyntaxError:
             return ()
-    return rust_reads(source)
+    return rust_reads(source, build_script=PurePosixPath(rel).name == BUILD_SCRIPT)
 
 
 def _judged(policy: EnvPolicy, files: Iterable[str]) -> list[str]:
@@ -380,7 +391,10 @@ def _pending_at(root: Path, rev: str) -> frozenset[str]:
 
 def range_problems(root: Path, base: str, head: str) -> list[str]:
     """A ``pending`` path *head* adds since its merge-base with *base*. A base with no table admits the census."""
-    since = _git(root, 'merge-base', base, head).strip()
+    try:
+        since = range_base(root, base, head)
+    except NoMergeBaseError as error:
+        return [str(error)]
     before = _pending_at(root, since)
     if not before:
         return []

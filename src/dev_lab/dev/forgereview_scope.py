@@ -46,6 +46,7 @@ from dev_lab.dev.blobfetch import fetch_blobs, git, is_partial
 from dev_lab.dev.forgereview_command import ReviewPending
 from dev_lab.dev.forgereview_findings import merge_outputs
 from dev_lab.dev.principles import payload
+from dev_lab.dev.rangebase import EMPTY_TREE, range_base
 from dev_lab.dev.reviewcode import CODE, NOT_CODE, is_code, matches
 
 if TYPE_CHECKING:
@@ -226,10 +227,14 @@ def review_base(root: Path, target: str, head: str, since: str = '') -> str:
     """What *head*'s review reads from: its merge base with *target*, else *since* (the module docstring).
 
     *since* -- a continuation's last landed head -- is taken when it is an ancestor of *head* and newer than the
-    merge base; a landed head the branch no longer descends from (a rewritten branch) is not.
+    merge base; a landed head the branch no longer descends from (a rewritten branch) is not. With no merge base
+    the answer is :func:`dev_lab.dev.rangebase.range_base`'s: an EMPTY integration tree (a trunk founded as an empty
+    root) reviews the whole head from :data:`~dev_lab.dev.rangebase.EMPTY_TREE`, which any landed head is newer than;
+    a contentful unrelated trunk raises :class:`~dev_lab.dev.rangebase.NoMergeBaseError` naming its door.
     """
-    base = git(root, 'merge-base', target, head)[1].strip()
-    if since and since != base and _ancestor(root, since, head) and _ancestor(root, base, since):
+    base = range_base(root, target, head)
+    newer = base == EMPTY_TREE or _ancestor(root, base, since) if since else False
+    if newer and since != base and _ancestor(root, since, head):
         return since
     return base
 

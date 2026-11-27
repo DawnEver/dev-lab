@@ -69,6 +69,7 @@ from dev_lab.dev.memoryentry import (
     only_volatile_stripped,
     shape_problems,
 )
+from dev_lab.dev.rangebase import EMPTY_TREE, NoMergeBaseError, range_base
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -83,7 +84,6 @@ __all__ = [
 _GIT = shutil.which('git') or 'git'
 _GIT_TIMEOUT_S = 120
 _ZERO = '0' * 40
-_EMPTY_TREE: Final = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'  # git's empty tree: the base before a first push
 _REF_LINE_FIELDS: Final = 4  # git pre-push: <local ref> <local sha> <remote ref> <remote sha>
 
 
@@ -272,8 +272,11 @@ def problems_between(root: Path, base: str, head: str) -> tuple[str, ...]:
 
     A memory path *head* holds byte-identical to an ``origin`` ref is published, not this range's: never re-judged.
     """
-    since = _git(root, 'merge-base', base, head).strip()
-    rows = _changes(root, f'{since}...{head}')
+    try:
+        since = range_base(root, base, head)
+    except NoMergeBaseError as error:
+        return (str(error),)
+    rows = _changes(root, since, head)
     published = _published(root, head, rows)
     return _judge(root, since, head, [row for row in rows if row[0] not in 'ACM' or row[2] not in published])
 
@@ -321,7 +324,7 @@ def pushed(root: Path, ref_lines: str) -> tuple[str, ...]:
         if founded:
             out.extend(problems_between(root, integration, parts[1]))
         else:
-            out.extend(_judge(root, _EMPTY_TREE, parts[1], _changes(root, _EMPTY_TREE, parts[1])))
+            out.extend(_judge(root, EMPTY_TREE, parts[1], _changes(root, EMPTY_TREE, parts[1])))
     return tuple(out)
 
 
