@@ -118,7 +118,7 @@ def test_ssh_argv_checks_a_declared_host_strictly_against_its_declared_key_alone
     assert 'StrictHostKeyChecking=yes' in argv
     known = next(a.split('=', 1)[1] for a in argv if a.startswith('UserKnownHostsFile='))
     assert Path(known).read_text(encoding='utf-8') == f'{HOST} {KEY}\n'
-    assert argv[-2:] == [f'dev@{HOST}', 'bash -lc true']
+    assert argv[-2:] == [f'dev@{HOST}', remote.login_line('true')]
     plain = remote.ssh_argv('dev@other.example', 'true', batch=True, host_keys={HOST: KEY})
     assert not any('KnownHosts' in a or 'Strict' in a for a in plain)
 

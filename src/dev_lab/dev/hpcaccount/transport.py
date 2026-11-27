@@ -155,7 +155,8 @@ def describe(dest: str, command: str) -> str:
     session = sshholdstate.read_session(dest)
     if session is not None:
         return f'held session {dest}: {command}'
-    return shlex.join(remote.ssh_argv(dest, command, batch=True))
+    argv = remote.ssh_argv(dest, command, batch=True)  # its last element is the command base64-encoded: show it read
+    return f'{shlex.join(argv[:-1])} bash -lc {shlex.quote(command)} (sent base64-encoded)'
 
 
 class Started(Protocol):

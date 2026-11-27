@@ -9,8 +9,8 @@ row ``REMOTE-WRITE-THROUGH-A-DOOR``, which names those two doors; read-only ssh 
 
 from __future__ import annotations
 
+import base64
 import os
-import shlex
 import subprocess
 import tempfile
 from collections.abc import Mapping, Sequence
@@ -32,6 +32,7 @@ __all__ = [
     'detached',
     'host_key_line',
     'host_key_options',
+    'login_line',
     'named',
     'piped',
     'run',
@@ -155,6 +156,9 @@ def ssh_argv(
 
     The host key is checked as :func:`host_key_options` says, *host_keys* and *required* passed through.
 
+    The command travels base64-encoded (:func:`login_line`): the element ssh sends holds no ``'``, so a native argv
+    re-split by an MSYS ssh (Git's, on Windows) cannot re-cut a deeply quoted line (measured 2026-11-27).
+
     Raises:
         HostKeyUndeclared: as :func:`host_key_options`; nothing was started.
 
@@ -162,7 +166,13 @@ def ssh_argv(
     hosts = host_key_options(target, host_keys, required=required)
     mode = ['-o', 'BatchMode=yes'] if batch else ['-t']
     timeout = ['-o', f'ConnectTimeout={CONNECT_TIMEOUT_S}']
-    return ['ssh', *mode, *timeout, *hosts, target, f'bash -lc {shlex.quote(command)}']
+    return ['ssh', *mode, *timeout, *hosts, target, login_line(command)]
+
+
+def login_line(command: str) -> str:
+    """*command* as one login-shell line free of ``'``: base64 in the argv, decoded by the remote shell."""
+    encoded = base64.b64encode(command.encode('utf-8')).decode('ascii')
+    return f'bash -lc "$(printf %s {encoded} | base64 -d)"'
 
 
 def detached(argv: Sequence[str], log: IO[Any]) -> subprocess.Popen[Any]:
