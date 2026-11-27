@@ -1428,6 +1428,9 @@ def _unreadable(_path: Path) -> LogRef:
 def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_text: str, pytest_code: int) -> None:
     """Run the REAL ``main`` and ``run_verify`` with the seat free, the hooks clean and the steps planted."""
     _cached(monkeypatch, tmp_path)
+    # A real checkout: the untargeted run's real ``baselines verify`` step reads ``git ls-files``, and a bare
+    # temp directory made it inconclusive, so the planted PASS control could not say PASS.
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, timeout=60)
     (tmp_path / 'tests').mkdir()
     (tmp_path / 'pyproject.toml').write_text(_OUTPUT, encoding='utf-8')
     monkeypatch.setattr(verify, 'lock_freshness', lambda _root: None)

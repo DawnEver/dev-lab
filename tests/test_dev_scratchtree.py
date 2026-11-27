@@ -135,3 +135,27 @@ def test_the_door_makes_and_discards(tmp_path: Path) -> None:
     assert main(['--root', str(work), '--scratch', 'cmp', 'HEAD']) == 0
     assert main(['--root', str(work), '--discard', 'cmp']) == 0
     assert main(['--root', str(work), '--discard', 'cmp']) == 1
+
+
+def test_each_refusal_names_its_one_cause_and_its_door(tmp_path: Path) -> None:
+    """Issue #1029: a path given as NAME, an unreadable root and an undeclared detached tree each say which and how.
+
+    The planted control is the accepted bare name above (``removed``); here each wall must name ONLY its own cause.
+    """
+    work = _repo(tmp_path)
+    tree = work / '.claude' / 'worktrees' / 'plain'
+    _run(work, 'worktree', 'add', '-q', '--detach', str(tree), 'HEAD')
+    pathy = discard(work, '.claude/worktrees/plain', occupied=_free)
+    assert _refused(pathy, 'not one plain directory name'), pathy
+    assert 'git cannot read' not in pathy, pathy
+    assert '--discard plain' in pathy, pathy
+    stray = tmp_path / 'not-a-repo'
+    stray.mkdir()
+    unread = discard(stray, 'plain', occupied=_free)
+    assert _refused(unread, 'git cannot read'), unread
+    assert 'plain directory name' not in unread, unread
+    assert '--root' in unread, unread
+    undeclared = discard(work, 'plain', occupied=_free)
+    assert _refused(undeclared, 'not declared disposable'), undeclared
+    assert '--remove plain' in undeclared, undeclared
+    assert (tree / '.git').is_file()
