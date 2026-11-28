@@ -24,7 +24,7 @@ from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev import tickholder, venvpointer
 from dev_lab.dev._machinefile import dumps
-from dev_lab.dev.hpcaccount import deploy, tick, tickwall
+from dev_lab.dev.hpcaccount import deploy, prep, tick, tickwall
 from dev_lab.dev.hpcaccount import spec as deploy_spec
 from dev_lab.dev.hpcaccount import steps as deploy_steps
 from dev_lab.dev.hpcaccount.account import UNREACHED
@@ -438,7 +438,15 @@ def test_a_missing_tool_is_installed_or_refused_by_name(
 ) -> None:
     """In the prep job: the uv and cargo installers are the official ones, into ~/.local and ~/.cargo; cc cannot."""
     assert box.run(*DECLARE) == 0
-    monkeypatch.setattr(tick, '_runs', lambda _sh, _env, tool: tool not in {'uv', 'cargo'})
+    absent = {'uv', 'cargo'}  # each runs once its installer ran: the re-probe after the installs finds it
+
+    def runs(_sh: object, _env: str, tool: str) -> bool:
+        if tool in absent:
+            absent.discard(tool)
+            return False
+        return True
+
+    monkeypatch.setattr(tick, '_runs', runs)
     monkeypatch.setattr(tick, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
     start = len(box.logged())
     assert box.prep('alpha') == 0
@@ -703,7 +711,7 @@ class _Done:
 
 
 def _prepared(box: Box, name: str) -> None:
-    """Stamp *name*'s live environment with its current key, as its Slurm prep job's publish does."""
+    """Stamp *name*'s live environment with its current key and proven needs, as its Slurm prep job's publish does."""
     spec = deploy_spec.load(box.machine)
     assert spec is not None
     repo = next(one for one in spec.repos if one.name == name)
@@ -711,6 +719,7 @@ def _prepared(box: Box, name: str) -> None:
     live = venvpointer.current(deploy_spec.checkout_of(spec, repo))
     live.mkdir(parents=True, exist_ok=True)
     (live / deploy_steps.STAMP).write_text(key, encoding='utf-8')
+    prep.stamp_tools(deploy_spec.checkout_of(spec, repo), ())
 
 
 def _tick(box: Box, name: str, served: list[tuple[list[str], Path, str]]) -> int:
