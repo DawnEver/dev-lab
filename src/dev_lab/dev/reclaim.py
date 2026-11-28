@@ -49,12 +49,14 @@ from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.liverun import Census, removal_holders
 
 __all__ = [
+    'LIVE_SESSION',
     'QUIET_S',
     'UNLANDED_DOORS',
     'Lease',
     'blockers',
     'declared_generated',
-    'index_age_s',
+    'live_session',
+    'moved_age_s',
     'orphan_reason',
     'reclaim',
     'reclaimable',
@@ -68,8 +70,10 @@ __all__ = [
 
 #: How many paths a kept line names before it counts the rest.
 _SHOWN: Final = 5
-#: A tree whose index moved this recently is a LIVE SESSION (it staged, committed or checked out): never reclaimed.
+#: A tree whose HEAD moved this recently is a LIVE SESSION (it committed or checked out): never reclaimed.
 QUIET_S: Final = 3600.0
+#: The stable head of a live-session refusal: the key a summary counts it under.
+LIVE_SESSION: Final = 'live session'
 
 
 def declared_generated(main: Path) -> tuple[str, ...]:
@@ -104,13 +108,33 @@ def blockers(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | N
     return tuple(p for p in paths if not any(fnmatch.fnmatchcase(p, glob) for glob in generated))
 
 
-def index_age_s(tree: Path) -> float | None:
-    """Seconds since *tree*'s index last changed; ``None`` when it has none to read."""
-    index = (git_out(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'index') or '').strip()
-    try:
-        return time.time() - Path(index).stat().st_mtime if index else None
-    except OSError:
-        return None
+def moved_age_s(tree: Path) -> float | None:
+    """Seconds since *tree*'s HEAD last moved; ``None`` when it has none to read.
+
+    A commit, checkout, reset or rebase writes the tree's ``HEAD`` or its reflog ``logs/HEAD``; a READ never does.
+    Issue dev-lab#1125 (2026-11-28): liveness was the index mtime, and ``git status`` refreshes the index stat
+    cache, so a session merely reading a tree looked live. A session that only stages is held by its process
+    instead (:func:`occupancy`, the REMOVAL lock).
+    """
+    out = git_out(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'HEAD', '--git-path', 'logs/HEAD')
+    stamps: list[float] = []
+    for line in (out or '').splitlines():
+        try:
+            stamps.append(Path(line.strip()).stat().st_mtime)
+        except OSError:
+            continue
+    return time.time() - max(stamps) if stamps else None
+
+
+def live_session(tree: Path, quiet_s: float) -> str:
+    """Why *tree* is a LIVE SESSION -- its HEAD moved within *quiet_s* -- with the wait left; ``''`` when quiet."""
+    age = moved_age_s(tree)
+    if age is None or age >= quiet_s:
+        return ''
+    return (
+        f'{LIVE_SESSION}: its HEAD moved {age / 60:.0f} min ago; re-run once it has been quiet '
+        f'{quiet_s / 60:g} min (about {(quiet_s - age) / 60:.0f} min left)'
+    )
 
 
 def repository_at(root: Path, path: Path) -> str:
@@ -206,7 +230,8 @@ class _Judge:
 #: The doors of a tree holding unlanded work (D31): it is merged, or the user discards it -- never parked.
 UNLANDED_DOORS: Final = (
     'commit it on its branch and land it through a PR; or the user discards it: '
-    'python -m dev_lab.dev.branchset --discard <branch> --approved "<the user words>"'
+    'python -m dev_lab.dev.branchset --discard <branch> --approved "<the user words>" '
+    '(a detached tree: python -m dev_lab.dev.worktrees --remove <name> --approved "<the user words>")'
 )
 
 
@@ -249,9 +274,8 @@ def _tree_reason(tree: Path, branch: str, judge: _Judge, *, locked: bool) -> str
     unsaved = scrap_unsaved(tree, base, judge.generated) if base else unlanded_work(tree, judge.generated)
     if unsaved and (base or not unsaved.startswith('untracked')):
         return unsaved
-    age = index_age_s(tree)
-    if age is not None and age < judge.quiet_s:
-        return f'index changed {age / 60:.0f} min ago -- a live session'
+    if live := live_session(tree, judge.quiet_s):
+        return live
     if not base and not _landed(tree, branch, holders):
         return f'not landed -- its content is on none of {", ".join(holders)}'
     return unsaved
@@ -316,7 +340,8 @@ def reclaimable(
     * not ``git worktree lock``-ed;
     * no TRACKED change, staged or not (:func:`blockers`), and no untracked NOT-IGNORED file
       (:func:`untracked_work`) -- ignored files, CR/LF-only changes and declared generated paths never block;
-    * QUIET: its index unchanged for *quiet_s* seconds (a session that stages, commits or checks out is live);
+    * QUIET: its HEAD unmoved for *quiet_s* seconds (:func:`moved_age_s`: a commit or checkout is live, a read is
+      not);
     * LANDED: its HEAD's content is on one of *holders* (``git cherry`` empty -- content, not ancestry), or
       its branch's origin ref is gone and its whole change is one commit's change on a holder (squash merge);
     * NOT A RUNTIME: no ``[runtimes.<name>]`` value of *runtimes* (default this host's machine file,
@@ -382,8 +407,8 @@ def _restored(aside: Path, tree: Path, gitfile: bytes | None) -> str:
 
 def _kind(reason: str) -> str:
     """The stable head of a kept *reason*: the key the summary line counts it under."""
-    if reason.startswith('index changed'):
-        return 'live session'
+    if reason.startswith(LIVE_SESSION):
+        return LIVE_SESSION
     return reason.split(' -- ', 1)[0].split(' (', 1)[0].split(':', 1)[0].split(';', 1)[0].strip()
 
 
@@ -401,13 +426,13 @@ def removed_approved(root: Path, tree: Path, *, quiet_s: float = QUIET_S) -> str
     """Remove ONE linked worktree a user approved discarding, unlanded work included; ``''`` when gone, else why not.
 
     The approval replaces only the landed-and-clean judgment: the main checkout or a repository, a live session
-    (an index changed within *quiet_s*) still refuse, and the delete is
+    (a HEAD moved within *quiet_s*, :func:`live_session`) still refuse, and the delete is
     the same all-or-nothing :func:`_removed`.
     """
     if refused := repository_at(root, tree):
         return refused
-    if (age := index_age_s(tree)) is not None and age < quiet_s:
-        return f'index changed {age / 60:.0f} min ago -- a live session'
+    if live := live_session(tree, quiet_s):
+        return live
     if refused := _removed(tree):
         return refused.replace('{label}', str(tree))
     git_out(root, 'worktree', 'prune')

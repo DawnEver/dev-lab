@@ -333,15 +333,36 @@ def _kept_or_refused(args: argparse.Namespace, root: Path, session: str) -> str 
         return 'no native session: --keep records which session keeps an entry'
     if args.keep:
         return _keep(root, session, args.keep)
-    if not args.names and not session:
-        return "no native session, so no entry is this session's: name the entries to clear"
+    if args.all and (args.names or not args.approved):
+        return f'--all takes no names and needs --approved "<the user\'s words>": {DOOR} --all --approved WORDS --yes'
+    if not args.names and not args.all and not session:
+        return (
+            "no native session, so no entry is this session's: name the entries to clear, or clear every unowned "
+            f'one the user approved: {DOOR} --all --approved "<the user\'s words>" --yes'
+        )
     return None
 
 
+def _left_note(root: Path, session: str, names: list[str]) -> str:
+    """What a no-names ``clear`` left and why (issue dev-lab#1124); ``''`` when no unowned entry stands."""
+    loose = [rel for rel, _ in by_owner(root, session, now=time.time())[1] if rel not in names]
+    if not loose:
+        return ''
+    return (
+        f"{plural(loose)} of no live session kept ({shown(loose)}): with no names clear takes only this session's; "
+        f'name them with --approved "<the user\'s words>", or {DOOR} --all --approved "<the user\'s words>" --yes'
+    )
+
+
 def _clear(rest: list[str], root: Path) -> int:
-    """``clear [NAME ...] [--keep NAME ...] [--approved WORDS] [--yes]``: the names, else this session's entries."""
+    """``clear [NAME ...] [--all] [--keep NAME ...] [--approved WORDS] [--yes]``: the names, else this session's.
+
+    ``--all`` (with the user's ``--approved`` words) takes every entry of no live session, kept ones excepted,
+    so a user's "clear it all" needs no fifty-name command line; a no-names clear says what it left and why.
+    """
     parser = argparse.ArgumentParser(prog=DOOR, exit_on_error=False)
     parser.add_argument('names', nargs='*', metavar='NAME')
+    parser.add_argument('--all', action='store_true', help='every entry of no live session (needs --approved)')
     parser.add_argument('--keep', nargs='+', action='extend', default=[], metavar='NAME')
     parser.add_argument('--approved', default=None, metavar='WORDS', help="the user's words approving the removal")
     parser.add_argument('--yes', action='store_true')
@@ -356,7 +377,10 @@ def _clear(rest: list[str], root: Path) -> int:
     if refused := _kept_or_refused(args, root, session):
         emit(refused)
         return 2
-    left = args.names or own_entries(root, session)
+    if args.all:
+        left = [rel for rel, _ in by_owner(root, session, now=time.time())[1]]
+    else:
+        left = args.names or own_entries(root, session)
     kept = {_name(name) for name in args.keep}
     names = [name for name in left if _name(name) not in kept]
     if names and not args.yes:
@@ -368,6 +392,10 @@ def _clear(rest: list[str], root: Path) -> int:
     except (ScratchEscape, ScratchInUse) as exc:
         emit(str(exc))
         return 2
+    if not args.names and not args.all and (note := _left_note(root, session, names)):
+        emit(note)
+    elif not names and not args.names:
+        emit("nothing to clear: no entry of this session's or of no live session stands")
     return 0
 
 
