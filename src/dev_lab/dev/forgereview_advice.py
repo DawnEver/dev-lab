@@ -26,7 +26,7 @@ from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forgepulls import Marker, comment_list, comment_upsert, marker
 from dev_lab.dev.forgereview_findings import SEVERITIES, Finding, Findings
 from dev_lab.dev.forgereview_identity import ruling, self_review
-from dev_lab.dev.forgereview_summary import context_summary, repo_url, what_it_does
+from dev_lab.dev.forgereview_summary import checklist, context_summary, repo_url, what_it_does
 from dev_lab.dev.reviewbudget import raise_record
 from dev_lab.dev.reviewgate import post_review
 
@@ -212,6 +212,8 @@ def render(
         parts.append(f'Past the review budget, not read ({len(unread)}): ' + ', '.join(f'`{p}`' for p in unread))
     who = ', '.join(f'`{one.name}` ({one.provider or "-"}): {one.status}' for one in found.reviewers) or 'none'
     parts.append(f'Reviewers: {who}')
+    if required := checklist(found.requirements):
+        parts.append(required)
     order = sorted(record.findings, key=lambda one: SEVERITIES.index(one.severity))
     sections = (
         ('Security (holds the merge)', [_row(one) for one in order if one.blocking]),

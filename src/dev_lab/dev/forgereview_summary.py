@@ -2,7 +2,8 @@
 
 The two readings that OPEN a review's comment (:mod:`dev_lab.dev.forgereview_advice`). :func:`what_it_does`
 renders the engine's summary with its cites linked; :func:`context_summary` is the review's shared context -- the
-files and layers changed, and the WHY cited from each of :data:`SUMMARY_CITES`.
+files and layers changed, and the WHY cited from each of :data:`SUMMARY_CITES`. :func:`checklist` renders the
+engine's verdict on each declared requirement (D226) -- for the integrator, never a merge condition.
 """
 
 from __future__ import annotations
@@ -14,12 +15,19 @@ from typing import TYPE_CHECKING, Any, Final
 from dev_lab.dev.forgereview_scope import git
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from dev_lab.dev._forgebackends import Backend
+    from dev_lab.dev.forgereview_findings import Requirement
 
-__all__ = ['SUMMARY_CITES', 'context_summary', 'repo_url', 'what_it_does']
+__all__ = ['CHECKLIST_TITLE', 'SUMMARY_CITES', 'checklist', 'context_summary', 'repo_url', 'what_it_does']
+
+#: The heading of a review's requirements checklist: what it is and what it is not.
+CHECKLIST_TITLE: Final = '### Requirements (for the integrator; advisory, never a merge condition)'
+
+#: The box each verdict ticks: met or untouched holds, amended is checked by hand, the rest does not hold.
+_BOXES: Final = {'met': '[x]', 'untouched': '[x]', 'amended': '[~]', 'unverified': '[?]', 'violated': '[ ]'}
 
 #: What a review's context summary cites as the change's WHY, in order: its commits, the memory entries it lands,
 #: the merge audit of its merges, and the PR body. Exported by :mod:`dev_lab.dev.reviewpolicy` for every trigger.
@@ -104,3 +112,16 @@ def what_it_does(summary: Mapping[str, Any] | None, repo: str, head: str, backen
         if items := summary.get(key):
             parts.append(f'**{title}**:\n' + '\n'.join(f'- {one}' for one in items))
     return '\n\n'.join(parts)
+
+
+def checklist(requirements: Sequence[Requirement]) -> str:
+    """The review's requirements checklist, one line per requirement in the engine's order; ``''`` when none."""
+    if not requirements:
+        return ''
+    lines = [
+        f'- {_BOXES.get(one.verdict, "[ ]")} `{one.id}` **{one.verdict}**'
+        + (f': {one.evidence}' if one.evidence else '')
+        + (' (' + ', '.join(f'`{cite}`' for cite in one.cites) + ')' if one.cites else '')
+        for one in requirements
+    ]
+    return '\n'.join([CHECKLIST_TITLE, *lines])

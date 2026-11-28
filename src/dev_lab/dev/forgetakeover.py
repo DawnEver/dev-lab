@@ -48,13 +48,14 @@ from dev_lab.dev.forgereview_declared import (
 from dev_lab.dev.forgereview_findings import parse_findings
 from dev_lab.dev.forgereview_identity import Identity, ReviewerRefused, identity
 from dev_lab.dev.forgereview_job import job_exit, review_due, review_run
+from dev_lab.dev.forgereview_requirements import requirements_at
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan
 from dev_lab.dev.forgereview_stands import ask_again, carry
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import PullRequest
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.reviewbudget import Raised, raise_line
-from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing
+from dev_lab.dev.reviewgate import RERUN, DeclarationUnread, forge_posted, posted_verdicts, review_missing
 from dev_lab.dev.reviewgitauth import take
 from dev_lab.dev.reviewruntime import review_runtimes
 from dev_lab.dev.taskkeys import REVIEW_TASK, keys_loaded
@@ -222,7 +223,12 @@ def _taken(
     argvs = [command_for(review, scope.range, runtimes, paths=s.paths, lens=s.lens, batching=batching)
              for s in scope.slices]  # fmt: skip
     synth = command_for(review, scope.range, runtimes, synthesis=True, batching=batching)
-    found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=thread.body))
+    try:  # read at the trusted base through the forge, never the head (forgereview_requirements)
+        required = requirements_at(client, review, base)
+    except DeclarationUnread as unread:
+        msg = f'its review requirements cannot be read: {unread}'
+        raise TakeoverRefused(msg) from unread
+    found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=thread.body, requirements=required))
     if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
         kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
         msg = f'no reviewer returned findings ({kinds}); nothing is posted'

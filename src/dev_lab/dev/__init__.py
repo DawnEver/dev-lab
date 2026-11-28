@@ -527,6 +527,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_advice` -- the one-shot review's comment and status: advice; a security finding holds.
 * :mod:`dev_lab.dev.forgereview_identity` -- who reviews: only the forge posts a status; no author reviews its head.
 * :mod:`dev_lab.dev.forgereview_summary` -- a review's opening: what the PR does, and what changed and why.
+* :mod:`dev_lab.dev.forgereview_requirements` -- what a review judges against (principles, architecture), per repo.
 * :mod:`dev_lab.dev.reviewbudget` -- a PR's review capped in USD inside the family's month, fitted.
 * :mod:`dev_lab.dev.reviewcap` -- a review that did not run is waived at the merge, warned and recorded, never passed.
 * :mod:`dev_lab.dev.reviewbundle` -- a PR head's review bundle: the changed files both sides, checked against the forge.

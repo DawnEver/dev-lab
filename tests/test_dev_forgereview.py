@@ -612,7 +612,7 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
         'command', 'model', 'synthesis', 'max_diff', 'max_total', 'derived', 'strict', 'light',
         'code', 'not_code', 'reviewers', 'backlog',
         'claim_stale', 'quiet', 'bundle', 'judge_login', 'judge_app',
-        'batch', 'on_expiry', 'batch_wait',
+        'batch', 'on_expiry', 'batch_wait', 'requirements', 'architecture', 'max_architecture',
     }  # fmt: skip
 
 

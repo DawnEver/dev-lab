@@ -78,6 +78,7 @@ from dev_lab.dev.forgereview_command import (
 from dev_lab.dev.forgereview_declared import PATHS_FIELD, Review, command_for, review_at
 from dev_lab.dev.forgereview_findings import FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_identity import ReviewerRefused, identity, ruling, self_review
+from dev_lab.dev.forgereview_requirements import requirements_at
 from dev_lab.dev.forgereview_runtimes import retired_table
 from dev_lab.dev.forgereview_scope import Scope, code_bytes, gather, plan
 from dev_lab.dev.forgereview_stands import asked_again, restands, stands
@@ -97,7 +98,7 @@ from dev_lab.dev.reviewbudget import (
 )
 from dev_lab.dev.reviewcap import unreviewed_line
 from dev_lab.dev.reviewcode import ONLY_GENERATED
-from dev_lab.dev.reviewgate import forge_posted, post_review
+from dev_lab.dev.reviewgate import DeclarationUnread, forge_posted, post_review
 from dev_lab.dev.reviewruntime import review_runtimes
 from dev_lab.dev.roles import HPC, REVIEW, roles_at
 
@@ -296,6 +297,10 @@ def _review(
     if cannot is not None:  # checked before the claim: the HOST cannot, so nothing is posted on the head
         raise HostCannot(cannot)
     forgereview_scope.prefetch(root, scope.range)  # the reviewer holds no forge token: a partial clone fetches first
+    try:  # read at the trusted base through the forge, never the head (forgereview_requirements)
+        required = requirements_at(client, review, pull.base)
+    except DeclarationUnread as unread:
+        return _failed(client, pull, f'its review requirements cannot be read: {unread}', runner)
     me = identity(client, runner.host, serving=runner.serving)  # checked before the claim too
     authors = sessions(root, target, head)
     ruling(me, f'reviewing #{pull.number}')
@@ -305,7 +310,9 @@ def _review(
     try:
         synth = command_for(review, scope.range, runner.runtimes, synthesis=True, batching=batching)
         body = '\n\n'.join(one for one in (pull.body, carried) if one)
-        found = parse_findings(gather(scope.range, argvs, synth, run, root, pr_body=body, disposed=disposed))
+        found = parse_findings(
+            gather(scope.range, argvs, synth, run, root, pr_body=body, requirements=required, disposed=disposed)
+        )
     except ReviewPending as waiting:
         why = f'{BATCH_PENDING} {waiting}'[:DESCRIPTION]
         post_review(client, head, state='pending', description=why)

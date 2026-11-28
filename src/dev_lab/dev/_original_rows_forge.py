@@ -112,6 +112,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgeapp',  # a GitHub App as a forge identity (the judge's), new here
     'forgereview_gate',  # the one review gate every merge door reads, split from forgereview_declared
     'forgereview_identity',  # who reviews: the forge's status, never a head's author, new here
+    'forgereview_requirements',  # what a review judges against, declared per repo (D226), new here
     'forgerunshow',  # a cluster run's findings published on the forge, new here
     'forgedraft',  # a PR opens as a draft until its author marks it ready (D53), new here
     'forgehold',  # a PR held from the merge tick by a label where its draft is refused, new here

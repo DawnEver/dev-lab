@@ -216,7 +216,7 @@ def test_a_slice_pending_still_lets_the_slices_after_it_submit(tmp_path: Path) -
         return _output()
 
     with pytest.raises(ReviewPending, match='msgbatch_1'):
-        gather('a..b', [['one'], ['two']], ['synth'], run, tmp_path, pr_body='')
+        gather('a..b', [['one'], ['two']], ['synth'], run, tmp_path, pr_body='', requirements={})
     assert ran == ['one', 'two'], 'slice two submitted; the synthesis waits for both'
 
 

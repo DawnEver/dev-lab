@@ -18,7 +18,7 @@ from test_dev_forgereview import _LANE_POLICY, _work
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeheadgate import GATES
 from dev_lab.dev.forgemerge import decide
-from dev_lab.dev.forgereview_gate import review_gate
+from dev_lab.dev.forgereview_gate import NO_JUDGE, review_gate
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA, GITEA_ACTIONS_LOGIN
 from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
@@ -197,40 +197,89 @@ def test_the_door_records_what_this_process_posted_and_nothing_outside_the_block
     assert said == ['pending', 'failure']
 
 
-# THE JUDGE MODE: a repo whose base declares ``where = "judge"`` is reviewed by its DECLARED judge's PR review.
+# THE JUDGE MODE: a repo whose review the family binds to a host is reviewed by its DECLARED judge's PR review.
 _JUDGE_LOGIN = 'review-bot'
-_JUDGED = f'[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "{_JUDGE_LOGIN}"\n'
+_JUDGED = f'[tool.dev_lab.review]\njudge_login = "{_JUDGE_LOGIN}"\n'
 
 
-def _judge_repo() -> tuple[StateForge, str, int]:
+def _judge_repo(declared: str = _JUDGED) -> tuple[StateForge, str, int]:
     forge = StateForge()
-    forge.pyproject_at[_BASE] = _JUDGED
+    forge.pyproject_at[_BASE] = declared
     head = 'd' * 40
     return forge, head, forge.add_pull('pr/x', _BASE, sha=head)
 
 
-def _gate(forge: StateForge, head: str, *, by: str = CI) -> str | None:
-    return review_gate(forge, base=_BASE, by=by)(status_list(forge, head))
+def _gate(forge: StateForge, head: str, *, by: str = CI, number: int = 1) -> str | None:
+    return review_gate(forge, base=_BASE, by=by, number=number, head=head)(status_list(forge, head))
+
+
+def _named(forge: StateForge, head: str, number: int) -> str:
+    """The judge's reading of *head*, which names why it is not reviewed."""
+    reading = _gate(forge, head, by=HOST, number=number)
+    assert reading is not None
+    return reading
+
+
+def _advisory(tmp_path: Path, forge: StateForge, head: str, number: int) -> None:
+    """The merge decision on the judge's reading: READY whatever it says (advisory), the reading reported."""
+    work, committed = _work(tmp_path)  # the decision's git half reads a real head; the reading is the forge's
+    policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
+    reviewed = review_gate(forge, base=_BASE, by=HOST, number=number, head=head)
+    statuses = (*(_status(gate, 'success', 'holds') for gate in GATES), _status(*_SECURED),
+                _status('tests/base', 'success', 'scope=full ran=3 hands=-'))  # fmt: skip
+    found = decide(work, policy, branch='pr/x', number=number, head=committed, statuses=statuses, reviewed=reviewed)
+    assert found.ready, found.missing
+    assert found.review == reviewed(statuses)
 
 
 @pytest.mark.parametrize(
-    'verdicts',
+    ('verdicts', 'said'),
     [
-        (),  # no review yet
-        (('someone-else', 'APPROVED'),),  # approved by a login that is not the declared judge
-        (('review-bot', 'APPROVED'), ('review-bot', 'REQUEST_CHANGES')),  # the judge changed its mind
+        ((), 'no verdict by the judge'),  # no review yet
+        ((('someone-else', 'APPROVED'),), 'no verdict by the judge'),  # approved by a login that is not the judge
+        ((('review-bot', 'APPROVED'), ('review-bot', 'REQUEST_CHANGES')), 'requested changes'),  # changed its mind
     ],
 )
-def test_a_judge_repo_s_merge_never_waits_on_the_judge(verdicts: tuple[tuple[str, str], ...]) -> None:
-    """User ruling 2026-11-11: the judge is ADVISORY on Gitea -- posted as information, never a merge condition.
+def test_a_judge_repo_s_reading_names_the_missing_verdict_and_the_merge_never_waits_on_it(
+    tmp_path: Path, verdicts: tuple[tuple[str, str], ...], said: str
+) -> None:
+    """D226: the judge's reading is READ again -- it is what asks for the review -- and stays ADVISORY (2026-11-11).
 
-    PLANTED CONTROL: test_a_serve_repo_is_unaffected_by_a_judge_approval, below, still waits.
+    6b416f2a made the reading a constant ``None``, so reviewturn never called a judged head due and the judge,
+    which reviews only a head called due, reviewed nothing. PLANTED CONTROL: the judge's approval reads ``None``
+    (below), and the merge decision is READY either way.
     """
     forge, head, number = _judge_repo()
     for login, state in verdicts:
         forge.add_review(number, login=login, state=state, commit=head)
+    assert said in _named(forge, head, number)
+    _advisory(tmp_path, forge, head, number)
+
+
+def test_the_judge_s_approval_at_the_head_is_a_review_and_a_pending_hold_is_named(tmp_path: Path) -> None:
+    """PLANTED CONTROL of the readings above: the declared judge's APPROVED at THIS head reads reviewed."""
+    forge, head, number = _judge_repo()
+    forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit='e' * 40)  # an older head: no verdict
+    assert 'no verdict' in _named(forge, head, number)
+    forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit=head)
+    assert _gate(forge, head, by=HOST, number=number) is None
+    _advisory(tmp_path, forge, head, number)
     status_post(forge, head, context=HOLD_CONTEXT, state='pending', description='held')
-    assert _gate(forge, head, by=HOST) is None
+    assert 'held' in _named(forge, head, number)
+
+
+def test_a_host_bound_review_declaring_no_judge_is_named_on_every_ready_head(tmp_path: Path) -> None:
+    """Every wall teaches (D226): with no judge identity the judge judges nothing, so merge-ready names the key.
+
+    PLANTED CONTROL: the same repo declaring judge_login reads the judge's verdict instead.
+    """
+    forge, head, number = _judge_repo('[tool.dev_lab.review]\n')
+    assert _gate(forge, head, by=HOST, number=number) == NO_JUDGE.format(base=_BASE)
+    assert 'judge_login' in NO_JUDGE
+    assert 'judge_app' in NO_JUDGE
+    _advisory(tmp_path, forge, head, number)
+    named, head, number = _judge_repo()
+    assert 'no verdict by the judge' in _named(named, head, number)
 
 
 def test_a_serve_repo_is_unaffected_by_a_judge_approval() -> None:

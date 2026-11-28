@@ -172,7 +172,10 @@ the merge audit, the messages, not a draft. The merge decision (`reviewturn.revi
   repo starts nothing: the judge fetches and prepares the head itself, D77). Gitea starts no workflow for its Actions user's event, so inside `merge.yml` the decision
   only says the review is due and the serve's tick (its own login) asks;
 - `forgereview.review_pull` reviews nothing whose latest `tests/review` is absent or `waits`, whoever started it (a
-  push, a hand-added label, a serve tick); the judge (review bound to a host) judges only a head called due.
+  push, a hand-added label, a serve tick); the judge (review bound to a host) judges only a head called due. A
+  judge repo's head is due until the judge the base declares (`judge_login`, `judge_app`) approved it
+  (`forgereview_gate.review_gate`, D226); a base declaring no judge identity is named on every ready head's
+  merge-ready line (`NO_JUDGE`), since no judge would ever review it.
 
 A push asks for nothing: a new head has no status, so it waits for the decision again, and a superseded head is
 never reviewed. A head whose PR already holds its one review is never reviewed again by this trigger: once called
@@ -206,6 +209,14 @@ violates. `tests/review` is `success` once the review ran, its description count
 for the review again. A HIGH finding is advice like any other. No session reviews a head it authored, and only the
 forge posts `tests/review` (`forgereview_identity`); a raw `status post` on `tests/review` is refused. A PR-less
 head's review comment is its `review of commit <sha>` issue, numbered like a PR.
+
+**Requirements, per repo, never a merge condition** (D226, user ruling 2026-11-28). `[tool.dev_lab.review]
+requirements` lists what the review judges a change against, from `principles` (the family default) and
+`architecture` (the documents its `architecture` globs match, at most `max_architecture`, read at the trusted
+integration branch through the forge, never the head). The engine answers each `met`, `violated`, `amended`,
+`untouched` or `unverified`; the review comment lists them as a checklist for the integrator, who gates draft ->
+ready by hand. The verdict rule above is unchanged. The declaration and its refusals:
+`dev_lab.dev.forgereview_requirements`.
 
 **A review that did not run never holds the merge** (`dev_lab.dev.reviewcap`, user rulings 2026-11-05 and
 2026-11-06). A failed attempt on the serve tick is `error` `review attempt failed, retried once: ...`, and the next

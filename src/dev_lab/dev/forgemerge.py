@@ -41,7 +41,8 @@ fifth conditions, which a serve host posts):
   named, never waited on (:func:`~dev_lab.dev.forgemergewaits.hand_parts`, user ruling 2026-11-10);
 * its review is ADVISORY and never a condition (user rulings 2026-11-11/12, both forges): the review still runs at
   the PR's first merge-ready head (:mod:`dev_lab.dev.reviewturn`) and posts its comment and ``tests/review``; a head
-  whose review is not a forge-posted ``success`` (:func:`dev_lab.dev.forgereview_gate.review_gate`) merges WARNED --
+  that is not reviewed (:func:`dev_lab.dev.forgereview_gate.review_gate`: a forge-posted ``success``, or the judge's
+  approving verdict) merges WARNED --
   the decision names why, and the merged PR gets a comment saying so. A review that did not run and left its
   recorded cause (:func:`dev_lab.dev.reviewcap.unreviewed_waiver`) carries ``Unreviewed: ...`` into the commit message;
 * it is an INTERNAL PR (:func:`external`, user ruling 2026-11-05): a fork's, or a non-writer's, is never merged by
@@ -281,7 +282,9 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
     try:
-        reviewed = review_gate(client, base=policy.integration, by=roles_at(root).kind(REVIEW))
+        reviewed = review_gate(
+            client, base=policy.integration, by=roles_at(root).kind(REVIEW), number=number, head=head
+        )
     except ValueError as config:  # a declaration that cannot gate is this PR's wait, never the tick's crash
 
         def reviewed(_statuses: Sequence[CommitStatus], why: str = str(config)) -> str:

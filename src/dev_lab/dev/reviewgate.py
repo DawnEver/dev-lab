@@ -24,7 +24,7 @@ import base64
 import contextlib
 import os
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Any, Final, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol, cast
 from urllib.parse import quote
 
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
@@ -46,16 +46,20 @@ __all__ = [
     'RERUN',
     'VERDICT_STATES',
     'DeclarationUnread',
+    'app_missing',
     'app_verdicts',
+    'blob_at',
     'forge_posted',
     'github_posted',
     'job_run_url',
+    'judge_missing',
     'manifest_at',
     'post_review',
     'posted_verdicts',
     'review_missing',
     'standing_verdicts',
     'status_gate',
+    'tree_at',
 ]
 
 #: The remedy for a head with no forge-posted review: the forge reviews it again, never a session.
@@ -98,16 +102,63 @@ def file_at(client: RepoReader, path: str, ref: str) -> str:
         DeclarationUnread: the file is absent at *ref*, cannot be read, or the answer carries no content.
 
     """
+    return blob_at(client, path, ref)[0]
+
+
+def blob_at(client: RepoReader, path: str, ref: str) -> tuple[str, str]:
+    """:func:`file_at`'s text and the git blob id the forge names for it (``''`` when it names none).
+
+    Raises:
+        DeclarationUnread: the file is absent at *ref*, cannot be read, or the answer carries no content.
+
+    """
     try:
-        answer: Any = client.call('GET', f'{client.repo}/contents/{quote(path)}?ref={ref}')
+        answer = _fields(client.call('GET', f'{client.repo}/contents/{quote(path)}?ref={ref}'))
     except ForgeCallFailed as failed:
         msg = f'{path} at {ref} cannot be read: {failed}'
         raise DeclarationUnread(msg) from failed
-    content = answer.get('content') if isinstance(answer, dict) else None
+    content = answer.get('content')
     if not content:
         msg = f'{path} at {ref}: the forge answered no content'
         raise DeclarationUnread(msg)
-    return base64.b64decode(content).decode()
+    return base64.b64decode(str(content)).decode(), str(answer.get('sha') or '')
+
+
+def _fields(answer: object) -> dict[str, Any]:
+    """A forge answer's JSON object, else empty: what a read names as no content."""
+    return cast('dict[str, Any]', answer) if isinstance(answer, dict) else {}
+
+
+def tree_at(client: RepoReader, ref: str) -> list[str]:
+    """Every file path in *ref*'s tree, as the forge lists it (``git/trees`` recursive, every page) -- never a checkout.
+
+    Gitea pages a long listing (``truncated`` with a next ``page``); GitHub truncates past its own limit with no page,
+    which refuses: name the documents without a glob there.
+
+    Raises:
+        DeclarationUnread: the tree cannot be read, or the forge truncated it with no next page.
+
+    """
+    paths: list[str] = []
+    page = 1
+    while True:
+        try:
+            answer = _fields(
+                client.call(
+                    'GET', f'{client.repo}/git/trees/{quote(ref, safe="")}?recursive=true&page={page}&per_page=1000'
+                )
+            )
+        except ForgeCallFailed as failed:
+            msg = f'the tree at {ref} cannot be read: {failed}'
+            raise DeclarationUnread(msg) from failed
+        rows = [_fields(row) for row in cast('list[object]', answer.get('tree') or [])]
+        paths += [str(row['path']) for row in rows if row.get('type') == 'blob' and 'path' in row]
+        if not answer.get('truncated'):
+            return paths
+        if 'page' not in answer:
+            msg = f'the forge truncated the tree at {ref}: name each document by its path, without a glob'
+            raise DeclarationUnread(msg)
+        page += 1
 
 
 def forge_posted(client: Client) -> Callable[[CommitStatus], bool]:
@@ -196,6 +247,45 @@ def app_verdicts(client: Client, head: str) -> list[dict[str, Any]]:
     listed: Any = client.call('GET', f'{client.repo}/commits/{head}/check-runs?check_name={JUDGE_CHECK}&per_page=100')
     runs = listed.get('check_runs') if isinstance(listed, dict) else None
     return [row for row in runs or [] if isinstance(row, dict)]
+
+
+def judge_missing(
+    statuses: Sequence[CommitStatus], reviews: Sequence[Mapping[str, Any]], *, head: str, judge: str
+) -> str | None:
+    """Why *head* carries no approving verdict of the DECLARED *judge* login, or ``None`` when it does: a REPORT.
+
+    The latest standing verdict review (:func:`standing_verdicts`) *judge* left AT *head* decides: ``APPROVED``
+    (then the hold is read) is reviewed; none, or a ``REQUEST_CHANGES``, is named. Another login's approval, one at
+    an older head, a dismissed or stale one is no verdict. Advisory: the merge decision reports it, never waits.
+    """
+    verdicts = standing_verdicts(reviews, login=judge, head=head)
+    latest = max(verdicts, key=lambda row: int(row.get('id') or 0), default=None)
+    if latest is None:
+        return f'no verdict by the judge {judge!r} at {head[:12]} yet: the judge reviews a head called due'
+    if latest.get('state') != APPROVED:
+        return f'the judge {judge!r} requested changes at {head[:12]}'
+    return _hold_missing(statuses)
+
+
+def app_missing(
+    statuses: Sequence[CommitStatus], runs: Sequence[Mapping[str, Any]], *, head: str, app_id: int
+) -> str | None:
+    """Why *head* carries no approving :data:`JUDGE_CHECK` run FROM App *app_id*, or ``None`` when it does: a REPORT.
+
+    Only a completed run whose ``app.id`` IS the declared App counts; its latest at *head* decides: ``success``
+    (then the hold is read) is reviewed, any other conclusion is named.
+    """
+    own = [
+        row for row in runs
+        if row.get('name') == JUDGE_CHECK and row.get('head_sha') == head and row.get('status') == 'completed'
+        and cast('Mapping[str, Any]', row.get('app') or {}).get('id') == app_id
+    ]  # fmt: skip
+    latest = max(own, key=lambda row: int(row.get('id') or 0), default=None)
+    if latest is None:
+        return f'no {JUDGE_CHECK} verdict by the judge App {app_id} at {head[:12]} yet'
+    if latest.get('conclusion') != 'success':
+        return f'the judge App {app_id} concluded {latest.get("conclusion")!r} at {head[:12]}: changes requested'
+    return _hold_missing(statuses)
 
 
 def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitStatus], bool]) -> str | None:

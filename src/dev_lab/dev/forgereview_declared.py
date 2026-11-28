@@ -12,6 +12,7 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light;
     # {model}: `model`; {rules}: the registry's rule ids, comma-separated (ai-lab imports no registry);
     # {principles}: a JSON file of dev_lab.dev.principles (written per run; ai-lab holds no copy);
+    # {requirements}: a JSON file of what the review judges against (forgereview_requirements; written per run);
     # {summary}: --pr-body <file> on the one summarizing call, --no-summary on the rest;
     # {disposed}: a JSON file of findings disposed earlier (a one-shot review hands an empty one);
     # {runtimes.<name>.<key>}: THIS host's machine-file [runtimes.<name>] value (repo says WHAT, host WHERE)
@@ -33,6 +34,9 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     batch = true               # FAMILY_BATCH: model calls via the vendor batch endpoint ({batch}); false: at once
     on_expiry = "sync"         # a request the batch let expire (24 h): answered at once ("sync") or failed ("fail")
     batch_wait = "20 min"      # DEFAULT_BATCH_WAIT: one review waits this long on its batches, then pending
+    requirements = ["principles"]  # FAMILY_REQUIREMENTS: what the review judges against, from REQUIREMENT_KINDS
+    architecture = []          # globs of the architecture documents, read at integration: exactly with "architecture"
+    max_architecture = "120 kB"  # every architecture document together: past it is refused, naming each size
 
 WHO reviews is never declared here: it is the family's binding of ``review`` (:mod:`dev_lab.dev.roles`, D73) -- a
 ``host`` (the independent judge over a verified bundle), an ``hpc`` executor's serve tick, or ``ci`` (the forge's
@@ -57,6 +61,7 @@ from dev_lab.dev import forgereview_batch as batching_
 from dev_lab.dev import forgereview_scope, reviewcode
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgereview_command import ReviewUnsupported
+from dev_lab.dev.forgereview_requirements import DEFAULT_MAX_ARCHITECTURE, FAMILY_REQUIREMENTS, declared_refusal
 from dev_lab.dev.forgereview_runtimes import DERIVED_RUNTIMES, HOST_FIELD, RUNTIMES_TABLE, retired_field, runtime_names
 from dev_lab.dev.forgereview_scope import Budget
 from dev_lab.dev.lanepolicy import policy_from
@@ -121,8 +126,8 @@ FAMILY_MODEL: Final = 'claude-sonnet-5-5'
 FAMILY_COMMAND: Final = (
     '{runtimes.ai_lab.python}', '-m', 'ai_lab.review', '--range', RANGE_FIELD, '--lens', LENS_FIELD,
     '--model', MODEL_FIELD, '--rules', RULES_FIELD, '--paths', PATHS_FIELD,
-    '--principles', forgereview_scope.PRINCIPLES_FIELD, forgereview_scope.SUMMARY_FIELD,
-    '--disposed', forgereview_scope.DISPOSED_FIELD, batching_.BATCH_FIELD,
+    '--principles', forgereview_scope.PRINCIPLES_FIELD, '--requirements', forgereview_scope.REQUIREMENTS_FIELD,
+    forgereview_scope.SUMMARY_FIELD, '--disposed', forgereview_scope.DISPOSED_FIELD, batching_.BATCH_FIELD,
 )  # fmt: skip
 
 #: The placeholder the judge's bundle command carries (:data:`dev_lab.dev.reviewbundle.BUNDLE_FIELD`).
@@ -132,7 +137,8 @@ BUNDLE_FIELD: Final = '{bundle}'
 #: files, never git. Run by ``forge review judge`` where the family binds review to a host (a judge).
 FAMILY_BUNDLE: Final = (
     '{runtimes.ai_lab.python}', '-m', 'ai_lab.review', '--bundle', BUNDLE_FIELD, '--model', MODEL_FIELD,
-    '--rules', RULES_FIELD, '--principles', forgereview_scope.PRINCIPLES_FIELD, forgereview_scope.SUMMARY_FIELD,
+    '--rules', RULES_FIELD, '--principles', forgereview_scope.PRINCIPLES_FIELD,
+    '--requirements', forgereview_scope.REQUIREMENTS_FIELD, forgereview_scope.SUMMARY_FIELD,
     '--disposed', forgereview_scope.DISPOSED_FIELD, batching_.BATCH_FIELD,
 )  # fmt: skip
 
@@ -167,7 +173,7 @@ RETIRED_KEYS: Final = {
 
 _TABLE: Final = 'review'
 #: The keys declared as sizes (``"400 kB"``); a :class:`Review` holds them in bytes.
-_SIZES: Final = ('max_diff', 'max_total')
+_SIZES: Final = ('max_diff', 'max_total', 'max_architecture')
 #: Unit-suffixed keys retired by the 2026-11-25 ruling (a value carries its unit), refused with their new line.
 _UNIT_RENAMED: Final = {'max_diff_bytes': Renamed('max_diff', 'B'), 'max_total_bytes': Renamed('max_total', 'B')}
 
@@ -202,9 +208,12 @@ class Review:
     batch: bool = batching_.FAMILY_BATCH  # via the vendor batch endpoint; False: at once (forgereview_batch)
     on_expiry: str = batching_.FAMILY_ON_EXPIRY  # an expired batch request: one of batching_.ON_EXPIRY
     batch_wait: str = batching_.DEFAULT_BATCH_WAIT  # a duration: one review waits this long, then posts pending
+    requirements: tuple[str, ...] = FAMILY_REQUIREMENTS  # what the review judges against (forgereview_requirements)
+    architecture: tuple[str, ...] = ()  # the architecture documents' globs: declared exactly with "architecture"
+    max_architecture: int = DEFAULT_MAX_ARCHITECTURE  # bytes, every architecture document together
 
     def __post_init__(self) -> None:
-        """Refuse a bad ``judge_app``, a bad ``bundle`` or duration."""
+        """Refuse a bad ``judge_app``, a bad ``bundle`` or duration, or half a requirement."""
         app: object = self.judge_app  # read from TOML: its declared type is what this refuses
         if isinstance(app, bool) or not isinstance(app, int) or app < 0:
             msg = f'judge_app = {self.judge_app!r} is no GitHub App id (a positive integer)'
@@ -215,6 +224,8 @@ class Review:
         if BUNDLE_FIELD not in self.bundle:
             msg = f'bundle = {list(self.bundle)} names no {BUNDLE_FIELD}: the judge would read no bundle'
             raise ValueError(msg)
+        if why := declared_refusal(self.requirements, self.architecture):
+            raise ValueError(why)
         batching_.check_expiry(self.on_expiry)
         stale_after(self)
         batching_.wait_of(self)
@@ -282,10 +293,31 @@ def review_from(text: str, origin: str) -> Review:
     if 'command' in declared and review.command == FAMILY_COMMAND:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} redeclares the family command: delete it (override `model`)'
         raise ValueError(msg)
+    if why := _requirements_dropped(review, declared):
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {why}'
+        raise ValueError(msg)
     if why := retired_field((*review.command, *review.synthesis, *review.bundle)):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {why}'
         raise ValueError(msg)
     return review
+
+
+def _requirements_dropped(review: Review, declared: Mapping[str, object]) -> str | None:
+    """Why a declared ``command`` or ``bundle`` would hand the reviewer none of the declared requirements, or ``None``.
+
+    Only a repo that DECLARES ``requirements`` and its own command is judged: the family commands carry the field.
+    """
+    if not review.requirements or 'requirements' not in declared:
+        return None
+    field = forgereview_scope.REQUIREMENTS_FIELD
+    for key in ('command', 'bundle'):
+        if key in declared and not any(field in arg for arg in getattr(review, key)):
+            return (
+                f'{key} names no {field} while requirements = {list(review.requirements)} are declared: the '
+                f'reviewer would judge none of them -- add "--requirements", "{field}" to it, or declare '
+                'requirements = []'
+            )
+    return None
 
 
 def load_review(root: Path) -> Review:
