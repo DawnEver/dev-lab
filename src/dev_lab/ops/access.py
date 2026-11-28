@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Final
 
 from dev_lab.ops.config import OpsConfig
-from dev_lab.ops.consentrole import Access
+from dev_lab.ops.consentrole import Access, SshCa
 from dev_lab.ops.totp import DIGITS, STEP, TotpRefused, uri, write_private
 from dev_lab.ops.totp import adopt as adopt_secret
 from dev_lab.ops.totp import enroll as enroll_secret
@@ -117,8 +117,10 @@ def keys_file(account: str) -> str:
     return f'{KEYS_DIR}/{account}.keys'
 
 
-def files(role: Access) -> dict[str, str]:
+def files(role: Access, ca: SshCa | None = None) -> dict[str, str]:
     """The sshd drop-in, the account's keys, the PAM include and the sudoers line, by path under the root.
+
+    *ca* is the declared ssh user CA: at N it closes the listed keys of an account it certifies (:mod:`.sshca`).
 
     Raises:
         ValueError: a declared command carries a character sudoers would read as syntax, or a ``permit_open``
@@ -136,8 +138,10 @@ def files(role: Access) -> dict[str, str]:
         if role.permit_open
         else '    AllowTcpForwarding no\n'
     )
+    listed = keys_file(role.account)
+    opens = listed if ca is None else ca.authorized(role.account, listed)
     sshd = (
-        f'Match User {role.account}\n    AuthorizedKeysFile {keys_file(role.account)}\n'
+        f'Match User {role.account}\n    AuthorizedKeysFile {opens}\n'
         '    AuthenticationMethods publickey,keyboard-interactive\n    KbdInteractiveAuthentication yes\n'
         f'{forwarding}    AllowAgentForwarding no\n    AllowStreamLocalForwarding no\n'
         '    X11Forwarding no\n    PermitTunnel no\n'

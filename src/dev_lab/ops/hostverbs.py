@@ -182,7 +182,7 @@ def backup_verb(config: OpsConfig, verb: str) -> int:
 
 def _issuer(config: OpsConfig, role: Consent) -> Issuer:
     """The consent issuer of *role*, alerting through this host's channels."""
-    return consentverbs.issuer(role, alert=lambda title, detail: alert(config, title, detail))
+    return consentverbs.issuer(role, alert=lambda title, detail: alert(config, title, detail), ca=config.ssh_ca)
 
 
 def breakglass_verb(config: OpsConfig, verb: str) -> int:

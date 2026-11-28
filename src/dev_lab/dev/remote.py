@@ -27,6 +27,7 @@ __all__ = [
     'HOST_KEY_RULE',
     'HOST_KEY_UNFILLED',
     'HostKeyUndeclared',
+    'certificate_options',
     'declared_known_hosts',
     'declared_piped',
     'detached',
@@ -147,14 +148,16 @@ def host_key_options(
 
 
 def ssh_argv(
-    target: str, command: str, *, batch: bool, host_keys: Mapping[str, object] | None = None, required: bool = False
-) -> list[str]:
+    target: str, command: str, *, batch: bool, host_keys: Mapping[str, object] | None = None, required: bool = False,
+    certificate: str | None = None,
+) -> list[str]:  # fmt: skip
     """The ssh argv running *command* (a POSIX shell line) as a login shell on *target* (``user@host``).
 
     *batch* true never prompts (a key-only account: a cluster); false allocates a terminal for an account whose
     login asks a second factor (a server's ops account: key AND a one-time code typed by the user).
 
     The host key is checked as :func:`host_key_options` says, *host_keys* and *required* passed through.
+    *certificate* is an issuer-signed ssh user certificate presented explicitly (:func:`certificate_options`).
 
     The command travels base64-encoded (:func:`login_argv`): the elements ssh sends hold no quote, so a native argv
     re-split by an MSYS ssh (Git's, on Windows) cannot re-cut a deeply quoted line (measured 2026-11-27).
@@ -166,7 +169,12 @@ def ssh_argv(
     hosts = host_key_options(target, host_keys, required=required)
     mode = ['-o', 'BatchMode=yes'] if batch else ['-t']
     timeout = ['-o', f'ConnectTimeout={CONNECT_TIMEOUT_S}']
-    return ['ssh', *mode, *timeout, *hosts, target, *login_argv(command)]
+    return ['ssh', *mode, *timeout, *hosts, *certificate_options(certificate), target, *login_argv(command)]
+
+
+def certificate_options(certificate: str | None) -> list[str]:
+    """The ssh options presenting *certificate* (``-o CertificateFile=``); none without one (``dev_lab.ops.sshca``)."""
+    return ['-o', f'CertificateFile={certificate}'] if certificate else []
 
 
 #: The longest base64 piece one argv element carries; an element holds no space, so the MSYS cut never applies.
@@ -206,8 +214,9 @@ def run(argv: Sequence[str], *, timeout_s: float) -> int:
 
 
 def piped(
-    target: str, line: str, *, identity: str | None, timeout_s: float, known_hosts: str | None = None
-) -> tuple[int, str]:
+    target: str, line: str, *, identity: str | None, timeout_s: float, known_hosts: str | None = None,
+    certificate: str | None = None,
+) -> tuple[int, str]:  # fmt: skip
     """Send *line* on stdin to *target*'s forced command over ``ssh -T`` (key-only, never prompts).
 
     ``(exit status, its answer)``; the remote account's forced command decides what runs, never the caller.
@@ -216,11 +225,12 @@ def piped(
     stderr too, because its reason (``refused: ...``) is written there.
 
     *known_hosts* is the file the target's host key is checked against, strictly (a root door on a host whose root
-    keeps no ``~/.ssh``); ``None`` leaves ssh's own default.
+    keeps no ``~/.ssh``); ``None`` leaves ssh's own default. *certificate* is presented as :func:`ssh_argv` does.
     """
     key = ['-i', identity] if identity else []
     hosts = ['-o', f'UserKnownHostsFile={known_hosts}', '-o', 'StrictHostKeyChecking=yes'] if known_hosts else []
-    argv = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', f'ConnectTimeout={CONNECT_TIMEOUT_S}', *key, *hosts, target]
+    argv = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', f'ConnectTimeout={CONNECT_TIMEOUT_S}', *key,
+            *certificate_options(certificate), *hosts, target]  # fmt: skip
     done = _door.run(argv, input=line, capture_output=True, text=True, encoding='utf-8', check=False, timeout=timeout_s)
     if done.returncode == 0:
         return 0, done.stdout.strip()
@@ -228,8 +238,9 @@ def piped(
 
 
 def declared_piped(
-    target: str, line: str, *, identity: str | None, timeout_s: float, host_keys: Mapping[str, object]
-) -> tuple[int, str]:
+    target: str, line: str, *, identity: str | None, timeout_s: float, host_keys: Mapping[str, object],
+    certificate: str | None = None,
+) -> tuple[int, str]:  # fmt: skip
     """:func:`piped` to *target*, its host key checked strictly against the DECLARED one in *host_keys*.
 
     The known_hosts ssh reads is built from the declaration for this one call and holds nothing else, so a key ssh
@@ -243,4 +254,5 @@ def declared_piped(
     with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}known-hosts-') as tmp:
         known = Path(tmp) / 'known_hosts'
         known.write_text(entry + '\n', encoding='utf-8')
-        return piped(target, line, identity=identity, timeout_s=timeout_s, known_hosts=str(known))
+        return piped(target, line, identity=identity, timeout_s=timeout_s, known_hosts=str(known),
+                     certificate=certificate)  # fmt: skip

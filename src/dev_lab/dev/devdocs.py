@@ -163,6 +163,11 @@ PAGES: Final[tuple[Page, ...]] = (
         'Submitting research from a workstation',
         "A session's own cluster jobs: reach, grants, build, submit, gather, and which account takes them",
     ),
+    Page(
+        'ssh-certificates',
+        'Short-lived ssh certificates',
+        "The consent code's output as an ssh user certificate: CA row, lifetime and skew, KRL, N/N-1 rollout",
+    ),
     Page('artifacts', 'Artifacts', "A run's declared outputs: the store, its layout and its retention"),
     Page('retirement', 'Retirement', 'The archive keeps old code, the registry keeps a dead spelling dead'),
     Page(

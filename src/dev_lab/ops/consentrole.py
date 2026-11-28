@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from dev_lab.dev.tablequantity import quantity
 from dev_lab.ops.httpsdoor import HttpsDoor
 
-__all__ = ['Access', 'Consent', 'ConsentClient']
+__all__ = ['Access', 'Consent', 'ConsentClient', 'SshCa']
 
 
 @dataclass(frozen=True)
@@ -84,3 +84,27 @@ class Access:
     totp: str = ''
     oath: str = '/etc/dev-lab/ops/users.oath'
     issuer: str = 'forge ops'
+
+
+@dataclass(frozen=True)
+class SshCa:
+    """The ssh user CA (:mod:`dev_lab.ops.sshca`, #1058): ONE row every host the family administers renders.
+
+    ``public_key`` is the CA's ``ssh-ed25519 <base64>`` line (sshd ``TrustedUserCAKeys``); ``principals`` the accounts
+    a certificate may name (shared cluster accounts are never among them: their sshd is not ours); ``revoked`` the
+    KRL row, certificate key ids (the credential id each is named by); ``accept_keys`` true is N-1 (each account's
+    listed keys still open it), false is N (only a certificate does); ``ttl`` the longest certificate (a duration,
+    ``"1 h"``, held in seconds; the credential it rides on bounds it too). ``key`` is the CA private key (PEM, root
+    600), on the issuer's host only.
+    """
+
+    public_key: str
+    principals: tuple[str, ...]
+    revoked: tuple[str, ...] = ()
+    accept_keys: bool = True
+    ttl: float = quantity('duration', 3600.0)
+    key: str = ''
+
+    def authorized(self, account: str, listed: str) -> str:
+        """*account*'s ``AuthorizedKeysFile``: its *listed* keys, or ``none`` once N closes them for a principal."""
+        return 'none' if not self.accept_keys and account in self.principals else listed
