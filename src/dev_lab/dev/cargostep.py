@@ -1,4 +1,4 @@
-"""THE CARGO PART -- ``cargo fmt --check``, ``cargo clippy -D warnings`` and ``cargo test``, run natively beside pytest.
+"""THE CARGO PART -- ``cargo fmt``, ``clippy``/``doc`` (``-D warnings``) and ``cargo test``, run natively beside pytest.
 
 User ruling 2026-11-24 (T8). A repo's Rust suite runs one step per workspace and :data:`COMMANDS` entry, each with
 its own :class:`~dev_lab.dev.reports.StepReport` and so its own result in the verdict: a red names
@@ -59,8 +59,8 @@ __all__ = [
 BANNER: Final = '--- cargo test ---\n'
 #: The forge part the Rust suite posts as, ``tests/cargo``: its own result, never inside a pytest part.
 PART: Final = 'cargo'
-#: Each workspace's commands, cheapest first: formatting, lints (``-D warnings``), then the tests.
-COMMANDS: Final = ('fmt', 'clippy', 'test')
+#: Each workspace's commands, cheapest first: formatting, lints and rustdoc (``-D warnings``), then the tests.
+COMMANDS: Final = ('fmt', 'clippy', 'doc', 'test')
 #: The lab-commons array entry (``module:function``) that runs one :func:`items` entry on a compute node.
 ITEM_ENTRY: Final = 'dev_lab.dev.cargostep:run_item'
 #: The lab-commons prep entry (``module:function``, ``items(tree, sha)``) listing :data:`PART`'s array items.
@@ -132,6 +132,8 @@ def argv(cargo: str, manifest: str, command: str) -> list[str]:
     tail = {
         'fmt': ['--all', '--', '--check'],
         'clippy': ['--workspace', '--all-targets', '--locked', '--', '-D', 'warnings'],
+        # rustdoc's own flags as a --config, so the deny rides the argv on every host, not an env to forget.
+        'doc': ['--workspace', '--no-deps', '--locked', '--config', 'build.rustdocflags=["-D", "warnings"]'],
         'test': ['--workspace', '--locked'],
     }[command]
     return [cargo, command, '--manifest-path', manifest, *tail]

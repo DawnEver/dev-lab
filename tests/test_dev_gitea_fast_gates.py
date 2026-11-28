@@ -58,6 +58,7 @@ def test_a_commit_s_workspaces_are_read_from_git_at_that_commit(tmp_path: Path) 
     assert cargostep.items(tmp_path, rust) == [
         {'manifest': 'rust/Cargo.toml', 'command': command} for command in cargostep.COMMANDS
     ]
+    assert {'manifest': 'rust/Cargo.toml', 'command': 'doc'} in cargostep.items(tmp_path, rust)
 
 
 @pytest.mark.parametrize(
