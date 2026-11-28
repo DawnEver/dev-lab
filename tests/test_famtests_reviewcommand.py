@@ -198,7 +198,7 @@ def test_the_planted_manifest_is_convicted_by_the_famtest(tmp_path: Path) -> Non
 
 def _engine(*, takes_requirements: bool) -> argparse.ArgumentParser:
     """A stand-in of the engine's parser: every flag the family commands hand it, ``--requirements`` optionally."""
-    parser = argparse.ArgumentParser(exit_on_error=False)
+    parser = argparse.ArgumentParser(exit_on_error=False)  # an unknown flag raises, as the famtest names it
     given = parser.add_mutually_exclusive_group(required=True)
     given.add_argument('--range')
     given.add_argument('--bundle')

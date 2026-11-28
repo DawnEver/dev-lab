@@ -17,6 +17,7 @@ its own code, so a drift between the two is red where it is made:
 
 from __future__ import annotations
 
+import argparse
 import tomllib
 from typing import TYPE_CHECKING
 
@@ -78,7 +79,7 @@ def assert_the_family_commands_parse(parse: Callable[[list[str]], object]) -> No
         args = _filled(argv)
         try:
             parse(args)
-        except (SystemExit, ValueError) as refused:
+        except (SystemExit, ValueError, argparse.ArgumentError) as refused:
             msg = f'the engine does not take {name} as dev-lab hands it ({args}): {refused!r}'
             raise AssertionError(msg) from refused
 
