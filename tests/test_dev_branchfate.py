@@ -57,8 +57,9 @@ def _quiet_lane(work: Path, tmp_path: Path, name: str, hours: float) -> Path:
         [_GIT, 'commit', '-q', '-m', name], cwd=tree, check=True, capture_output=True, text=True,
         encoding='utf-8', env=env, timeout=60,
     )  # fmt: skip
-    index = Path(_run(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'index').strip())
-    os.utime(index, (then, then))
+    heads = _run(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'HEAD', '--git-path', 'logs/HEAD')
+    for head in heads.splitlines():
+        os.utime(head, (then, then))
     return tree
 
 

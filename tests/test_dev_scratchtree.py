@@ -126,8 +126,8 @@ def test_reclaim_takes_a_quiet_disposable_tree_it_would_keep_as_not_landed(tmp_p
     for name in ('base', 'plain'):
         (home / name / 'probe.log').write_text('scratch', encoding='utf-8')
     old = time.time() - 2 * 3600
-    for index in (work / '.git' / 'worktrees').glob('*/index'):
-        os.utime(index, (old, old))
+    for head in (work / '.git' / 'worktrees').glob('*/**/HEAD'):
+        os.utime(head, (old, old))
     lines = reclaim(work, ('origin/main',), occupied=_free, runtimes={})
     assert lines is not None
     assert any(line.startswith('removed') and 'base' in line for line in lines), lines

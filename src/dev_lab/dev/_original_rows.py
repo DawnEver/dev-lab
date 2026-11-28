@@ -204,6 +204,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: no consumer ever removed a finished worktree; the lease decision is new here.
     'reclaim',
     'reclaimrun',
+    'livesession',  # a tree is live while its HEAD moves, never by an index a read refreshed (split from reclaim)
     'venvprune',  # ORIGINAL: no door swept superseded .venvs/ environments across checkouts
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
     # consumer held a copy, which is why each published one had no guard at all.

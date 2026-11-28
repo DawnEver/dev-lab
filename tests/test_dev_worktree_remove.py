@@ -162,10 +162,15 @@ def test_the_main_checkout_and_an_unknown_name_are_refused(work: Path) -> None:
     assert work.is_dir()
 
 
-def test_the_door_removes_through_the_cli(work: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def _settle(work: Path) -> None:
+    """Age every linked tree's HEAD and reflog past the live-session window."""
     old = time.time() - 2 * 3600
-    for index in (work / '.git' / 'worktrees').glob('*/index'):
-        os.utime(index, (old, old))
+    for head in (work / '.git' / 'worktrees').glob('*/**/HEAD'):
+        os.utime(head, (old, old))
+
+
+def test_the_door_removes_through_the_cli(work: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _settle(work)
     assert main(['--root', str(work), '--remove', 'loose']) == 0
     assert 'removed' in capsys.readouterr().out
     assert not _tree(work, 'loose').exists()
@@ -221,8 +226,67 @@ def test_a_just_used_tree_is_refused_naming_the_quiet_wait(work: Path) -> None:
     """
     ok, line = remove(work, 'loose', census=_idle)
     assert not ok
-    assert 'index changed' in line, line
-    assert 're-run once it has been quiet 60 min' in line, line
+    assert 'live session: its HEAD moved' in line, line
+    assert 're-run once it has been quiet 60 min (about' in line, line
     assert _tree(work, 'loose').exists()
     ok, line = remove(work, 'loose', census=_idle, quiet_s=0)
     assert ok, line
+
+
+def test_a_read_that_refreshes_the_index_is_no_live_session(work: Path) -> None:
+    """dev-lab#1125: ``git status`` rewrote the index stat cache and the guard called the reader a live session.
+
+    PLANTED CONTROL: the same tree after a checkout (its HEAD moved) is a live session again.
+    """
+    _settle(work)
+    tree = _tree(work, 'lane')
+    _run(tree, 'status')
+    (tree / 'base.txt').touch()
+    _run(tree, 'status')  # a stat change: git status rewrites the index
+    ok, line = remove(work, 'lane', census=_idle)
+    assert ok, line
+    _run(_tree(work, 'loose'), 'switch', '-q', '-c', 'moved')
+    ok, line = remove(work, 'loose', census=_idle)
+    assert not ok
+    assert 'live session' in line, line
+
+
+def test_an_approved_detached_tree_holding_untracked_work_is_discarded(work: Path) -> None:
+    """dev-lab#1123: a detached tree has no branch for ``branchset --discard``; ``--approved`` is its door.
+
+    PLANTED CONTROLS: unapproved it is refused naming this door; approved, a live process or a commit no ref holds
+    still refuses.
+    """
+    tree = _tree(work, 'loose')
+    (tree / 'later.txt').write_text('only here', encoding='utf-8')
+    ok, line = remove(work, 'loose', census=_idle, quiet_s=0)
+    assert not ok
+    assert 'worktrees --remove loose --approved' in line, line
+    session = Process(77, 1, 'C:/node/node.exe', 'node claude', 600.0, str(tree))
+    ok, line = remove(work, 'loose', approved='drop it', census=lambda: (session,), quiet_s=0)
+    assert (ok, 'pid 77' in line) == (False, True), line
+    ok, line = remove(work, 'loose', approved='the user: drop loose', census=_idle, quiet_s=0)
+    assert ok, line
+    assert line.startswith('discarded'), line
+    assert 'approved: "the user: drop loose"' in line, line
+    assert not tree.exists()
+
+
+def test_an_approved_detached_commit_no_ref_holds_is_refused_naming_salvage(work: Path) -> None:
+    """PLANTED CONTROL: approval never discards a commit only the detached HEAD holds; salvage is named."""
+    tree = _tree(work, 'loose')
+    (tree / 'new.txt').write_text('committed detached', encoding='utf-8')
+    _run(tree, 'add', 'new.txt')
+    _run(tree, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'detached work')
+    ok, line = remove(work, 'loose', approved='drop it', census=_idle, quiet_s=0)
+    assert not ok
+    assert 'worktrees --salvage loose' in line, line
+    assert tree.is_dir()
+
+
+def test_the_approved_door_runs_through_the_cli(work: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _settle(work)
+    (_tree(work, 'loose') / 'later.txt').write_text('only here', encoding='utf-8')
+    assert main(['--root', str(work), '--remove', 'loose', '--approved', 'the user: drop it']) == 0
+    assert 'discarded' in capsys.readouterr().out
+    assert not _tree(work, 'loose').exists()

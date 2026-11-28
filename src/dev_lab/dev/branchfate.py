@@ -39,10 +39,10 @@ from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev.checkout import git_out, locked_trees, worktrees
 from dev_lab.dev.forgereview_runtimes import host_runtimes
+from dev_lab.dev.livesession import moved_age_s
 from dev_lab.dev.reclaim import (
     QUIET_S,
     UNLANDED_DOORS,
-    index_age_s,
     occupancy,
     removed_approved,
     runtime_of,
@@ -102,7 +102,7 @@ def _owner(root: Path, fate: Fate, *, occupied: Callable[[Path], bool], quiet_s:
             return runtime
         if occupied(tree):
             return 'live -- a process works in, executes from or reads it'
-    ages = [_tip_age_s(root, fate.sha), index_age_s(tree) if tree is not None else None]
+    ages = [_tip_age_s(root, fate.sha), moved_age_s(tree) if tree is not None else None]
     window = quiet_s if fate.merged else max(quiet_s, abandoned_s)
     if (age := min((a for a in ages if a is not None), default=None)) is not None and age < window:
         return f'live session -- touched {age / 3600:.1f} h ago, quiet less than {window / 3600:g} h'
@@ -197,7 +197,8 @@ def settle(
             continue
         if kept := _unlanded(fate):
             named = fate.branch if fate.branch != _DETACHED else '<a branch made at its HEAD>'
-            out.append(f'unlanded  {fate.label}{where}  ({kept.replace("<branch>", named)})')
+            doors = kept.replace('<branch>', named).replace('<name>', fate.tree.name if fate.tree else '<name>')
+            out.append(f'unlanded  {fate.label}{where}  ({doors})')
             continue
         if limit is not None and done >= limit:
             out.append(f'deferred  {fate.label}{where}  (batch of {limit} reached)')
@@ -246,6 +247,17 @@ def _commit_free(root: Path, sha: str, held: Sequence[Path]) -> bool:
     return all(git_out(tree, 'status', '--porcelain') == '' for tree in held)
 
 
+def _no_branch(trees: tuple[tuple[Path, str], ...], name: str) -> str:
+    """Why no local branch *name* can be discarded, naming the detached tree's own door when *name* is one."""
+    detached = [path for path, branch in trees[1:] if branch == _DETACHED and name in (path.name, str(path))]
+    if detached:
+        return (
+            f'{detached[0]} is a DETACHED worktree, no branch; its door: python -m dev_lab.dev.worktrees '
+            f'--remove {detached[0].name} --approved "<the user words>"'
+        )
+    return 'no local branch of that name; origin is never discarded here'
+
+
 def _discard_refusal(
     root: Path,
     branchset: BranchSet,
@@ -261,10 +273,10 @@ def _discard_refusal(
         return '--approved "<the user words>" is required: the lane holds work origin lacks; the user decides'
     if branch in branchset.declared:
         return 'declared in [tool.dev_lab.branchset]: the trunk and sessions are never discarded'
-    if not sha:
-        return 'no local branch of that name; origin is never discarded here'
     if trees is None:
         return f'git could not list the worktrees of {root}'
+    if not sha:
+        return _no_branch(trees, branch)
     if trees and trees[0][1] == branch:
         return f'the main checkout holds it at {trees[0][0]}'
     return ''
