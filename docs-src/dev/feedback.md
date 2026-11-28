@@ -42,6 +42,8 @@ A gap found late is closed at the earliest layer that could have caught it.
    If it cannot be closed now, record it as a task in the Gitea tasks repo or an issue on the repo`s tracker.
 4. Record the closure: `python -m dev_lab.dev.walls close --rule <rule> --by <sha|issue|path>`.
 5. Otherwise the `Stop` hook (`walls stop`) refuses the turn once, naming the open walls and this loop.
+6. A session at rest is the exception: a comment it posted through `forge issue comment` with a line starting
+   `standby:` (`dev_lab.dev.standby.MARKER`), newer than its checkout's last commit, lets it stop (v1 ruling D218).
 
 ## A subagent's hand-back
 

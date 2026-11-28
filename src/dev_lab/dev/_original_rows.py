@@ -440,4 +440,5 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'complexity',  # ORIGINAL: 2026-11-25, the per-owner complexity report (fan-out, call path, surface), not a gate
     'branchcensus',  # the branch census and its two ref readers, split from branchset (2026-11-26)
     'repodeltas',  # loading a repo's DELTAS module, split from famfiles (2026-11-26)
+    'standby',  # ORIGINAL: 2026-11-28, v1 ruling D218, a posted standby is a resting state
 )

@@ -80,6 +80,7 @@ from dev_lab.dev import (
     prsuperseded,
     pushwatch,
     servelock,
+    standby,
     walls,
 )
 from dev_lab.dev.forge import Transport, forge_transport
@@ -89,6 +90,7 @@ from dev_lab.dev.forgefeedstatus import unheard_notice
 from dev_lab.dev.forgelabels import LabelMissing, relabel
 from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest
 from dev_lab.dev.labsession import ENV
+from dev_lab.dev.native_session import session_of
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -220,6 +222,12 @@ def _show(args: argparse.Namespace, result: Issue | PullRequest | Comment | tupl
         emit(f'[forge] {said}', err=True)  # TASK-HEARS-ITS-FORGE-EVENTS: a subscription nobody hears is said
 
 
+def _record_standby(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str] | None) -> None:
+    """A standby comment this session posted is recorded for the stop hook (STANDBY-IS-RESTING)."""
+    if isinstance(result, Comment) and standby.posted(args.body) and (who := session_of(env)):
+        walls.standby(root, issue=result.url, session=who)
+
+
 def _declared_body(args: argparse.Namespace) -> str:
     """*args*' PR body, with :data:`~dev_lab.dev.forgedraft.READY_WHEN` as its last line when the author declared it."""
     if not args.ready_when_current:
@@ -286,6 +294,7 @@ def issue_and_pr(
         emit(f'[forge] {stopped}', err=True)
         return 1
     forgetask.record(args, result, root)
+    _record_standby(args, result, root, env)
     _show(args, result, root)
     if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
         emit(forgedraft.opened_line(result))  # the exact next step for a draft, on stdout (D53)
