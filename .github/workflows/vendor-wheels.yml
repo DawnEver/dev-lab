@@ -1,0 +1,123 @@
+# Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + [tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `python -m dev_lab.dev.ciworkflows render`.
+{
+  "name": "Vendored wheels",
+  "on": {
+    "push": {
+      "branches": [
+        "main"
+      ],
+      "paths": [
+        "pyproject.toml"
+      ]
+    },
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "build": {
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "dist": "triangle",
+              "repository": "drufat/triangle",
+              "rev": "595b43eb6682992a0b1012b9671bf860c0e6ae56",
+              "os": "ubuntu-latest"
+            },
+            {
+              "dist": "triangle",
+              "repository": "drufat/triangle",
+              "rev": "595b43eb6682992a0b1012b9671bf860c0e6ae56",
+              "os": "windows-latest"
+            },
+            {
+              "dist": "triangle",
+              "repository": "drufat/triangle",
+              "rev": "595b43eb6682992a0b1012b9671bf860c0e6ae56",
+              "os": "macos-latest"
+            }
+          ]
+        }
+      },
+      "runs-on": "${{ matrix.os }}",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "repository": "${{ matrix.repository }}",
+            "ref": "${{ matrix.rev }}",
+            "submodules": "recursive",
+            "path": "src"
+          }
+        },
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.14"
+          }
+        },
+        {
+          "uses": "pypa/cibuildwheel@v3.2.1",
+          "with": {
+            "package-dir": "src",
+            "output-dir": "dist"
+          },
+          "env": {
+            "CIBW_BUILD": "cp314-*",
+            "CIBW_ARCHS": "native"
+          }
+        },
+        {
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "vendor-${{ matrix.dist }}-${{ matrix.os }}",
+            "path": "dist/*.whl"
+          }
+        }
+      ]
+    },
+    "publish": {
+      "needs": "build",
+      "runs-on": "ubuntu-latest",
+      "strategy": {
+        "matrix": {
+          "include": [
+            {
+              "dist": "triangle",
+              "rev": "595b43eb6682992a0b1012b9671bf860c0e6ae56",
+              "release": "vendor-triangle-595b43eb6682"
+            }
+          ]
+        }
+      },
+      "permissions": {
+        "contents": "write"
+      },
+      "env": {
+        "GH_TOKEN": "${{ github.token }}",
+        "GH_REPO": "${{ github.repository }}",
+        "DIST": "${{ matrix.dist }}",
+        "REV": "${{ matrix.rev }}",
+        "RELEASE": "${{ matrix.release }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "path": "dist",
+            "pattern": "vendor-${{ matrix.dist }}-*",
+            "merge-multiple": true
+          }
+        },
+        {
+          "name": "Publish each missing wheel to the pin release",
+          "shell": "bash",
+          "run": "gh release view \"$RELEASE\" >/dev/null 2>&1 || gh release create \"$RELEASE\" --target \"$GITHUB_SHA\" \\\n  --title \"$RELEASE\" --notes \"Wheels of $DIST at $REV, built by GitHub Actions (FAM-16).\"\nhave=$(gh release view \"$RELEASE\" --json assets --jq '.assets[].name')\nfor wheel in dist/*.whl; do\n  name=$(basename \"$wheel\")\n  if printf '%s\\n' \"$have\" | grep -qxF \"$name\"; then echo \"kept $name: a published wheel is immutable\"\n  else gh release upload \"$RELEASE\" \"$wheel\"; fi\ndone\n"
+        }
+      ]
+    }
+  }
+}

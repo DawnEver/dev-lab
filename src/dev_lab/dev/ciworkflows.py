@@ -61,8 +61,9 @@ A HOSTED PART (a setup, secrets or both) gets its own job, cut from the matrix `
 (:func:`dev_lab.dev.hostedjobs.hosted_jobs`): the one place a repo's
 ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
-NATIVE WHEELS ARE OPT-IN: a repo's ``[tool.dev_lab.native] wheels`` adds :data:`~dev_lab.dev.nativewheels.WORKFLOW`
-(:mod:`dev_lab.dev.nativewheels`); a repo without it renders none.
+NATIVE WHEELS ARE OPT-IN: a repo's ``[tool.dev_lab.native] wheels`` adds :data:`~dev_lab.dev.nativewheels.WORKFLOW`,
+its ``[tool.dev_lab.native.vendor]`` rows :data:`~dev_lab.dev.nativewheels.VENDOR_WORKFLOW`
+(:mod:`dev_lab.dev.nativewheels`); a repo without them renders none.
 
 THE REVIEW TOOLING IS PINNED ONCE, BY LOCKS: the ``door`` steps install the dev-lab commit the BASE's ``uv.lock`` pins
 (dev-lab #18), and the ``method`` steps the ai-lab commit THAT dev-lab's lock pins (its ``review`` group) --
@@ -237,8 +238,11 @@ def declared_paths(root: Path) -> frozenset[str]:
     forge = repo_forge(root)
     _, tables = _declared(root)
     names = base_names(forge) | {name for name, table in tables.items() if isinstance(table, dict)}
-    if nativewheels.wheels_workflow(_declared(root)[0], str(root / 'pyproject.toml')) is not None:
+    text, origin = _declared(root)[0], str(root / 'pyproject.toml')
+    if nativewheels.wheels_workflow(text, origin) is not None:
         names.add(nativewheels.WORKFLOW)
+    if nativewheels.vendor_workflow(text, origin) is not None:
+        names.add(nativewheels.VENDOR_WORKFLOW)
     return frozenset((WORKFLOW_DIRS[forge] / name).as_posix() for name in names)
 
 
@@ -288,14 +292,19 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
         rendered = cast('dict[str, Any]', _named(workflow, integration, timeout, extras_words))
         refuse_everything(rendered, f'[tool.dev_lab.ci."{name}"]')
         out[name] = (WORKFLOW_DIRS[forge], rendered)
-    if (wheels := nativewheels.wheels_workflow(text, origin)) is not None:
+    for name, wheels in (
+        (nativewheels.WORKFLOW, nativewheels.wheels_workflow(text, origin)),
+        (nativewheels.VENDOR_WORKFLOW, nativewheels.vendor_workflow(text, origin)),
+    ):
+        if wheels is None:
+            continue
         if hosted_on != 'github':
             msg = (
-                f'{origin}: [tool.dev_lab.native] wheels renders on GitHub Actions only (no macOS or Windows '
+                f'{origin}: [tool.dev_lab.native] renders {name} on GitHub Actions only (no macOS or Windows '
                 f'runner on {hosted_on}) -- build the wheels from a GitHub mirror, or drop the declaration'
             )
             raise ValueError(msg)
-        out[nativewheels.WORKFLOW] = (WORKFLOW_DIRS['github'], wheels)
+        out[name] = (WORKFLOW_DIRS['github'], wheels)
     return follow_checks(out)
 
 
