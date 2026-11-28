@@ -211,7 +211,7 @@ PUSH-NO-VERIFY = "push without skipping the hook; no hook runs a test, and the f
 NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- <git push|fetch|pull|clone|ls-remote|submodule update ...  or  uv lock|add|remove ...>  (retries 3x, then reports a diagnosis); an environment change is <venv python> -m dev_lab.dev.dep --sync (installs the committed lock) and a lock change <venv python> -m dev_lab.dev.dep --lock-upgrade . [--upgrade-package NAME], both retrying inside"
 
 # VENDORED WHEELS (FAM-16, dev_lab.dev.nativewheels): a third-party pin that only builds from source, built here
-# by Actions for the family Python on every OS, so no consumer needs a compiler. v1's [[tool.uv.index]] "family-wheels"
+# by Actions for the family Python on every OS, so no consumer needs a compiler. v1's [[tool.uv.index]] "vendor-triangle"
 # reads the release vendor-triangle-595b43eb6682; a new rev is a new release, never a replaced wheel.
 [tool.dev_lab.native.vendor.triangle]
 git = "https://github.com/drufat/triangle"
