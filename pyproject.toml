@@ -210,6 +210,13 @@ BARE-TEST-INVOCATION = "<venv python> -m dev_lab.dev.verify -- <paths>  (the mea
 PUSH-NO-VERIFY = "push without skipping the hook; no hook runs a test, and the forge produces the part"
 NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- <git push|fetch|pull|clone|ls-remote|submodule update ...  or  uv lock|add|remove ...>  (retries 3x, then reports a diagnosis); an environment change is <venv python> -m dev_lab.dev.dep --sync (installs the committed lock) and a lock change <venv python> -m dev_lab.dev.dep --lock-upgrade . [--upgrade-package NAME], both retrying inside"
 
+# VENDORED WHEELS (FAM-16, dev_lab.dev.nativewheels): a third-party pin that only builds from source, built here
+# by Actions for the family Python on every OS, so no consumer needs a compiler. v1's [[tool.uv.index]] "family-wheels"
+# reads the release vendor-triangle-595b43eb6682; a new rev is a new release, never a replaced wheel.
+[tool.dev_lab.native.vendor.triangle]
+git = "https://github.com/drufat/triangle"
+rev = "595b43eb6682992a0b1012b9671bf860c0e6ae56"
+
 [tool.dev_lab.render]
 # What the family renderers read from this repo (dev_lab.dev._famfiles_registry.RENDERERS); a relock re-runs each one due.
 deltas = "tests/_famconfig_delta.py"

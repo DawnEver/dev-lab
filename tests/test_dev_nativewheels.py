@@ -109,3 +109,66 @@ def test_the_render_writes_the_file_and_drift_accepts_it(tmp_path: Path) -> None
     assert drift(root) == []
     assert '.github/workflows/wheels.yml' in ciworkflows.declared_paths(root)
     assert '.github/workflows/wheels.yml' not in ciworkflows.declared_paths(_repo(tmp_path / 'u', _MATURIN))
+
+
+# VENDORED WHEELS (FAM-16): a family-pinned third-party commit, built per OS on Actions so no consumer compiles it.
+_REV = '595b43eb6682992a0b1012b9671bf860c0e6ae56'
+_VENDORED = (
+    '[project]\nname = "dev-lab"\n\n[tool.dev_lab.native.vendor.triangle]\n'
+    f'git = "https://github.com/drufat/triangle"\nrev = "{_REV}"\n'
+)
+
+
+def test_an_undeclared_repo_renders_no_vendor_workflow(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the native wheels declaration alone vendors nothing."""
+    assert nativewheels.vendor_workflow(_DECLARED, 'x') is None
+    assert nativewheels.VENDOR_WORKFLOW not in workflows(_repo(tmp_path, _DECLARED))
+
+
+def test_a_vendored_commit_builds_family_python_wheels_on_every_os_from_that_commit(tmp_path: Path) -> None:
+    flow = workflows(_repo(tmp_path, _VENDORED))[nativewheels.VENDOR_WORKFLOW]
+    assert flow['on']['push'] == {'branches': ['main'], 'paths': ['pyproject.toml']}
+    build = flow['jobs']['build']
+    rows = build['strategy']['matrix']['include']
+    assert sorted(row['os'] for row in rows) == sorted(nativewheels.RUNNERS.values())
+    assert {row['dist'] for row in rows} == {'triangle'}
+    assert {(row['repository'], row['rev']) for row in rows} == {('drufat/triangle', _REV)}
+    steps = json.dumps(build['steps'])
+    assert 'recursive' in steps  # triangle's C sources are a submodule
+    assert 'pypa/cibuildwheel@v3' in steps
+    assert f'cp{nativewheels.VERSION.replace(".", "")}-*' in steps
+
+
+def test_a_vendored_commit_publishes_to_its_own_immutable_release() -> None:
+    flow = nativewheels.vendor_workflow(_VENDORED, 'x')
+    assert flow is not None
+    publish = json.dumps(flow['jobs']['publish'])
+    assert nativewheels.vendor_release('triangle', _REV) == 'vendor-triangle-595b43eb6682'
+    assert 'vendor-triangle-595b43eb6682' in json.dumps(flow['jobs'])
+    assert '--clobber' not in publish  # a published wheel is never replaced: a consumer's lock pins its hash
+
+
+@pytest.mark.parametrize(
+    ('row', 'named'),
+    [
+        ('git = "https://github.com/drufat/triangle"\nrev = "595b43eb"', '40-hex'),
+        (f'rev = "{_REV}"', 'git'),
+        ('git = "https://github.com/drufat/triangle"', 'rev'),
+    ],
+)
+def test_a_malformed_vendor_row_is_refused_by_name(row: str, named: str) -> None:
+    with pytest.raises(ValueError, match=named):
+        nativewheels.vendor_workflow(f'[project]\nname = "x"\n[tool.dev_lab.native.vendor.triangle]\n{row}\n', 'x')
+
+
+def test_a_gitea_repo_vendoring_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: 'gitea')
+    with pytest.raises(ValueError, match='GitHub'):
+        workflows(_repo(tmp_path, _VENDORED))
+
+
+def test_the_vendor_render_writes_the_file_and_drift_accepts_it(tmp_path: Path) -> None:
+    root = _repo(tmp_path, _VENDORED)
+    assert root / '.github/workflows' / nativewheels.VENDOR_WORKFLOW in write(root)
+    assert drift(root) == []
+    assert f'.github/workflows/{nativewheels.VENDOR_WORKFLOW}' in ciworkflows.declared_paths(root)

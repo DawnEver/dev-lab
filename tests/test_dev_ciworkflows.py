@@ -75,7 +75,9 @@ def test_this_repo_s_workflows_are_exactly_their_render(monkeypatch: pytest.Monk
     # dev-lab is a judge repo (user ruling 2026-11-10): the base set less the review-again workflow, whose one job
     # reviews on the runner (its role, review, is bound to a host); the judge prepares its own bundle (D77).
     carry(monkeypatch, CI_REPO)
-    assert set(workflows(_ROOT)) == _GITHUB_BASE - {'review-again.yml'}, 'a floor: an empty table drifts from nothing'
+    # Its [tool.dev_lab.native.vendor] rows add the vendored-wheels workflow (FAM-16).
+    expected = (_GITHUB_BASE - {'review-again.yml'}) | {'vendor-wheels.yml'}
+    assert set(workflows(_ROOT)) == expected, 'a floor: an empty table drifts from nothing'
     assert drift(_ROOT) == []
 
 
