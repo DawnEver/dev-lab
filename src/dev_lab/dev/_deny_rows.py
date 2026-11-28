@@ -213,16 +213,29 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     },
     {
         'id': 'ARCHIVE-IS-NO-STORE',
-        'pattern': r'\bgit(?:\s+-C\s+\S+)*\s+bundle\s+create\b',
+        # Any global option before the verb (`-C <dir>` quoted or not, `-c k=v`, `--git-dir=...`) (#1118);
+        # `verify`, `list-heads` and `unbundle` only read a bundle, so they pass.
+        'pattern': r"""\bgit(?:\s+(?:-[Cc]\s+(?:"[^"]*"|'[^']*'|\S+)|--[\w-]+(?:=\S+)?))*\s+bundle\s+create\b""",
         'matches': 'command',
         'hazard': 'a bundle parks unlanded work where nobody reads it again (ONLY-VERSION-TAGS).',
         'remedy': (
-            'Unlanded work is merged or discarded (MERGE-OR-DELETE): merge it through a PR, or on the user words '
-            '`branchprune discard <branch> --approved "<their words>"`; never `git merge -s ours`'
+            'Unlanded work is merged or discarded (MERGE-OR-DELETE): merge it through a PR, or show the user what '
+            'dropping it discards and, only on their words, `branchprune discard <branch> --approved "<their words>"`; '
+            'never `git merge -s ours`'
         ),
         'needs': None,
-        'refuses': ('git bundle create ../x.bundle origin/pr/a', 'git -C ../lab bundle create out.bundle --all'),
-        'permits': ('git bundle verify x.bundle', 'git commit -m "bundle create notes"'),
+        'refuses': (
+            'git bundle create ../x.bundle origin/pr/a',
+            'git -C ../lab bundle create out.bundle --all',
+            'git bundle create output/logs/x.bundle --branches --glob=refs/salvage',
+            'git -c core.quotepath=off bundle create x.bundle --all',
+        ),
+        'permits': (
+            'git bundle verify x.bundle',
+            'git bundle list-heads x.bundle',
+            'git bundle unbundle x.bundle',
+            'git commit -m "bundle create notes"',
+        ),
     },
     {
         'id': 'GIT-RESET',

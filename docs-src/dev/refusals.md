@@ -109,6 +109,7 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 ## ARCHIVE-IS-NO-STORE
 
 - **Why it is refused.** A bundle (like an `archive/*` tag or a copy under `output/`) parks unlanded work where nobody reads it again; origin's tags are versions only (`ONLY-VERSION-TAGS`, `dev_lab.dev.milestonebase`, user ruling 2026-11-23).
+- **What is refused.** `git bundle create` in any shape: any target or flags, any global option before the verb (`-C <dir>`, `-c k=v`, `--git-dir=`), inside a compound line (#1118). `git bundle verify|list-heads|unbundle` read a bundle and pass. `hpcaccount salvage` reads its bundle through `subprocess` in Python, not a shell command, so the row does not reach it.
 - **The exit.** Unlanded work is merged or discarded (`MERGE-OR-DELETE`): merge it through a PR, or show the user what dropping it discards and, only on their words, `branchprune discard <branch> --approved "<their words>"`; else leave it -- never `git merge -s ours`, which keeps the commits as ancestors and loses their content (#611) (a tag: `branchprune tag <tag>`).
 
 ## NO-LOCAL-HEAVY
