@@ -37,6 +37,7 @@ __all__ = [
     'missing_keys',
     'move_approved',
     'only_amended',
+    'only_dated',
     'only_redacted',
     'only_renamed_redacting',
     'only_volatile_stripped',
@@ -103,6 +104,34 @@ def only_volatile_stripped(old: str, new: str) -> bool:
         return False
     head = '\n'.join(line for line in match.group(1).splitlines() if not _VOLATILE.match(line))
     return f'---\n{head}\n---\n' + old[match.end() :] == new
+
+
+#: A dated entry's path: ``.md`` directly in its ``<yyyy>/<mm>/<dd>/`` directory, the date captured.
+_DATED_ENTRY: Final = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/[^/]+\.md$')
+
+
+def only_dated(path: str, old: str, new: str) -> bool:
+    """DATE-COMPLETION (user ruling 2026-11-26): *new* is *old* with only the missing ``created:`` its directory states.
+
+    The added line is ``created: <yyyy-mm-dd>`` with the entry's own directory date, so it repeats what the path
+    already said and needs no approved note. Either *old* has frontmatter without ``created:`` and *new*'s holds
+    exactly that one line more, the body unchanged; or *old* has none and *new* is a frontmatter of that one line
+    (and at most one blank line after it) put before *old*'s text. Any other date, key or line is an edit.
+    """
+    day = _DATED_ENTRY.search(path)
+    if day is None:
+        return False
+    line = f'created: {day[1]}-{day[2]}-{day[3]}'
+    old, new = lf(old), lf(new)
+    head = FRONTMATTER.match(old)
+    if head is None:
+        return new in (f'---\n{line}\n---\n\n{old}', f'---\n{line}\n---\n{old}')
+    kept = head.group(1).splitlines()
+    added = FRONTMATTER.match(new)
+    if added is None or any(key.startswith('created:') for key in kept) or new[added.end() :] != old[head.end() :]:
+        return False
+    lines = added.group(1).splitlines()
+    return lines.count(line) == 1 and [key for key in lines if key != line] == kept
 
 
 def frontmatter(name: str, description: str, created: date) -> str:
