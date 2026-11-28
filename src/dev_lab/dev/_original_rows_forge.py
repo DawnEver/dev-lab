@@ -27,6 +27,9 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgestatus',
     # ORIGINAL: 2026-11-27, a status description longer than its forge stores continues, never cut.
     'statuscontinuation',
+    # ORIGINAL: 2026-11-28, the hosted CI job log reader (#990) and the native wheel job render; no consumer had either.
+    'forgeci',
+    'nativewheeljobs',
     'forgeoutbox',
     'forgelabels',
     'forgepublish',
