@@ -29,7 +29,7 @@ from _forge_fake import credential_env, serve
 from _forge_fake import make_repo as _repo
 from _forge_fake import run_git as _run
 
-from dev_lab.dev import branchnotices, forge, forgecred, pradmit
+from dev_lab.dev import branchnotices, forge, forgecred, pradmit, walls
 from dev_lab.dev.forge import Forge, NoCredential
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgecli import issue_and_pr
@@ -483,6 +483,18 @@ def test_the_cli_stamps_from_the_environment(server, tmp_path: Path, capsys) -> 
     )
     assert _Recorder.received[-1]['body'] == {'body': '[g · claude · lane]\n\nhello'}
     assert 'u' in capsys.readouterr().out
+
+
+def test_a_standby_comment_this_session_posts_is_recorded_for_the_stop_hook(server, tmp_path: Path) -> None:
+    """STANDBY-IS-RESTING: the forge door records this session's standby post; an ordinary comment records none."""
+    repo = _repo(tmp_path, 'https://f.example/o/r.git', branch='lane')
+    env = credential_env(tmp_path) | {'CLAUDE_CODE_SESSION_ID': 'session-standby'}
+    for body in ('just progress', 'standby: queue empty -- waiting on the integrator'):
+        _answer('POST', '/api/v1/repos/o/r/issues/7/comments', (201, {'id': 1, 'body': body, 'html_url': 'u7'}))
+        assert (
+            issue_and_pr(['issue', 'comment', '7', '--body', body], cwd=repo, env=env, transport=_Loopback(server)) == 0
+        )
+        assert walls.resting(repo, 'session-standby') is body.startswith('standby:')
 
 
 def test_the_cli_reports_a_refusal_and_exits_nonzero(server, tmp_path: Path, capsys) -> None:
