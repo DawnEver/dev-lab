@@ -67,7 +67,9 @@
           },
           "env": {
             "CIBW_BUILD": "cp314-*",
-            "CIBW_ARCHS": "native"
+            "CIBW_ARCHS": "native",
+            "CIBW_TEST_COMMAND": "python -c \"import ${{ matrix.dist }}\"",
+            "CIBW_TEST_REQUIRES": ""
           }
         },
         {
