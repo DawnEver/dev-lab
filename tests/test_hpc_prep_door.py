@@ -63,7 +63,7 @@ def test_the_prep_job_is_asked_with_the_checkout_key_python_root_and_script(monk
         asked.append((checkout, key, python, root, script, kit, retry))
         return 'submitted job 42'
 
-    module.submit_env_prep = submit_env_prep  # type: ignore[attr-defined]
+    monkeypatch.setattr(module, 'submit_env_prep', submit_env_prep, raising=False)
     monkeypatch.setitem(sys.modules, 'lab_commons.hpc.prep', module)
     said = prep.submit(Path('/r/repos/alpha'), 'k1', python='3.13', root='/r', script='x', kit='c0ffee')
     assert said == 'submitted job 42'
@@ -77,7 +77,7 @@ def test_a_failed_prep_job_line_names_its_retry_door(monkeypatch: pytest.MonkeyP
     """
     answer = ['job 600 failed: /r/jobs/envprep/k1/prep.log: FAILED: no cargo']
     module = types.ModuleType('lab_commons.hpc.prep')
-    module.submit_env_prep = lambda *_a, **_kw: answer[0]  # type: ignore[attr-defined]
+    monkeypatch.setattr(module, 'submit_env_prep', lambda *_a, **_kw: answer[0], raising=False)
     monkeypatch.setitem(sys.modules, 'lab_commons.hpc.prep', module)
     monkeypatch.setattr(prep.getpass, 'getuser', lambda: 'ezxmw9')
     said = prep.submit(Path('/r/repos/alpha'), 'k1', python='3.13', root='/r', script='x', kit='c0ffee')

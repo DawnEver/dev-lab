@@ -53,6 +53,7 @@ __all__ = [
     'paths_of',
     'render',
     'role_refusal',
+    'role_serves',
     'schedule_tick',
     'served',
     'serves_here',
@@ -333,12 +334,20 @@ def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
     Only an account whose role SERVES ticks -- *serves* as the workstation's role table says, else the shipped
     default for its role (:data:`dev_lab.dev.hpcaccount.division.DEFAULT_ROLES`); undeclared ticks nothing.
     """
-    if not (DEFAULT_ROLES.get(spec.role, {}).get('serves', False) if serves is None else serves):
+    if not (role_serves(spec) if serves is None else serves):
         return ()
     from dev_lab.dev.githubtests import on_github  # noqa: PLC0415 -- githubtests imports this module (accounthost)
 
     here = served(spec)
     return tuple(repo for repo in spec.repos if repo.name in here and not on_github(repo.url))
+
+
+def role_serves(spec: Deployment) -> bool:
+    """Whether *spec*'s role serves by the shipped default (:data:`~dev_lab.dev.hpcaccount.division.DEFAULT_ROLES`).
+
+    A role question only: a serving account whose served repos are not yet cloned still serves, and ticks nothing.
+    """
+    return bool(DEFAULT_ROLES.get(spec.role, {}).get('serves', False))
 
 
 def served(spec: Deployment) -> frozenset[str]:

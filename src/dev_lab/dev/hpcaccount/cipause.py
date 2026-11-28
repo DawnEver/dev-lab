@@ -37,7 +37,7 @@ from dev_lab.dev.hpcaccount.cimark import RESUME_DOOR, marker
 from dev_lab.dev.hpcaccount.cronline import MARK, cron_lines
 from dev_lab.dev.hpcaccount.drift import DISCARD, account_drift, unrenderable
 from dev_lab.dev.hpcaccount.grantslice import grant_setup, refused_with_door
-from dev_lab.dev.hpcaccount.spec import Deployment, load, ticked
+from dev_lab.dev.hpcaccount.spec import Deployment, load, role_serves
 from dev_lab.dev.hpcaccount.steps import Step, Tools, crontab
 
 __all__ = ['ci_pause', 'ci_resume', 'main_pause', 'main_resume']
@@ -73,7 +73,7 @@ def _serving(machine: Path) -> Deployment | str:
         return refused_with_door(refused)
     if spec is None:
         return f'no [deploy] in {machine}: deploy it with python -m dev_lab.dev.hpcaccount deploy-fleet'
-    if not ticked(spec):
+    if not role_serves(spec):
         return f'its [deploy] role {spec.role!r} does not serve: no CI cron by design, nothing to pause'
     return spec
 

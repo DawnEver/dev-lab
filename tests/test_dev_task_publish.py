@@ -20,7 +20,9 @@ _GIT = shutil.which('git') or 'git'
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run([_GIT, '-C', str(root), *args], check=True, capture_output=True, text=True).stdout.strip()
+    return subprocess.run(
+        [_GIT, '-C', str(root), *args], check=True, capture_output=True, text=True, encoding='utf-8'
+    ).stdout.strip()
 
 
 @pytest.fixture

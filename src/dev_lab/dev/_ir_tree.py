@@ -15,7 +15,7 @@ from typing import cast
 
 import numpy as np
 
-from ._ir_runtime import F, build, fail, target, type_name
+from ._ir_runtime import F, build, fail, fields_of, target, type_name, values_of
 
 __all__ = ['canonical', 'from_tree', 'to_tree']
 
@@ -45,8 +45,7 @@ def _tree_of(spec: F, value: object) -> object:
 
 def to_tree(record: object) -> dict[str, object]:
     """The JSON tree of *record*; absent optionals are omitted; a foreign rest's keys sit beside the fields."""
-    specs = cast('tuple[F, ...]', getattr(type(record), '_ir_fields'))  # noqa: B009 -- generated
-    values = cast('tuple[object, ...]', getattr(record, '_ir_values')())  # noqa: B009 -- generated
+    specs, values = fields_of(type(record)), values_of(record)
     tree: dict[str, object] = {}
     for spec, value in zip(specs, values, strict=True):
         if value is None:
@@ -105,7 +104,7 @@ def from_tree(cls: type, tree: object, path: str | None = None) -> object:
     path = path or cls.__name__
     if not isinstance(tree, dict):
         fail(path, 'an object', type_name(tree))
-    specs = cast('tuple[F, ...]', getattr(cls, '_ir_fields'))  # noqa: B009 -- generated
+    specs = fields_of(cls)
     known = {spec.name: spec for spec in specs if spec.kind != 'rest'}
     unknown = sorted(set(tree) - set(known))
     if unknown and not any(spec.kind == 'rest' for spec in specs):
@@ -115,7 +114,7 @@ def from_tree(cls: type, tree: object, path: str | None = None) -> object:
     }
     if unknown:
         kwargs['rest'] = {name: tree[name] for name in unknown}
-    missing = [s.name for s in cls._ir_fields if not s.optional and s.name not in kwargs]
+    missing = [s.name for s in fields_of(cls) if not s.optional and s.name not in kwargs]
     if missing:
         fail(f'{path}.{missing[0]}', 'a value', 'nothing')
     return build(cls, kwargs, path)

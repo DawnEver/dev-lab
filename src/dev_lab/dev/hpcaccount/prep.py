@@ -59,8 +59,8 @@ __all__ = ['ABSENT', 'RETRY', 'TOOLS', 'Submit', 'job_script', 'kit_of', 'prepar
 #: ``(checkout, key, python=, root=, script=, kit=, retry=) -> one line``: submit (or find in flight) *key*'s prep job.
 type Submit = Callable[..., str]
 
-# TODO(arch-prep-job): lab-commons lane pr/toolchain/arch-prep-job provides submit_env_prep  # noqa: FIX002, TD003
-# Until it lands, every repo whose environment is not current is refused by ABSENT, never built here.
+# A kit whose lab-commons predates submit_env_prep refuses every repo whose environment is not current by ABSENT,
+# never building it here.
 _MODULE: Final = 'lab_commons.hpc.prep'
 _FUNCTION: Final = 'submit_env_prep'
 ABSENT: Final = (
@@ -117,7 +117,7 @@ def submit(checkout: Path, key: str, *, python: str, root: str, script: str, kit
     A failed job's line names :data:`RETRY` for this account and *checkout*'s repo.
     """
     try:
-        door = getattr(importlib.import_module(_MODULE), _FUNCTION)
+        door = importlib.import_module(_MODULE).submit_env_prep
     except ImportError, AttributeError:
         return ABSENT
     said = str(door(checkout, key, python=python, root=root, script=script, kit=kit, retry=retry))
