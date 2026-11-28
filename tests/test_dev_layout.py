@@ -485,6 +485,10 @@ _CLOSED = f"""[layout]
 """
 #: One file of every family kind's every sub-shape, each a format its writer writes.
 _FAMILY_FILES = (
+    'ci/0123456789ab-tests_base-1.log',  # forgeci: a job's whole log
+    'ci/0123456789ab-verify-log-base-1-2/verify-20261125T000000Z.log',  # forgeci: an unpacked artifact
+    'ci/0123456789ab-verify-log-base-1-2/verify-20261125T000000Z.outcomes/parallel/cells-gw0.jsonl',
+    'ci/0123456789ab-measurement-1-1/receipt.json',
     'verify/verify-20261125T000000Z.log',
     'verify/verify-20261125T000000Z.outcome.json',
     'verify/verify-20261125T000000Z.outcomes/parallel/cells-gw0.jsonl',
@@ -515,8 +519,12 @@ def test_a_family_kind_admits_only_its_own_formats_and_shapes_PLANTED(tmp_path) 
     _plant(root, 'output/logs/26/11/25/verify/plot.png')
     _plant(root, 'output/logs/26/11/25/verify/stray/x.log')
     _plant(root, 'output/logs/26/11/25/parts/loose.gz')
+    _plant(root, 'output/logs/26/11/25/ci/job.py')
+    _plant(root, 'output/logs/26/11/25/ci/artifact/deep/x.log')
     found = layout_violations(root)[1]
     assert [line.split(':', 1)[0] for line in found] == [
+        'output/logs/26/11/25/ci/artifact/deep/',
+        'output/logs/26/11/25/ci/job.py',
         'output/logs/26/11/25/parts/loose.gz',
         'output/logs/26/11/25/verify/plot.png',
         'output/logs/26/11/25/verify/stray/',

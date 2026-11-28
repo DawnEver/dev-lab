@@ -17,6 +17,7 @@ import pytest
 from _forge_fake import make_repo
 
 from dev_lab.dev import forgeci
+from dev_lab.dev.datedlog import FAMILY_KINDS
 from dev_lab.dev.forge import Forge, NoCredential
 from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -330,3 +331,8 @@ def test_status_show_names_the_ci_door_for_a_red_part_a_ci_job_produced() -> Non
     argv = door.split(' -m dev_lab.dev.forge ', 1)[1].split()
     assert argv[0] == 'ci'
     assert forgeci._parser().parse_args(argv[1:]).failed
+
+
+def test_the_kind_it_writes_is_a_family_kind_every_repo_admits() -> None:
+    """Its logs land in every family repo, so DECLARED-LAYOUT admits them without a repo row."""
+    assert forgeci.KIND in FAMILY_KINDS
