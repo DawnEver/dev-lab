@@ -18,7 +18,7 @@ from test_dev_forgereview import _DECLARED, FakeCommand, _can, _work
 from dev_lab.dev.ciworkflows import workflows
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeheadgate import GATES
-from dev_lab.dev.forgemerge import Decision
+from dev_lab.dev.forgemerge import Decision, judged
 from dev_lab.dev.forgemergeready import ready
 from dev_lab.dev.forgereview_claim import DUE, WAITS
 from dev_lab.dev.forgereview_command import Runner
@@ -26,6 +26,7 @@ from dev_lab.dev.forgereview_job import review_run
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.labsession import ENV as SESSION_ENV
+from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewturn import REVIEW_DUE_SAID, REVIEW_LABEL, review_turn
 
@@ -259,10 +260,15 @@ def test_a_judged_draft_is_never_due(tmp_path: Path, monkeypatch: pytest.MonkeyP
 def test_merge_ready_names_a_requirement_that_cannot_be_built(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Review item 3 on #1121: an architecture that cannot be built degrades alone, and says so on every ready head.
 
-    PLANTED CONTROL: the same repo declaring no architecture names nothing.
+    Read on the decision's notes (merge-ready's line carries them; the posted description is cut to the forge's
+    limit). PLANTED CONTROL: the same repo declaring no architecture notes nothing.
     """
-    work, forge, number, _ = _judged_pr(tmp_path, monkeypatch, parts='success')
-    assert 'review requirements' not in ready(work, forge, number)
+    work, forge, number, head = _judged_pr(tmp_path, monkeypatch, parts='success')
+
+    def notes() -> str:
+        found = judged(work, forge, load_policy(work), branch='pr/x', number=number, head=head)
+        return '; '.join(found.notes)
+
+    assert 'review requirements' not in notes()
     forge.pyproject = _JUDGED + 'requirements = ["principles", "architecture"]\narchitecture = ["AGENTS.md"]\n'
-    said = ready(work, forge, number)
-    assert 'its review requirements are not all judged: branch integrate/main cannot be read' in said
+    assert 'its review requirements are not all judged: branch integrate/main cannot be read' in notes()
