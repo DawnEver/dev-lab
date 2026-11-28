@@ -32,7 +32,7 @@ __all__ = [
     'detached',
     'host_key_line',
     'host_key_options',
-    'login_line',
+    'login_argv',
     'named',
     'piped',
     'run',
@@ -156,7 +156,7 @@ def ssh_argv(
 
     The host key is checked as :func:`host_key_options` says, *host_keys* and *required* passed through.
 
-    The command travels base64-encoded (:func:`login_line`): the element ssh sends holds no ``'``, so a native argv
+    The command travels base64-encoded (:func:`login_argv`): the elements ssh sends hold no quote, so a native argv
     re-split by an MSYS ssh (Git's, on Windows) cannot re-cut a deeply quoted line (measured 2026-11-27).
 
     Raises:
@@ -166,13 +166,24 @@ def ssh_argv(
     hosts = host_key_options(target, host_keys, required=required)
     mode = ['-o', 'BatchMode=yes'] if batch else ['-t']
     timeout = ['-o', f'ConnectTimeout={CONNECT_TIMEOUT_S}']
-    return ['ssh', *mode, *timeout, *hosts, target, login_line(command)]
+    return ['ssh', *mode, *timeout, *hosts, target, *login_argv(command)]
 
 
-def login_line(command: str) -> str:
-    """*command* as one login-shell line free of ``'``: base64 in the argv, decoded by the remote shell."""
+#: The longest base64 piece one argv element carries; an element holds no space, so the MSYS cut never applies.
+CHUNK: Final = 4096
+
+
+def login_argv(command: str) -> list[str]:
+    """*command* as ssh's trailing elements: no quote, and no element both spaced and long.
+
+    Git's MSYS ssh re-splits a native command line, dropping quotes, and cuts an element that holds a space at
+    8186 characters (measured 2026-11-27: the deploy line lost its closing ``)"`` and died with ``unexpected EOF``).
+    So the command travels base64-encoded in space-free pieces ``printf %s`` rejoins (ssh joins the elements with
+    spaces), into a temporary file the login shell runs: the command keeps its own stdin and its exit status.
+    """
     encoded = base64.b64encode(command.encode('utf-8')).decode('ascii')
-    return f'bash -lc "$(printf %s {encoded} | base64 -d)"'
+    pieces = [encoded[at : at + CHUNK] for at in range(0, len(encoded), CHUNK)] or ['']
+    return ['f=$(mktemp) && printf %s', *pieces, '| base64 -d > $f && bash -l $f; rc=$?; rm -f $f; exit $rc']
 
 
 def detached(argv: Sequence[str], log: IO[Any]) -> subprocess.Popen[Any]:

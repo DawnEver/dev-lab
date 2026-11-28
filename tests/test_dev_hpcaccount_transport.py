@@ -88,7 +88,7 @@ def test_no_held_session_is_key_only_ssh(monkeypatch: pytest.MonkeyPatch) -> Non
     transport.start(_DEST, 'deploy', io.StringIO())
     assert opened == ['alice@login01.example']
     assert started[0][:3] == ['ssh', '-o', 'BatchMode=yes']
-    assert started[0][-2] == _DEST
+    assert started[0][-4] == _DEST  # then the command's three elements (remote.login_argv)
     assert ran == []
 
 
