@@ -99,6 +99,12 @@ build-backend = "hatchling.build"
 source = "vcs"
 fallback-version = "0.0.0"
 
+# Only a version tag (v<digits>...) names a version: the repo also carries release tags that are not versions
+# (`vendor-<dist>-<rev12>` from nativewheels, `run-records`), and a bare `git describe` picked
+# `vendor-triangle-595b43eb6682` and failed every build of dev-lab from git (2026-11-28).
+[tool.hatch.version.raw-options]
+git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "v[0-9]*"]
+
 [tool.hatch.build.hooks.vcs]
 version-file = "src/dev_lab/__version__.py"
 template = "__version__ = version = \"{version}\"\n__version_tuple__ = version_tuple = {version_tuple}\n"
