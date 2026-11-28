@@ -7,8 +7,10 @@
   (``python -m dev_lab.dev.famfiles``) runs it -- and judged by :func:`drift`;
 * every venv ``dep --bootstrap`` builds: it builds under the target's ``requires-python``, which only this
   interpreter fits (:func:`dev_lab.dev._dep_project.bootstrap_python`);
-* every ``uv sync`` a rendered CI workflow runs (``ci_base.toml``'s ``@python@``, :data:`SYNC_FLAGS`): a uv-managed
-  interpreter on every runner, never the runner's own;
+* every ``uv sync`` a rendered CI workflow runs (``ci_base.toml``'s ``@python@``, :data:`RUNNER_SYNC_FLAGS`): ONE
+  interpreter per OS, the one the job's setup provisions -- Homebrew's on macOS (:data:`MACOS_PROVISION`, with the
+  system Tk a GUI capture needs, dev-lab #1105: uv's standalone build bundles Tk 8.6), uv-managed everywhere else;
+  never the runner's own;
 * the interpreter a rendered wheels workflow builds and smoke-imports on (:mod:`dev_lab.dev.nativewheels`);
 * a cluster deployment's default interpreter (:data:`dev_lab.dev.hpcaccount.spec.DEFAULT_PYTHON`).
 
@@ -37,10 +39,14 @@ from dev_lab.dev.famconfig import OWNED, SectionBase, SectionDelta, inspect_sect
 from dev_lab.dev.sectionrender import render_section
 
 __all__ = [
+    'MACOS_FORMULAE',
+    'MACOS_PROVISION',
+    'MACOS_SYNC_FLAGS',
     'MANIFEST',
     'RENDER_COMMAND',
     'REQUIRES_PYTHON',
     'RUFF_TARGET',
+    'RUNNER_SYNC_FLAGS',
     'SECTIONS',
     'SYNC_FLAGS',
     'VERSION',
@@ -61,6 +67,15 @@ REQUIRES_PYTHON: Final = f'>={VERSION},<{_MAJOR}.{_MINOR + 1}'
 RUFF_TARGET: Final = f'py{_MAJOR}{_MINOR}'
 #: What every rendered ``uv sync`` carries: this interpreter, uv-managed -- never the runner's own.
 SYNC_FLAGS: Final = f'--python {VERSION} --managed-python'
+#: The macOS runner's interpreter and its Tk (dev-lab #1105): Homebrew's, whose ``python-tk`` links the system Tk 9
+#: a window capture assumes; uv's standalone build bundles Tk 8.6.
+MACOS_FORMULAE: Final = (f'python@{VERSION}', f'python-tk@{VERSION}')
+#: The step that installs them, run by every syncing job on macOS before its first sync (ciworkflows refuses less).
+MACOS_PROVISION: Final = 'HOMEBREW_NO_AUTO_UPDATE=1 brew install ' + ' '.join(MACOS_FORMULAE)
+#: What a sync on macOS carries: the interpreter :data:`MACOS_PROVISION` installed, and no uv-managed one.
+MACOS_SYNC_FLAGS: Final = f'--python "$(brew --prefix python@{VERSION})/bin/python{VERSION}" --no-managed-python'
+#: What every rendered workflow ``uv sync`` carries: an Actions expression the runner resolves to its OS's flags.
+RUNNER_SYNC_FLAGS: Final = f"${{{{ runner.os == 'macOS' && '{MACOS_SYNC_FLAGS}' || '{SYNC_FLAGS}' }}}}"
 
 #: The file both keys live in (ruff's dedicated files are retired: ``_famfiles_registry.RETIRED_PROJECT_FILES``).
 MANIFEST: Final = 'pyproject.toml'
@@ -89,9 +104,9 @@ def minor_check(want: str) -> str:
 
 
 def unpinned_syncs(workflow: object) -> list[str]:
-    """Every ``uv sync`` command line in *workflow* (a rendered workflow's data) lacking :data:`SYNC_FLAGS`."""
+    """Every ``uv sync`` command line in *workflow* (a rendered workflow's data) lacking :data:`RUNNER_SYNC_FLAGS`."""
     if isinstance(workflow, str):
-        return [line for line in workflow.splitlines() if 'uv sync' in line and SYNC_FLAGS not in line]
+        return [line for line in workflow.splitlines() if 'uv sync' in line and RUNNER_SYNC_FLAGS not in line]
     values: Iterable[object] = ()
     if isinstance(workflow, Mapping):
         values = cast('Mapping[object, object]', workflow).values()
@@ -122,7 +137,7 @@ def drift(root: Path) -> list[str]:
             out.append(f'{MANIFEST} {base.artifact}: {said} -- {RENDER_COMMAND}')
     for path, workflow in _rendered_workflows(root).items():
         out += [
-            f'{path.relative_to(root).as_posix()}: `{line.strip()}` syncs without `{SYNC_FLAGS}` -- the family '
+            f'{path.relative_to(root).as_posix()}: `{line.strip()}` syncs without `{RUNNER_SYNC_FLAGS}` -- the family '
             f'Python reaches a workflow through ci_base.toml; drop the override, then `python -m dev_lab.dev.famfiles`'
             for line in unpinned_syncs(workflow)
         ]

@@ -404,8 +404,11 @@ setup = [
     # The repo's DECLARED extras only ([tool.dev_lab.dep] extras, rendered by ciworkflows.EXTRAS_PLACEHOLDER); a part
     # adds its need-set's own. No job syncs every extra: a rendered `--all-extras` is refused (ALL-EXTRAS-REFUSED).
     # THE FAMILY PYTHON on every runner (user ruling 2026-11-27, dev-lab #1045): `@python@` renders as
-    # dev_lab.dev.pythontoolchain.SYNC_FLAGS, a uv-managed interpreter uv fetches -- never the runner's own, which
-    # measured three minors on three OSes (Ubuntu's system one, Homebrew's newest, an older Windows one).
+    # dev_lab.dev.pythontoolchain.RUNNER_SYNC_FLAGS -- never the runner's own, which measured three minors on three
+    # OSes (Ubuntu's system one, Homebrew's newest, an older Windows one). ONE interpreter per OS, the one this setup
+    # provisions (dev-lab #1105): on macOS Homebrew's with its Tk (`@macos-python@`, pythontoolchain.MACOS_PROVISION;
+    # uv's standalone build bundles Tk 8.6), elsewhere uv-managed. A job syncing without both is refused at render.
+    { name = "Install the macOS interpreter and its Tk", if = "${{ runner.os == 'macOS' }}", run = "@macos-python@" },
     { name = "Sync the environment", run = "uv sync --frozen @python@@extras@" },
 ]
 # ci.yml's merge decision on its one PR and the smoke run its merge dispatches; merge-ready and merge-rejudge list
