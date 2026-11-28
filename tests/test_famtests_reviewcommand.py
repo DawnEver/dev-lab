@@ -24,12 +24,13 @@ from dev_lab.dev.forgereview_declared import (
     command_for,
     review_from,
 )
+from dev_lab.dev.forgereview_requirements import Required
 from dev_lab.dev.forgereview_scope import DISPOSED_FIELD, PRINCIPLES_FIELD, REQUIREMENTS_FIELD, SUMMARY_FIELD, gather
 from dev_lab.dev.principles import payload
 from dev_lab.dev.rules import RULES
 
 _ROOT = Path(__file__).resolve().parents[1]
-_DECLARED = "[tool.dev_lab.review]\ncommand = ['r', '{rules}']\n"
+_DECLARED = "[tool.dev_lab.review]\ncommand = ['r', '{rules}', '{requirements}']\n"
 _HOST = {'ai_lab': {'python': 'C:/rt/python.exe'}}
 
 
@@ -78,7 +79,9 @@ def test_the_principles_reach_the_method_as_a_file(tmp_path: Path) -> None:
         raise _Ran
 
     with pytest.raises(_Ran):
-        gather('a..b', [['x', '--principles', PRINCIPLES_FIELD]], (), run, tmp_path, pr_body='', requirements={})
+        gather(
+            'a..b', [['x', '--principles', PRINCIPLES_FIELD]], (), run, tmp_path, pr_body='', requirements=Required({})
+        )
     assert seen == [payload()]
 
 
@@ -99,7 +102,7 @@ def test_the_requirements_reach_the_method_as_a_file(tmp_path: Path) -> None:
     ):
         with pytest.raises(_Ran):
             gather('a..b', [['x', '--requirements', REQUIREMENTS_FIELD]], (), run, tmp_path, pr_body='',
-                   requirements=given)  # fmt: skip
+                   requirements=Required(given))  # fmt: skip
     assert seen == [
         {'principles': True},
         {'architecture': [{'id': 'arch:A.md', 'path': 'A.md', 'blob': 'b', 'text': 't'}]},
@@ -130,7 +133,7 @@ def test_one_call_summarizes_with_the_pr_body_and_every_call_is_handed_no_dispos
 
     shape = ['r', SUMMARY_FIELD, '--disposed', DISPOSED_FIELD]
     merged = gather('a..b', [shape, shape], ['s', '{findings}', *shape], run, tmp_path,
-                    pr_body='Why: x.', requirements={})  # fmt: skip
+                    pr_body='Why: x.', requirements=Required({}))  # fmt: skip
     assert [body for _, body, _ in seen] == ['Why: x.', '', '']
     assert ['--no-summary' in argv for argv, _, _ in seen] == [False, True, True]
     assert all(gone == {'disposed': []} for _, _, gone in seen), 'nothing is disposed of in a one-shot review'
@@ -164,7 +167,11 @@ def test_a_capability_field_is_retired_into_a_runtime_field() -> None:
 
 def test_a_genuinely_different_command_is_kept() -> None:
     """Control: a repo whose method differs may declare it."""
-    assert review_from("[tool.dev_lab.review]\ncommand = ['r', '{range}']\n", 'p').command == ('r', '{range}')
+    assert review_from("[tool.dev_lab.review]\ncommand = ['r', '{range}', '{requirements}']\n", 'p').command == (
+        'r',
+        '{range}',
+        '{requirements}',
+    )
 
 
 def test_the_planted_manifest_is_convicted_by_the_famtest(tmp_path: Path) -> None:

@@ -218,8 +218,11 @@ requirements` lists what the review judges a change against, from `principles` (
 `architecture` (the documents its `architecture` globs match, at most `max_architecture`, read at the trusted
 integration branch through the forge, never the head). The engine answers each `met`, `violated`, `amended`,
 `untouched` or `unverified`; the review comment lists them as a checklist for the integrator, who gates draft ->
-ready by hand. The verdict rule above is unchanged. The declaration and its refusals:
-`dev_lab.dev.forgereview_requirements`.
+ready by hand. The verdict rule above is unchanged. An architecture that cannot be built (a glob matching nothing,
+documents past `max_architecture`, a read the forge refuses) degrades alone: the principles are still judged, the
+checklist lists `architecture` `unverified` with the cause, and merge-ready names it on every ready head. Every
+declared `command`, `synthesis` and `bundle` carries `{requirements}` (the engine refuses a call without it). The
+declaration and its refusals: `dev_lab.dev.forgereview_requirements`.
 
 **A review that did not run never holds the merge** (`dev_lab.dev.reviewcap`, user rulings 2026-11-05 and
 2026-11-06). A failed attempt on the serve tick is `error` `review attempt failed, retried once: ...`, and the next

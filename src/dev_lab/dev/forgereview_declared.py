@@ -293,29 +293,28 @@ def review_from(text: str, origin: str) -> Review:
     if 'command' in declared and review.command == FAMILY_COMMAND:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} redeclares the family command: delete it (override `model`)'
         raise ValueError(msg)
-    if why := _requirements_dropped(review, declared):
+    if why := retired_field((*review.command, *review.synthesis, *review.bundle)):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {why}'
         raise ValueError(msg)
-    if why := retired_field((*review.command, *review.synthesis, *review.bundle)):
+    if why := _requirements_dropped(review, declared):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {why}'
         raise ValueError(msg)
     return review
 
 
 def _requirements_dropped(review: Review, declared: Mapping[str, object]) -> str | None:
-    """Why a declared ``command`` or ``bundle`` would hand the reviewer none of the declared requirements, or ``None``.
+    """Which declared ``command``, ``synthesis`` or ``bundle`` hands the engine no requirements file, or ``None``.
 
-    Only a repo that DECLARES ``requirements`` and its own command is judged: the family commands carry the field.
+    Every call of the review engine takes ``--requirements`` (ai-lab refuses one without it, ``NO_REQUIREMENTS``,
+    even when the file lists none), so a repo's own method carries the field; the family commands do.
     """
-    if not review.requirements or 'requirements' not in declared:
-        return None
     field = forgereview_scope.REQUIREMENTS_FIELD
-    for key in ('command', 'bundle'):
-        if key in declared and not any(field in arg for arg in getattr(review, key)):
+    for key in ('command', 'synthesis', 'bundle'):
+        argv: tuple[str, ...] = getattr(review, key)
+        if key in declared and argv and not any(field in arg for arg in argv):
             return (
-                f'{key} names no {field} while requirements = {list(review.requirements)} are declared: the '
-                f'reviewer would judge none of them -- add "--requirements", "{field}" to it, or declare '
-                'requirements = []'
+                f'{key} names no {field}: the review engine refuses a call without its requirements file -- add '
+                f'"--requirements", "{field}" to it'
             )
     return None
 

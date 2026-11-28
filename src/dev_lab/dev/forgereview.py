@@ -98,7 +98,7 @@ from dev_lab.dev.reviewbudget import (
 )
 from dev_lab.dev.reviewcap import unreviewed_line
 from dev_lab.dev.reviewcode import ONLY_GENERATED
-from dev_lab.dev.reviewgate import DeclarationUnread, forge_posted, post_review
+from dev_lab.dev.reviewgate import forge_posted, post_review
 from dev_lab.dev.reviewruntime import review_runtimes
 from dev_lab.dev.roles import HPC, REVIEW, roles_at
 
@@ -297,10 +297,7 @@ def _review(
     if cannot is not None:  # checked before the claim: the HOST cannot, so nothing is posted on the head
         raise HostCannot(cannot)
     forgereview_scope.prefetch(root, scope.range)  # the reviewer holds no forge token: a partial clone fetches first
-    try:  # read at the trusted base through the forge, never the head (forgereview_requirements)
-        required = requirements_at(client, review, pull.base)
-    except DeclarationUnread as unread:
-        return _failed(client, pull, f'its review requirements cannot be read: {unread}', runner)
+    required = requirements_at(client, review, pull.base)  # the trusted base, never the head; degrades alone
     me = identity(client, runner.host, serving=runner.serving)  # checked before the claim too
     authors = sessions(root, target, head)
     ruling(me, f'reviewing #{pull.number}')

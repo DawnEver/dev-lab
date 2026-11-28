@@ -81,7 +81,7 @@ _DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
 _MANIFEST = (
     "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
-    "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
+    "[tool.dev_lab.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm', '{requirements}']\n"
     "quiet = '0 s'\n"  # the step reviews at once; the debounce has its own test
     "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
 )
@@ -818,8 +818,8 @@ def test_a_review_hold_is_reported_until_it_is_released_and_never_waits(tmp_path
 
 def test_the_declaration_defaults_and_overrides_and_refuses_an_unknown_key() -> None:
     assert review_from('', 'p') == Review()
-    declared = "[tool.dev_lab.review]\ncommand = ['r', '{range}']\nmax_diff = '5 B'\n"
-    assert review_from(declared, 'p') == Review(command=('r', '{range}'), max_diff=5)
+    declared = "[tool.dev_lab.review]\ncommand = ['r', '{range}', '{requirements}']\nmax_diff = '5 B'\n"
+    assert review_from(declared, 'p') == Review(command=('r', '{range}', '{requirements}'), max_diff=5)
     with pytest.raises(ValueError, match='unknown key'):
         review_from("[tool.dev_lab.review]\ncomand = ['x']\n", 'p')
 

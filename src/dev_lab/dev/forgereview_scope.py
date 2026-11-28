@@ -44,13 +44,15 @@ from lab_commons.temp import TEMP_PREFIX
 from dev_lab.dev._famfiles_registry import GENERATED
 from dev_lab.dev.blobfetch import fetch_blobs, git, is_partial
 from dev_lab.dev.forgereview_command import ReviewPending
-from dev_lab.dev.forgereview_findings import merge_outputs
+from dev_lab.dev.forgereview_findings import merge_outputs, with_unjudged
 from dev_lab.dev.principles import payload
 from dev_lab.dev.rangebase import EMPTY_TREE, range_base
 from dev_lab.dev.reviewcode import CODE, NOT_CODE, is_code, matches
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
+
+    from dev_lab.dev.forgereview_requirements import Required
 
 __all__ = [
     'DISPOSED_FIELD',
@@ -312,14 +314,15 @@ def code_bytes(root: Path, target: str, head: str, budget: Budget, since: str = 
 
 def gather(
     reviewed: str, argvs: Sequence[Sequence[str]], synthesis: Sequence[str], run: Callable[..., str], root: Path, *,
-    pr_body: str, requirements: Mapping[str, object], disposed: Sequence[tuple[str, str]] = (),
+    pr_body: str, requirements: Required, disposed: Sequence[tuple[str, str]] = (),
 ) -> str:  # fmt: skip
     """The slices' outputs merged over *reviewed*; with several, the *synthesis* command's reading of them merged in.
 
     *synthesis* (empty: none) names the merged document's path as :data:`FINDINGS_FIELD`; every command names
-    the principles file as :data:`PRINCIPLES_FIELD`, the *requirements* payload's file as :data:`REQUIREMENTS_FIELD`,
-    and the *disposed* ``(id, reason)`` pairs -- a continuation's
-    carried findings already resolved or deferred, none otherwise -- as :data:`DISPOSED_FIELD`; the first
+    the principles file as :data:`PRINCIPLES_FIELD`, the *requirements* payload's file as :data:`REQUIREMENTS_FIELD`
+    (each requirement it could not build is listed ``unverified`` in the result), and the *disposed* ``(id, reason)``
+    pairs -- a continuation's carried findings already resolved or deferred, none otherwise -- as
+    :data:`DISPOSED_FIELD`; the first
     slice alone is handed *pr_body* through :data:`SUMMARY_FIELD`, every other call ``--no-summary``. A slice whose
     batch is still running (:class:`~dev_lab.dev.forgereview_command.ReviewPending`) does not stop the slices after
     it: each submits its own, and the first pending is raised once all have run.
@@ -328,7 +331,7 @@ def gather(
         given = Path(scratch) / 'principles.json'
         given.write_text(json.dumps(payload()), encoding='utf-8')
         required = Path(scratch) / 'requirements.json'
-        required.write_text(json.dumps(requirements), encoding='utf-8')
+        required.write_text(json.dumps(dict(requirements.payload)), encoding='utf-8')
         body = Path(scratch) / 'pr-body.md'
         body.write_text(pr_body, encoding='utf-8')
         gone = Path(scratch) / 'disposed.json'
@@ -355,11 +358,11 @@ def gather(
             raise waiting
         merged = merge_outputs(outputs, reviewed)
         if not synthesis or len(argvs) == 1:
-            return merged
+            return with_unjudged(merged, requirements.unjudged)
         path = Path(scratch) / 'findings.json'
         path.write_text(merged, encoding='utf-8')
         argv = [arg.replace(FINDINGS_FIELD, str(path)) for arg in filled(synthesis)]
-        return merge_outputs([merged, run(argv, root)], reviewed)
+        return with_unjudged(merge_outputs([merged, run(argv, root)], reviewed), requirements.unjudged)
 
 
 def landed_base(root: Path, base: str, head: str) -> str:

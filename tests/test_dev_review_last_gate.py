@@ -254,3 +254,15 @@ def test_a_judged_draft_is_never_due(tmp_path: Path, monkeypatch: pytest.MonkeyP
     forge.pulls[number]['draft'] = False
     ready(work, forge, number)
     assert _review(forge, head) == ('pending', DUE)
+
+
+def test_merge_ready_names_a_requirement_that_cannot_be_built(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review item 3 on #1121: an architecture that cannot be built degrades alone, and says so on every ready head.
+
+    PLANTED CONTROL: the same repo declaring no architecture names nothing.
+    """
+    work, forge, number, _ = _judged_pr(tmp_path, monkeypatch, parts='success')
+    assert 'review requirements' not in ready(work, forge, number)
+    forge.pyproject = _JUDGED + 'requirements = ["principles", "architecture"]\narchitecture = ["AGENTS.md"]\n'
+    said = ready(work, forge, number)
+    assert 'its review requirements are not all judged: branch integrate/main cannot be read' in said

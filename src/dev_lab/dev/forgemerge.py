@@ -90,8 +90,9 @@ from dev_lab.dev.forgeheadgate import alarms_said
 from dev_lab.dev.forgehold import HELD, is_held
 from dev_lab.dev.forgemergewaits import hand_note, off_record, recorded_as_ran, red_checks, status_waits
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
-from dev_lab.dev.forgereview_declared import load_review
+from dev_lab.dev.forgereview_declared import forge_review, load_review
 from dev_lab.dev.forgereview_gate import review_gate
+from dev_lab.dev.forgereview_requirements import requirements_refusal
 from dev_lab.dev.forgestatus import fingerprints_at, status_list
 from dev_lab.dev.hostedparts import pull_request_parts
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
@@ -318,4 +319,18 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
         others = (HELD.format(n=number), *others)
     waiting = found.waiting and len(others) == len(found.others)
     early = by == HOST and not pull.draft  # D228: the judge reviews every ready PR, not only one about to merge
-    return Decision(others, found.message, found.review, found.unreviewed, found.notes, waiting, early)
+    notes = (*found.notes, *_requirements_note(client, policy.integration))
+    return Decision(others, found.message, found.review, found.unreviewed, notes, waiting, early)
+
+
+def _requirements_note(client: Client, integration: str) -> tuple[str, ...]:
+    """The note naming why the declared review requirements cannot be built at *integration* (D226), else none.
+
+    The review then judges the principles alone and lists ``architecture`` ``unverified``; the note says so on
+    every ready head, so a bad declaration is never a silent loss of review. Read from the trusted declaration.
+    """
+    try:
+        why = requirements_refusal(client, forge_review(client, integration), integration)
+    except ValueError:  # the declaration itself: the review gate's reading names it already
+        return ()
+    return () if why is None else (f'its review requirements are not all judged: {why}',)

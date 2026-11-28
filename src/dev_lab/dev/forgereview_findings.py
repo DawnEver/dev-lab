@@ -40,6 +40,7 @@ __all__ = [
     'UnknownSchemaVersion',
     'merge_outputs',
     'parse_findings',
+    'with_unjudged',
 ]  # fmt: skip
 
 #: The ``schema_version`` values this reader knows.
@@ -265,3 +266,17 @@ def _strongest(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
             kept = dict(row)
         held[row['id']] = {**kept, 'cites': cites}
     return list(held.values())
+
+
+def with_unjudged(text: str, unjudged: Sequence[tuple[str, str]]) -> str:
+    """The findings document *text* with each ``(id, why)`` of *unjudged* listed ``unverified``: none, *text* as is.
+
+    A declared requirement the review could not be handed (:attr:`dev_lab.dev.forgereview_requirements.Required.
+    unjudged`) is never silently dropped: the checklist names it and why.
+    """
+    if not unjudged:
+        return text
+    doc = json.loads(text)
+    rows = [row for row in doc.get('requirements', ()) if row['id'] not in {key for key, _ in unjudged}]
+    rows += [{'id': key, 'verdict': 'unverified', 'cites': [], 'evidence': why} for key, why in unjudged]
+    return json.dumps({**doc, 'requirements': rows}, ensure_ascii=False)

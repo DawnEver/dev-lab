@@ -78,7 +78,7 @@ from dev_lab.dev.forgereview_declared import (
     forge_review,
 )
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, parse_findings
-from dev_lab.dev.forgereview_requirements import requirements_at
+from dev_lab.dev.forgereview_requirements import Required, requirements_at
 from dev_lab.dev.forgereview_scope import gather, is_code
 from dev_lab.dev.forgereview_summary import checklist
 from dev_lab.dev.forgestatus import status_list
@@ -259,11 +259,11 @@ def fetch_from(url: str) -> Fetch:
 
 def judge_one(
     client: Client, review: Review, pull: PullRequest, *, runtimes: Mapping[str, Mapping[str, Any]], fetch: Fetch,
-    requirements: Mapping[str, object], run: Callable[[Sequence[str], Path, Mapping[str, str]], str] = run_command,
+    requirements: Required, run: Callable[[Sequence[str], Path, Mapping[str, str]], str] = run_command,
 ) -> Verdict | str:  # fmt: skip
     """The verdict on *pull*'s head, built from the head the judge fetched itself; a line when nothing can post yet.
 
-    *requirements* is the payload read at the trusted integration branch (:func:`requirements_at`), never the head.
+    *requirements* is what was read at the trusted integration branch (:func:`requirements_at`), never the head.
     """
     said = f'#{pull.number} {pull.head_sha[:12]}'
     with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-judge-') as scratch:
@@ -288,7 +288,7 @@ def judge_one(
 def _reviewed(
     client: Client, review: Review, pull: PullRequest, bundle: reviewbundle.Bundle, *, diff: str,
     runtimes: Mapping[str, Mapping[str, Any]],
-    run: Callable[[Sequence[str], Path, Mapping[str, str]], str], where: Path, requirements: Mapping[str, object],
+    run: Callable[[Sequence[str], Path, Mapping[str, str]], str], where: Path, requirements: Required,
 ) -> Findings | str:  # fmt: skip
     """The bundle command's findings over *bundle*, or the line said when there are none yet (retried next run).
 
@@ -361,10 +361,7 @@ def judge_pending(
     me = client.whoami()
     if (other := _not_the_judge(client, review, me)) is not None:
         return [f'{integration} declares {other}: it judges nothing']
-    try:  # the requirements every head is judged against, read once at the trusted branch
-        required = requirements_at(client, review, integration)
-    except DeclarationUnread as unread:
-        return [f'{integration} declares review requirements that cannot be read: {unread}; it judges nothing']
+    required = requirements_at(client, review, integration)  # read once at the trusted branch; degrades alone
     said = []
     for pull in (*pr_list(client), *merged_recently(client, integration)):
         if pull.base != integration or (pull.draft and not pull.merged) or not pull.head_sha:

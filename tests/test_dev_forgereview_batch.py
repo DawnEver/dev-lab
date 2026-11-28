@@ -48,6 +48,7 @@ from dev_lab.dev.forgereview_declared import (
     review_from,
 )
 from dev_lab.dev.forgereview_job import job_exit
+from dev_lab.dev.forgereview_requirements import Required
 from dev_lab.dev.forgereview_scope import gather
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgetakeover import main as review_main
@@ -216,15 +217,15 @@ def test_a_slice_pending_still_lets_the_slices_after_it_submit(tmp_path: Path) -
         return _output()
 
     with pytest.raises(ReviewPending, match='msgbatch_1'):
-        gather('a..b', [['one'], ['two']], ['synth'], run, tmp_path, pr_body='', requirements={})
+        gather('a..b', [['one'], ['two']], ['synth'], run, tmp_path, pr_body='', requirements=Required({}))
     assert ran == ['one', 'two'], 'slice two submitted; the synthesis waits for both'
 
 
 # --- the GitHub job: a pending batch is not a failure, and a schedule resumes it with no human -------------------
 
 _BATCHED_MANIFEST = _MANIFEST.replace(
-    "command = ['reviewer', '--range', '{range}', '--model', 'm']",
-    "command = ['reviewer', '--range', '{range}', '--model', 'm', '{batch}']",
+    "command = ['reviewer', '--range', '{range}', '--model', 'm', '{requirements}']",
+    "command = ['reviewer', '--range', '{range}', '--model', 'm', '{requirements}', '{batch}']",
 )
 
 

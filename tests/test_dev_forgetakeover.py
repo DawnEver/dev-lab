@@ -76,8 +76,8 @@ def test_the_door_plans_and_runs_the_takeover(tmp_path: Path, capsys: pytest.Cap
         (work / 'pyproject.toml')
         .read_text(encoding='utf-8')
         .replace(
-            "command = ['reviewer', '--range', '{range}', '--model', 'm']",
-            "command = ['reviewer', '--range', '{range}', '--paths', '{paths}']\nmax_diff = '10 B'",
+            "command = ['reviewer', '--range', '{range}', '--model', 'm', '{requirements}']",
+            "command = ['reviewer', '--range', '{range}', '--paths', '{paths}', '{requirements}']\nmax_diff = '10 B'",
         )
     )
     advance(work, 'integrate/main', 'pyproject.toml', sliced)  # a takeover acts on the base's review (review_at)
@@ -184,7 +184,9 @@ def test_the_door_reads_the_repo_it_is_told_and_refuses_a_sha_it_lacks(tmp_path:
 def test_the_takeover_in_a_repo_with_an_empty_command_names_the_same_fix(tmp_path: Path, capsys) -> None:
     work, forge, _, head = _merged(tmp_path)
     text = (work / 'pyproject.toml').read_text(encoding='utf-8')  # the base's declaration is what a takeover reads
-    empty = text.replace("command = ['reviewer', '--range', '{range}', '--model', 'm']", 'command = []')
+    empty = text.replace(
+        "command = ['reviewer', '--range', '{range}', '--model', 'm', '{requirements}']", 'command = []'
+    )
     advance(work, 'integrate/main', 'pyproject.toml', empty)
     (work / 'pyproject.toml').write_text(text, encoding='utf-8')
     assert main(['takeover', head], cwd=work, client=forge, run=FakeCommand(), fetch=lambda _r, _n: None) == 2

@@ -49,6 +49,7 @@ __all__ = [
     'app_missing',
     'app_verdicts',
     'blob_at',
+    'branch_sha',
     'forge_posted',
     'github_posted',
     'job_run_url',
@@ -129,34 +130,57 @@ def _fields(answer: object) -> dict[str, Any]:
     return cast('dict[str, Any]', answer) if isinstance(answer, dict) else {}
 
 
-def tree_at(client: RepoReader, ref: str) -> list[str]:
-    """Every file path in *ref*'s tree, as the forge lists it (``git/trees`` recursive, every page) -- never a checkout.
+def branch_sha(client: RepoReader, ref: str) -> str:
+    """The commit branch *ref* points at, as the forge answers ``branches/<ref>``.
 
-    Gitea pages a long listing (``truncated`` with a next ``page``); GitHub truncates past its own limit with no page,
-    which refuses: name the documents without a glob there.
+    Read ONCE, so every later read of the same snapshot (:func:`tree_at`, :func:`blob_at`) sees one commit, whatever
+    lands meanwhile.
+
+    Raises:
+        DeclarationUnread: the forge names no such branch, or no commit for it.
+
+    """
+    try:
+        commit = _fields(_fields(client.call('GET', f'{client.repo}/branches/{quote(ref, safe="/")}')).get('commit'))
+    except ForgeCallFailed as failed:
+        msg = f'branch {ref} cannot be read: {failed}'
+        raise DeclarationUnread(msg) from failed
+    sha = str(commit.get('id') or commit.get('sha') or '')
+    if not sha:
+        msg = f'branch {ref}: the forge answered no commit'
+        raise DeclarationUnread(msg)
+    return sha
+
+
+def tree_at(client: RepoReader, sha: str) -> dict[str, int]:
+    """``{path: size}`` of every file in commit *sha*'s tree, as the forge lists it -- never a checkout.
+
+    ``git/trees`` recursive, every page.
+
+    Gitea pages a long listing (``truncated`` with its next ``page``); GitHub truncates past its own limit with no
+    page, which refuses naming the fix.
 
     Raises:
         DeclarationUnread: the tree cannot be read, or the forge truncated it with no next page.
 
     """
-    paths: list[str] = []
+    found: dict[str, int] = {}
     page = 1
     while True:
         try:
             answer = _fields(
-                client.call(
-                    'GET', f'{client.repo}/git/trees/{quote(ref, safe="")}?recursive=true&page={page}&per_page=1000'
-                )
+                client.call('GET', f'{client.repo}/git/trees/{sha}?recursive=true&page={page}&per_page=1000')
             )
         except ForgeCallFailed as failed:
-            msg = f'the tree at {ref} cannot be read: {failed}'
+            msg = f'the tree of {sha[:12]} cannot be read: {failed}'
             raise DeclarationUnread(msg) from failed
         rows = [_fields(row) for row in cast('list[object]', answer.get('tree') or [])]
-        paths += [str(row['path']) for row in rows if row.get('type') == 'blob' and 'path' in row]
+        found |= {str(row['path']): int(row.get('size') or 0) for row in rows if row.get('type') == 'blob'
+                  and 'path' in row}  # fmt: skip
         if not answer.get('truncated'):
-            return paths
+            return found
         if 'page' not in answer:
-            msg = f'the forge truncated the tree at {ref}: name each document by its path, without a glob'
+            msg = f'the forge truncated the tree of {sha[:12]} with no next page: name fewer, nearer documents'
             raise DeclarationUnread(msg)
         page += 1
 
@@ -282,7 +306,9 @@ def app_missing(
     ]  # fmt: skip
     latest = max(own, key=lambda row: int(row.get('id') or 0), default=None)
     if latest is None:
-        return f'no {JUDGE_CHECK} verdict by the judge App {app_id} at {head[:12]} yet'
+        others = sorted({str(_fields(row.get('app')).get('slug') or '?') for row in runs if row not in own})
+        foreign = f' (ignored: {JUDGE_CHECK} from {", ".join(others)})' if others else ''
+        return f'no {JUDGE_CHECK} verdict by the judge App {app_id} at {head[:12]} yet{foreign}'
     if latest.get('conclusion') != 'success':
         return f'the judge App {app_id} concluded {latest.get("conclusion")!r} at {head[:12]}: changes requested'
     return _hold_missing(statuses)

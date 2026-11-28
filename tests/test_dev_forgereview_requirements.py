@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from types import SimpleNamespace
 from typing import Any, cast
 from urllib.parse import unquote
@@ -23,44 +24,59 @@ from dev_lab.dev.forgereview_findings import (
     Requirement,
     merge_outputs,
     parse_findings,
+    with_unjudged,
 )
 from dev_lab.dev.forgereview_requirements import (
     DEFAULT_MAX_ARCHITECTURE,
     FAMILY_REQUIREMENTS,
     REQUIREMENT_KINDS,
-    RequirementsRefused,
     requirements_at,
+    requirements_refusal,
 )
 from dev_lab.dev.forgereview_scope import REQUIREMENTS_FIELD
 from dev_lab.dev.forgereview_summary import CHECKLIST_TITLE, checklist
 from dev_lab.dev.reviewbundle import Bundle
-from dev_lab.dev.reviewgate import DeclarationUnread
 
 _TRUSTED = 'integrate/main'
+_TIP = 'c' * 40  # the trusted branch's commit
 
 
 class _Forge:
-    """One repository's contents and tree at each ref, as the contents and git-trees APIs answer them."""
+    """One repository as the branch, git-trees and contents APIs answer it: each branch's tip, each commit's files."""
 
-    repo = '/api/v1/repos/o/r'
-
-    def __init__(self, files: dict[str, dict[str, str]]) -> None:
-        self.files = files  # {ref: {path: text}}
+    def __init__(
+        self, files: dict[str, dict[str, str]], *, branches: dict[str, str] | None = None, page: int = 0,
+        repo: str = '/api/v1/repos/o/r',
+    ) -> None:  # fmt: skip
+        self.files = files  # {commit: {path: text}}
+        self.branches = branches if branches is not None else {_TRUSTED: _TIP}
+        self.page = page  # >0: the tree is listed this many entries a page (Gitea's paging); <0: truncated, no page
+        self.repo = repo
         self.asked: list[str] = []
 
     def call(self, method: str, path: str, /) -> object:
         assert method == 'GET'
         self.asked.append(path)
         route, _, query = path.partition('?')
+        asked = dict(one.split('=', 1) for one in query.split('&')) if query else {}
+        if '/branches/' in route:
+            return {'commit': {'id': self.branches[unquote(route.split('/branches/', 1)[1])]}}
         if '/git/trees/' in route:
-            ref = unquote(route.rsplit('/git/trees/', 1)[1])
-            return {'tree': [{'path': one, 'type': 'blob'} for one in self.files[ref]], 'truncated': False}
+            return self._tree(route.rsplit('/git/trees/', 1)[1], int(asked.get('page', '1')))
         where = unquote(route.split('/contents/', 1)[1])
-        ref = dict(one.split('=', 1) for one in query.split('&'))['ref']
-        text = self.files.get(ref, {}).get(where)
+        text = self.files.get(asked['ref'], {}).get(where)
         if text is None:
             return {}
         return {'content': base64.b64encode(text.encode()).decode(), 'sha': f'blob-of-{where}'}
+
+    def _tree(self, sha: str, page: int) -> dict[str, Any]:
+        rows = [{'path': one, 'type': 'blob', 'size': len(text.encode())} for one, text in self.files[sha].items()]
+        if self.page < 0:  # GitHub past its limit: truncated, and no page to read on
+            return {'tree': rows[:1], 'truncated': True}
+        if not self.page:
+            return {'tree': rows, 'truncated': False}
+        cut = rows[(page - 1) * self.page : page * self.page]
+        return {'tree': cut, 'truncated': page * self.page < len(rows), 'page': page}
 
 
 def _review(text: str) -> Review:
@@ -68,7 +84,12 @@ def _review(text: str) -> Review:
 
 
 def _payload(forge: _Forge, review: Review) -> dict[str, Any]:
-    return requirements_at(forge, review, _TRUSTED)
+    required = requirements_at(forge, review, _TRUSTED)
+    assert required.unjudged == (), required.unjudged
+    return dict(required.payload)
+
+
+_ARCH = 'requirements = ["principles", "architecture"]\narchitecture = [{globs}]'
 
 
 # --- the declaration -------------------------------------------------------------------------------------------
@@ -97,33 +118,40 @@ def test_the_family_requires_the_principles_and_a_repo_may_add_its_architecture(
         ('requirements = []\narchitecture = ["AGENTS.md"]', 'requirements does not list "architecture"'),
         ('max_architecture = 5', 'max_architecture'),
         ('requirement = ["principles"]', 'unknown key'),
+        # review item 4: a value of the wrong shape is refused naming the form, never read as its letters
+        ('requirements = "principles"', "requirements = 'principles' is not a list of non-empty strings: write"),
+        ('requirements = ["principles", ""]', 'requirements = ['),
+        ('requirements = ["architecture"]\narchitecture = "AGENTS.md"', "architecture = 'AGENTS.md' is not a list"),
+        ('requirements = ["architecture"]\narchitecture = [1]', 'architecture = [1] is not a list of non-empty'),
     ],
 )
-def test_half_a_requirement_or_an_unknown_kind_is_refused_by_name(text: str, said: str) -> None:
+def test_half_a_requirement_an_unknown_kind_or_a_wrong_shape_is_refused_by_name(text: str, said: str) -> None:
     """PLANTED CONTROL: each declaration made whole loads (the test above, and requirements = [] below)."""
-    with pytest.raises(ValueError, match=said.replace('[', r'\[').replace(']', r'\]')):
+    with pytest.raises(ValueError, match=re.escape(said)):
         _review(text)
     assert _review('requirements = []').requirements == ()
 
 
-def test_the_family_commands_hand_the_requirements_and_a_declared_command_must_too() -> None:
-    """A custom command that drops ``{requirements}`` while requirements are declared would judge none of them.
+@pytest.mark.parametrize('key', ['command', 'synthesis', 'bundle'])
+def test_every_declared_method_carries_the_requirements_file(key: str) -> None:
+    """Review item 5: every declared command, synthesis and bundle carries ``{requirements}``, whatever is declared.
 
-    PLANTED CONTROL: the same command declaring no requirements, or carrying the field, loads.
+    The engine refuses ANY call without ``--requirements`` (ai-lab NO_REQUIREMENTS), even one listing none.
+
+    PLANTED CONTROL: the same declaration carrying the field loads; the family commands carry it.
     """
     assert REQUIREMENTS_FIELD in FAMILY_COMMAND
     assert REQUIREMENTS_FIELD in FAMILY_BUNDLE
-    with pytest.raises(ValueError, match=r'command names no \{requirements\}'):
-        _review('requirements = ["principles"]\ncommand = ["r", "{range}"]')
-    with pytest.raises(ValueError, match=r'bundle names no \{requirements\}'):
-        _review('requirements = ["principles"]\nbundle = ["r", "{bundle}"]')
-    assert _review('command = ["r", "{range}"]').command == ('r', '{range}')
-    carried = _review('requirements = ["principles"]\ncommand = ["r", "{range}", "--requirements", "{requirements}"]')
-    assert REQUIREMENTS_FIELD in carried.command
-    assert _review('requirements = []\ncommand = ["r", "{range}"]').requirements == ()
+    argv = '"r", "{bundle}"' if key == 'bundle' else '"r", "{range}"'
+    for declared in ('', 'requirements = []\n'):
+        with pytest.raises(ValueError, match=re.escape(f'{key} names no {{requirements}}')) as refused:
+            _review(f'{declared}{key} = [{argv}]')
+        assert 'requirements = []' not in str(refused.value), 'requirements = [] would still be NO_REQUIREMENTS'
+    carried = _review(f'{key} = [{argv}, "--requirements", "{{requirements}}"]')
+    assert REQUIREMENTS_FIELD in getattr(carried, key)
 
 
-# --- the payload, read at the trusted branch --------------------------------------------------------------------
+# --- the payload, read from one snapshot of the trusted branch --------------------------------------------------
 
 
 def test_the_principles_alone_read_nothing_from_the_forge() -> None:
@@ -133,39 +161,89 @@ def test_the_principles_alone_read_nothing_from_the_forge() -> None:
     assert _payload(forge, _review('requirements = []')) == {}
 
 
-def test_the_architecture_is_read_at_the_trusted_branch_never_the_head() -> None:
-    """PLANTED CONTROL: the head holds a different AGENTS.md; the payload carries the trusted branch's text."""
+def test_the_architecture_is_read_at_one_commit_of_the_trusted_branch_never_the_head() -> None:
+    """Review item 6: the branch is resolved to a commit ONCE; the tree and every document are read at it.
+
+    PLANTED CONTROL: the head holds a different AGENTS.md; the payload carries the trusted commit's text.
+    """
     forge = _Forge({
-        _TRUSTED: {'AGENTS.md': 'layers point down\n', 'docs/a.md': 'A\n', 'docs/b.md': 'B\n', 'src/x.py': ''},
-        'pr/x': {'AGENTS.md': 'anything goes\n'},
-    })  # fmt: skip
-    review = _review('requirements = ["principles", "architecture"]\narchitecture = ["AGENTS.md", "docs/*.md"]')
-    payload = _payload(forge, review)
+        _TIP: {'AGENTS.md': 'layers point down\n', 'docs/a.md': 'A\n', 'docs/b.md': 'B\n', 'src/x.py': ''},
+        'head-sha': {'AGENTS.md': 'anything goes\n'},
+    }, branches={_TRUSTED: _TIP, 'pr/x': 'head-sha'})  # fmt: skip
+    payload = _payload(forge, _review(_ARCH.format(globs='"AGENTS.md", "docs/*.md"')))
     assert payload['principles'] is True
     assert payload['architecture'] == [
         {'id': 'arch:AGENTS.md', 'path': 'AGENTS.md', 'blob': 'blob-of-AGENTS.md', 'text': 'layers point down\n'},
         {'id': 'arch:docs/a.md', 'path': 'docs/a.md', 'blob': 'blob-of-docs/a.md', 'text': 'A\n'},
         {'id': 'arch:docs/b.md', 'path': 'docs/b.md', 'blob': 'blob-of-docs/b.md', 'text': 'B\n'},
     ]
-    assert all('pr/x' not in one for one in forge.asked)
+    branches = [one for one in forge.asked if '/branches/' in one]
+    assert branches == [f'{forge.repo}/branches/integrate/main'], 'the branch is resolved once, by its name'
+    reads = [one for one in forge.asked if '/branches/' not in one]
+    assert all(_TIP in one for one in reads), reads
+    assert not any('head-sha' in one or 'pr/x' in one for one in forge.asked)
 
 
-def test_a_glob_matching_nothing_and_an_absent_document_are_refused_by_name() -> None:
-    """PLANTED CONTROL: the same declaration over a tree that holds the documents is read (above)."""
-    forge = _Forge({_TRUSTED: {'AGENTS.md': 'x\n'}})
-    with pytest.raises(RequirementsRefused, match=r"glob 'docs/\*\.md' matches no file at integrate/main"):
-        _payload(forge, _review('requirements = ["architecture"]\narchitecture = ["docs/*.md"]'))
-    with pytest.raises(DeclarationUnread, match=r'ARCH\.md at integrate/main'):
-        _payload(forge, _review('requirements = ["architecture"]\narchitecture = ["ARCH.md"]'))
+def test_a_paged_gitea_tree_is_read_to_its_last_page() -> None:
+    """PLANTED CONTROL: the document on page 2 is found; a GitHub tree truncated with no page is refused."""
+    files = {f'f{at}.txt': '' for at in range(5)} | {'docs/zz.md': 'Z\n'}
+    forge = _Forge({_TIP: files}, page=2)
+    assert [row['path'] for row in _payload(forge, _review(_ARCH.format(globs='"docs/*.md"')))['architecture']] == [
+        'docs/zz.md'
+    ]
+    assert sum('/git/trees/' in one for one in forge.asked) == 3
+    hub = _Forge({_TIP: files}, page=-1, repo='/repos/o/r')
+    required = requirements_at(hub, _review(_ARCH.format(globs='"docs/*.md"')), _TRUSTED)
+    assert required.unjudged[0][0] == 'architecture'
+    assert 'truncated the tree' in required.unjudged[0][1]
 
 
-def test_documents_past_max_architecture_are_refused_naming_the_key_and_every_size() -> None:
+@pytest.mark.parametrize(
+    ('globs', 'said'),
+    [
+        ('"docs/*.md"', "architecture entry 'docs/*.md' matches no file at integrate/main"),
+        ('"ARCH.md"', "architecture entry 'ARCH.md' matches no file at integrate/main"),
+    ],
+)
+def test_an_architecture_that_cannot_be_built_degrades_alone_naming_the_fix(globs: str, said: str) -> None:
+    """Review item 3: a bad declaration never silently turns off the review; the architecture alone degrades.
+
+    The principles are still judged, and the architecture is listed ``unverified`` with its cause (merge-ready names
+    the same, requirements_refusal).
+
+    PLANTED CONTROL: the same declaration over a tree holding the documents builds (above).
+    """
+    forge = _Forge({_TIP: {'AGENTS.md': 'x\n'}})
+    review = _review(_ARCH.format(globs=globs))
+    required = requirements_at(forge, review, _TRUSTED)
+    assert dict(required.payload) == {'principles': True}
+    ((key, why),) = required.unjudged
+    assert key == 'architecture'
+    assert said in why
+    assert 'fix the path in architecture = [...]' in why
+    assert requirements_refusal(forge, review, _TRUSTED) == why.removeprefix('not judged: ')
+    assert requirements_refusal(forge, _review(_ARCH.format(globs='"AGENTS.md"')), _TRUSTED) is None
+
+
+def test_documents_past_max_architecture_degrade_naming_the_key_and_every_size_before_any_read() -> None:
     """PLANTED CONTROL: one byte more of cap reads the same documents."""
-    forge = _Forge({_TRUSTED: {'a.md': 'x' * 6, 'b.md': 'y' * 5}})
-    declared = 'requirements = ["architecture"]\narchitecture = ["a.md", "b.md"]\nmax_architecture = "{cap} B"'
-    with pytest.raises(RequirementsRefused, match=r'is 11 B, past max_architecture \(10 B\): a\.md 6 B, b\.md 5 B'):
-        _payload(forge, _review(declared.format(cap=10)))
-    assert len(_payload(forge, _review(declared.format(cap=11)))['architecture']) == 2
+    forge = _Forge({_TIP: {'a.md': 'x' * 6, 'b.md': 'y' * 5}})
+    declared = _ARCH.format(globs='"a.md", "b.md"') + '\nmax_architecture = "{cap} B"'
+    required = requirements_at(forge, _review(declared.replace('{cap}', '10')), _TRUSTED)
+    assert 'is 11 B, past max_architecture (10 B): a.md 6 B, b.md 5 B' in required.unjudged[0][1]
+    assert not any('/contents/' in one for one in forge.asked), 'judged from the tree listing, before any read'
+    assert len(_payload(forge, _review(declared.replace('{cap}', '11')))['architecture']) == 2
+
+
+def test_an_unbuilt_requirement_is_listed_unverified_in_the_review() -> None:
+    """The review comment's checklist names it; PLANTED CONTROL: nothing unbuilt changes nothing."""
+    text = _doc(('first-principles', 'met', []))
+    assert with_unjudged(text, ()) == text
+    found = parse_findings(with_unjudged(text, (('architecture', 'not judged: glob matches nothing'),)))
+    assert [(row.id, row.verdict, row.evidence) for row in found.requirements] == [
+        ('first-principles', 'met', 'first-principles met'),
+        ('architecture', 'unverified', 'not judged: glob matches nothing'),
+    ]
 
 
 # --- the engine's answers: read, combined across slices, listed, and never a merge condition ---------------------
