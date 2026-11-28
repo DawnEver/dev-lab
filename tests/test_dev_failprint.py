@@ -11,6 +11,7 @@ import gzip
 import json
 from collections.abc import Callable
 
+from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.failprint import Fingerprints, new_subjects, refusal, subject_lines, subjects_of
 from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgestatus import CommitStatus, fingerprints_at
@@ -50,7 +51,7 @@ def test_pass_to_fail_is_not_judged_here() -> None:
 class _Forge:
     """The calls the merge's fingerprint reading makes: a branch tip, each sha's statuses, each record."""
 
-    backend = 'gitea'
+    backend = GITEA
     repo = '/api/v1/repos/o/r'
 
     def __init__(self, subjects: dict[str, set[str]]) -> None:
@@ -60,7 +61,7 @@ class _Forge:
         assert method == 'GET'
         if path.endswith('/branches/integrate/main'):
             return {'commit': {'id': _TIP}}
-        sha = path.rsplit('/', 1)[1]
+        sha = path.partition('?')[0].rsplit('/', 1)[1]
         url = f'https://forge.example.org/attachments/{sha}.json.gz'
         return [{'id': 1, 'context': 'tests/base', 'status': 'failure', 'description': 'fail', 'target_url': url}]
 

@@ -30,7 +30,7 @@ def _post(forge: StateForge, part: str, state: str, description: str) -> None:
 
 
 def _reads(forge: StateForge) -> int:
-    return sum(one == f'GET {forge.repo}/statuses/{SHA}' for one in forge.asked)
+    return sum(one.partition('?')[0] == f'GET {forge.repo}/statuses/{SHA}' for one in forge.asked)
 
 
 def _cached(tmp_path: Path) -> StateForge:
