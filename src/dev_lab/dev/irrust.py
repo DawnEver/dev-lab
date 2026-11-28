@@ -1,6 +1,7 @@
 """THE RUST GENERATOR: one ``ir.rs`` holding the shared runtime and one ``mod ir_<module>`` per schema module.
 
-A crate's ``build.rs`` (printed by ``python -m dev_lab.dev.irschema build-rs``, :func:`build_rs`) finds the checkout's
+A crate's ``build.rs`` (printed by ``python -m dev_lab.dev.irschema build-rs``,
+:func:`dev_lab.dev._irrust_buildrs.build_rs`) finds the checkout's
 venv interpreter by probing every :data:`dev_lab.dev.venvpath.VENV_LAYOUTS` spelling upward from the crate -- no
 ``PYTHON`` variable, no PATH guess -- runs ``-m dev_lab.dev.irschema rust --out $OUT_DIR`` and ``include!``s the
 file; it reads only ``OUT_DIR``, ENV-IS-READ-ONCE's build-script door. Nothing is committed
@@ -15,24 +16,22 @@ keys). The admitted metadata (``one_of``, ``requires``, ``nonempty``, bounds in 
 from __future__ import annotations
 
 import functools
-import json
 import re
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev._ir_errors import refuse
+from dev_lab.dev._irrust_metadata import metadata, rust_str
 from dev_lab.dev._irrust_runtime import RUNTIME_RS
-from dev_lab.dev.ircheck import bounds, default_si
 from dev_lab.dev.irmodel import CONSTANTS_MODULE
 from dev_lab.dev.irpython import FINGERPRINT_PREFIX, fingerprint
 from dev_lab.dev.irrustpy import PY_RUNTIME_RS, enum_py, id_py, record_py
-from dev_lab.dev.venvpath import VENV_LAYOUTS
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from dev_lab.dev.irmodel import IR, Field, Module, Record, TypeRef
 
-__all__ = ['UNIT_CRATES', 'build_rs', 'render', 'write']
+__all__ = ['UNIT_CRATES', 'render', 'write']
 
 #: Unit crates generated Rust never names: it carries SI ``f64``s, and a unit is read only at the consumer's boundary.
 UNIT_CRATES: Final = frozenset({'uom', 'dimensioned', 'measurements'})
@@ -170,72 +169,6 @@ def _field_line(ir: IR, f: Field, here: str) -> list[str]:
     return [*lines, f'    pub {f.rust_name}: {rust},']
 
 
-def _names(names: tuple[str, ...] | list[str]) -> str:
-    return f'&[{", ".join(_rust_str(n) for n in names)}]'
-
-
-def _option(value: object) -> str:
-    """``Some(<literal>)``, or ``None`` for an absent value (``None`` or an empty name)."""
-    return (
-        'None'
-        if value is None or value == ''
-        else f'Some({_rust_str(value) if isinstance(value, str) else repr(value)})'
-    )
-
-
-def _metadata(ir: IR, record: Record) -> list[str]:
-    """The record's admitted metadata as associated consts: read by a resolver, never enforced by ``validate``."""
-    text, names = "&'static str", "&'static [&'static str]"
-    fields = record.fields
-
-    def rows(items: list[tuple[object, ...]]) -> str:
-        return '&[' + ', '.join('(' + ', '.join(_literal(v) for v in item) + ')' for item in items) + ']'
-
-    limits = [(f.name, *bounds(ir, f)) for f in fields if f.minimum is not None or f.maximum is not None]
-    canonical = functools.partial(json.dumps, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
-    consts = [
-        ('The foreign type every undeclared key is kept as.', f'REST: Option<{text}>', _option(record.rest)),
-        ('The field a bare string written for the record is.', f'STRING: Option<{text}>', _option(record.string)),
-        ('The fields, in order, an entry written as an array is.', f'ARRAY: {names}', _names(record.array)),
-        ('The fields a bare number written for the record fills.', f'FILL: {names}', _names(record.fill)),
-        ('The optional fields of which exactly one is present.', f'ONE_OF: {names}', _names(record.one_of)),
-        (
-            '(field, the sibling it is written only beside).',
-            f"REQUIRES: &'static [({text}, {text})]",
-            rows([(f.name, f.requires) for f in fields if f.requires]),
-        ),
-        (
-            'The list fields holding at least one entry.',
-            f'NONEMPTY: {names}',
-            _names([f.name for f in fields if f.nonempty]),
-        ),
-        (
-            '(field, minimum, maximum) in absolute SI, either side open.',
-            f"FIELD_BOUNDS: &'static [({text}, Option<f64>, Option<f64>)]",
-            rows([(n, _option(lo), _option(hi)) for n, lo, hi in limits]),
-        ),
-        (
-            '(field, its constant default as canonical JSON).',
-            f"DEFAULTS: &'static [({text}, {text})]",
-            rows([(f.name, canonical(default_si(ir, f))) for f in fields if f.default is not None]),
-        ),
-        (
-            '(field, facet, scale, offset): an absent field is scale * facet + offset.',
-            f"DEFAULT_FROM: &'static [({text}, {text}, f64, f64)]",
-            rows([(f.name, d.facet, float(d.scale), float(d.offset)) for f in fields if (d := f.default_from)]),
-        ),
-    ]
-    return [line for doc, decl, value in consts for line in (f'    /// {doc}', f'    pub const {decl} = {value};')]
-
-
-def _literal(value: object) -> str:
-    """A Rust literal: a str quoted, a float its round-trip ``repr``, a rendered ``Some(..)``/``None`` as is."""
-    if isinstance(value, float):
-        return repr(value)
-    text = str(value)
-    return text if text == 'None' or text.startswith('Some(') else _rust_str(text)
-
-
 def _record(ir: IR, module: Module, record: Record) -> list[str]:
     name = record.name
     lines = ['', f'/// {record.doc or name}', '#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]']
@@ -248,7 +181,7 @@ def _record(ir: IR, module: Module, record: Record) -> list[str]:
         lines += [f'    /// Every undeclared key, a `foreign:{record.rest}` value its owner validates.']
         lines += ['    #[serde(flatten)]', '    pub rest: serde_json::Map<String, serde_json::Value>,']
     lines += ['}', '', f'impl {name} {{', f'    pub const NAME: &\'static str = "{module.name}.{name}";']
-    lines += _metadata(ir, record)
+    lines += metadata(ir, record)
     lines += [
         '    pub fn validate(&self) -> ir_runtime::Res {',
         '        let mut dims = ir_runtime::Dims::new();',
@@ -324,11 +257,6 @@ def _module(ir: IR, module: Module) -> list[str]:
     return [*lines, '}']
 
 
-def _rust_str(text: str) -> str:
-    """*text* as a Rust string literal (catalogue text is one TOML line: only a backslash and a quote need escaping)."""
-    return '"' + text.replace('\\', '\\\\').replace('"', '\\"') + '"'
-
-
 def _constants(ir: IR) -> list[str]:
     """``mod ir_constants``: one ``pub const NAME: f64`` per catalogue constant (the Python's ``repr``), and ``ALL``."""
     lines = [
@@ -345,8 +273,7 @@ def _constants(ir: IR) -> list[str]:
     lines.append('/// (name, value in absolute SI, unit, citation, reason) of every constant, in catalogue order.')
     lines.append('pub const ALL: &[(&str, f64, &str, &str, &str)] = &[')
     lines += [
-        f'    ({_rust_str(c.name)}, {c.name.upper()}, {_rust_str(c.unit)}, {_rust_str(c.citation)}, '
-        f'{_rust_str(c.reason)}),'
+        f'    ({rust_str(c.name)}, {c.name.upper()}, {rust_str(c.unit)}, {rust_str(c.citation)}, {rust_str(c.reason)}),'
         for c in ir.constants.values()
     ]
     return [*lines, '];', '}']
@@ -375,54 +302,3 @@ def write(ir: IR, out: Path) -> Path:
         out.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding='utf-8', newline='\n')
     return target
-
-
-_BUILD_RS: Final = """// build.rs -- printed by `python -m dev_lab.dev.irschema build-rs`; edit there, not here.
-use std::path::PathBuf;
-use std::process::Command;
-
-/// Every venv layout, probed rather than switched on (dev_lab.dev.venvpath.VENV_LAYOUTS).
-const VENV_PYTHONS: [&str; __COUNT__] = [__PYTHONS__];
-
-/// The checkout holding a venv at or above this crate, and its interpreter.
-fn venv_python() -> (PathBuf, PathBuf) {
-    let here = std::env::current_dir().expect("Cargo runs a build script in its crate's directory");
-    for dir in here.ancestors() {
-        for rel in VENV_PYTHONS {
-            let candidate = dir.join(rel);
-            if candidate.is_file() {
-                return (dir.to_path_buf(), candidate);
-            }
-        }
-    }
-    panic!(
-        concat!(
-            "no venv interpreter ({}) at or above {}: bootstrap the checkout with ",
-            "`<any python with dev-lab> -m dev_lab.dev.dep --bootstrap <checkout>`",
-        ),
-        VENV_PYTHONS.join(", "),
-        here.display()
-    );
-}
-
-fn main() {
-    let out = std::env::var("OUT_DIR").expect("Cargo sets OUT_DIR for a build script");
-    let (root, python) = venv_python();
-    let status = Command::new(&python)
-        .args(["-m", "dev_lab.dev.irschema", "--root"])
-        .arg(&root)
-        .args(["rust", "--out", &out])
-        .status()
-        .expect("python -m dev_lab.dev.irschema rust");
-    assert!(status.success(), "IR generation failed; the line above names why");
-    println!("cargo:rerun-if-changed={}", root.join("ir").display());
-    println!("cargo:rerun-if-changed={}", root.join("pyproject.toml").display());
-}
-// lib.rs: include!(concat!(env!("OUT_DIR"), "/ir.rs"));
-"""
-
-
-def build_rs() -> str:
-    """The consuming crate's ``build.rs``: the venv interpreter found by layout, the IR written into ``OUT_DIR``."""
-    pythons = ', '.join(f'"{"/".join(parts)}"' for parts in VENV_LAYOUTS.values())
-    return _BUILD_RS.replace('__COUNT__', str(len(VENV_LAYOUTS))).replace('__PYTHONS__', pythons)

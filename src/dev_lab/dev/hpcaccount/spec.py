@@ -1,4 +1,4 @@
-"""The cluster deployment's DATA: the ``[deploy]`` declaration, and the crontab lines derived from it.
+"""The cluster deployment's DATA: the ``[deploy]`` declaration and what derives from it.
 
 AN ACCOUNT HAS A ROLE (user ruling 2026-11-06), declared ONCE as ``[deploy] role`` in its own machine file -- the
 table its deploy, its tick, its host card and the workstation's ``deploy-fleet`` all read: ``"verification"`` (a
@@ -7,7 +7,8 @@ never a serve cron). Undeclared, nothing is ticked and the deploy refuses (:func
 DOES is the workstation's data (:mod:`dev_lab.dev.hpcaccount.division`, user ruling 2026-11-09), passed by
 ``deploy-fleet``; a hand-run deploy falls back to its shipped defaults.
 
-Pure: parse, render, derive. :mod:`dev_lab.dev.hpcaccount.deploy` runs the steps.
+Pure: parse, render, derive (the crontab lines: :mod:`dev_lab.dev.hpcaccount.cronline`).
+:mod:`dev_lab.dev.hpcaccount.deploy` runs the steps.
 """
 
 from __future__ import annotations
@@ -16,7 +17,6 @@ import argparse
 import re
 import shlex
 import sys
-import zlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,21 +39,15 @@ __all__ = [
     'DEFAULT_TICK',
     'DEFAULT_TICK_WALL',
     'KIT',
-    'MARK',
     'RESEARCH',
-    'TICK_LINE',
     'TICK_LOCK',
     'TICK_LOG',
     'VERIFICATION',
     'Deployment',
     'Repo',
     'checkout_of',
-    'cron_lines',
-    'crontab_refusal',
-    'deployed',
     'host_serve_argv',
     'load',
-    'merge_crontab',
     'parse',
     'parse_repo',
     'paths_of',
@@ -70,20 +64,9 @@ __all__ = [
     'uv_cache',
 ]
 
-#: Every crontab line this tool owns ends with this comment plus :data:`TICK_LINE`.
-MARK: Final = '# lab-commons-deploy:'
-
-#: What follows :data:`MARK` on an account's ONE cron line (ONE-LOGIN-POLLER, user ruling 2026-11-27): one tick that
-#: loops over every ticked repo under one lock, :data:`TICK_LOCK`, logging to :data:`TICK_LOG`.
-TICK_LINE: Final = 'tick'
+#: The account's ONE tick lock and log (ONE-LOGIN-POLLER, user ruling 2026-11-27).
 TICK_LOCK: Final = 'tick.lock'
 TICK_LOG: Final = 'tick.log'
-
-#: An UNMARKED crontab line running family code (the kit, lab-commons, a tick): a second poller the one line replaces.
-_FAMILY_CRON: Final = re.compile(r'dev_lab\.|lab_commons|hpcaccount')
-#: An unmarked line a previous deploy wrote: it runs the deploy's own verb. The deploy replaces it; any other
-#: :data:`_FAMILY_CRON` line is FOREIGN, its holder's to delete.
-_DEPLOYED_CRON: Final = re.compile(r'dev_lab\.dev\.hpcaccount')
 
 #: ``[deploy] python`` when undeclared: the family Python (user ruling 2026-11-27), whose ``requires-python`` every
 #: served repo declares -- a cluster venv on any other minor would not install them.
@@ -340,29 +323,6 @@ def parse_repo(text: str) -> Repo:
     return Repo(name, url, ref)
 
 
-def cron_lines(
-    spec: Deployment,
-    home: Path,
-    *,
-    serves: bool | None = None,
-    slurm: Sequence[str] = (),
-    setup: Sequence[str] = (),
-) -> list[str]:
-    """The account's ONE marked line (ONE-LOGIN-POLLER): one tick of every ticked repo, every ``[schedule] tick``.
-
-    One login-node poller per account (user ruling 2026-11-27): the line runs ONE ``hpcaccount tick`` naming every
-    repo :func:`ticked` returns, under the one lock :data:`TICK_LOCK`; none ticked, no line. The minute offset is
-    derived from *home* (one per account), so accounts sharing a forge tick staggered rather than in lockstep.
-    """
-    repos = ticked(spec, serves=serves)
-    if not repos:
-        return []
-    step = spec.tick // 60
-    minute = f'{zlib.crc32(str(home).encode()) % step}-59/{step}'
-    command = tick_command(spec, home, repos, log=True, slurm=slurm, setup=setup)
-    return [f'{minute} * * * * {command} {MARK}{TICK_LINE}']
-
-
 def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
     """The repos this account TICKS: exactly those it serves (:func:`served`), never one hosted on github.com.
 
@@ -429,46 +389,6 @@ def serves_here(spec: Deployment, repo: Repo) -> bool:
     if not (checkout / 'pyproject.toml').is_file():
         return False
     return _bound_here(spec, roles_at(checkout))
-
-
-def crontab_refusal(text: str) -> str:
-    """``''`` when crontab *text* holds at most one marked line and no unmarked family line; else why, naming each.
-
-    ONE-LOGIN-POLLER (user ruling 2026-11-27): an HPC login node runs exactly one cron poller per account. Every door
-    that writes or reads the crontab asks this (``deploy`` and ``ci-resume`` through
-    :func:`dev_lab.dev.hpcaccount.steps.crontab`, ``look crontab``). A commented-out line runs nothing and is skipped.
-    """
-    live = [line for line in text.splitlines() if line.strip() and not line.lstrip().startswith('#')]
-    marked = [line for line in live if MARK in line]
-    strays = [line for line in live if MARK not in line and _FAMILY_CRON.search(line)]
-    named = [*(marked if len(marked) > 1 else []), *strays]
-    if not named:
-        return ''
-    each = '; '.join(f'`{line}`' for line in named)
-    return (
-        f'ONE-LOGIN-POLLER: an account runs exactly one cron poller, the line marked {MARK}{TICK_LINE}; this crontab '
-        f'holds {len(marked)} marked and {len(strays)} unmarked family line(s): {each} -- the door: `hpcaccount '
-        'deploy` writes the one line and replaces every line a deploy wrote (marked, or running '
-        "dev_lab.dev.hpcaccount); any other family line is foreign and deleted from the account's crontab by its "
-        'holder (`hpcaccount look --account <user> crontab` names it)'
-    )
-
-
-def deployed(line: str) -> bool:
-    """Whether crontab *line* is one a deploy wrote: marked, or a live line running the deploy's own verb."""
-    live = line.strip() and not line.lstrip().startswith('#')
-    return MARK in line or bool(live and _DEPLOYED_CRON.search(line))
-
-
-def merge_crontab(current: str, lines: Sequence[str]) -> str:
-    """*current* without any line a deploy wrote (:func:`deployed`), plus *lines*; every other line kept in place.
-
-    An older deploy's lines (seven per-repo marked lines on ezztz, 2026-11-27) are REPLACED by the one tick, never
-    refused; a foreign family line survives the merge, so :func:`crontab_refusal` names it.
-    """
-    kept = [line for line in current.splitlines() if not deployed(line)]
-    text = '\n'.join([*kept, *lines])
-    return text + '\n' if text else ''
 
 
 def tick_command(

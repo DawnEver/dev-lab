@@ -3,13 +3,12 @@
 :mod:`dev_lab.dev.irpython` writes the copy, so this file imports nothing from dev-lab.
 
 The one runtime every generated IR module of this package shares: validation driven by each record's
-field table, the canonical JSON and the import-time freshness check; the stored envelope and the record
-surface are its sibling template ``_ir_surface.py``. numpy only.
+field table and the import-time freshness check; the canonical JSON tree is its sibling template
+``_ir_tree.py``, the stored envelope and the record surface ``_ir_surface.py``. numpy only.
 """
 
 from __future__ import annotations
 
-import base64
 import dataclasses
 import hashlib
 import json
@@ -94,19 +93,19 @@ class F(NamedTuple):
 # -- scalars ------------------------------------------------------------------------------------------------
 
 
-def _type_name(value: object) -> str:
+def type_name(value: object) -> str:
     return type(value).__name__
 
 
 def _boolean(_spec: F, value: object, path: str) -> bool:
     if not isinstance(value, bool):
-        fail(path, 'bool', _type_name(value))
+        fail(path, 'bool', type_name(value))
     return value
 
 
 def _integer(_spec: F, value: object, path: str) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
-        fail(path, 'int', _type_name(value))
+        fail(path, 'int', type_name(value))
     if not _I64[0] <= int(value) <= _I64[1]:
         fail(path, 'a signed 64-bit int', str(value))
     return int(value)
@@ -114,7 +113,7 @@ def _integer(_spec: F, value: object, path: str) -> int:
 
 def _real(_spec: F, value: object, path: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)):
-        fail(path, 'float', _type_name(value))
+        fail(path, 'float', type_name(value))
     if not math.isfinite(value):
         fail(path, 'a finite float (IR-NON-FINITE)', repr(float(value)))
     return float(value)
@@ -122,7 +121,7 @@ def _real(_spec: F, value: object, path: str) -> float:
 
 def _complex(_spec: F, value: object, path: str) -> complex:
     if isinstance(value, bool) or not isinstance(value, (int, float, complex, np.number)):
-        fail(path, 'complex', _type_name(value))
+        fail(path, 'complex', type_name(value))
     value = complex(value)
     if not (math.isfinite(value.real) and math.isfinite(value.imag)):
         fail(path, 'a finite complex (IR-NON-FINITE)', repr(value))
@@ -131,7 +130,7 @@ def _complex(_spec: F, value: object, path: str) -> complex:
 
 def _text(spec: F, value: object, path: str) -> str:
     if not isinstance(value, str):
-        fail(path, spec.kind, _type_name(value))
+        fail(path, spec.kind, type_name(value))
     if spec.kind == 'id' and not value:
         fail(path, 'a non-empty id', "''")
     return value
@@ -140,7 +139,7 @@ def _text(spec: F, value: object, path: str) -> str:
 def _instance(spec: F, value: object, path: str) -> object:
     cls = target(spec)
     if not isinstance(value, cls):
-        fail(path, cls.__name__, _type_name(value))
+        fail(path, cls.__name__, type_name(value))
     return value
 
 
@@ -151,7 +150,7 @@ def _foreign(_spec: F, value: object, _path: str) -> object:
 def _rest(spec: F, value: object, path: str) -> dict[str, object]:
     table = cast('dict[object, object]', value) if isinstance(value, dict) else None
     if table is None or not all(isinstance(k, str) for k in table):
-        fail(path, f'a table of foreign:{spec.target}', _type_name(value))
+        fail(path, f'a table of foreign:{spec.target}', type_name(value))
     return {str(k): v for k, v in table.items()}
 
 
@@ -193,7 +192,7 @@ def _bind(dims: dict[str, tuple[int, str]], name: str, extent: int, path: str, b
 
 def _array(spec: F, value: object, path: str, dims: dict[str, tuple[int, str]], bounds: _Bounds) -> np.ndarray:
     if not isinstance(value, np.ndarray):
-        fail(path, 'ndarray', _type_name(value))
+        fail(path, 'ndarray', type_name(value))
     if value.dtype != np.dtype(spec.dtype):
         fail(f'{path}.dtype', spec.dtype, str(value.dtype))
     if value.ndim != len(spec.shape):
@@ -238,7 +237,7 @@ def _item(spec: F, value: object, path: str, dims: dict, bounds: dict) -> object
         return _array(spec, value, path, dims, bounds)
     if spec.kind == 'list':
         if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            fail(path, 'a sequence', _type_name(value))
+            fail(path, 'a sequence', type_name(value))
         items = tuple(_item(spec.item, v, f'{path}[{i}]', dims, bounds) for i, v in enumerate(value))
         if spec.unique_by:
             items = _unique(spec, items, path)
@@ -320,110 +319,6 @@ def build(cls: type, kwargs: dict[str, object], path: str) -> object:
         return cls(**named)
     except IRValidationError as error:
         raise error.under(cls.__name__, path) from None
-
-
-# -- canonical JSON -----------------------------------------------------------------------------------------
-
-
-def _array_tree(value: np.ndarray) -> dict:
-    data = value.astype(value.dtype.newbyteorder('<'), copy=False)
-    if data.dtype.kind == 'b':
-        data = data.view(np.uint8)
-    raw = np.ascontiguousarray(data).tobytes(order='C')
-    return {'data': base64.b64encode(raw).decode('ascii'), 'shape': list(value.shape)}
-
-
-def _tree_of(spec: F, value: object) -> object:
-    kind = spec.kind
-    if kind == 'array':
-        return _array_tree(value)
-    if kind == 'list':
-        return [_tree_of(spec.item, v) for v in value]
-    if kind == 'record':
-        return to_tree(value)
-    if kind == 'enum':
-        return value.value
-    if kind == 'complex':
-        return [value.real, value.imag]
-    return value
-
-
-def to_tree(record: object) -> dict[str, object]:
-    """The JSON tree of *record*; absent optionals are omitted; a foreign rest's keys sit beside the fields."""
-    specs = cast('tuple[F, ...]', getattr(type(record), '_ir_fields'))  # noqa: B009 -- generated
-    values = cast('tuple[object, ...]', getattr(record, '_ir_values')())  # noqa: B009 -- generated
-    tree: dict[str, object] = {}
-    for spec, value in zip(specs, values, strict=True):
-        if value is None:
-            continue
-        if spec.kind == 'rest':
-            tree.update(cast('dict[str, object]', value))
-        else:
-            tree[spec.name] = _tree_of(spec, value)
-    return tree
-
-
-def canonical(tree: object) -> bytes:
-    """The canonical bytes of a JSON tree: sorted keys, no whitespace, ``repr`` floats, no NaN."""
-    return json.dumps(tree, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode()
-
-
-def _from_array(spec: F, tree: object, path: str) -> np.ndarray:
-    if not isinstance(tree, dict) or set(tree) != {'data', 'shape'}:
-        fail(path, '{"data", "shape"}', _type_name(tree))
-    dtype = np.dtype(spec.dtype)
-    raw = base64.b64decode(tree['data'], validate=True)
-    wire = np.dtype(np.uint8) if dtype.kind == 'b' else dtype.newbyteorder('<')
-    flat = np.frombuffer(raw, dtype=wire)
-    if dtype.kind == 'b':
-        flat = flat.astype(bool)
-    shape = tuple(tree['shape'])
-    if math.prod(shape) != flat.size:
-        fail(f'{path}.shape', f'{flat.size} elements', str(list(shape)))
-    return flat.astype(dtype).reshape(shape)
-
-
-def _from_tree_item(spec: F, tree: object, path: str) -> object:
-    kind = spec.kind
-    if kind == 'array':
-        return _from_array(spec, tree, path)
-    if kind == 'list':
-        if not isinstance(tree, list):
-            fail(path, 'a list', _type_name(tree))
-        return tuple(_from_tree_item(spec.item, v, f'{path}[{i}]') for i, v in enumerate(tree))
-    if kind == 'record':
-        return from_tree(target(spec), tree, path)
-    if kind == 'enum':
-        try:
-            return target(spec)(tree)
-        except ValueError:
-            fail(path, f'one of {[m.value for m in target(spec)]}', repr(tree))
-    if kind == 'complex':
-        if not (isinstance(tree, list) and len(tree) == len('ri')):
-            fail(path, '[re, im]', repr(tree))
-        return complex(tree[0], tree[1])
-    return tree
-
-
-def from_tree(cls: type, tree: object, path: str | None = None) -> object:
-    """Rebuild *cls* from its JSON tree; an unknown key is refused by name (IR-UNKNOWN-FIELD)."""
-    path = path or cls.__name__
-    if not isinstance(tree, dict):
-        fail(path, 'an object', _type_name(tree))
-    specs = cast('tuple[F, ...]', getattr(cls, '_ir_fields'))  # noqa: B009 -- generated
-    known = {spec.name: spec for spec in specs if spec.kind != 'rest'}
-    unknown = sorted(set(tree) - set(known))
-    if unknown and not any(spec.kind == 'rest' for spec in specs):
-        fail(f'{path}.{unknown[0]}', f'a field of {cls.__name__}', 'an unknown field (IR-UNKNOWN-FIELD)')
-    kwargs = {
-        name: _from_tree_item(known[name], value, f'{path}.{name}') for name, value in tree.items() if name in known
-    }
-    if unknown:
-        kwargs['rest'] = {name: tree[name] for name in unknown}
-    missing = [s.name for s in cls._ir_fields if not s.optional and s.name not in kwargs]
-    if missing:
-        fail(f'{path}.{missing[0]}', 'a value', 'nothing')
-    return build(cls, kwargs, path)
 
 
 def ir_dims() -> object:

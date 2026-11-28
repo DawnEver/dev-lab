@@ -24,12 +24,12 @@ from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev import tickholder, venvpointer
 from dev_lab.dev._machinefile import dumps
-from dev_lab.dev.hpcaccount import deploy, prep, tick, tickwall
+from dev_lab.dev.hpcaccount import cronline, deploy, prep, tick, tickwall
 from dev_lab.dev.hpcaccount import spec as deploy_spec
 from dev_lab.dev.hpcaccount import steps as deploy_steps
 from dev_lab.dev.hpcaccount.account import UNREACHED
 from dev_lab.dev.hpcaccount.declaration import declaration, parser
-from dev_lab.dev.hpcaccount.fleet import grant_slice
+from dev_lab.dev.hpcaccount.grantslice import grant_slice
 from dev_lab.dev.hpcaccount.steps import Tools
 from dev_lab.dev.roles import ROLES_ENV
 
@@ -148,11 +148,11 @@ class Box:
 
 def _ticked_names(lines: list[str]) -> set[str]:
     """The repos the account's ONE marked line ticks (ONE-LOGIN-POLLER); asserts there is at most one."""
-    marked = [line for line in lines if deploy_spec.MARK in line]
+    marked = [line for line in lines if cronline.MARK in line]
     assert len(marked) <= 1, f'one login poller per account, found {len(marked)}: {marked}'
     if not marked:
         return set()
-    assert marked[0].endswith(f'{deploy_spec.MARK}{deploy_spec.TICK_LINE}'), marked[0]
+    assert marked[0].endswith(f'{cronline.MARK}{cronline.TICK_LINE}'), marked[0]
     found = re.search(r'hpcaccount tick (.+?) --lock', marked[0])
     assert found, marked[0]
     return set(found.group(1).split())
@@ -199,7 +199,7 @@ def test_twice_gives_the_one_marked_line_and_keeps_the_users_own(box: Box) -> No
     lines = box.crontab.read_text(encoding='utf-8').splitlines()
     assert lines[0] == '0 1 * * * echo mine'
     assert _ticked_names(lines) == {'dev-lab', 'alpha', 'beta'}
-    [line] = [line for line in lines if deploy_spec.MARK in line]
+    [line] = [line for line in lines if cronline.MARK in line]
     assert line.split(' ', 1)[0].endswith('-59/5'), 'the schedule default period'
     assert 'flock -n' not in line, 'the tick takes its own lock, which names its holder'
     lock = shlex.quote(str(box.root / 'serve' / deploy_spec.TICK_LOCK))
@@ -618,7 +618,7 @@ def test_the_cron_path_carries_where_slurm_resolved_at_deploy_time(
     slurm['squeue'] = '/opt/slurm/23.02.6/bin/squeue'
     monkeypatch.setattr(deploy, '_which', lambda name, **_kw: slurm.get(name, f'/x/{name}'))
     assert box.run(*DECLARE) == 0
-    marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
+    marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if cronline.MARK in line]
     assert all(':/bin:' + str(Path('/opt/slurm/23.02.6/bin')) + ';' in line for line in marked), marked[0]
     del slurm['sbatch']
     monkeypatch.setattr(deploy, '_which', lambda name, **_kw: None if name == 'sbatch' else slurm.get(name, '/x/y'))
@@ -644,10 +644,10 @@ def test_the_tick_runs_inside_the_grant_setup_and_its_git_is_proven_there(
     text = box.machine.read_text(encoding='utf-8')
     box.machine.write_text(text.replace('[hpc.clusters.int]\n', f'[hpc.clusters.int]\nsetup = ["{setup}"]\n'))
     assert box.run() == 0
-    marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
+    marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if cronline.MARK in line]
     assert marked
     for line in marked:
-        argv = shlex.split(line.split(' ', 5)[5].split(deploy_spec.MARK)[0])
+        argv = shlex.split(line.split(' ', 5)[5].split(cronline.MARK)[0])
         assert argv[:2] == ['bash', '-lc'], line
         assert argv[2].startswith(f'PATH={box.home / ".local/bin"}:'), line
         assert f'; {setup}; cd ' in argv[2], line
@@ -918,13 +918,13 @@ def test_the_cron_period_is_the_schedule_tick_staggered_per_account(
     monkeypatch.setattr(deploy_spec, 'served', lambda spec: frozenset(repo.name for repo in spec.repos))
     offsets = set()
     for user in ('alice', 'bob', 'carol', 'dave', 'erin', 'frank'):
-        lines = deploy_spec.cron_lines(spec, Path('/home') / user)
+        lines = cronline.cron_lines(spec, Path('/home') / user)
         assert len(lines) == 1, 'one account ticks its repos together, on its one line'
         minute = lines[0].split(' ', 1)[0]
         offset, _, step = minute.partition('-59/')
         assert step == '15', minute
         assert 0 <= int(offset) < 15, minute
-        assert lines == deploy_spec.cron_lines(spec, Path('/home') / user), 'deterministic'
+        assert lines == cronline.cron_lines(spec, Path('/home') / user), 'deterministic'
         offsets.add(offset)
     assert len(offsets) > 1, 'accounts are staggered'
     assert _cron_spec('', tmp_path).tick == 5 * 60

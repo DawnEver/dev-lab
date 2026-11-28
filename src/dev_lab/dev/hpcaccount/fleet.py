@@ -74,16 +74,17 @@ from dev_lab.dev.devsource import config_source
 from dev_lab.dev.hpcaccount.cimark import paused_guard
 from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleetguard import deploy_root, serving_twice_refusal, stale_render
+from dev_lab.dev.hpcaccount.grantslice import grant_slice
 from dev_lab.dev.hpcaccount.spec import KIT, TICK_LOCK, paths_of_root, uv_cache
 from dev_lab.dev.hpcaccount.transport import Started, describe, outcomes, start
 from dev_lab.dev.machinehome import default_layout
-from dev_lab.dev.pythontoolchain import SYNC_FLAGS, VERSION
+from dev_lab.dev.pythontoolchain import SYNC_FLAGS, VERSION, minor_check
 from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
     'KIND', 'ConfigSource', 'Target', 'account_clone', 'account_host', 'config_source_of', 'declared_target',
     'deploy_command', 'deploy_fleet', 'first_install', 'in_checkout', 'in_job', 'layer_refusal', 'layer_target', 'main',
-    'minor_check', 'refresh_kit', 'render_command',
+    'refresh_kit', 'render_command',
 ]  # fmt: skip
 
 #: The dated-log kind every account's log is written under.
@@ -275,52 +276,23 @@ def account_clone(target: Target, source: ConfigSource) -> PurePosixPath:
     return repo_dir(target, PurePosixPath(urlsplit(source.url).path).stem)
 
 
-def minor_check(want: str) -> str:
-    """A ``python -c`` program exiting 0 on Python *want* (``<major>.<minor>``), else 1 naming both and the door.
-
-    Written for any Python 3: it runs on the very interpreter that may be too old for the kit's code.
-    """
-    return (
-        "import sys; have = '%d.%d' % sys.version_info[:2]; "
-        f"sys.exit(0 if have == '{want}' else 'KIT-PYTHON-MINOR: the kit venv runs Python ' + have + "
-        f"', the kit requires {want}: deploy-fleet --account <this account> (dev_lab.dev.hpcaccount) rebuilds it "
-        "in a Slurm job')"
-    )
-
-
 def in_checkout(target: Target, argv: Sequence[str]) -> str:
     """The shell line that runs ``python <argv>`` in *target*'s declared dev-lab checkout, with its venv.
 
-    The venv's minor is checked first (:func:`minor_check` against the family :data:`VERSION`): measured 2026-11-27,
-    a 3.13 venv under a checkout of 3.14 code crashed drift with a SyntaxError that named nothing.
+    The venv's minor is checked first (:func:`~dev_lab.dev.pythontoolchain.minor_check` against the family
+    :data:`VERSION`): measured 2026-11-27, a 3.13 venv under a checkout of 3.14 code crashed drift with a
+    SyntaxError that named nothing.
     """
     kit, python = repo_dir(target, KIT), shell_interpreter('.')  # every cluster login host is POSIX
     return f'cd {kit} && {python} -c {shlex.quote(minor_check(VERSION))} && {python} {shlex.join(argv)}'
-
-
-def grant_slice(grant: Grant) -> dict[str, Any]:
-    """*grant* as the ``[hpc]`` slice its account's own machine file holds: its cluster, its grant, its role reached."""
-    account: dict[str, Any] = {'billed': grant.billed}
-    if grant.budget is not None:
-        hours = grant.budget.core_time / 3600
-        account['budget'] = {'core_time': f'{hours:g} h', 'since': grant.budget.since, 'until': grant.budget.until}
-    cluster: dict[str, Any] = {'hosts': list(grant.hosts), 'slurm_accounts': {grant.slurm_account: account}}
-    optional = {
-        'partitions': list(grant.partitions), 'qos': dict(grant.qos), 'setup': list(grant.setup),
-        'architecture': grant.architecture, 'root': grant.root,
-    }  # fmt: skip
-    cluster.update({key: value for key, value in optional.items() if value})
-    row = {'user': grant.user, 'cluster': grant.cluster_name, 'slurm_account': grant.slurm_account, 'role': grant.role}
-    row.update({key: value for key, value in (('owner', grant.owner), ('priority', grant.priority)) if value})
-    return {'reach': [grant.role], 'clusters': {grant.cluster_name: cluster}, 'grant': [row]}
 
 
 def deploy_command(grant: Grant, target: Target, source: ConfigSource, division: Division | None = None) -> str:
     """The shell line that runs *grant*'s own deploy on its DECLARED host (:mod:`dev_lab.dev.hpcaccount.transport`).
 
     After the kit's tick the account renders its own layer from *source* (:func:`render_command`); only a render that
-    succeeds deploys. The deploy is passed its declared ``[hpc]`` slice (:func:`grant_slice`); with *division*, also
-    the role and its table.
+    succeeds deploys. The deploy is passed its declared ``[hpc]`` slice
+    (:func:`~dev_lab.dev.hpcaccount.grantslice.grant_slice`); with *division*, also the role and its table.
     """
     deploy = ['-m', 'dev_lab.dev.hpcaccount', 'deploy', '--grant-table', json.dumps(grant_slice(grant), sort_keys=True)]
     if division is not None and (role := division.role_of(grant.user)):

@@ -11,7 +11,8 @@ import hashlib
 import json
 from pathlib import Path
 
-from ._ir_runtime import _GENERATE, IRValidationError, canonical, from_tree, refuse_read, to_tree
+from ._ir_runtime import _GENERATE, IRValidationError, refuse_read
+from ._ir_tree import canonical, from_tree, to_tree
 
 _MIGRATE = 'python -m dev_lab.dev.irschema migrate'
 

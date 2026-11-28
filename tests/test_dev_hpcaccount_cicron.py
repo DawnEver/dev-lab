@@ -16,7 +16,8 @@ from _hpcaccount_fakes import FLEET, HOST, fleet_source, home_of, tools_of
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from dev_lab.dev.hpcaccount import accountset, cicron, cimark, cipause, deploy
-from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, load
+from dev_lab.dev.hpcaccount.cronline import MARK, cron_lines
+from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.planrunsteps import LOCAL_VERBS, load_steps
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.client import redeem

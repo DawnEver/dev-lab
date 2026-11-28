@@ -23,6 +23,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import irmigrate, irpython, irrust
 from dev_lab.dev._ir_errors import IRSchemaError
+from dev_lab.dev._irrust_buildrs import build_rs
 from dev_lab.dev.ircheck import load
 from dev_lab.dev.irversion import Level, at_revision, bump_refusal, classify
 
@@ -177,7 +178,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if parsed.verb == 'check':
         return _report([stale_refusal(root)])
     if parsed.verb == 'build-rs':
-        emit(irrust.build_rs().rstrip())
+        emit(build_rs().rstrip())
         return 0
     ir = _loaded(root)
     if ir is None:

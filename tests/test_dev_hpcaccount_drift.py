@@ -11,7 +11,8 @@ from _hpcaccount_fakes import FAMILY, FLEET, HOST, fleet_source, home_of, tools_
 
 from dev_lab.dev import devhost, hpcaccount
 from dev_lab.dev.hpcaccount import accountset, deploy, drift
-from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, load
+from dev_lab.dev.hpcaccount.cronline import MARK, cron_lines
+from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.hpcaccount.steps import Step
 from dev_lab.dev.venvpointer import RETIRED_POINTER
 

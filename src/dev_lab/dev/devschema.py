@@ -7,14 +7,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Mapping
-from pathlib import Path
 from typing import Any, Final
 
 from lab_commons import config as machineconfig
 from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
 from dev_lab.dev import devservers, remote
-from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops import clientkeys
 
 __all__ = [
@@ -23,7 +21,6 @@ __all__ = [
     'CADENCE_BOUNDS',
     'CHANNELS_TABLE',
     'CPU_SHARES',
-    'DETECT_DOOR',
     'FAMILY_ONLY',
     'FORGE_REACH',
     'HELPERS',
@@ -37,20 +34,15 @@ __all__ = [
     'SCHEMA',
     'SSH',
     'SSH_HOLD',
-    'UNFILLED',
     'VENDOR',
-    'HomeUnfilled',
     'app_tables',
     'channel_defects',
     'check',
     'check_family',
     'declared_channels',
-    'fill_remedy',
-    'home_of',
     'hpc_reach',
     'key_comment_defects',
     'ssh_defects',
-    'unfilled',
     'usable',
 ]  # fmt: skip
 
@@ -124,9 +116,6 @@ RESOURCES: Final = {
 }  # fmt: skip
 #: How a shared box splits its CPU: ``session-fair`` -- evenly among the ACTIVE login sessions (all of it when alone).
 CPU_SHARES: Final = ('session-fair',)
-#: The ONE placeholder for an install home not yet found on its machine: never a plausible path. configcheck accepts
-#: it; the session start names it first, the stop blocks once on it, and :func:`home_of` refuses it.
-UNFILLED: Final = 'FILL-ON-THIS-MACHINE'
 #: Keys the family and host ``[dev]`` must hold between them.
 REQUIRED: Final = ('ref',)
 #: The machine-file tables a host file may declare for its machine (each open: its consumer owns its keys;
@@ -146,8 +135,6 @@ RENAMED: Final = {
     'bridge.hpc': {'cadence_hours': Renamed('cadence', 'h')},
     'ssh.hold': {'max_hours': Renamed('ceiling', 'h'), 'idle_minutes': Renamed('idle', 'min')},
 }
-#: The door that finds this machine's vendor install homes.
-DETECT_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost detect'
 
 
 def _typed(
@@ -398,40 +385,6 @@ def usable(dev: Mapping[str, Any]) -> tuple[int | None, int | None]:
     cores, memory = ('allotted_cores', 'allotted_memory') if resources.get('shared') else ('cores', 'memory')
     size = resources.get(memory)
     return resources.get(cores), None if size is None else int(parse(f'[dev.resources] {memory}', size, 'size'))
-
-
-def unfilled(dev: Mapping[str, Any]) -> list[str]:
-    """The vendors whose install home this machine has yet to fill: the placeholder, or seats with no home."""
-    return [
-        name
-        for name, vendor in dev.get('vendors', {}).items()
-        if vendor.get('home') == UNFILLED or (vendor.get('seats') and not vendor.get('home'))
-    ]
-
-
-def fill_remedy(names: list[str]) -> str:
-    """What a machine does about *names*: detect here, then propose the lines through a config-source PR."""
-    return (
-        f'install home not filled for {", ".join(names)} ({UNFILLED}): run {DETECT_DOOR} on this machine and open a '
-        "pull request on the config source replacing the placeholder in this machine's host file"
-    )
-
-
-class HomeUnfilled(LookupError):
-    """A code path needs a vendor's install home this machine has not filled."""
-
-
-def home_of(dev: Mapping[str, Any], vendor: str) -> Path:
-    """*vendor*'s declared install home.
-
-    Raises:
-        HomeUnfilled: it is the placeholder or absent -- never a fallback guess.
-
-    """
-    home = dev.get('vendors', {}).get(vendor, {}).get('home')
-    if not home or home == UNFILLED:
-        raise HomeUnfilled(fill_remedy([vendor]))
-    return Path(home)
 
 
 def declared_channels(live: Mapping[str, Any] | None = None) -> dict[str, str]:

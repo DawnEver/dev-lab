@@ -30,12 +30,11 @@ from dev_lab.dev.hpcaccount.fleet import (
     first_install,
     in_checkout,
     layer_target,
-    minor_check,
     render_command,
     repo_dir,
 )
 from dev_lab.dev.hpcaccount.fleetguard import stale_render
-from dev_lab.dev.pythontoolchain import SYNC_FLAGS, VERSION
+from dev_lab.dev.pythontoolchain import SYNC_FLAGS, VERSION, minor_check
 from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')

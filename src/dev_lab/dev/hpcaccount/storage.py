@@ -46,9 +46,10 @@ from lab_commons.log import emit
 
 from dev_lab.dev import accountsweep, quotawatch
 from dev_lab.dev.diskusage import MMLSQUOTA, parse_mmlsquota, parse_quota
+from dev_lab.dev.hpcaccount.cronline import MARK
 from dev_lab.dev.hpcaccount.division import division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout, repo_dir
-from dev_lab.dev.hpcaccount.spec import KIT, MARK
+from dev_lab.dev.hpcaccount.spec import KIT
 from dev_lab.dev.hpcaccount.transport import grant_runner, host_runner
 from dev_lab.dev.oldcopies import STRAYS_IN_HOME, STRAYS_IN_ROOT
 from dev_lab.dev.retentionrust import RULE_REGISTRY
