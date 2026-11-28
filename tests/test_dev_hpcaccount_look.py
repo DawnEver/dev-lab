@@ -70,3 +70,65 @@ def test_stuck_reads_owner_mode_attrs_acls_and_every_ancestor() -> None:
     for read in ('id', 'stat -f', 'ls -ld "$d"', 'lsattr -d "$d"', '%u', '! -perm -u+w', 'getfacl'):
         assert read in line
     assert not re.search(r'(?<![\w-])(rm|chmod|chown|mv|setfacl|truncate)\b| > |>>', line)
+
+
+_WRITES = re.compile(r'(?<![\w-])(rm|chmod|chown|mv|setfacl|truncate|crontab|module (purge|save|unload))\b| > |>>')
+
+
+def test_modules_sends_exactly_the_module_query_and_lists_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    ran: list[str] = []
+    said: list[str] = []
+    fleet = _fleet(monkeypatch, ran)
+    listing = '/opt/modulefiles/apps:\nansys/2023R2\nansys/2024R1\n\n'
+    fleet['pin'] = lambda _g, _host: lambda command, _stdin: ran.append(command) or listing
+    assert look.look('u1', 'modules', 'ansys', say=said.append, **fleet) == 0
+    assert ran == [look.modules_command('ansys')]
+    assert 'module -t avail ansys' in ran[0]
+    assert 'module -t spider ansys' in ran[0]
+    assert not _WRITES.search(ran[0])
+    assert said == ['u1@login1: modules ansys', 'ansys/2023R2', 'ansys/2024R1']
+
+
+def test_where_loads_in_its_own_shell_and_reads_the_path() -> None:
+    line = look.command_of('where', 'ansys/2024R1 ansysedt', ROOT)
+    for read in ('module load ansys/2024R1', 'module -t list', 'command -v ansysedt', 'readlink -f'):
+        assert read in line
+    assert not _WRITES.search(line)
+
+
+def test_planted_control_the_write_pattern_catches_a_write() -> None:
+    assert _WRITES.search('module purge; rm -rf x')
+
+
+@pytest.mark.parametrize(('what', 'arg'), [
+    ('modules', 'a;rm -rf ~'), ('modules', '../x'), ('modules', '$(id)'), ('where', 'ansys'),
+    ('where', 'ansys a;b'), ('where', 'a`id` ansysedt'), ('where', ''),
+])  # fmt: skip
+def test_a_shell_shaped_module_request_is_refused(what: str, arg: str) -> None:
+    with pytest.raises(ValueError, match=r'^look: '):
+        look.command_of(what, arg, ROOT)
+
+
+def test_a_stale_kit_schema_refusal_names_its_door(monkeypatch: pytest.MonkeyPatch) -> None:
+    said: list[str] = []
+
+    def stale(_users: object) -> object:
+        msg = "[hpc] has unknown keys ['cluster_reach']; known: ['accounts']"
+        raise ValueError(msg)
+
+    monkeypatch.setattr(look, 'reached_machine', stale)
+    assert look.look('u1', 'modules', say=said.append, connect=lambda _g: None) == 2
+    assert 'dev_lab.dev.dep --sync' in said[0]
+    assert 'cluster_reach' in said[0]
+
+
+def test_planted_control_an_ordinary_refusal_names_no_kit_door(monkeypatch: pytest.MonkeyPatch) -> None:
+    said: list[str] = []
+
+    def other(_users: object) -> object:
+        msg = 'no such account'
+        raise LookupError(msg)
+
+    monkeypatch.setattr(look, 'reached_machine', other)
+    assert look.look('u1', 'modules', say=said.append, connect=lambda _g: None) == 2
+    assert 'dep --sync' not in said[0]
