@@ -51,6 +51,28 @@ PY_RUNTIME_RS: Final = r"""
             Ok(super::Complex { re: ob.getattr("real")?.extract()?, im: ob.getattr("imag")?.extract()? })
         }
 
+        /// A Python value as JSON (a `foreign:` value or a record's rest), through Python's own `json`.
+        pub fn json(ob: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
+            let text: String = pyo3::types::PyModule::import(ob.py(), "json")?.call_method1("dumps", (ob,))?.extract()?;
+            serde_json::from_str(&text).map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+        }
+
+        /// A record's foreign rest: a Python dict (or None, no undeclared key) as a JSON object.
+        pub fn json_map(ob: &Bound<'_, PyAny>) -> PyResult<serde_json::Map<String, serde_json::Value>> {
+            if ob.is_none() {
+                return Ok(serde_json::Map::new());
+            }
+            match json(ob)? {
+                serde_json::Value::Object(map) => Ok(map),
+                _ => Err(pyo3::exceptions::PyTypeError::new_err("a record's rest is a table")),
+            }
+        }
+
+        /// A JSON value as the Python value `json.loads` gives.
+        pub fn to_py<'py>(py: Python<'py>, value: &serde_json::Value) -> PyResult<Bound<'py, PyAny>> {
+            pyo3::types::PyModule::import(py, "json")?.call_method1("loads", (value.to_string(),))
+        }
+
         pub fn class<'py>(py: Python<'py>, module: &str, name: &str) -> PyResult<Bound<'py, PyAny>> {
             pyo3::types::PyModule::import(py, module)?.getattr(name)
         }
@@ -89,6 +111,8 @@ def _read(f: Field, ref: TypeRef, var: str, path: Path) -> str:  # noqa: PLR0911
         return f'<{path(ref.target)}View as pyo3::FromPyObject>::extract({var}.as_borrowed())?'
     if kind == 'array':
         return f"{var}.extract::<numpy::PyReadonlyArrayDyn<'py, {_NUMPY[f.dtype]}>>()?"
+    if kind == 'foreign':
+        return f'ir_runtime::py::json(&{var})?'
     inner = _read(f, ref.item, 'i', path)
     return (
         f'{var}.try_iter()?.map(|i| -> pyo3::PyResult<_> {{ let i = i?; Ok({inner}) }})'
@@ -108,7 +132,7 @@ def _owned(f: Field, ref: TypeRef, var: str) -> str:
     return var
 
 
-def _write(ir: IR, f: Field, ref: TypeRef, var: str) -> str:
+def _write(ir: IR, f: Field, ref: TypeRef, var: str) -> str:  # noqa: PLR0911 -- one return per kind
     kind = ref.kind
     if kind in ('bool', 'int', 'float', 'str'):
         return f'pyo3::IntoPyObjectExt::into_bound_py_any({var}, py)?'
@@ -118,6 +142,8 @@ def _write(ir: IR, f: Field, ref: TypeRef, var: str) -> str:
         return f'pyo3::types::PyComplex::from_doubles(py, {var}.re, {var}.im).into_any()'
     if kind in ('enum', 'record'):
         return f'pyo3::IntoPyObject::into_pyobject({var}, py)?'
+    if kind == 'foreign':
+        return f'ir_runtime::py::to_py(py, &{var})?'
     if kind == 'array':
         moved = f'{var}.mapv(|c| numpy::Complex64::new(c.re, c.im))' if f.dtype == 'complex128' else var
         return f'numpy::PyArrayDyn::from_owned_array(py, {moved}).into_any()'
@@ -138,6 +164,8 @@ def record_py(ir: IR, module: Module, record: Record, path: Path, owned: Owned) 
     for f in record.fields:
         view = _view_type(f, f.type, path, owned)
         lines.append(f'    pub {f.rust_name}: {f"Option<{view}>" if f.optional else view},')
+    if record.rest:
+        lines.append('    pub rest: serde_json::Map<String, serde_json::Value>,')
     lines += ["    _py: std::marker::PhantomData<&'py ()>,", '}', '', _CFG]
     lines += [f"impl<'a, 'py> pyo3::FromPyObject<'a, 'py> for {name}View<'py> {{", '    type Error = pyo3::PyErr;', '']
     lines.append("    fn extract(ob: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {")
@@ -147,6 +175,8 @@ def record_py(ir: IR, module: Module, record: Record, path: Path, owned: Owned) 
         read = _read(f, f.type, 'a', path)
         value = f'if a.is_none() {{ None }} else {{ Some({read}) }}' if f.optional else read
         lines.append(f'            {f.rust_name}: {{ let a = ob.getattr("{f.py_name}")?; {value} }},')
+    if record.rest:
+        lines.append('            rest: ir_runtime::py::json_map(&ob.getattr("rest")?)?,')
     lines += ['            _py: std::marker::PhantomData,', '        })', '    }', '}', '', _CFG]
     lines += [f"impl<'py> {name}View<'py> {{", f'    pub fn into_owned(self) -> {name} {{', f'        {name} {{']
     for f in record.fields:
@@ -156,6 +186,8 @@ def record_py(ir: IR, module: Module, record: Record, path: Path, owned: Owned) 
             else _owned(f, f.type, f'self.{f.rust_name}')
         )
         lines.append(f'            {f.rust_name}: {owned},')
+    if record.rest:
+        lines.append('            rest: self.rest,')
     lines += ['        }', '    }', '}', '', _CFG]
     lines += [f"impl<'a, 'py> pyo3::FromPyObject<'a, 'py> for {name} {{", '    type Error = pyo3::PyErr;', '']
     lines.append("    fn extract(ob: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {")
@@ -174,6 +206,12 @@ def record_py(ir: IR, module: Module, record: Record, path: Path, owned: Owned) 
         else:
             value = _write(ir, f, f.type, f'self.{f.rust_name}')
         lines.append(f'        kwargs.set_item("{f.py_name}", {value})?;')
+    if record.rest:
+        lines += [
+            '        let rest = if self.rest.is_empty() { py.None().into_bound(py) } else {',
+            '            ir_runtime::py::to_py(py, &serde_json::Value::Object(self.rest))? };',
+            '        kwargs.set_item("rest", rest)?;',
+        ]
     lines.append(f'        ir_runtime::py::class(py, "{_python_module(ir, f"{module.name}.{name}")}", "{name}")?')
     lines += ['            .call((), Some(&kwargs))', '    }', '}']
     return lines

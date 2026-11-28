@@ -15,6 +15,7 @@ import hashlib
 import json
 import math
 from collections.abc import Callable, Iterable
+from enum import Enum
 from pathlib import Path
 from typing import NamedTuple, NoReturn, Protocol, cast
 
@@ -75,9 +76,9 @@ class F(NamedTuple):
     """One field of a record: everything validation, serialization and the codec need."""
 
     name: str
-    kind: str  # bool int float complex str enum id record list array
+    kind: str  # bool int float complex str enum id record list array foreign rest
     optional: bool = False
-    target: str = ''  # 'module.Name' of the Enum or record class, resolved through REGISTRY
+    target: str = ''  # 'module.Name' of the Enum or record class (REGISTRY); a foreign's '<package>.<name>'
     item: F | None = None  # a list's element
     dtype: str = ''
     shape: tuple[int | str, ...] = ()
@@ -143,7 +144,20 @@ def _instance(spec: F, value: object, path: str) -> object:
     return value
 
 
+def _foreign(_spec: F, value: object, _path: str) -> object:
+    return value  # another package's value, kept as written: its owner validates it
+
+
+def _rest(spec: F, value: object, path: str) -> dict[str, object]:
+    table = cast('dict[object, object]', value) if isinstance(value, dict) else None
+    if table is None or not all(isinstance(k, str) for k in table):
+        fail(path, f'a table of foreign:{spec.target}', _type_name(value))
+    return {str(k): v for k, v in table.items()}
+
+
 _SCALARS = {
+    'foreign': _foreign,
+    'rest': _rest,
     'bool': _boolean,
     'int': _integer,
     'float': _real,
@@ -227,16 +241,46 @@ def _item(spec: F, value: object, path: str, dims: dict, bounds: dict) -> object
             fail(path, 'a sequence', _type_name(value))
         items = tuple(_item(spec.item, v, f'{path}[{i}]', dims, bounds) for i, v in enumerate(value))
         if spec.unique_by:
-            keys = [spec.key(v) for v in items]
-            seen = {k for k in keys if keys.count(k) > 1}
-            if seen:
-                fail(path, f'unique {spec.unique_by}', f'duplicate {min(seen)!r}')
-            items = tuple(sorted(items, key=spec.key))
+            items = _unique(spec, items, path)
         return items
     value = _scalar(spec, value, path)
     if spec.kind == 'record':
         _merge(dims, value._ir_dims, path, type(value).__name__)  # noqa: SLF001 -- the runtime owns the slot
     return value
+
+
+def _unique(spec: F, items: tuple[object, ...], path: str) -> tuple[object, ...]:
+    """*items* in key order, refusing a duplicate key; a key is its canonical JSON, as the generated Rust's."""
+    read = cast('Callable[[object], object]', spec.key)
+    keys = [_plain(read(item)) for item in items]
+    tokens = [json.dumps(k, separators=(',', ':'), ensure_ascii=False) for k in keys]
+    if seen := {t for t in tokens if tokens.count(t) > 1}:
+        fail(path, f'unique {spec.unique_by}', f'duplicate {min(seen)}')
+    order = [_order(k) for k in keys]
+    return tuple(items[i] for i in sorted(range(len(items)), key=order.__getitem__))
+
+
+def _plain(key: object) -> object:
+    """A ``unique_by`` key as its JSON tree: an enum its value, a tuple a list, an absent optional ``None``."""
+    if isinstance(key, tuple):
+        return [_plain(k) for k in cast('tuple[object, ...]', key)]
+    return cast('Enum', key).value if isinstance(key, Enum) else key
+
+
+def _order(key: object) -> tuple[object, ...]:
+    """The sort order of a key tree, the generated Rust's ``cmp_key``: null < number < string < array."""
+    if key is None:
+        return (0,)
+    if isinstance(key, list):
+        return (3, tuple(_order(k) for k in cast('list[object]', key)))
+    return (2, key) if isinstance(key, str) else (1, key)
+
+
+def _shadowed(cls: type, rest: dict[str, object], path: str) -> None:
+    """Refuse a foreign rest that holds a declared field's key: it is set as the field."""
+    names = {spec.name for spec in cast('tuple[F, ...]', getattr(cls, '_ir_fields'))}  # noqa: B009 -- generated
+    if declared := sorted(names & set(rest)):
+        fail(f'{path}.{declared[0]}', 'an undeclared key', 'a declared field (set it as the field)')
 
 
 def post_init(record: object) -> None:
@@ -253,6 +297,8 @@ def post_init(record: object) -> None:
             values[spec.name] = None
             continue
         values[spec.name] = _item(spec, value, path, dims, cls._ir_bounds)
+        if spec.kind == 'rest':
+            _shadowed(cls, values[spec.name], path)
     for spec in cls._ir_fields:
         if spec.csr_values and values[spec.name] is not None:
             _csr(values[spec.name], values[spec.csr_values], f'{head}.{spec.name}')
@@ -302,13 +348,19 @@ def _tree_of(spec: F, value: object) -> object:
     return value
 
 
-def to_tree(record: object) -> dict:
-    """The JSON tree of *record*; absent optionals are omitted."""
-    return {
-        spec.name: _tree_of(spec, value)
-        for spec, value in zip(type(record)._ir_fields, record._ir_values(), strict=True)  # noqa: SLF001
-        if value is not None
-    }
+def to_tree(record: object) -> dict[str, object]:
+    """The JSON tree of *record*; absent optionals are omitted; a foreign rest's keys sit beside the fields."""
+    specs = cast('tuple[F, ...]', getattr(type(record), '_ir_fields'))  # noqa: B009 -- generated
+    values = cast('tuple[object, ...]', getattr(record, '_ir_values')())  # noqa: B009 -- generated
+    tree: dict[str, object] = {}
+    for spec, value in zip(specs, values, strict=True):
+        if value is None:
+            continue
+        if spec.kind == 'rest':
+            tree.update(cast('dict[str, object]', value))
+        else:
+            tree[spec.name] = _tree_of(spec, value)
+    return tree
 
 
 def canonical(tree: object) -> bytes:
@@ -358,11 +410,16 @@ def from_tree(cls: type, tree: object, path: str | None = None) -> object:
     path = path or cls.__name__
     if not isinstance(tree, dict):
         fail(path, 'an object', _type_name(tree))
-    known = {spec.name: spec for spec in cls._ir_fields}
+    specs = cast('tuple[F, ...]', getattr(cls, '_ir_fields'))  # noqa: B009 -- generated
+    known = {spec.name: spec for spec in specs if spec.kind != 'rest'}
     unknown = sorted(set(tree) - set(known))
-    if unknown:
+    if unknown and not any(spec.kind == 'rest' for spec in specs):
         fail(f'{path}.{unknown[0]}', f'a field of {cls.__name__}', 'an unknown field (IR-UNKNOWN-FIELD)')
-    kwargs = {name: _from_tree_item(known[name], value, f'{path}.{name}') for name, value in tree.items()}
+    kwargs = {
+        name: _from_tree_item(known[name], value, f'{path}.{name}') for name, value in tree.items() if name in known
+    }
+    if unknown:
+        kwargs['rest'] = {name: tree[name] for name in unknown}
     missing = [s.name for s in cls._ir_fields if not s.optional and s.name not in kwargs]
     if missing:
         fail(f'{path}.{missing[0]}', 'a value', 'nothing')
