@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import fnmatch
 import subprocess
-import time
 import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -47,16 +46,14 @@ from dev_lab.dev.disposable import disposable_base, unheld_head
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.liverun import Census, removal_holders
+from dev_lab.dev.livesession import LIVE_SESSION, live_session
 
 __all__ = [
-    'LIVE_SESSION',
     'QUIET_S',
     'UNLANDED_DOORS',
     'Lease',
     'blockers',
     'declared_generated',
-    'live_session',
-    'moved_age_s',
     'orphan_reason',
     'reclaim',
     'reclaimable',
@@ -72,8 +69,6 @@ __all__ = [
 _SHOWN: Final = 5
 #: A tree whose HEAD moved this recently is a LIVE SESSION (it committed or checked out): never reclaimed.
 QUIET_S: Final = 3600.0
-#: The stable head of a live-session refusal: the key a summary counts it under.
-LIVE_SESSION: Final = 'live session'
 
 
 def declared_generated(main: Path) -> tuple[str, ...]:
@@ -106,35 +101,6 @@ def blockers(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | N
         return None
     paths = (row.split('\t', 2)[-1] for row in out.split('\0') if row.strip())
     return tuple(p for p in paths if not any(fnmatch.fnmatchcase(p, glob) for glob in generated))
-
-
-def moved_age_s(tree: Path) -> float | None:
-    """Seconds since *tree*'s HEAD last moved; ``None`` when it has none to read.
-
-    A commit, checkout, reset or rebase writes the tree's ``HEAD`` or its reflog ``logs/HEAD``; a READ never does.
-    Issue dev-lab#1125 (2026-11-28): liveness was the index mtime, and ``git status`` refreshes the index stat
-    cache, so a session merely reading a tree looked live. A session that only stages is held by its process
-    instead (:func:`occupancy`, the REMOVAL lock).
-    """
-    out = git_out(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'HEAD', '--git-path', 'logs/HEAD')
-    stamps: list[float] = []
-    for line in (out or '').splitlines():
-        try:
-            stamps.append(Path(line.strip()).stat().st_mtime)
-        except OSError:
-            continue
-    return time.time() - max(stamps) if stamps else None
-
-
-def live_session(tree: Path, quiet_s: float) -> str:
-    """Why *tree* is a LIVE SESSION -- its HEAD moved within *quiet_s* -- with the wait left; ``''`` when quiet."""
-    age = moved_age_s(tree)
-    if age is None or age >= quiet_s:
-        return ''
-    return (
-        f'{LIVE_SESSION}: its HEAD moved {age / 60:.0f} min ago; re-run once it has been quiet '
-        f'{quiet_s / 60:g} min (about {(quiet_s - age) / 60:.0f} min left)'
-    )
 
 
 def repository_at(root: Path, path: Path) -> str:
@@ -340,8 +306,8 @@ def reclaimable(
     * not ``git worktree lock``-ed;
     * no TRACKED change, staged or not (:func:`blockers`), and no untracked NOT-IGNORED file
       (:func:`untracked_work`) -- ignored files, CR/LF-only changes and declared generated paths never block;
-    * QUIET: its HEAD unmoved for *quiet_s* seconds (:func:`moved_age_s`: a commit or checkout is live, a read is
-      not);
+    * QUIET: its HEAD unmoved for *quiet_s* seconds (:func:`dev_lab.dev.livesession.moved_age_s`: a commit or
+      checkout is live, a read is not);
     * LANDED: its HEAD's content is on one of *holders* (``git cherry`` empty -- content, not ancestry), or
       its branch's origin ref is gone and its whole change is one commit's change on a holder (squash merge);
     * NOT A RUNTIME: no ``[runtimes.<name>]`` value of *runtimes* (default this host's machine file,
@@ -426,7 +392,7 @@ def removed_approved(root: Path, tree: Path, *, quiet_s: float = QUIET_S) -> str
     """Remove ONE linked worktree a user approved discarding, unlanded work included; ``''`` when gone, else why not.
 
     The approval replaces only the landed-and-clean judgment: the main checkout or a repository, a live session
-    (a HEAD moved within *quiet_s*, :func:`live_session`) still refuse, and the delete is
+    (a HEAD moved within *quiet_s*, :func:`dev_lab.dev.livesession.live_session`) still refuse, and the delete is
     the same all-or-nothing :func:`_removed`.
     """
     if refused := repository_at(root, tree):

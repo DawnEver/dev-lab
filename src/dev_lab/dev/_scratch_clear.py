@@ -7,7 +7,6 @@ entry is :mod:`dev_lab.dev._scratch_owners`.
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import json
 import shutil
@@ -32,12 +31,11 @@ from dev_lab.dev._scratch_owners import (
     live,
     named,
     owners,
-    record,
     release,
     touched,
 )
 from dev_lab.dev.codeplace import PlacementNotDeclared, checkout_root, scratch_placement
-from dev_lab.dev.native_session import session_of, valid
+from dev_lab.dev.native_session import valid
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -120,7 +118,7 @@ def _writable(func: Callable[[str], object], path: str, _exc: BaseException) -> 
     func(path)
 
 
-def _name(entry: str) -> str:
+def entry_name(entry: str) -> str:
     """A top-level entry's name from *entry*, given bare, as ``scratch/<name>`` or with a trailing slash."""
     return entry.strip('/\\').replace('\\', '/').split('/')[-1]
 
@@ -135,7 +133,7 @@ def in_use(root: Path, rel: str, session: str, records: Mapping[str, Owner], *, 
     Its own entry it always may. Another LIVE session's never; anyone else's (a gone session's, or one no session
     claimed) once it has been quiet :data:`RECENT_S` -- a fresh one is somebody's work in progress.
     """
-    owner = records.get(_name(rel))
+    owner = records.get(entry_name(rel))
     if owner is not None and owner.session == session:
         return None
     if owner is not None and live(owner.session, now=now):
@@ -163,8 +161,8 @@ def clear_scratch(
 
     """
     scratch = (root / scratch_placement(root).scratch).resolve()
-    entries = {_name(rel): rel for rel, _, _ in untracked_scratch(root)}
-    wanted = list(dict.fromkeys(_name(name) for name in names))
+    entries = {entry_name(rel): rel for rel, _, _ in untracked_scratch(root)}
+    wanted = list(dict.fromkeys(entry_name(name) for name in names))
     if missing := [name for name in wanted if name not in entries]:
         msg = f'{missing}: not an untracked entry of scratch (tracked, or absent); nothing cleared'
         raise ScratchEscape(msg)
@@ -204,7 +202,7 @@ def by_owner(root: Path, session: str, *, now: float) -> tuple[list[str], list[t
     mine: list[str] = []
     loose: list[tuple[str, Owner | None]] = []
     for rel, _, _ in untracked_scratch(root):
-        owner = records.get(_name(rel))
+        owner = records.get(entry_name(rel))
         if owner is not None and owner.session == session:
             mine += [] if owner.kept else [rel]
         elif owner is None or not (owner.kept or live(owner.session, now=now)):
@@ -306,102 +304,9 @@ def _hook(mode: str, rest: list[str], stdin: TextIO | None) -> int:
     return 0
 
 
-def _keep(root: Path, session: str, names: Iterable[str]) -> str | None:
-    """Mark *names* as entries *session* leaves on purpose, adopting a gone one's; the refusal, else ``None``."""
-    entries = {_name(rel) for rel, _, _ in untracked_scratch(root)}
-    records, now = owners(root), time.time()
-    wanted = [_name(name) for name in names]
-    if missing := [name for name in wanted if name not in entries]:
-        return f'{missing}: not an untracked entry of scratch (tracked, or absent); nothing kept'
-    theirs = [
-        f'{name} ({o.session})'
-        for name in wanted
-        if (o := records.get(name)) and o.session != session and live(o.session, now=now)
-    ]
-    if theirs:
-        return f'{RULE}: {", ".join(theirs)} belong to another live session, whose own Stop names them; nothing kept'
-    for name in wanted:
-        record(root, name, Owner(session, now, kept=True))
-    return None
-
-
-def _kept_or_refused(args: argparse.Namespace, root: Path, session: str) -> str | None:
-    """Record ``--keep``; the refusal of the whole verb, else ``None``."""
-    if args.approved is not None and not args.approved.strip():
-        return "--approved takes the user's own words approving the removal; an empty approval approves nothing"
-    if args.keep and not session:
-        return 'no native session: --keep records which session keeps an entry'
-    if args.keep:
-        return _keep(root, session, args.keep)
-    if args.all and (args.names or not args.approved):
-        return f'--all takes no names and needs --approved "<the user\'s words>": {DOOR} --all --approved WORDS --yes'
-    if not args.names and not args.all and not session:
-        return (
-            "no native session, so no entry is this session's: name the entries to clear, or clear every unowned "
-            f'one the user approved: {DOOR} --all --approved "<the user\'s words>" --yes'
-        )
-    return None
-
-
-def _left_note(root: Path, session: str, names: list[str]) -> str:
-    """What a no-names ``clear`` left and why (issue dev-lab#1124); ``''`` when no unowned entry stands."""
-    loose = [rel for rel, _ in by_owner(root, session, now=time.time())[1] if rel not in names]
-    if not loose:
-        return ''
-    return (
-        f"{plural(loose)} of no live session kept ({shown(loose)}): with no names clear takes only this session's; "
-        f'name them with --approved "<the user\'s words>", or {DOOR} --all --approved "<the user\'s words>" --yes'
-    )
-
-
-def _clear(rest: list[str], root: Path) -> int:
-    """``clear [NAME ...] [--all] [--keep NAME ...] [--approved WORDS] [--yes]``: the names, else this session's.
-
-    ``--all`` (with the user's ``--approved`` words) takes every entry of no live session, kept ones excepted,
-    so a user's "clear it all" needs no fifty-name command line; a no-names clear says what it left and why.
-    """
-    parser = argparse.ArgumentParser(prog=DOOR, exit_on_error=False)
-    parser.add_argument('names', nargs='*', metavar='NAME')
-    parser.add_argument('--all', action='store_true', help='every entry of no live session (needs --approved)')
-    parser.add_argument('--keep', nargs='+', action='extend', default=[], metavar='NAME')
-    parser.add_argument('--approved', default=None, metavar='WORDS', help="the user's words approving the removal")
-    parser.add_argument('--yes', action='store_true')
-    try:
-        args = parser.parse_args(rest)
-    except argparse.ArgumentError as exc:
-        emit(str(exc))
-        return 2
-    session = session_of()
-    if session:
-        beat(session)
-    if refused := _kept_or_refused(args, root, session):
-        emit(refused)
-        return 2
-    if args.all:
-        left = [rel for rel, _ in by_owner(root, session, now=time.time())[1]]
-    else:
-        left = args.names or own_entries(root, session)
-    kept = {_name(name) for name in args.keep}
-    names = [name for name in left if _name(name) not in kept]
-    if names and not args.yes:
-        emit(f'would clear: {", ".join(names)}; re-run with --yes to delete them')
-        return 2
-    try:
-        for rel in clear_scratch(root, names, session=session, approved=args.approved or ''):
-            emit(f'cleared {rel}' + (f' (approved: {args.approved})' if args.approved else ''))
-    except (ScratchEscape, ScratchInUse) as exc:
-        emit(str(exc))
-        return 2
-    if not args.names and not args.all and (note := _left_note(root, session, names)):
-        emit(note)
-    elif not names and not args.names:
-        emit("nothing to clear: no entry of this session's or of no live session stands")
-    return 0
-
-
 def owner_label(records: Mapping[str, Owner], rel: str, session: str, *, now: float) -> str:
     """Whose entry *rel* is, for ``list``: ``this``, ``live <id>``, ``gone <id>`` (``+kept``), or ``-``."""
-    owner = records.get(_name(rel))
+    owner = records.get(entry_name(rel))
     if owner is None:
         return '-'
     who = (

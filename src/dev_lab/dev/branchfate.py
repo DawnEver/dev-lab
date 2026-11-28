@@ -39,10 +39,10 @@ from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev.checkout import git_out, locked_trees, worktrees
 from dev_lab.dev.forgereview_runtimes import host_runtimes
+from dev_lab.dev.livesession import moved_age_s
 from dev_lab.dev.reclaim import (
     QUIET_S,
     UNLANDED_DOORS,
-    moved_age_s,
     occupancy,
     removed_approved,
     runtime_of,

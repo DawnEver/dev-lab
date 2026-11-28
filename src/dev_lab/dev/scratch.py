@@ -68,7 +68,6 @@ from dev_lab.dev._scratch_clear import (
     SCRATCH_README,
     ScratchEscape,
     ScratchInUse,
-    _clear,
     _hook,
     clear_scratch,
     in_use,
@@ -76,6 +75,7 @@ from dev_lab.dev._scratch_clear import (
     owner_label,
     untracked_scratch,
 )
+from dev_lab.dev._scratch_clearcli import clear_verb
 from dev_lab.dev._scratch_owners import owners
 from dev_lab.dev.codeplace import PRUNED_NAMES, PlacementNotDeclared, checkout_root, scratch_placement
 from dev_lab.dev.native_session import session_of
@@ -259,7 +259,7 @@ def _verb(mode: str, rest: list[str], root: Path) -> int:
         for rel, size, age in untracked_scratch(root):
             emit(f'{size:>14,}  {age:7.1f}d  {owner_label(records, rel, session, now=now):<12}  {rel}')
     if mode in {'list', 'clear'}:
-        return _clear(rest, root) if mode == 'clear' else 0
+        return clear_verb(rest, root) if mode == 'clear' else 0
     try:
         for rel in discard_scratch(rest, root=root, session=session_of()):
             emit(f'discarded {rel}')

@@ -696,6 +696,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.salvage` -- ``worktrees --salvage`` and ``--reap-orphans``: a tree's unreachable work is
   recorded on a salvage commit before anything is reclaimed.
 * :mod:`dev_lab.dev.disposable` -- the DISPOSABLE declaration of a throwaway worktree, in its git admin directory.
+* :mod:`dev_lab.dev.livesession` -- LIVE SESSION: a tree is live while its HEAD moves; a read never makes it so.
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
 * :mod:`dev_lab.dev.boxmigrate` -- LEDGER-MIGRATES-ON-INSTALL: each lab-commons install door migrates the box ledger.
 * :mod:`dev_lab.dev.backgroundrun` -- the shared detached-run and per-repo lock helpers every background hook uses.
