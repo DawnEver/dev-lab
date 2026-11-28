@@ -69,6 +69,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'fleetguard',
     # ORIGINAL: 2026-11-21, the machine file's [hpc] slice (grants, login hosts), split from spec at the size band.
     'grantslice',
+    # ORIGINAL: 2026-11-28, an account's one marked cron line, merged and checked, split from spec at the size band.
+    'cronline',
     'spec',
     'steps',
     'tick',
@@ -81,6 +83,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: the integrator as a session role, verified offline from its consent credential (2026-11-12).
     'session',
     'storagecheck',  # ORIGINAL: 2026-11-23, hpcaccount storage-check re-proves a placed secret on its host
+    # ORIGINAL: 2026-11-27, a served repo's environment is built in a Slurm prep job, never on the login node.
+    'prep',
     'prepretry',  # ORIGINAL: 2026-11-28, hpcaccount prep-retry, the door to a failed environment prep job
     'tickstop',  # ORIGINAL: 2026-11-23, hpcaccount tick-status and tick-stop, the door to a hung cluster tick
     # ORIGINAL: 2026-11-25, hpcaccount inventory and archive: a path's results archived to the run store, verified.

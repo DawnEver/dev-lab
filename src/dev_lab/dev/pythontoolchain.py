@@ -46,6 +46,7 @@ __all__ = [
     'VERSION',
     'drift',
     'main',
+    'minor_check',
     'unpinned_syncs',
     'write',
 ]
@@ -72,6 +73,19 @@ RENDER_COMMAND: Final = 'python -m dev_lab.dev.pythontoolchain render'
 
 _NO_DELTA: Final = SectionDelta(repo='family', added={}, dropped={}, ceiling=0)
 _RENDERED_BY: Final = '# Rendered by '
+
+
+def minor_check(want: str) -> str:
+    """A ``python -c`` program exiting 0 on Python *want* (``<major>.<minor>``), else 1 naming both and the door.
+
+    Written for any Python 3: it runs on the very interpreter that may be too old for the kit's code.
+    """
+    return (
+        "import sys; have = '%d.%d' % sys.version_info[:2]; "
+        f"sys.exit(0 if have == '{want}' else 'KIT-PYTHON-MINOR: the kit venv runs Python ' + have + "
+        f"', the kit requires {want}: deploy-fleet --account <this account> (dev_lab.dev.hpcaccount) rebuilds it "
+        "in a Slurm job')"
+    )
 
 
 def unpinned_syncs(workflow: object) -> list[str]:

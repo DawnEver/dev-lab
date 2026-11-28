@@ -23,8 +23,9 @@ from _cargo_probe import usable_cargo
 
 from dev_lab.dev import irpython, irrust
 from dev_lab.dev._ir_errors import IRSchemaError
+from dev_lab.dev._ir_metadata import DefaultFrom
 from dev_lab.dev.ircheck import bounds, default_si, load
-from dev_lab.dev.irmodel import IR, DefaultFrom
+from dev_lab.dev.irmodel import IR
 
 DATA = Path(__file__).parent / 'data' / 'ir_schema'
 D = 'ir/drafts.toml'

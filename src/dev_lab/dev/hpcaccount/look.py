@@ -12,7 +12,7 @@ login host (where its crontab and its ticks live), ONE of a CLOSED set of reads 
 * ``log`` -- the last :data:`LOG_LINES` lines of the account's ONE tick/cron log, ``<root>/serve/tick.log``
   (:data:`~dev_lab.dev.hpcaccount.spec.TICK_LOG`: one poller per account, ONE-LOGIN-POLLER);
 * ``crontab`` -- ``crontab -l``, refused (exit 2) when it holds more than the account's one poller, naming each line
-  (ONE-LOGIN-POLLER, :func:`~dev_lab.dev.hpcaccount.spec.crontab_refusal`);
+  (ONE-LOGIN-POLLER, :func:`~dev_lab.dev.hpcaccount.cronline.crontab_refusal`);
 * ``stuck <path>`` -- why entries under ``~/<path>`` cannot be removed (measured 2026-11-23: 206,412 entries kept
   with "Operation not permitted" and no read could say why): ``id``, the filesystem type, ``ls -ld`` and
   ``lsattr -d`` of every ancestor (GPFS keeps no such flags: ``lsattr`` says so), the owners and modes counted,
@@ -41,9 +41,10 @@ from lab_commons.hpc.cluster import Runner
 from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount import inventory
+from dev_lab.dev.hpcaccount.cronline import crontab_refusal
 from dev_lab.dev.hpcaccount.division import reached_machine
 from dev_lab.dev.hpcaccount.fleet import declared_target
-from dev_lab.dev.hpcaccount.spec import TICK_LOG, crontab_refusal
+from dev_lab.dev.hpcaccount.spec import TICK_LOG
 from dev_lab.dev.hpcaccount.storage import Pin, on_host
 from dev_lab.dev.hpcaccount.transport import grant_runner
 

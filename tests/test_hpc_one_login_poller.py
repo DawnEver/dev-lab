@@ -1,10 +1,10 @@
 """ONE-LOGIN-POLLER: an HPC login node runs exactly ONE cron poller per account (user ruling 2026-11-27).
 
 The account's crontab holds at most one line this tool marks -- one tick of every served repo under one lock
-(:func:`~dev_lab.dev.hpcaccount.spec.cron_lines`) -- and no unmarked family line (a hand-written or stale poller).
+(:func:`~dev_lab.dev.hpcaccount.cronline.cron_lines`) -- and no unmarked family line (a hand-written or stale poller).
 Every door that writes or reads it says so: ``deploy`` and ``ci-resume`` (through
 :func:`~dev_lab.dev.hpcaccount.steps.crontab`) refuse to write such a crontab and ``look crontab`` refuses it, each
-naming every offending line (:func:`~dev_lab.dev.hpcaccount.spec.crontab_refusal`).
+naming every offending line (:func:`~dev_lab.dev.hpcaccount.cronline.crontab_refusal`).
 
 PLANTED CONTROLS: a two-line marked crontab and an unmarked family poller are each refused by the same check that
 passes the one marked line beside a user's own line.
@@ -19,7 +19,7 @@ from typing import Final
 
 import pytest
 
-from dev_lab.dev.hpcaccount import look
+from dev_lab.dev.hpcaccount import cronline, look
 from dev_lab.dev.hpcaccount import spec as deploy_spec
 from dev_lab.dev.hpcaccount.fleet import Target
 from dev_lab.dev.hpcaccount.steps import Step, Tools
@@ -27,9 +27,9 @@ from dev_lab.dev.hpcaccount.steps import Step, Tools
 FORGE: Final = 'https://forge.example/team'
 MINE: Final = '0 1 * * * echo mine'
 ONE: Final = (
-    f'3-59/15 * * * * cd /r/repos/dev-lab && python -m dev_lab.dev.hpcaccount tick dev-lab alpha {deploy_spec.MARK}tick'
+    f'3-59/15 * * * * cd /r/repos/dev-lab && python -m dev_lab.dev.hpcaccount tick dev-lab alpha {cronline.MARK}tick'
 )
-TWO: Final = f'7-59/15 * * * * cd /r/repos/dev-lab && python -m dev_lab.dev.hpcaccount tick beta {deploy_spec.MARK}beta'
+TWO: Final = f'7-59/15 * * * * cd /r/repos/dev-lab && python -m dev_lab.dev.hpcaccount tick beta {cronline.MARK}beta'
 STRAY: Final = '*/5 * * * * cd /r/repos/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount tick alpha'
 FOREIGN: Final = '*/5 * * * * cd /r/lab-commons && .venv/bin/python -m lab_commons.hpc.poll'
 
@@ -50,18 +50,18 @@ def test_an_accounts_cron_lines_are_exactly_one(tmp_path: Path, monkeypatch: pyt
     repos = tuple(deploy_spec.Repo(name, f'{FORGE}/{name}.git', 'trunk') for name in (deploy_spec.KIT, 'a', 'b', 'c'))
     spec = deploy_spec.Deployment('h', '/r/src', '3.13', repos, role=deploy_spec.VERIFICATION)
     monkeypatch.setattr(deploy_spec, 'served', lambda _spec: frozenset({'a', 'b', 'c'}))
-    lines = deploy_spec.cron_lines(spec, tmp_path)
+    lines = cronline.cron_lines(spec, tmp_path)
     assert len(lines) == 1, lines
-    assert deploy_spec.crontab_refusal('\n'.join([MINE, *lines])) == ''
+    assert cronline.crontab_refusal('\n'.join([MINE, *lines])) == ''
 
 
 def test_one_marked_line_beside_the_users_own_passes() -> None:
-    assert deploy_spec.crontab_refusal(f'{MINE}\n{ONE}\n') == ''
-    assert deploy_spec.crontab_refusal('') == ''
+    assert cronline.crontab_refusal(f'{MINE}\n{ONE}\n') == ''
+    assert cronline.crontab_refusal('') == ''
 
 
 def test_planted_two_marked_lines_are_refused_naming_each() -> None:
-    why = deploy_spec.crontab_refusal(f'{MINE}\n{ONE}\n{TWO}\n')
+    why = cronline.crontab_refusal(f'{MINE}\n{ONE}\n{TWO}\n')
     assert 'ONE-LOGIN-POLLER' in why
     assert ONE in why
     assert TWO in why
@@ -69,10 +69,10 @@ def test_planted_two_marked_lines_are_refused_naming_each() -> None:
 
 
 def test_planted_unmarked_family_poller_is_refused_naming_it() -> None:
-    why = deploy_spec.crontab_refusal(f'{ONE}\n{STRAY}\n')
+    why = cronline.crontab_refusal(f'{ONE}\n{STRAY}\n')
     assert 'ONE-LOGIN-POLLER' in why
     assert STRAY in why
-    assert deploy_spec.crontab_refusal(f'# {STRAY}\n{ONE}\n') == '', 'a commented-out line runs nothing'
+    assert cronline.crontab_refusal(f'# {STRAY}\n{ONE}\n') == '', 'a commented-out line runs nothing'
 
 
 def _step(tmp_path: Path, text: str | None) -> tuple[Step, Path]:
@@ -112,7 +112,7 @@ def test_planted_seven_marked_lines_become_exactly_the_one_tick(
     from dev_lab.dev.hpcaccount.steps import crontab  # noqa: PLC0415 -- the door under test
 
     old = [
-        f'{n}-59/15 * * * * cd /r/dev-lab && python -m dev_lab.dev.hpcaccount tick r{n} {deploy_spec.MARK}r{n}'
+        f'{n}-59/15 * * * * cd /r/dev-lab && python -m dev_lab.dev.hpcaccount tick r{n} {cronline.MARK}r{n}'
         for n in range(7)
     ]
     step, state = _step(tmp_path, '\n'.join([MINE, *old, STRAY]) + '\n')

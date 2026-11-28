@@ -14,6 +14,7 @@ from typing import Final
 import pytest
 from _roles_fixtures import EVERY_CI, HPC_REPO
 
+from dev_lab.dev.hpcaccount import cronline
 from dev_lab.dev.hpcaccount import spec as deploy_spec
 from dev_lab.dev.roles import Roles
 
@@ -62,7 +63,7 @@ def test_a_github_hosted_repo_is_never_ticked_even_bound_to_the_hpc(
     spec = _deployment(tmp_path, alpha, hosted)
     _bind(monkeypatch, {'alpha': HPC_REPO, 'gamma': HPC_REPO})
     assert _names(deploy_spec.ticked(spec)) == ['alpha']
-    assert ' gamma ' not in deploy_spec.cron_lines(spec, tmp_path)[0]
+    assert ' gamma ' not in cronline.cron_lines(spec, tmp_path)[0]
     moved = replace(spec, repos=(spec.repos[0], alpha, replace(hosted, url=f'{FORGE}/gamma.git')))
     assert _names(deploy_spec.ticked(moved)) == ['alpha', 'gamma']
 
@@ -72,8 +73,8 @@ def test_an_account_that_serves_nothing_has_no_line(tmp_path: Path, monkeypatch:
     spec = _deployment(tmp_path, deploy_spec.Repo('alpha', f'{FORGE}/alpha.git', 'trunk'))
     _bind(monkeypatch, {})
     assert deploy_spec.ticked(spec) == ()
-    assert deploy_spec.cron_lines(spec, tmp_path) == []
+    assert cronline.cron_lines(spec, tmp_path) == []
     _bind(monkeypatch, {'alpha': HPC_REPO})
-    assert len(deploy_spec.cron_lines(spec, tmp_path)) == 1
+    assert len(cronline.cron_lines(spec, tmp_path)) == 1
     research = _deployment(tmp_path, spec.repos[1], role=deploy_spec.RESEARCH)
-    assert deploy_spec.cron_lines(research, tmp_path) == []
+    assert cronline.cron_lines(research, tmp_path) == []

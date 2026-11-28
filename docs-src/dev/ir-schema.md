@@ -247,8 +247,9 @@ and the codec imports the declared `boundary` module.
   top record (`Batch.samples[2].position.shape[1]: expected 3, got 2`).
 - Each record has `to_json() -> bytes`, `content_hash() -> str`, `from_json(bytes)`, `dump(path)` and
   `load(path)`. Equality is equality of canonical bytes.
-- Beside the modules sit `_ir_runtime.py` (validation, canonical JSON, envelope, freshness; numpy only) and
-  `_ir_codec.py` (the record walk delegating to `boundary`), copied from `dev_lab.dev._ir_runtime` / `_ir_codec`.
+- Beside the modules sit `_ir_runtime.py` (validation, freshness; numpy only), `_ir_tree.py` (the JSON tree and
+  canonical bytes), `_ir_surface.py` (the envelope and record surface) and `_ir_codec.py` (the record walk delegating
+  to `boundary`), copied from the `dev_lab.dev` templates of the same names.
 
 - Ids live in one shared `_ir_ids.py`, and a field names its record or enum target as text resolved through the
   runtime's registry. Two modules may therefore reference each other: each imports the other only after
@@ -278,7 +279,7 @@ build-backend = "hatchling.build"
 ## Rust output
 
 The consuming crate's `build.rs` runs the generator into `OUT_DIR`; nothing is committed. Print it with
-`python -m dev_lab.dev.irschema build-rs` (`irrust.build_rs`) and keep it as printed:
+`python -m dev_lab.dev.irschema build-rs` (`_irrust_buildrs.build_rs`) and keep it as printed:
 
 - It finds the interpreter by probing every `venvpath.VENV_LAYOUTS` spelling (`.venv/Scripts/python.exe`,
   `.venv/bin/python`) upward from the crate, and runs the generator with that checkout as `--root`. No `PYTHON`

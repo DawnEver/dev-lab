@@ -82,8 +82,9 @@ from dev_lab.dev._machinefile import dumps, merged
 from dev_lab.dev.backedup import backups_dir, replace_backed_up
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by, layered, merge
-from dev_lab.dev.devschema import CHANNELS_TABLE, fill_remedy, hpc_reach, unfilled
+from dev_lab.dev.devschema import CHANNELS_TABLE, hpc_reach
 from dev_lab.dev.hpcaccount.grantslice import Unreadable, read_machine
+from dev_lab.dev.vendorhome import fill_remedy, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = ['LOCAL_DOOR', 'RENDER_DOOR', 'drift', 'host_file', 'local_set', 'main', 'notice', 'render']

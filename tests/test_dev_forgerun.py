@@ -1688,7 +1688,7 @@ def test_a_forge_task_whose_stream_stalls_past_its_bound_is_cancelled_and_a_slow
     """Ada 2026-10-24..26: eight tasks ran 34-41 h on one hung test each and no tick noticed; RUNNING was healthy.
 
     The bound is the manifest's own per-test walls (the ones the item runner kills at) times
-    :data:`forgeslurm.STALL_MULTIPLE`: a stream silent past twice its longest wall, or a task past twice the sum
+    :data:`slurmstall.STALL_MULTIPLE`: a stream silent past twice its longest wall, or a task past twice the sum
     of its walls, has a runner that is not enforcing them. PLANTED CONTROLS: a slow task whose stream moves and
     whose walls cover its run is kept; a task with no walls declared is never judged; a non-forge job is ignored.
     """

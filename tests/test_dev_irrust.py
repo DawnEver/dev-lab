@@ -22,6 +22,7 @@ from _cargo_probe import usable_cargo
 
 from dev_lab.dev import envreads, irpython, irrust, irschema
 from dev_lab.dev._ir_errors import IRSchemaError
+from dev_lab.dev._irrust_buildrs import build_rs
 from dev_lab.dev.ircheck import load
 from dev_lab.dev.venvpath import VENV_LAYOUTS
 
@@ -222,7 +223,7 @@ def test_the_build_script_finds_the_venv_interpreter_and_reads_only_out_dir() ->
 
     PLANTED CONTROL: the same text with a ``PYTHON`` read added is convicted by the env check it otherwise passes.
     """
-    text = irrust.build_rs()
+    text = build_rs()
     for parts in VENV_LAYOUTS.values():
         assert '"' + '/'.join(parts) + '"' in text
     assert 'dev_lab.dev.irschema' in text
@@ -234,7 +235,7 @@ def test_the_build_script_finds_the_venv_interpreter_and_reads_only_out_dir() ->
 
 def test_the_cli_prints_the_build_script(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     assert irschema.main(['--root', str(tmp_path), 'build-rs']) == 0
-    assert capsys.readouterr().out.strip() == irrust.build_rs().strip()
+    assert capsys.readouterr().out.strip() == build_rs().strip()
 
 
 _NO_TOOLCHAIN = (

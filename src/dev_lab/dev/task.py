@@ -24,7 +24,6 @@ Every refusal is a :class:`TaskRefused` (or a ``LookupError`` from the ledger re
 from __future__ import annotations
 
 import argparse
-import contextlib
 import hashlib
 import re
 import shutil
@@ -36,6 +35,7 @@ from typing import Final
 from lab_commons.log import emit
 
 from dev_lab.dev import taskauthority, taskjournal, taskpublish
+from dev_lab.dev._task_distill import undistilled, undistilled_door
 from dev_lab.dev._task_io import (
     Branches,
     Forge,
@@ -102,8 +102,6 @@ VERBS: Final = (
     ('show', 'agent', '[<slug>]', 'TASK.md and the whole journal (an archived task too)'),
     ('migrate', 'owner', '<checkout>... [--dry-run]', 'the one-time move of retired stores; open tasks get issues'),
 )
-_CITE: Final = 'tasks/{slug}/JOURNAL.md#D'
-_DISTILL_HOMES: Final = (('.claude', 'memory'), ('.claude', 'rules'), ('docs-src',))
 
 
 def append(
@@ -207,18 +205,6 @@ def open_task(
     return root / slug
 
 
-def _cited(cwd: Path, slug: str) -> set[int]:
-    tops = [p for p in (Path(cwd).resolve(), *Path(cwd).resolve().parents) if (p / '.git').exists()][:1]
-    cite = re.compile(re.escape(_CITE.format(slug=slug)) + r'(\d+)\b')
-    found: set[int] = set()
-    for top in tops:
-        for home in _DISTILL_HOMES:
-            for doc in top.joinpath(*home).rglob('*.md'):
-                with contextlib.suppress(OSError):
-                    found.update(int(n) for n in cite.findall(doc.read_text(encoding='utf-8').replace('\\', '/')))
-    return found
-
-
 def close(
     slug: str, reason: str = '', *, cwd: Path, journal_only: Sequence[int] = (), forge: Forge | None = None,
     date: str | None = None, branches: Branches | None = None, say: Callable[[str], None] = emit, dry_run: bool = False,
@@ -242,13 +228,8 @@ def close(
             listed = '\n'.join(f'  {line}' for line in unmerged)
             msg = f'{len(unmerged)} pr/{slug}/* branch(es) not merged:\n{listed}\n{TASK_HEAD_DOORS.format(door=DOOR)}'
             raise TaskRefused(msg)
-        missing = [n for n, _, _ in found.journal.decisions if n not in _cited(cwd, slug) and n not in journal_only]
-        if missing:
-            msg = (
-                f'{", ".join(f"D{n}" for n in missing)} not distilled.\nDoor: cite {_CITE.format(slug=slug)}<n> from a '
-                'memory entry, a rule or a doc of this checkout, or keep it in the journal only (--journal-only D<n>)'
-            )
-            raise TaskRefused(msg)
+        if missing := undistilled(cwd, slug, (n for n, _, _ in found.journal.decisions), journal_only):
+            raise TaskRefused(undistilled_door(slug, missing))
         kept = (
             f' (kept in the journal only: {", ".join(f"D{n}" for n in sorted(journal_only))})' if journal_only else ''
         )

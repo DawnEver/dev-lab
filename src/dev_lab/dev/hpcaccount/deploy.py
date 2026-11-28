@@ -85,20 +85,12 @@ from dev_lab.dev.hpcaccount import femm, headroom, prep
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
 from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, merge_tree_refusal
 from dev_lab.dev.hpcaccount.cimark import paused_refusal
+from dev_lab.dev.hpcaccount.cronline import cron_lines
 from dev_lab.dev.hpcaccount.declaration import parser, resolve, store
 from dev_lab.dev.hpcaccount.deployhost import host_refusal
 from dev_lab.dev.hpcaccount.division import account_role
 from dev_lab.dev.hpcaccount.grantslice import Unreadable, grant_setup, machine_table
-from dev_lab.dev.hpcaccount.spec import (
-    KIT,
-    Deployment,
-    Repo,
-    checkout_of,
-    cron_lines,
-    load,
-    tick_dirs,
-    tick_environment,
-)
+from dev_lab.dev.hpcaccount.spec import KIT, Deployment, Repo, checkout_of, load, tick_dirs, tick_environment
 from dev_lab.dev.hpcaccount.steps import Step, Tools, crontab, declared, env_key, login, update
 from dev_lab.dev.venvpointer import shell_interpreter
 

@@ -21,15 +21,8 @@ from dev_lab.dev.harness import child_env
 from dev_lab.dev.hpcaccount import selfclean
 from dev_lab.dev.hpcaccount.checkout import clone, converge
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
-from dev_lab.dev.hpcaccount.spec import (
-    Deployment,
-    Repo,
-    checkout_of,
-    crontab_refusal,
-    deployed,
-    merge_crontab,
-    uv_cache,
-)
+from dev_lab.dev.hpcaccount.cronline import crontab_refusal, deployed, merge_crontab
+from dev_lab.dev.hpcaccount.spec import Deployment, Repo, checkout_of, uv_cache
 
 __all__ = ['STAMP', 'Step', 'Tools', 'build', 'crontab', 'declared', 'env_key', 'login', 'prune_uv', 'update']
 
@@ -242,7 +235,8 @@ def crontab(step: Step, lines: Sequence[str]) -> int:
     """Replace this tool's marked crontab lines with *lines*, every other line kept; each line dropped is printed.
 
     Refused, nothing written, when the crontab it would write holds more than the one poller (ONE-LOGIN-POLLER,
-    :func:`~dev_lab.dev.hpcaccount.spec.crontab_refusal`): *lines* of more than one, or an unmarked family line kept.
+    :func:`~dev_lab.dev.hpcaccount.cronline.crontab_refusal`): *lines* of more than one, or an unmarked family
+    line kept.
     """
     listed = step.read([*step.tools.crontab, '-l'])
     current = listed.stdout if listed.returncode == 0 else ''

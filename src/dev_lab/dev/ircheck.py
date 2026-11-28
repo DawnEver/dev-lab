@@ -14,7 +14,8 @@ from typing import TYPE_CHECKING, Any, Final, cast
 from lab_commons.quantity import registry
 
 from dev_lab.dev._ir_errors import refuse
-from dev_lab.dev.irmodel import IR, Field, Record, TypeRef, number, parse
+from dev_lab.dev._ir_metadata import number
+from dev_lab.dev.irmodel import IR, Field, Record, TypeRef, parse
 
 if TYPE_CHECKING:
     from pathlib import Path

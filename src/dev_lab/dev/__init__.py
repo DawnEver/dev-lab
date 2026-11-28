@@ -464,6 +464,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
 * :mod:`dev_lab.dev.forgesubmit` -- a cluster submit (build, collection) in its own process and lock, off the tick.
 * :mod:`dev_lab.dev.slurmkilled` -- the jobs ``sacct`` says Slurm killed for memory or time, and what each used.
+* :mod:`dev_lab.dev.slurmstall` -- which RUNNING forge tasks stopped progressing past their walls (the stall watch).
 * :mod:`dev_lab.dev.hpcusage` -- an account's last day from its one ``sacct`` read: run budget and card table;
   ``report --json``, every declared grant's day, quota and budget for a reader outside dev-lab.
 * :mod:`dev_lab.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
@@ -573,6 +574,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.taskjournal` -- a task's record read: TASK.md fields and the journal grammar, union repeats named.
 * :mod:`dev_lab.dev.taskauthority` -- the user's grant to open or close a task, from their own prompt, spent once.
 * :mod:`dev_lab.dev.taskmigrate` -- the one-time move of a retired task store into the ledger; open tasks get issues.
+* :mod:`dev_lab.dev.taskpublish` -- the task ledger publishes its own write: each ledger commit pushed to its origin.
 * :mod:`dev_lab.dev.taskgate` -- an opt-in repo refuses an agent push from a branch naming no open task.
 * :mod:`dev_lab.dev.tickholder` -- the holder record beside a cluster tick's lock: its pid, wall and phase.
 * :mod:`dev_lab.dev.tmpsweep` -- the census, Stop report and age sweep over those write-prone roots.
@@ -735,6 +737,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgethreads` -- the threads a task hears: the issues-since read, its cursor, own comments.
 * :mod:`dev_lab.dev.accounthost` -- an HPC account's host file: its own tables; its role is its family grant's.
 * :mod:`dev_lab.dev.vendordetect` -- each declared vendor's install home on this machine, from the family's patterns.
+* :mod:`dev_lab.dev.vendorhome` -- a vendor's declared install home: the placeholder, its fill remedy and its read.
 * :mod:`dev_lab.dev.tomlleaves` -- a parsed TOML table's leaf keys by path, and their ``[table].key`` spelling.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only;
   drift named key by key with its owning layer; ``local set|unset``, the one door into the local layer.
