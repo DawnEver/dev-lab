@@ -32,7 +32,9 @@ import re
 from collections.abc import Sequence
 from typing import Final
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -73,6 +75,8 @@ DROP_IN: Final = 'etc/ssh/sshd_config.d/59-dev-lab-ops-ssh-ca.conf'
 #: (``ssh -J``); each account's ``Match`` block narrows further. No agent or X11 forwarding, no user rc.
 EXTENSIONS: Final = ('permit-port-forwarding', 'permit-pty')
 #: One account name: what a principal is (sshd matches it against the login name).
+_KEY_LINE_FIELDS: Final = 2  # '<type> <base64>' at least
+_CERTIFIABLE: Final = (Ed25519PublicKey, EllipticCurvePublicKey, RSAPublicKey)
 _ACCOUNT: Final = re.compile(r'[a-z_][a-z0-9_-]{0,31}')
 
 
@@ -88,7 +92,7 @@ def public_line(key: Ed25519PrivateKey) -> str:
 def _blob(line: str) -> bytes:
     parts = line.split()
     try:
-        return base64.b64decode(parts[1], validate=True) if len(parts) >= 2 else b''  # noqa: PLR2004
+        return base64.b64decode(parts[1], validate=True) if len(parts) >= _KEY_LINE_FIELDS else b''
     except binascii.Error, ValueError:
         return b''
 
@@ -97,9 +101,13 @@ def sign_certificate(
     ca: Ed25519PrivateKey, public: str, *, key_id: str, principals: Sequence[str], now: float, ttl: float, serial: int
 ) -> str:
     """An OpenSSH USER certificate over *public* (a key line), valid ``[now - SKEW_S, now + ttl]``; one line."""
+    subject = load_ssh_public_key(public.encode())
+    if not isinstance(subject, _CERTIFIABLE):
+        msg = f'an ssh certificate signs an ed25519, ecdsa or rsa key, not {type(subject).__name__}'
+        raise TypeError(msg)
     builder = (
         SSHCertificateBuilder()
-        .public_key(load_ssh_public_key(public.encode()))  # type: ignore[arg-type]
+        .public_key(subject)
         .type(SSHCertificateType.USER)
         .key_id(key_id.encode())
         .valid_principals([principal.encode() for principal in principals])

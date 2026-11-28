@@ -26,7 +26,9 @@ from dev_lab.ops.install import files, install
 from dev_lab.ops.totp import STEP
 
 _SSH_KEYGEN = shutil.which('ssh-keygen') or ''
-needs_openssh = pytest.mark.skipif(not _SSH_KEYGEN, reason='OpenSSH ssh-keygen is the reference and is absent')
+needs_openssh = pytest.mark.xfail(
+    not _SSH_KEYGEN, reason='OpenSSH ssh-keygen is the reference and is absent on this box', raises=OSError, strict=True
+)
 WAVE = {'action': 'breakglass.wave', 'subject': 'dev-lab wave', 'params': {'hours': 4, 'max_merges': 3}}
 
 
@@ -44,8 +46,8 @@ def user() -> str:
     return _public(Ed25519PrivateKey.generate())
 
 
-def _role(ca: Ed25519PrivateKey, **extra: object) -> SshCa:
-    return SshCa(public_key=sshca.public_line(ca), principals=('consent', 'breakglass'), **extra)  # type: ignore[arg-type]
+def _role(ca: Ed25519PrivateKey, *, revoked: tuple[str, ...] = ()) -> SshCa:
+    return SshCa(public_key=sshca.public_line(ca), principals=('consent', 'breakglass'), revoked=revoked)
 
 
 def _cert(ca: Ed25519PrivateKey, user: str, *, principals: tuple[str, ...] = ('consent',), ttl: float = 600.0) -> str:
@@ -96,7 +98,9 @@ def test_openssh_reads_the_certificate_and_the_rendered_krl_revokes_it(
 ) -> None:
     cert = tmp_path / 'user-cert.pub'
     cert.write_text(_cert(ca, user) + '\n', encoding='utf-8')
-    said = subprocess.run([_SSH_KEYGEN, '-L', '-f', str(cert)], capture_output=True, text=True, check=True).stdout
+    said = subprocess.run(
+        [_SSH_KEYGEN, '-L', '-f', str(cert)], capture_output=True, text=True, encoding='utf-8', check=True
+    ).stdout
     assert 'user certificate' in said
     assert 'Key ID: "cred-1"' in said
     for revoked, verdict in ((('cred-1',), 'REVOKED'), (('cred-2',), 'ok')):  # the KRL row, and its control
@@ -107,7 +111,11 @@ def test_openssh_reads_the_certificate_and_the_rendered_krl_revokes_it(
         subprocess.run([_SSH_KEYGEN, '-k', '-f', str(krl), '-s', str(ca_pub), str(spec)], capture_output=True,
                        check=True)  # fmt: skip
         query = subprocess.run(
-            [_SSH_KEYGEN, '-Q', '-f', str(krl), str(cert)], capture_output=True, text=True, check=False
+            [_SSH_KEYGEN, '-Q', '-f', str(krl), str(cert)],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            check=False,
         )
         assert verdict in query.stdout, query.stdout
         krl.unlink()
