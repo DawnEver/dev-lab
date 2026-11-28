@@ -1,6 +1,6 @@
 """The deploy migrates the account's forge run files once (FORMATS-MIGRATE-ONCE), so no tick meets a retired key.
 
-Measured 2026-11-27: every serve tick of ezxmw9 and ezztz said ``carries retired key(s) 'artefact'``. The door
+Measured 2026-11-27: every serve tick of ezxmw9 and ezztz said the run files carry a retired key. The door
 (:func:`dev_lab.dev.forgerunstate.migrate`) runs on the account itself, and an account is reached only through
 the fleet: the deploy is its one door there, so the migration is a deploy phase.
 """
