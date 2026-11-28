@@ -271,4 +271,4 @@ def test_merge_ready_names_a_requirement_that_cannot_be_built(tmp_path: Path, mo
 
     assert 'review requirements' not in notes()
     forge.pyproject = _JUDGED + 'requirements = ["principles", "architecture"]\narchitecture = ["AGENTS.md"]\n'
-    assert 'its review requirements are not all judged: branch integrate/main cannot be read' in notes()
+    assert 'its review requirements are not all judged: branch integrate/main: the forge answered no commit' in notes()
