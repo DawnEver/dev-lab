@@ -63,7 +63,8 @@ A HOSTED PART (a setup, secrets or both) gets its own job, cut from the matrix `
 
 NATIVE WHEELS ARE OPT-IN: a repo's ``[tool.dev_lab.native] wheels`` adds :data:`~dev_lab.dev.nativewheels.WORKFLOW`,
 its ``[tool.dev_lab.native.vendor]`` rows :data:`~dev_lab.dev.nativewheels.VENDOR_WORKFLOW`
-(:mod:`dev_lab.dev.nativewheels`); a repo without them renders none.
+(:mod:`dev_lab.dev.nativewheels`), and its promote job dispatches the wheels on the trunk it promoted; a repo
+without them renders none.
 
 THE REVIEW TOOLING IS PINNED ONCE, BY LOCKS: the ``door`` steps install the dev-lab commit the BASE's ``uv.lock`` pins
 (dev-lab #18), and the ``method`` steps the ai-lab commit THAT dev-lab's lock pins (its ``review`` group) --
@@ -305,7 +306,17 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
             )
             raise ValueError(msg)
         out[name] = (WORKFLOW_DIRS['github'], wheels)
-    return follow_checks(out)
+    return follow_checks(_dispatching(out, text, origin))
+
+
+def _dispatching(
+    rendered: dict[str, tuple[Path, dict[str, Any]]], text: str, origin: str
+) -> dict[str, tuple[Path, dict[str, Any]]]:
+    """*rendered* with ci.yml's promote job dispatching the wheels: its token push of the trunk starts none."""
+    if 'ci.yml' not in rendered:
+        return rendered
+    where, ci = rendered['ci.yml']
+    return {**rendered, 'ci.yml': (where, nativewheels.dispatched(ci, text, origin))}
 
 
 def follow_checks(rendered: dict[str, tuple[Path, dict[str, Any]]]) -> dict[str, tuple[Path, dict[str, Any]]]:

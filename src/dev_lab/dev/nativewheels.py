@@ -1,28 +1,38 @@
-"""NATIVE WHEELS ARE OPT-IN (#981): one wheel per declared OS, built from ``main`` on GitHub, for EXTERNAL users.
+"""NATIVE WHEELS ARE OPT-IN (#981): native wheels built from the trunk on GitHub, for EXTERNAL users.
 
 A repo with a native extension declares the systems in its ``pyproject.toml`` -- the single source::
 
     [tool.dev_lab.native]
-    wheels = ["linux", "windows", "macos"]
+    wheels = ["linux", "windows", "macos"]   # also "linux-arm64", "windows-arm64": every RUNNERS key
+    # every option below is optional; each default is the behavior without it
+    python = ["3.13", "3.14"]   # test each wheel installed on these; default: the family Python's smoke import
+    abi3 = true                 # one wheel per system; false: one per system and python
+    manylinux = "auto"          # the Linux platform policy: "auto" or a "2_X" glibc floor
+    rolling = "main-latest"     # the prerelease recreated at every trunk build (ROLLING)
+    versioned = false           # true: publish v<version>, read from the sdist's PKG-INFO, once per version
+    existing = "refuse"         # with versioned: a version released from another commit fails, or "keep" it
 
-and :mod:`dev_lab.dev.ciworkflows` renders :data:`WORKFLOW` beside the base workflows. A repo without the
-declaration renders nothing. Family repos keep depending on each other by ``git+https://`` (built from source with
-the pinned toolchain); these wheels are for consumers outside the family.
+and :mod:`dev_lab.dev.ciworkflows` renders :data:`WORKFLOW` (its jobs: :mod:`dev_lab.dev.nativewheeljobs`) beside
+the base workflows. A repo without the declaration renders nothing. Family repos keep depending on each other by
+``git+https://`` (built from source with the pinned toolchain); these wheels are for consumers outside the family.
 
-* Trigger: each push to ``main``, a version tag (``v*``), and ``workflow_dispatch``.
+* Trigger: each push to the trunk (``[tool.dev_lab.integrator] trunk``), a version tag (``v*``), and
+  ``workflow_dispatch``. The promote job pushes the trunk with the job token, which starts no workflow, so
+  :func:`dispatched` has it dispatch :data:`WORKFLOW` once it promoted.
 * Build: per the repo's ``[build-system] build-backend`` -- ``maturin`` builds with ``PyO3/maturin-action`` (the
-  toolchain from the repo's ``rust-toolchain.toml``), any other backend with ``pypa/cibuildwheel``. One wheel per
-  OS across Python versions means pyo3 ``abi3``: a built wheel that is not ``abi3`` fails the job by name.
-* Smoke: each wheel installs into a clean venv of the family Python (:data:`dev_lab.dev.pythontoolchain.VERSION`,
-  the one interpreter its ``requires-python`` admits) and imports the extension (``[tool.maturin] module-name``, else
-  the project name as a module).
+  toolchain from the repo's ``rust-toolchain.toml``), any other backend with ``pypa/cibuildwheel``. With ``abi3``
+  (the default) one wheel per system serves every Python, so a built wheel that is not ``abi3`` fails the job by
+  name; ``abi3 = false`` builds one per system and declared ``python``.
+* Smoke and test: each wheel installs into a clean venv on its build interpreter and imports the extension
+  (``[tool.maturin] module-name``, else the project name as a module); a declared ``python`` list also installs
+  each wheel on each listed interpreter.
 * Attest: every wheel and the sdist carry GitHub's build provenance attestation, made where they were built and
   checked by ``gh attestation verify <file> --repo <owner>/<repo>``.
-* Sdist: a maturin repo's one sdist (built on the Linux runner, so when ``linux`` is declared) is installed on a
-  fresh Linux runner -- no checkout, the family Rust toolchain (:data:`dev_lab.dev.rusttoolchain.CHANNEL`) -- and its
-  extension imported, so a consumer building from source is tested before anything is published.
-* Publish: the wheels and the sdist go to the rolling prerelease :data:`ROLLING` (replaced on each push to
-  ``main``) and, on a tag, to that tag's release. PyPI stays out of scope until a repo asks.
+* Sdist: a maturin repo's one sdist (built on its first Linux system) is installed on a fresh Linux runner -- no
+  checkout, the family Rust toolchain (:data:`dev_lab.dev.rusttoolchain.CHANNEL`) -- and its extension imported.
+* Publish: the wheels and the sdist go to the rolling prerelease (replaced on each trunk build), with ``versioned``
+  to ``v<version>`` (never overwritten: a re-run on its commit leaves it, another commit fails unless ``existing =
+  "keep"``), and, on a pushed tag, to that tag's release. PyPI stays out of scope until a repo asks.
 
 GitHub only: Gitea runners carry no macOS or Windows host, so a Gitea repo declaring wheels is refused by name.
 
@@ -34,7 +44,7 @@ extension: every consumer would need a compiler) is declared once, in the repo t
     rev = "<40-hex commit>"
 
 and renders :data:`VENDOR_WORKFLOW`: ``pypa/cibuildwheel`` builds that commit (submodules included) for the family
-Python on every :data:`RUNNERS` system, runs the package's own cibuildwheel test, and publishes to the release
+Python on every :data:`VENDOR_SYSTEMS` system, runs the package's own cibuildwheel test, and publishes to the release
 :func:`vendor_release` names. That release is IMMUTABLE: an existing asset is never replaced, since a consumer's lock
 pins its hash. A consumer reads it as a uv flat index (``[[tool.uv.index]] format = "flat"``, url
 ``https://github.com/<owner>/<repo>/releases/expanded_assets/<release>``) and pins the distribution's version.
@@ -47,23 +57,36 @@ import tomllib
 from typing import Any, Final, cast
 
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.lanepolicy import Policy
+from dev_lab.dev.nativewheeljobs import RUNNERS, Wheels, jobs
 from dev_lab.dev.pythontoolchain import VERSION
-from dev_lab.dev.rusttoolchain import CHANNEL
 
-__all__ = ['ROLLING', 'RUNNERS', 'VENDOR_WORKFLOW', 'WORKFLOW', 'vendor_release', 'vendor_workflow', 'wheels_workflow']
+__all__ = [
+    'EXISTING',
+    'ROLLING',
+    'VENDOR_SYSTEMS',
+    'VENDOR_WORKFLOW',
+    'WORKFLOW',
+    'dispatched',
+    'vendor_release',
+    'vendor_workflow',
+    'wheels_workflow',
+]
 
 #: The workflow file a declaring repo renders.
 WORKFLOW: Final = 'wheels.yml'
-#: The rolling prerelease every push to ``main`` replaces.
+#: The rolling prerelease every trunk build replaces, when ``rolling`` is not declared.
 ROLLING: Final = 'main-latest'
-#: Each declarable system and the GitHub runner building its one wheel (manylinux x86_64, Windows x64, macOS arm64).
-RUNNERS: Final = {'linux': 'ubuntu-latest', 'windows': 'windows-latest', 'macos': 'macos-latest'}
+#: What a trunk build does when its ``v<version>`` is released from another commit (the first is the default).
+EXISTING: Final = ('refuse', 'keep')
+_PYTHON: Final = re.compile(r'3\.\d+')
+_MANYLINUX: Final = re.compile(r'auto|2_\d+')
+#: The systems a vendored commit is built on: x86_64 Linux and Windows, arm64 macOS.
+VENDOR_SYSTEMS: Final = ('linux', 'windows', 'macos')
+#: What the promote step runs (``ci_base.toml``): the dispatch follows the step that runs it.
+_PROMOTES: Final = 'dev_lab.dev.integrate promote'
 #: The workflow file a repo declaring ``[tool.dev_lab.native.vendor]`` renders.
 VENDOR_WORKFLOW: Final = 'vendor-wheels.yml'
-#: GitHub's build provenance attestation, and what it needs beyond reading the tree: the OIDC token Sigstore
-#: certifies and the attestation store.
-_ATTEST: Final = 'actions/attest-build-provenance@v4'
-_ATTESTS: Final = {'contents': 'read', 'id-token': 'write', 'attestations': 'write'}
 _CIBUILDWHEEL: Final = 'pypa/cibuildwheel@v3.2.1'
 _COMMIT: Final = re.compile(r'[0-9a-f]{40}')
 _UPLOAD: Final = """\
@@ -77,138 +100,117 @@ for wheel in dist/*.whl; do
 done
 """
 
-_ABI3_CHECK: Final = (
-    'for wheel in dist/*.whl; do case "$wheel" in *abi3*) ;; *) echo "::error::$wheel is not abi3 -- '
-    'one wheel per OS needs pyo3 abi3 at the requires-python floor ([tool.dev_lab.native], #981)"; exit 1;; '
-    'esac; done'
-)
+
+def _strings(value: object, where: str, what: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        msg = f'{where} must be a list of {what}'
+        raise TypeError(msg)
+    return tuple(str(item) for item in cast('list[object]', value))
+
+
+def _declared(text: str, origin: str) -> Wheels | None:
+    """The wheels declaration of pyproject *text*, every option resolved; ``None`` without ``wheels``."""
+    data = tomllib.loads(text)
+    native = declared_table(data, 'native', {})
+    if native.get('wheels') is None:
+        return None
+    where = f'{origin}: [tool.dev_lab.native]'
+    systems = _strings(native['wheels'], f'{where} wheels', f'systems from {sorted(RUNNERS)}')
+    if not systems:
+        msg = f'{where} wheels names no system -- name some of {sorted(RUNNERS)} or drop it'
+        raise ValueError(msg)
+    if unknown := [name for name in systems if name not in RUNNERS]:
+        msg = f'{where} wheels names {unknown}; the systems are {sorted(RUNNERS)}'
+        raise ValueError(msg)
+    python = _strings(native.get('python', []), f'{where} python', '"3.X" versions')
+    abi3, manylinux = native.get('abi3', True), native.get('manylinux', 'auto')
+    rolling, versioned, existing = (
+        native.get('rolling', ROLLING),
+        native.get('versioned', False),
+        native.get('existing'),
+    )
+    refusals = [
+        *(f'python names {bad}, not "3.X"' for bad in python if not _PYTHON.fullmatch(bad)),
+        *([] if isinstance(abi3, bool) else [f'abi3 = {abi3!r} is not true or false']),
+        *([] if not (abi3 is False and not python) else ['abi3 = false builds one wheel per python: declare python']),
+        *(
+            []
+            if isinstance(manylinux, str) and _MANYLINUX.fullmatch(manylinux)
+            else [f'manylinux = {manylinux!r} is not "auto" or "2_X"']
+        ),
+        *(
+            []
+            if isinstance(rolling, str) and rolling and not re.match(r'v\d', rolling)
+            else [f"rolling = {rolling!r} names no tag, or a v<digit> one (the versioned release's)"]
+        ),
+        *([] if isinstance(versioned, bool) else [f'versioned = {versioned!r} is not true or false']),
+        *(
+            []
+            if existing is None or (versioned is True and existing in EXISTING)
+            else [f'existing = {existing!r} needs versioned = true and one of {list(EXISTING)}']
+        ),
+    ]
+    maturin = data.get('build-system', {}).get('build-backend') == 'maturin'
+    if versioned is True and not (maturin and any(name.startswith('linux') for name in systems)):
+        refusals.append('versioned reads the version from the sdist: it needs maturin and a Linux system')
+    if refusals:
+        msg = f'{where}: ' + '; '.join(refusals)
+        raise ValueError(msg)
+    return Wheels(
+        systems=systems,
+        module=data.get('tool', {}).get('maturin', {}).get('module-name') or data['project']['name'].replace('-', '_'),
+        maturin=maturin,
+        python=python,
+        abi3=bool(abi3),
+        manylinux=str(manylinux),
+        rolling=str(rolling),
+        versioned=bool(versioned),
+        existing=str(existing or EXISTING[0]),
+        trunk=str(declared_table(data, 'integrator', {}).get('trunk') or Policy.trunk),
+    )
 
 
 def wheels_workflow(text: str, origin: str) -> dict[str, Any] | None:
     """The wheels workflow pyproject *text* declares, or ``None`` with no ``[tool.dev_lab.native] wheels``. PURE.
 
     Raises:
-        TypeError: ``wheels`` is not a list.
-        ValueError: ``wheels`` is not a non-empty list of :data:`RUNNERS` keys; *origin* names the text.
+        TypeError: ``wheels`` or ``python`` is not a list.
+        ValueError: an option is malformed or contradicts another; *origin* names the text.
 
     """
-    data = tomllib.loads(text)
-    systems = declared_table(data, 'native', {}).get('wheels')
-    if systems is None:
+    wheels = _declared(text, origin)
+    if wheels is None:
         return None
-    if not isinstance(systems, list):
-        msg = f'{origin}: [tool.dev_lab.native] wheels must be a list of systems from {sorted(RUNNERS)}'
-        raise TypeError(msg)
-    systems = [str(name) for name in cast('list[object]', systems)]
-    if not systems:
-        msg = f'{origin}: [tool.dev_lab.native] wheels names no system -- name some of {sorted(RUNNERS)} or drop it'
-        raise ValueError(msg)
-    if unknown := [name for name in systems if name not in RUNNERS]:
-        msg = f'{origin}: [tool.dev_lab.native] wheels names {unknown}; the systems are {sorted(RUNNERS)}'
-        raise ValueError(msg)
-    maturin = data.get('build-system', {}).get('build-backend') == 'maturin'
-    module = data.get('tool', {}).get('maturin', {}).get('module-name') or data['project']['name'].replace('-', '_')
-    sdist = maturin and 'linux' in systems  # maturin builds the one sdist on the Linux runner
     return {
         'name': 'Wheels',
-        'on': {'push': {'branches': ['main'], 'tags': ['v*']}, 'workflow_dispatch': {}},
+        'on': {'push': {'branches': [wheels.trunk], 'tags': ['v*']}, 'workflow_dispatch': {}},
         'permissions': {'contents': 'read'},
-        'jobs': {
-            'build': _build(systems, module, maturin=maturin),
-            **({'test-sdist': _test_sdist(module)} if sdist else {}),
-            'publish': _publish(['build', 'test-sdist'] if sdist else ['build']),
-        },
+        'jobs': jobs(wheels),
     }
 
 
-def _build(systems: list[str], module: str, *, maturin: bool) -> dict[str, Any]:
-    """The matrix job: build one wheel on each system's runner, refuse non-abi3, smoke-import, attest, upload."""
-    if maturin:
-        built = [
-            {
-                'uses': 'PyO3/maturin-action@v1',
-                'with': {'command': 'build', 'args': '--release --out dist', 'manylinux': 'auto'},
-            },
-            {
-                'if': "runner.os == 'Linux'",
-                'uses': 'PyO3/maturin-action@v1',
-                'with': {'command': 'sdist', 'args': '--out dist'},
-            },
-        ]
-    else:
-        built = [{'uses': 'pypa/cibuildwheel@v2.22', 'with': {'output-dir': 'dist'}}]
-    smoke = (
-        'python -m venv .smoke && py=.smoke/bin/python && { [ -x "$py" ] || py=.smoke/Scripts/python.exe; } && '
-        f'"$py" -m pip install dist/*.whl && "$py" -c "import {module}"'
-    )
-    return {
-        'strategy': {'fail-fast': False, 'matrix': {'include': [{'os': RUNNERS[name]} for name in systems]}},
-        'runs-on': '${{ matrix.os }}',
-        'permissions': _ATTESTS,
-        'steps': [
-            {'uses': 'actions/checkout@v4'},
-            {'uses': 'actions/setup-python@v5', 'with': {'python-version': VERSION}},
-            *built,
-            {'name': 'Refuse a wheel that is not abi3', 'shell': 'bash', 'run': _ABI3_CHECK},
-            {'name': 'Smoke-import the wheel in a clean venv', 'shell': 'bash', 'run': smoke},
-            {
-                'name': 'Attest the build provenance of what was built',
-                'uses': _ATTEST,
-                'with': {'subject-path': 'dist/*'},
-            },
-            {
-                'uses': 'actions/upload-artifact@v4',
-                'with': {'name': 'wheels-${{ matrix.os }}', 'path': 'dist/*'},
-            },
-        ],
+def dispatched(ci: dict[str, Any], text: str, origin: str) -> dict[str, Any]:
+    """*ci* with its promote job dispatching :data:`WORKFLOW` on the trunk once it promoted. PURE.
+
+    The job token's push of the trunk starts no workflow, so the job starts it. Without a wheels declaration, or
+    with no promote job (the role is on a host, whose push starts the workflow itself), *ci* is returned as is.
+    """
+    wheels = _declared(text, origin)
+    promote = ci.get('jobs', {}).get('promote')
+    if wheels is None or promote is None:
+        return ci
+    at = next(i for i, step in enumerate(promote['steps']) if _PROMOTES in step.get('run', '')) + 1
+    step = {
+        'name': f'Build the native wheels of the promoted {wheels.trunk}',
+        'run': f'gh workflow run {WORKFLOW} --repo "$GITHUB_REPOSITORY" --ref {wheels.trunk}',
+        'env': {'GH_TOKEN': '${{ github.token }}'},
     }
-
-
-def _test_sdist(module: str) -> dict[str, Any]:
-    """The sdist installed on a fresh Linux runner with the family Rust toolchain, then its extension imported."""
-    return {
-        'needs': 'build',
-        'runs-on': 'ubuntu-latest',
-        'steps': [
-            {'uses': 'actions/setup-python@v5', 'with': {'python-version': VERSION}},
-            {
-                'name': f'Install the family Rust toolchain {CHANNEL}',
-                'shell': 'bash',
-                'run': f'rustup toolchain install {CHANNEL} --profile minimal\nrustup default {CHANNEL}',
-            },
-            {'uses': 'actions/download-artifact@v4', 'with': {'name': f'wheels-{RUNNERS["linux"]}', 'path': 'dist'}},
-            {'name': 'Build and install the sdist', 'shell': 'bash', 'run': 'python -m pip install dist/*.tar.gz'},
-            {'name': 'Import the extension', 'shell': 'bash', 'run': f'python -c "import {module}"'},
-        ],
+    job = {
+        **promote,
+        'permissions': {**promote.get('permissions', {}), 'actions': 'write'},
+        'steps': [*promote['steps'][:at], step, *promote['steps'][at:]],
     }
-
-
-def _publish(needs: list[str]) -> dict[str, Any]:
-    """The release job after *needs*: every artifact to :data:`ROLLING` on ``main``, to the tag's release on a tag."""
-    rolling = (
-        f'gh release delete {ROLLING} --yes --cleanup-tag || true\n'
-        f'gh release create {ROLLING} dist/* --prerelease --target "$GITHUB_SHA" '
-        f'--title "{ROLLING}" --notes "Wheels built from main at $GITHUB_SHA."'
-    )
-    return {
-        'needs': needs,
-        'runs-on': 'ubuntu-latest',
-        'permissions': {'contents': 'write'},
-        'env': {'GH_TOKEN': '${{ github.token }}', 'GH_REPO': '${{ github.repository }}'},
-        'steps': [
-            {'uses': 'actions/download-artifact@v4', 'with': {'path': 'dist', 'merge-multiple': True}},
-            {
-                'name': f'Replace the rolling {ROLLING} prerelease',
-                'if': "github.ref == 'refs/heads/main'",
-                'run': rolling,
-            },
-            {
-                'name': 'Publish the tag release',
-                'if': "startsWith(github.ref, 'refs/tags/')",
-                'run': 'gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "$GITHUB_REF_NAME"',
-            },
-        ],
-    }
+    return {**ci, 'jobs': {**ci['jobs'], 'promote': job}}
 
 
 def vendor_release(dist: str, rev: str) -> str:
@@ -246,7 +248,7 @@ def vendor_workflow(text: str, origin: str) -> dict[str, Any] | None:
     builds = [
         {'dist': dist, 'repository': git.removeprefix('https://github.com/'), 'rev': rev, 'os': runner}
         for dist, (git, rev) in vendored
-        for runner in RUNNERS.values()
+        for runner in (RUNNERS[name] for name in VENDOR_SYSTEMS)
     ]
     pins = [{'dist': dist, 'rev': rev, 'release': vendor_release(dist, rev)} for dist, (_, rev) in vendored]
     checkout = {'repository': '${{ matrix.repository }}', 'ref': '${{ matrix.rev }}', 'submodules': 'recursive'}
