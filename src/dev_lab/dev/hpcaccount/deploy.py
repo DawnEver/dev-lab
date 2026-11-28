@@ -266,7 +266,9 @@ def _prep(step: Step, spec: Deployment, _home: Path, repo: Repo, submit: prep.Su
     if prep.prepared(checkout, key):
         emit(f'  {repo.name}: its environment is current (key {key[:12]})')
         return 0
-    said = submit(checkout, key, python=spec.python, root=spec.root, script=prep.job_script(spec, repo))
+    said = submit(
+        checkout, key, python=spec.python, root=spec.root, script=prep.job_script(spec, repo), kit=prep.kit_of(spec)
+    )
     emit(f'  {repo.name}: not built for key {key[:12]}: {said}')
     return 0
 

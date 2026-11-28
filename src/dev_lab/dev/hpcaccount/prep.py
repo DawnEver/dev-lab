@@ -25,16 +25,24 @@ node never runs one. An environment without the stamp is not :func:`prepared`, s
 The job SUBMISSION is lab-commons' (``lab_commons.hpc.prep``); the
 interface needed, by name:
 
-    ``submit_env_prep(checkout: Path, key: str, *, python: str, root: str, script: str) -> str``
+    ``submit_env_prep(checkout: Path, key: str, *, python: str, root: str, script: str, kit: str, retry: bool)``
 
 submits *script* (a POSIX shell line) as one Slurm job of the account's grant, keyed by *key*: it never queues a
 second job for a key already queued or running, and returns one line saying what it did -- ``submitted job <id>``,
 ``job <id> already queued for <key>``, ``job <id> failed: <log path>`` -- never raising for a job's failure. A
 lab-commons without it is refused by name (:data:`ABSENT`), the repo unserved.
+
+A FAILED JOB IS NEVER A DEAD END (every-wall-teaches; measured 2026-11-28, Ada: a served repo's envprep jobs
+failed ``Failed to build a native library through cargo`` before this kit installed cargo, and nothing could ever
+retry them). *kit* is this kit's commit (:func:`kit_of`): a failure recorded under another kit predates what builds
+the env now and is resubmitted once, naming why. A failure under this kit stays reported, and the line names its
+door (:data:`RETRY`): ``hpcaccount prep-retry --account <user> <repo>`` (:mod:`~dev_lab.dev.hpcaccount.prepretry`)
+resubmits once with *retry*.
 """
 
 from __future__ import annotations
 
+import getpass
 import importlib
 import shlex
 from collections.abc import Callable, Iterable
@@ -42,12 +50,13 @@ from pathlib import Path
 from typing import Final
 
 from dev_lab.dev import venvpointer
+from dev_lab.dev.forgestatus import head_sha
 from dev_lab.dev.hpcaccount.spec import KIT, Deployment, Repo, checkout_of
 from dev_lab.dev.hpcaccount.steps import STAMP
 
-__all__ = ['ABSENT', 'TOOLS', 'Submit', 'job_script', 'prepared', 'proven', 'stamp_tools', 'submit']
+__all__ = ['ABSENT', 'RETRY', 'TOOLS', 'Submit', 'job_script', 'kit_of', 'prepared', 'proven', 'stamp_tools', 'submit']
 
-#: ``(checkout, key, python=, root=, script=) -> one line``: submit (or find in flight) the prep job of *key*.
+#: ``(checkout, key, python=, root=, script=, kit=, retry=) -> one line``: submit (or find in flight) *key*'s prep job.
 type Submit = Callable[..., str]
 
 # TODO(arch-prep-job): lab-commons lane pr/toolchain/arch-prep-job provides submit_env_prep  # noqa: FIX002, TD003
@@ -59,6 +68,10 @@ ABSENT: Final = (
     '(ONE-LOGIN-POLLER), so this repo waits for the prep job -- update the kit to a lab-commons that provides it '
     '(lane pr/toolchain/arch-prep-job)'
 )
+
+
+#: The door a failed prep job's line names: resubmit it once, from the workstation.
+RETRY: Final = 'python -m dev_lab.dev.hpcaccount prep-retry --account {account} {repo}'
 
 
 #: The live environment's list of the needs its prep job proved on a compute node, one per line.
@@ -92,10 +105,22 @@ def job_script(spec: Deployment, repo: Repo) -> str:
     return f'cd {shlex.quote(str(kit))} && {python} -m dev_lab.dev.hpcaccount prep-build {shlex.quote(repo.name)}'
 
 
-def submit(checkout: Path, key: str, *, python: str, root: str, script: str) -> str:
-    """lab-commons' prep job for *key*, as one line; :data:`ABSENT` when this kit's lab-commons has none."""
+def kit_of(spec: Deployment) -> str:
+    """The commit of *spec*'s kit checkout -- what builds every environment; a stable placeholder when unreadable."""
+    kit = checkout_of(spec, next(one for one in spec.repos if one.name == KIT))
+    return (head_sha(kit) if kit.is_dir() else None) or f'unreadable:{kit.as_posix()}'
+
+
+def submit(checkout: Path, key: str, *, python: str, root: str, script: str, kit: str, retry: bool = False) -> str:
+    """lab-commons' prep job for *key*, as one line; :data:`ABSENT` when this kit's lab-commons has none.
+
+    A failed job's line names :data:`RETRY` for this account and *checkout*'s repo.
+    """
     try:
         door = getattr(importlib.import_module(_MODULE), _FUNCTION)
     except ImportError, AttributeError:
         return ABSENT
-    return str(door(checkout, key, python=python, root=root, script=script))
+    said = str(door(checkout, key, python=python, root=root, script=script, kit=kit, retry=retry))
+    if said.startswith('job ') and ' failed: ' in said:
+        said += ' -- once its cause is fixed, retry: ' + RETRY.format(account=getpass.getuser(), repo=checkout.name)
+    return said

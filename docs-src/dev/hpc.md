@@ -91,6 +91,9 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   `look --account <user> {processes|ticks|log|crontab|stuck <path>|inventory <path>}` is the closed set of
   read-only looks; `inventory` lists each entry's files, bytes and newest change and judges every git checkout under
   the path pushed or NOT PUSHED (`dev_lab.dev.hpcaccount.inventory`).
+  A failed environment prep job is reported every tick, never retried blind; one that failed under an older kit
+  commit is resubmitted once by the tick itself, and `prep-retry --account <user> <repo>` resubmits one under the
+  current kit once its cause is fixed (`dev_lab.dev.hpcaccount.prepretry`; the failed line names it).
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine
   file adds Telegram/email/webhook delivery.
 - **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across
