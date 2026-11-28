@@ -69,7 +69,9 @@ from dev_lab.dev.forgereview_declared import (
     forge_review,
 )
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, parse_findings
+from dev_lab.dev.forgereview_requirements import requirements_at
 from dev_lab.dev.forgereview_scope import gather, is_code
+from dev_lab.dev.forgereview_summary import checklist
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewbundle import BundleRefused
@@ -161,6 +163,8 @@ def _rendered(found: Findings, bundle: reviewbundle.Bundle) -> Verdict:
         f'**Review** of `{bundle.head_sha[:12]}` over `{bundle.base_sha[:12]}..{bundle.head_sha[:12]}` (bundle)',
         f'Reviewers: {who}',
     ]
+    if required := checklist(found.requirements):
+        parts.append(required)
     for title, rows in (('Security (holds the merge)', blocking), ('Advice', rest)):
         if rows:
             lines = [
@@ -208,9 +212,12 @@ def fetch_from(url: str) -> Fetch:
 
 def judge_one(
     client: Client, review: Review, pull: PullRequest, *, runtimes: Mapping[str, Mapping[str, Any]], fetch: Fetch,
-    run: Callable[[Sequence[str], Path, Mapping[str, str]], str] = run_command,
+    requirements: Mapping[str, object], run: Callable[[Sequence[str], Path, Mapping[str, str]], str] = run_command,
 ) -> Verdict | str:  # fmt: skip
-    """The verdict on *pull*'s head, built from the head the judge fetched itself; a line when nothing can post yet."""
+    """The verdict on *pull*'s head, built from the head the judge fetched itself; a line when nothing can post yet.
+
+    *requirements* is the payload read at the trusted integration branch (:func:`requirements_at`), never the head.
+    """
     said = f'#{pull.number} {pull.head_sha[:12]}'
     with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-judge-') as scratch:
         where = Path(scratch)
@@ -226,14 +233,15 @@ def judge_one(
             return f'{said}: the bundle or the forge could not be read, retried next run: {failed}'
         if (unread := _unread_code(bundle, review)) is not None:
             return unread
-        out = _reviewed(client, review, pull, bundle, diff=diff, runtimes=runtimes, run=run, where=where)
+        out = _reviewed(client, review, pull, bundle, diff=diff, runtimes=runtimes, run=run, where=where,
+                       requirements=requirements)  # fmt: skip
     return out if isinstance(out, str) else _verdict_of(out, bundle, said)
 
 
 def _reviewed(
     client: Client, review: Review, pull: PullRequest, bundle: reviewbundle.Bundle, *, diff: str,
     runtimes: Mapping[str, Mapping[str, Any]],
-    run: Callable[[Sequence[str], Path, Mapping[str, str]], str], where: Path,
+    run: Callable[[Sequence[str], Path, Mapping[str, str]], str], where: Path, requirements: Mapping[str, object],
 ) -> Findings | str:  # fmt: skip
     """The bundle command's findings over *bundle*, or the line said when there are none yet (retried next run).
 
@@ -250,7 +258,9 @@ def _reviewed(
             return reviewbundle.judge(bundle, filled, diff=diff, run=lambda final, env: timed(final, where, env))
 
         try:
-            return parse_findings(gather(reviewed, [argv], (), once, where, pr_body=pull.body))
+            return parse_findings(
+                gather(reviewed, [argv], (), once, where, pr_body=pull.body, requirements=requirements)
+            )
         except ReviewPending as waiting:
             return f'{said}: {BATCH_PENDING} {waiting}; nothing posted, the next run resumes it'
         except (OSError, FindingsInvalid) as failed:
@@ -296,6 +306,10 @@ def judge_pending(
     me = client.whoami()
     if (other := _not_the_judge(client, review, me)) is not None:
         return [f'{integration} declares {other}: it judges nothing']
+    try:  # the requirements every head is judged against, read once at the trusted branch
+        required = requirements_at(client, review, integration)
+    except DeclarationUnread as unread:
+        return [f'{integration} declares review requirements that cannot be read: {unread}; it judges nothing']
     said = []
     for pull in pr_list(client):
         if pull.base != integration or pull.draft or not pull.head_sha:
@@ -303,7 +317,7 @@ def judge_pending(
         try:
             if not _called_due(client, pull.head_sha) or reviewed_by(client, pull, me):
                 continue
-            outcome = judge_one(client, review, pull, runtimes=runtimes, fetch=fetch, run=run)
+            outcome = judge_one(client, review, pull, runtimes=runtimes, fetch=fetch, run=run, requirements=required)
             if isinstance(outcome, Verdict):
                 post_verdict(client, pull, outcome)
                 said.append(f'#{pull.number} {pull.head_sha[:12]}: {outcome.event}')

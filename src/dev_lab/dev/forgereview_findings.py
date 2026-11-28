@@ -10,26 +10,32 @@ what a reader of the old version would misread.
 
 Two optional top-level keys come from the unified engine (user ruling D83): ``summary`` (what the PR does, each
 claim with its cites; printed by the ONE call handed ``--pr-body``) and ``disposed`` (the ids it was handed via
-``--disposed`` and dropped, each ``{id, reason}``). :func:`merge_outputs` carries both through.
+``--disposed`` and dropped, each ``{id, reason}``). :func:`merge_outputs` carries both through. A third, optional
+``requirements`` (D226), is the engine's verdict on each requirement it was handed
+(:mod:`dev_lab.dev.forgereview_requirements`), ``{id, verdict, cites, evidence}``: information for the integrator,
+never a merge condition -- :data:`BLOCKING` is unchanged. :func:`merge_outputs` keeps one row per id, the strongest
+verdict any slice gave (:data:`REQUIREMENT_VERDICTS`).
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
 __all__ = [
     'BLOCKING',
+    'REQUIREMENT_VERDICTS',
     'REVIEWER_STATUSES',
     'SCHEMA_VERSIONS',
     'SEVERITIES',
     'Finding',
     'Findings',
     'FindingsInvalid',
+    'Requirement',
     'Reviewer',
     'UnknownSchemaVersion',
     'merge_outputs',
@@ -52,6 +58,12 @@ SEVERITIES: Final = ('HIGH', 'MEDIUM', 'LOW')
 #: :attr:`Finding.blocking` and exported by :mod:`dev_lab.dev.reviewpolicy`.
 BLOCKING: Final = ('security',)
 
+#: A requirement's verdict, strongest first: slices combine to the strongest any slice gave (:func:`merge_outputs`).
+#: ``violated``: the change breaks it; ``amended``: the change edits the requirement's own document; ``unverified``:
+#: a violation the engine could not ground in a changed file; ``met``; ``untouched``: the change does not bear on it.
+REQUIREMENT_VERDICTS: Final = ('violated', 'amended', 'unverified', 'met', 'untouched')
+
+_REQUIREMENT: Final = ('id', 'verdict', 'cites', 'evidence')
 _TOP: Final = ('schema_version', 'range', 'profiles', 'reviewers', 'findings')
 _REVIEWER: Final = ('name', 'provider', 'status', 'dropped_findings')
 _FINDING: Final = (
@@ -107,6 +119,16 @@ class Finding:
 
 
 @dataclass(frozen=True)
+class Requirement:
+    """The engine's verdict on one requirement (``principle id`` or ``arch:<path>``), what it cites and why."""
+
+    id: str
+    verdict: str
+    cites: tuple[str, ...] = ()
+    evidence: str = ''
+
+
+@dataclass(frozen=True)
 class Findings:
     """One review run's merged result."""
 
@@ -120,6 +142,8 @@ class Findings:
     summary: Mapping[str, Any] | None = None
     #: ``(id, reason)`` of every finding the engine dropped as disposed earlier.
     disposed: tuple[tuple[str, str], ...] = ()
+    #: The verdict on every requirement the review was handed, in the engine's order; none when it was handed none.
+    requirements: tuple[Requirement, ...] = ()
 
 
 def _fields(row: object, required: tuple[str, ...], where: str) -> dict[str, Any]:
@@ -160,6 +184,16 @@ def _finding(row: object, at: int) -> Finding:
     )  # fmt: skip
 
 
+def _requirement(row: object, at: int) -> Requirement:
+    got = _fields(row, _REQUIREMENT, f'requirements[{at}]')
+    cites: object = got['cites']
+    if not isinstance(cites, list):
+        msg = f'requirements[{at}].cites is {cites!r}, not a list of paths'
+        raise FindingsInvalid(msg)
+    verdict = _one_of(got['verdict'], REQUIREMENT_VERDICTS, f'requirements[{at}].verdict')
+    return Requirement(str(got['id']), verdict, tuple(map(str, cast('list[object]', cites))), str(got['evidence']))
+
+
 def parse_findings(text: str) -> Findings:
     """The :class:`Findings` *text* holds; :class:`UnknownSchemaVersion` / :class:`FindingsInvalid` naming why not."""
     try:
@@ -179,11 +213,16 @@ def parse_findings(text: str) -> Findings:
         msg = 'the review output summary is not a JSON object'
         raise FindingsInvalid(msg)
     gone = tuple(_fields(row, ('id', 'reason'), f'disposed[{at}]') for at, row in enumerate(got.get('disposed', ())))
+    required: object = got.get('requirements', [])
+    if not isinstance(required, list):
+        msg = 'the review output requirements is not a JSON array'
+        raise FindingsInvalid(msg)
     return Findings(
         version, str(got['range']), tuple(map(str, got['profiles'])),
         tuple(_reviewer(row, at) for at, row in enumerate(got['reviewers'])),
         tuple(_finding(row, at) for at, row in enumerate(got['findings'])),
         summary, tuple((str(row['id']), str(row['reason'])) for row in gone),
+        tuple(_requirement(row, at) for at, row in enumerate(cast('list[object]', required))),
     )  # fmt: skip
 
 
@@ -191,8 +230,9 @@ def merge_outputs(texts: Sequence[str], range_: str) -> str:
     """ONE findings document of the slice outputs *texts* over *range_*: reviewers in order, findings once by id.
 
     The ``summary`` is the first one printed (one call is handed ``--pr-body``), first key as the engine prints it;
-    ``disposed`` is every call's, once per id. Each output is read first (:func:`parse_findings`), so a slice
-    printing an unknown version is refused here.
+    ``disposed`` is every call's, once per id; ``requirements`` one row per id, the strongest verdict any slice
+    gave (:data:`REQUIREMENT_VERDICTS`), its cites every slice's. Each output is read first (:func:`parse_findings`),
+    so a slice printing an unknown version is refused here.
     """
     for text in texts:
         parse_findings(text)
@@ -203,11 +243,25 @@ def merge_outputs(texts: Sequence[str], range_: str) -> str:
         for row in doc.get('disposed', ()):
             gone.setdefault(row['id'], row)
     summary = next((doc['summary'] for doc in docs if doc.get('summary') is not None), None)
+    required = _strongest(row for doc in docs for row in doc.get('requirements', ()))
     merged = {
         **({'summary': summary} if summary is not None else {}),
         'schema_version': docs[0]['schema_version'], 'range': range_,
         'profiles': list(dict.fromkeys(name for doc in docs for name in doc['profiles'])),
         'reviewers': [row for doc in docs for row in doc['reviewers']], 'findings': list(findings.values()),
         **({'disposed': list(gone.values())} if gone else {}),
+        **({'requirements': required} if required else {}),
     }  # fmt: skip
     return json.dumps(merged, ensure_ascii=False)
+
+
+def _strongest(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """One row per requirement id, first-seen order: the strongest verdict's row, every row's cites once each."""
+    held: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        kept = held.get(row['id'])
+        cites = list(dict.fromkeys([*(kept['cites'] if kept else ()), *row['cites']]))
+        if kept is None or REQUIREMENT_VERDICTS.index(row['verdict']) < REQUIREMENT_VERDICTS.index(kept['verdict']):
+            kept = dict(row)
+        held[row['id']] = {**kept, 'cites': cites}
+    return list(held.values())

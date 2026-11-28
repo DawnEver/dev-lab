@@ -57,6 +57,7 @@ __all__ = [
     'FINDINGS_FIELD',
     'LENSES',
     'PRINCIPLES_FIELD',
+    'REQUIREMENTS_FIELD',
     'SUMMARY_FIELD',
     'Budget',
     'Scope',
@@ -78,6 +79,11 @@ FINDINGS_FIELD: Final = '{findings}'
 #: Replaced by the path of a JSON file holding :func:`dev_lab.dev.principles.payload`, written under the run's
 #: scratch: the method judges against the family's principles and owns no copy of them.
 PRINCIPLES_FIELD: Final = '{principles}'
+
+#: Replaced by the path of a JSON file holding the review's REQUIREMENTS
+#: (:func:`dev_lab.dev.forgereview_requirements.requirements_at`, read at the trusted integration branch), written
+#: under the run's scratch: what the reviewer returns a verdict for, one by one.
+REQUIREMENTS_FIELD: Final = '{requirements}'
 
 #: An argument exactly this expands, per call, into the engine's summary flags: ``--pr-body <file of the PR body>``
 #: for the ONE designated call (the first slice), ``--no-summary`` for every other slice and the synthesis -- so the
@@ -306,12 +312,13 @@ def code_bytes(root: Path, target: str, head: str, budget: Budget, since: str = 
 
 def gather(
     reviewed: str, argvs: Sequence[Sequence[str]], synthesis: Sequence[str], run: Callable[..., str], root: Path, *,
-    pr_body: str, disposed: Sequence[tuple[str, str]] = (),
+    pr_body: str, requirements: Mapping[str, object], disposed: Sequence[tuple[str, str]] = (),
 ) -> str:  # fmt: skip
     """The slices' outputs merged over *reviewed*; with several, the *synthesis* command's reading of them merged in.
 
     *synthesis* (empty: none) names the merged document's path as :data:`FINDINGS_FIELD`; every command names
-    the principles file as :data:`PRINCIPLES_FIELD` and the *disposed* ``(id, reason)`` pairs -- a continuation's
+    the principles file as :data:`PRINCIPLES_FIELD`, the *requirements* payload's file as :data:`REQUIREMENTS_FIELD`,
+    and the *disposed* ``(id, reason)`` pairs -- a continuation's
     carried findings already resolved or deferred, none otherwise -- as :data:`DISPOSED_FIELD`; the first
     slice alone is handed *pr_body* through :data:`SUMMARY_FIELD`, every other call ``--no-summary``. A slice whose
     batch is still running (:class:`~dev_lab.dev.forgereview_command.ReviewPending`) does not stop the slices after
@@ -320,6 +327,8 @@ def gather(
     with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
         given = Path(scratch) / 'principles.json'
         given.write_text(json.dumps(payload()), encoding='utf-8')
+        required = Path(scratch) / 'requirements.json'
+        required.write_text(json.dumps(requirements), encoding='utf-8')
         body = Path(scratch) / 'pr-body.md'
         body.write_text(pr_body, encoding='utf-8')
         gone = Path(scratch) / 'disposed.json'
@@ -332,6 +341,7 @@ def gather(
                 one
                 for arg in argv
                 for one in (flags if arg == SUMMARY_FIELD else [arg.replace(PRINCIPLES_FIELD, str(given))
+                                                                .replace(REQUIREMENTS_FIELD, str(required))
                                                                 .replace(DISPOSED_FIELD, str(gone))])
             ]  # fmt: skip
 

@@ -24,7 +24,7 @@ from dev_lab.dev.forgereview_declared import (
     command_for,
     review_from,
 )
-from dev_lab.dev.forgereview_scope import DISPOSED_FIELD, PRINCIPLES_FIELD, SUMMARY_FIELD, gather
+from dev_lab.dev.forgereview_scope import DISPOSED_FIELD, PRINCIPLES_FIELD, REQUIREMENTS_FIELD, SUMMARY_FIELD, gather
 from dev_lab.dev.principles import payload
 from dev_lab.dev.rules import RULES
 
@@ -46,7 +46,8 @@ def test_the_family_command_slices_and_names_one_model() -> None:
     assert argv == [
         'C:/rt/python.exe', '-m', 'ai_lab.review', '--range', 'a..b', '--lens', 'strict',
         '--model', FAMILY_MODEL, '--rules', ','.join(rule.id for rule in RULES),
-        '--paths', 'x.py', 'y.py', '--principles', PRINCIPLES_FIELD, SUMMARY_FIELD, '--disposed', DISPOSED_FIELD,
+        '--paths', 'x.py', 'y.py', '--principles', PRINCIPLES_FIELD, '--requirements', REQUIREMENTS_FIELD,
+        SUMMARY_FIELD, '--disposed', DISPOSED_FIELD,
         '--no-batch',
     ]  # fmt: skip
 
@@ -77,8 +78,32 @@ def test_the_principles_reach_the_method_as_a_file(tmp_path: Path) -> None:
         raise _Ran
 
     with pytest.raises(_Ran):
-        gather('a..b', [['x', '--principles', PRINCIPLES_FIELD]], (), run, tmp_path, pr_body='')
+        gather('a..b', [['x', '--principles', PRINCIPLES_FIELD]], (), run, tmp_path, pr_body='', requirements={})
     assert seen == [payload()]
+
+
+def test_the_requirements_reach_the_method_as_a_file(tmp_path: Path) -> None:
+    """D226: ``{requirements}`` is filled at run time with the payload the caller read at the trusted branch.
+
+    PLANTED CONTROL: a different payload reaches the method as that payload, never a constant.
+    """
+    seen: list[object] = []
+
+    def run(argv: Sequence[str], _root: Path) -> str:
+        seen.append(json.loads(Path(argv[list(argv).index('--requirements') + 1]).read_text(encoding='utf-8')))
+        raise _Ran
+
+    for given in (
+        {'principles': True},
+        {'architecture': [{'id': 'arch:A.md', 'path': 'A.md', 'blob': 'b', 'text': 't'}]},
+    ):
+        with pytest.raises(_Ran):
+            gather('a..b', [['x', '--requirements', REQUIREMENTS_FIELD]], (), run, tmp_path, pr_body='',
+                   requirements=given)  # fmt: skip
+    assert seen == [
+        {'principles': True},
+        {'architecture': [{'id': 'arch:A.md', 'path': 'A.md', 'blob': 'b', 'text': 't'}]},
+    ]
 
 
 def _slice_doc(**top: object) -> str:
@@ -105,7 +130,7 @@ def test_one_call_summarizes_with_the_pr_body_and_every_call_is_handed_no_dispos
 
     shape = ['r', SUMMARY_FIELD, '--disposed', DISPOSED_FIELD]
     merged = gather('a..b', [shape, shape], ['s', '{findings}', *shape], run, tmp_path,
-                    pr_body='Why: x.')  # fmt: skip
+                    pr_body='Why: x.', requirements={})  # fmt: skip
     assert [body for _, body, _ in seen] == ['Why: x.', '', '']
     assert ['--no-summary' in argv for argv, _, _ in seen] == [False, True, True]
     assert all(gone == {'disposed': []} for _, _, gone in seen), 'nothing is disposed of in a one-shot review'

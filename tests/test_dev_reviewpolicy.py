@@ -30,6 +30,9 @@ def test_the_schema_is_pinned(tmp_path: Path, capsys: pytest.CaptureFixture[str]
         'not_code': list(NOT_CODE),
         'max_total_bytes': 800_000,
         'max_file_bytes': 400_000,
+        'requirements': ['principles'],
+        'architecture': [],
+        'max_architecture_bytes': 120_000,
         'blocking': ['security'],
         'summary': {'cite': ['commits', 'memory', 'merge_audit', 'pr_body']},
     }
@@ -43,6 +46,18 @@ def test_a_repo_override_overlays_the_family_defaults(tmp_path: Path) -> None:
     got = policy(tmp_path)
     assert (got['code'], got['max_total_bytes'], got['max_file_bytes']) == (['**/*.py'], 7, 3)
     assert got['not_code'] == list(NOT_CODE)  # planted control: an undeclared key stays the family's
+
+
+def test_the_declared_requirements_are_exported(tmp_path: Path) -> None:
+    """D226: a repo's requirements reach every trigger. PLANTED CONTROL: undeclared, the family's (above)."""
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.dev_lab.review]\nrequirements = ["principles", "architecture"]\narchitecture = ["AGENTS.md"]\n'
+        'max_architecture = "9 kB"\n',
+        encoding='utf-8',
+    )
+    got = policy(tmp_path)
+    assert (got['requirements'], got['architecture']) == (['principles', 'architecture'], ['AGENTS.md'])
+    assert got['max_architecture_bytes'] == 9_000
 
 
 def test_the_forge_review_and_the_export_agree(tmp_path: Path) -> None:

@@ -3,12 +3,13 @@
 ONE engine (ai-lab review), ONE policy (here), TWO triggers: the session's pre-push self check (the sharp-review
 plugin, another repo, JavaScript) and the forge PR review (the merge gate). The policy is not restated here: it is
 READ from the values the forge review itself runs on -- :func:`dev_lab.dev.forgereview_declared.load_review` (family
-defaults overlaid by the repo's ``[tool.dev_lab.review]``), :data:`~dev_lab.dev.forgereview_findings.BLOCKING`,
-:data:`~dev_lab.dev.forgereview_summary.SUMMARY_CITES` and :func:`dev_lab.dev.principles.payload` -- so the export
-and the gate cannot disagree.
+defaults overlaid by the repo's ``[tool.dev_lab.review]``, its ``requirements`` among them, D226),
+:data:`~dev_lab.dev.forgereview_findings.BLOCKING`, :data:`~dev_lab.dev.forgereview_summary.SUMMARY_CITES` and
+:func:`dev_lab.dev.principles.payload` -- so the export and the gate cannot disagree.
 
 ``python -m dev_lab.dev.reviewpolicy --json [--repo <path>]`` prints :func:`policy`; ``max_file_bytes`` is the
-review's ``max_diff`` (one file alone past it is a slice of its own).
+review's ``max_diff`` (one file alone past it is a slice of its own). New keys are ADDED under the same ``schema``: a
+consumer reads the keys it knows, so only a renamed or removed key bumps :data:`EXPORT_VERSION`.
 """
 
 from __future__ import annotations
@@ -43,6 +44,9 @@ def policy(repo: Path) -> dict[str, Any]:
         'not_code': list(budget.not_code),
         'max_total_bytes': budget.total_bytes,
         'max_file_bytes': budget.slice_bytes,
+        'requirements': list(review.requirements),
+        'architecture': list(review.architecture),
+        'max_architecture_bytes': review.max_architecture,
         'blocking': list(BLOCKING),
         'summary': {'cite': list(SUMMARY_CITES)},
     }

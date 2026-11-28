@@ -48,6 +48,7 @@ __all__ = [
     'DeclarationUnread',
     'app_missing',
     'app_verdicts',
+    'blob_at',
     'forge_posted',
     'github_posted',
     'job_run_url',
@@ -58,6 +59,7 @@ __all__ = [
     'review_missing',
     'standing_verdicts',
     'status_gate',
+    'tree_at',
 ]
 
 #: The remedy for a head with no forge-posted review: the forge reviews it again, never a session.
@@ -100,16 +102,63 @@ def file_at(client: RepoReader, path: str, ref: str) -> str:
         DeclarationUnread: the file is absent at *ref*, cannot be read, or the answer carries no content.
 
     """
+    return blob_at(client, path, ref)[0]
+
+
+def blob_at(client: RepoReader, path: str, ref: str) -> tuple[str, str]:
+    """:func:`file_at`'s text and the git blob id the forge names for it (``''`` when it names none).
+
+    Raises:
+        DeclarationUnread: the file is absent at *ref*, cannot be read, or the answer carries no content.
+
+    """
     try:
-        answer: Any = client.call('GET', f'{client.repo}/contents/{quote(path)}?ref={ref}')
+        answer = _fields(client.call('GET', f'{client.repo}/contents/{quote(path)}?ref={ref}'))
     except ForgeCallFailed as failed:
         msg = f'{path} at {ref} cannot be read: {failed}'
         raise DeclarationUnread(msg) from failed
-    content = answer.get('content') if isinstance(answer, dict) else None
+    content = answer.get('content')
     if not content:
         msg = f'{path} at {ref}: the forge answered no content'
         raise DeclarationUnread(msg)
-    return base64.b64decode(content).decode()
+    return base64.b64decode(str(content)).decode(), str(answer.get('sha') or '')
+
+
+def _fields(answer: object) -> dict[str, Any]:
+    """A forge answer's JSON object, else empty: what a read names as no content."""
+    return cast('dict[str, Any]', answer) if isinstance(answer, dict) else {}
+
+
+def tree_at(client: RepoReader, ref: str) -> list[str]:
+    """Every file path in *ref*'s tree, as the forge lists it (``git/trees`` recursive, every page) -- never a checkout.
+
+    Gitea pages a long listing (``truncated`` with a next ``page``); GitHub truncates past its own limit with no page,
+    which refuses: name the documents without a glob there.
+
+    Raises:
+        DeclarationUnread: the tree cannot be read, or the forge truncated it with no next page.
+
+    """
+    paths: list[str] = []
+    page = 1
+    while True:
+        try:
+            answer = _fields(
+                client.call(
+                    'GET', f'{client.repo}/git/trees/{quote(ref, safe="")}?recursive=true&page={page}&per_page=1000'
+                )
+            )
+        except ForgeCallFailed as failed:
+            msg = f'the tree at {ref} cannot be read: {failed}'
+            raise DeclarationUnread(msg) from failed
+        rows = [_fields(row) for row in cast('list[object]', answer.get('tree') or [])]
+        paths += [str(row['path']) for row in rows if row.get('type') == 'blob' and 'path' in row]
+        if not answer.get('truncated'):
+            return paths
+        if 'page' not in answer:
+            msg = f'the forge truncated the tree at {ref}: name each document by its path, without a glob'
+            raise DeclarationUnread(msg)
+        page += 1
 
 
 def forge_posted(client: Client) -> Callable[[CommitStatus], bool]:

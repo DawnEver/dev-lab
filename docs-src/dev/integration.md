@@ -210,6 +210,14 @@ for the review again. A HIGH finding is advice like any other. No session review
 forge posts `tests/review` (`forgereview_identity`); a raw `status post` on `tests/review` is refused. A PR-less
 head's review comment is its `review of commit <sha>` issue, numbered like a PR.
 
+**Requirements, per repo, never a merge condition** (D226, user ruling 2026-11-28). `[tool.dev_lab.review]
+requirements` lists what the review judges a change against, from `principles` (the family default) and
+`architecture` (the documents its `architecture` globs match, at most `max_architecture`, read at the trusted
+integration branch through the forge, never the head). The engine answers each `met`, `violated`, `amended`,
+`untouched` or `unverified`; the review comment lists them as a checklist for the integrator, who gates draft ->
+ready by hand. The verdict rule above is unchanged. The declaration and its refusals:
+`dev_lab.dev.forgereview_requirements`.
+
 **A review that did not run never holds the merge** (`dev_lab.dev.reviewcap`, user rulings 2026-11-05 and
 2026-11-06). A failed attempt on the serve tick is `error` `review attempt failed, retried once: ...`, and the next
 tick tries once more. A second failure, a failure in a review job, every reviewer unsupported, exhausted or
