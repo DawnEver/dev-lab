@@ -8,19 +8,39 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from dev_lab.dev import forgepr, sessionprs
+from dev_lab.dev import forgepr, forgestatus, sessionprs
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import GITHUB
+from dev_lab.dev.prcurrent import HOOK_ID, RULE, SYNC
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
-__all__ = ['auto_merge', 'merge']
+__all__ = ['MERGE_REFUSALS', 'MergeRefused', 'auto_merge', 'merge']
 
 #: GitHub's answer to deleting a ref that is already gone (a repo that auto-deletes head branches on merge).
 _REF_GONE: Final = 'Reference does not exist'
 _NOT_FOUND: Final = 404
 _UNPROCESSABLE: Final = 422
+#: The statuses a forge refuses a MERGE with for a cause the PR carries (a conflict, an unmet check, a moved head):
+#: Gitea 405 (a conflict reads "Please try again later"), GitHub 405 "not mergeable" and 409 "Head branch was modified".
+MERGE_REFUSALS: Final = frozenset({405, 409, _UNPROCESSABLE})
+#: GitHub's ``mergeable_state`` of a PR that conflicts with its base.
+_DIRTY: Final = 'dirty'
+_RED: Final = frozenset({'failure', 'error'})
+
+
+class MergeRefused(ForgeCallFailed):
+    """The forge refused a merge; its message is the cause the PR carries and its door, its report the call's.
+
+    A :class:`ForgeCallFailed`, so every door already catching a failed merge says this line, never a traceback.
+    """
+
+    def __init__(self, said: str, refused: ForgeCallFailed) -> None:
+        """Carry *refused*'s report, said as *said*."""
+        super().__init__(refused.report)
+        self.args = (said,)
+
 
 #: GitHub's native auto-merge, as a merge commit (never squash or rebase: the merge audit reads merge commits).
 _AUTO_MERGE: Final = (
@@ -68,7 +88,43 @@ def merge(client: Client, number: int, *, head: str, message: str, delete_branch
     branch is deleted, and a closed PR whose base is gone cannot be reopened (dev-lab #1003, document-lab #67).
     Gitea retargets the children itself when its merge deletes the head (``RETARGET_CHILDREN_ON_MERGE``, on by
     default since Gitea 1.20).
+
+    A forge's refusal of the merge itself (:data:`MERGE_REFUSALS`) raises :class:`MergeRefused` naming its cause and
+    door (:func:`_why`): a conflict with the base, a head that is not current, else the forge's own text.
     """
+    try:
+        _merge(client, number, head=head, message=message, delete_branch=delete_branch, force=force)
+    except ForgeCallFailed as refused:
+        if refused.final not in MERGE_REFUSALS:
+            raise
+        raise MergeRefused(_why(client, number, head, refused), refused) from refused
+
+
+def _why(client: Client, number: int, head: str, refused: ForgeCallFailed) -> str:
+    """Why the forge refused merging PR *number*, read off the PR: a conflict, a stale head, else the forge's text.
+
+    A conflict is Gitea ``mergeable: false`` or GitHub ``mergeable_state: dirty``; a stale head is a red
+    PR-HEAD-IS-CURRENT status (``pr-current``) on *head*. A read failing here leaves the forge's own text.
+    """
+    name = f'{client.forge.owner}/{client.forge.repo}#{number}'
+    try:
+        pull = client.call('GET', f'{client.repo}/pulls/{number}')
+        base, branch = pull['base']['ref'], pull['head']['ref']
+        if pull.get('mergeable_state') == _DIRTY or (client.backend is not GITHUB and pull.get('mergeable') is False):
+            return (
+                f'{name} conflicts with {base}: merge {base} into {branch} -- {SYNC}, resolve, push '
+                f'(the forge answered: {refused})'
+            )
+        stale = [one for one in forgestatus.status_list(client, head) if one.context == HOOK_ID and one.state in _RED]
+    except (ForgeCallFailed, KeyError, TypeError) as unread:
+        return f'{name}: the forge refused the merge: {refused} (its cause could not be read: {unread})'
+    if stale:
+        why = stale[0].description
+        return f'{name}: its head is not current ({RULE}): {why} -- {SYNC}, push (the forge answered: {refused})'
+    return f'{name}: the forge refused the merge: {refused}'
+
+
+def _merge(client: Client, number: int, *, head: str, message: str, delete_branch: bool, force: bool) -> None:
     title, _, body = message.partition('\n\n')
     if client.backend is GITHUB:
         client.call(

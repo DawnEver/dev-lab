@@ -72,6 +72,7 @@ from dev_lab.dev.breakglass import BREAK_GLASS
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR, is_held
 from dev_lab.dev.forgemerge import hidden_reds
+from dev_lab.dev.forgemergecall import MergeRefused
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.hostedparts import pull_request_parts
@@ -311,7 +312,10 @@ class Server:
         tests += f'; {hidden}' if hidden else ''  # D18: on record
         forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}, '
                           f'{_merged(tests)}. Reason: {reason}. Tests: {tests}')  # fmt: skip
-        forge.merge(pr, head=head, message=merge_message(pr, integration, reason, held.id))
+        try:
+            forge.merge(pr, head=head, message=merge_message(pr, integration, reason, held.id))
+        except MergeRefused as refused:  # its cause and door, said as a refusal, never a traceback
+            raise BreakglassRefused(str(refused)) from refused
         held.merges.append(waves.Merge(repo, pr, head, reason, self.now(), self.key, tests))
         waves.save(self.state, held)
         said = f'{_merged(tests)} {repo}#{pr} at {head[:12]} into {integration} (wave {held.id})'
