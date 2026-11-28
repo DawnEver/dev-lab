@@ -3,7 +3,7 @@
 WHY HERE AND NOT A BINARY. An agent that files an issue or opens a PR needs the same handful of verbs
 on every box, and a host CLI is one more thing installed, authenticated and version-skewed per
 machine -- differently for each forge. The REST shapes are small and stable, so the verbs live in the
-leaf every repo already installs: ``issue list|view|create|comment|close`` and ``pr create|view``,
+leaf every repo already installs: ``issue list|view|create|comment|close`` and ``pr list|create|view``,
 nothing more.
 
 TWO BACKENDS, ONE RESULT. :func:`backend_for` reads the host already derived from ``origin`` by

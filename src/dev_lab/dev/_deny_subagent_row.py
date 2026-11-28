@@ -135,6 +135,7 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         'git log --oneline -5',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.netverb -- git fetch origin',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr view 12',
+        f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr list --head pr/x',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge queue',
         f'{VENV_PYTHONS[1]} -m dev_lab.dev.forge sync',
         f'{VENV_PYTHONS[1]} -m dev_lab.dev.forge sync --help',

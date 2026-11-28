@@ -230,3 +230,64 @@ def test_the_cli_reports_a_refusal_and_exits_nonzero(server, tmp_path: Path, cap
     answer('GET', f'/api/v1/repos/o/r/statuses/{_SHA}', (404, {'message': 'nope'}))
     assert main(['list', _SHA], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 1
     assert 'REFUSED' in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------------------------
+# #1102: every page of a commit's statuses is read -- merge-ready reposts and their ``#k`` continuations
+# bury a part's status pages deep, and a first-page read never sees it
+
+
+def _status_path(forge: Forge, root: str) -> str:
+    return f'{root}/commits/{_SHA}/statuses' if forge.host == 'github.com' else f'{root}/statuses/{_SHA}'
+
+
+def _page_param(forge: Forge) -> str:
+    return 'per_page' if forge.host == 'github.com' else 'limit'
+
+
+def _reposts(first: int, count: int) -> list[dict]:
+    return [
+        {'id': first + n, 'context': 'tests/merge-ready', 'state': 'pending', 'status': 'pending'} for n in range(count)
+    ]
+
+
+@pytest.mark.parametrize(('forge', 'root'), CASES)
+def test_a_part_posted_behind_a_hundred_reposts_is_read(server, forge, root) -> None:
+    """PLANTED: 120 merge-ready reposts, newest first, then the part on page 3 -- a first-page read misses it."""
+    path, size = _status_path(forge, root), 50
+    part = {'id': 1, 'context': 'tests/base', 'state': 'success', 'status': 'success'}
+    every = [*reversed(_reposts(2, 120)), part]
+    for page in range(1, 4):
+        listed = every[(page - 1) * size : page * size]
+        answer('GET', f'{path}?{_page_param(forge)}={size}&page={page}', (200, listed))
+    built = client(forge, Loopback(server))
+    assert {status.context for status in status_list(built, _SHA)} == {'tests/base', 'tests/merge-ready'}
+    assert len(status_history(built, _SHA)) == 121
+
+
+@pytest.mark.parametrize(('forge', 'root'), CASES)
+def test_a_pager_answering_full_full_partial_reads_all_three_pages(server, forge, root) -> None:
+    path, size = _status_path(forge, root), 50
+    for page, count in ((1, size), (2, size), (3, 7)):
+        answer('GET', f'{path}?{_page_param(forge)}={size}&page={page}', (200, _reposts(page * 1000, count)))
+    assert len(status_history(client(forge, Loopback(server)), _SHA)) == 2 * size + 7
+    assert [r['path'].rsplit('page=', 1)[1] for r in Recorder.received] == ['1', '2', '3']
+
+
+@pytest.mark.parametrize(('forge', 'root'), CASES)
+def test_a_server_ignoring_paging_is_read_once_and_never_loops(server, forge, root) -> None:
+    """A forge answering its whole listing to every page (and every size) ends at the repeated page."""
+    whole = _reposts(1, 60)
+    answer('GET', _status_path(forge, root), (200, whole))
+    assert len(status_history(client(forge, Loopback(server)), _SHA)) == 60
+    assert len(Recorder.received) <= 3
+
+
+def test_the_cli_lists_with_json_and_the_created_time_as_iso_text(server, tmp_path: Path, capsys) -> None:
+    """#1102's second defect: ``CommitStatus.created`` is a datetime, which ``json.dumps`` refused."""
+    repo = make_repo(tmp_path, 'https://f.example/o/r.git')
+    posted = {'id': 1, 'context': 'lab/test', 'status': 'success', 'created_at': '2026-11-20T10:00:00Z'}
+    answer('GET', f'/api/v1/repos/o/r/statuses/{_SHA}', (200, [posted]))
+    assert main(['list', _SHA, '--json'], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
+    (listed,) = json.loads(capsys.readouterr().out)
+    assert listed['created'].startswith('2026-11-20T10:00:00')

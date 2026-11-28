@@ -52,7 +52,7 @@ from lab_commons.hpc.layout import ROOT_VAR as LAB_ROOT_VAR
 from lab_commons.storage import Storage
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev._writeroots_shell import shell_targets
+from dev_lab.dev._writeroots_shell import shell_assignments, shell_targets
 from dev_lab.dev.disclosure import details_for
 
 __all__ = [
@@ -328,13 +328,27 @@ def admitted_paths(
     return tuple(dict.fromkeys(found))
 
 
+def _door(name: str, checkout: Path) -> str:
+    """The door line a refusal ends on: :data:`REMEDY` and the literal path under *checkout* to write instead.
+
+    EVERY-WALL-TEACHES (#1070, #997): the door is its own LINE, so :func:`dev_lab.dev.walls.has_remedy` sees it.
+    """
+    return f'{REMEDY} Here: {(checkout / "scratch" / (name or "<name>")).as_posix()}.'
+
+
 def refuse_outside_tree(
-    path: Path, *, allowed: Allowance | None = None, admitted: Iterable[Path] | None = None
+    path: Path,
+    *,
+    allowed: Allowance | None = None,
+    admitted: Iterable[Path] | None = None,
+    checkout: Path | None = None,
 ) -> str | None:
     """The refusal for writing *path* outside every allowed root and admitted place; ``None`` inside one.
 
-    A checkout's sibling, a drive root, the temp dir, OneDrive: all are simply not on the list.
+    A checkout's sibling, a drive root, the temp dir, OneDrive: all are simply not on the list. The door names
+    *checkout*'s ``scratch/`` (the one the write came from; default the cwd) as the literal place to write instead.
     """
+    checkout = Path.cwd() if checkout is None else checkout
     target = _norm(Path(path))
     try:
         allowed = allowed_roots() if allowed is None else allowed
@@ -349,8 +363,8 @@ def refuse_outside_tree(
         whose = 'the fallback, the family checkouts of [repos] ([writeroots] allow is undeclared here)'
     listed = ', '.join(root.as_posix() for root in allowed.roots) or 'none'
     return (
-        f'{RULE_ID}: {Path(path).as_posix()} is outside every writable root of {whose}: {listed} -- {HAZARD} '
-        f'{REMEDY} A root this machine truly needs: {DOOR}.\n{details_for(RULE_ID)}'
+        f'{RULE_ID}: {Path(path).as_posix()} is outside every writable root of {whose}: {listed} -- {HAZARD}\n'
+        f'{_door(Path(path).name, checkout)} A root this machine truly needs: {DOOR}.\n{details_for(RULE_ID)}'
     )
 
 
@@ -400,15 +414,18 @@ def judge(
     if not isinstance(command, str):
         return None
     base = Path(str(payload.get('cwd') or Path.cwd()))
+    env = {**os.environ, **shell_assignments(command)}
     for target, cwd in shell_targets(command):
-        path = place(target, cwd, base)
+        path = place(target, cwd, base, env=env)
         if path is None:
             spelled = f'{cwd}/{target}' if cwd else target
+            name = Path(target).name
             return (
                 f'{RULE_ID}: {spelled} names a variable this session does not hold, so no writable root can be '
-                f'shown to hold it -- {REMEDY}\n{details_for(RULE_ID)}'
+                f'shown to hold it.\n{_door("" if "$" in name or "%" in name else name, base)} '
+                f'Spell the target as a literal path.\n{details_for(RULE_ID)}'
             )
-        if reason := refuse_outside_tree(path, allowed=allowed, admitted=admitted):
+        if reason := refuse_outside_tree(path, allowed=allowed, admitted=admitted, checkout=base):
             return reason
     return None
 
