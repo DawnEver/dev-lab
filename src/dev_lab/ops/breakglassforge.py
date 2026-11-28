@@ -18,7 +18,7 @@ from typing import Final, Protocol
 import lab_commons.launch as _door
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev.branchset import branchset_from
+from dev_lab.dev.branchset import merge_branchset
 from dev_lab.dev.failprint import Fingerprints
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgeapp import installation
@@ -159,14 +159,18 @@ class ClientForge:
         """Merge PR *number* at *head* (:func:`dev_lab.dev.forgemergecall.merge`, either backend).
 
         Its head branch is deleted exactly when the integration path would delete it (D18): when the branch set
-        the repo declares AT THE PR'S BASE (:func:`dev_lab.dev.branchset.branchset_from`, the one parser) puts the
+        the repo declares AT THE PR'S BASE (:func:`dev_lab.dev.branchset.merge_branchset`;
+        the head's when the base declares a retired key, #1115) puts the
         head name in an ephemeral namespace. A long-lived branch (the trunk, a declared session) is never deleted.
         The forge refuses a *head* that moved, so a moved head is neither merged nor deleted. The merge is FORCED:
         a wave waives the tests, so the branch's unmet required checks are overridden, which Gitea does only when
         asked (:func:`~dev_lab.dev.forgemergecall.merge`).
         """
         found = self._client.pr_view(number)
-        declared = branchset_from(manifest_at(self._client, found.base), f'pyproject.toml at {found.base}')
+        declared = merge_branchset(
+            manifest_at(self._client, found.base), f'pyproject.toml at {found.base}',
+            lambda: manifest_at(self._client, head), f'pyproject.toml at {head}',
+        )  # fmt: skip
         ephemeral = declared.is_ephemeral(found.head)
         merge(self._client, number, head=head, message=message, delete_branch=ephemeral, force=True)
 
