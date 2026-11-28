@@ -52,8 +52,11 @@ def _fingerprint(repo: Path) -> dict[str, str]:
 
 
 def test_hpc_imports_nothing_of_the_box_lock_or_the_environment_seats() -> None:
+    # The entry item runner is shipped beside the pytest item runner and imports it by its shipped name
+    # (lab_commons.hpc.entry_item): the probe stands that layout up, so every module imports as it runs.
     probe = (
         'import importlib, pkgutil, sys, lab_commons.hpc as h\n'
+        "sys.modules['lab_ci_pytest_item'] = importlib.import_module('lab_commons.hpc.pytest_item')\n"
         "for m in pkgutil.iter_modules(h.__path__): importlib.import_module('lab_commons.hpc.' + m.name)\n"
         "print('\\n'.join(sorted(k for k in sys.modules if k.startswith('dev_lab.dev'))))\n"
     )
@@ -107,7 +110,11 @@ def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record
                      '--repo', str(repo)]) == 0  # fmt: skip
     assert json.loads(fake.state)['sha'] == sha, 'the run state went to the cluster'
     out = tmp_path / 'out'
-    assert cli.main(['run', 'gather', *common, '-o', str(out)]) == 0
+    # The first gather follows the prep job into round 0; a later one gathers the record (3: still running).
+    for _ in range(4):
+        if (code := cli.main(['run', 'gather', *common, '-o', str(out)])) != 3:
+            break
+    assert code == 0
     (output,) = out.iterdir()
     assert output.name.startswith(f'run-{sha}-base-'), output.name
     assert {argv[3] for argv in spawned} <= READ_ONLY_GIT

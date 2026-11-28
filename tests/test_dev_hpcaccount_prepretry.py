@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 from lab_commons.hpc.builds import Builds
 
+from dev_lab.dev import hpcaccount
 from dev_lab.dev.hpcaccount import prep, prepretry, tick
 from dev_lab.dev.hpcaccount import spec as deploy_spec
 from dev_lab.dev.hpcaccount.fleet import Target
@@ -85,8 +86,6 @@ def test_the_workstation_door_runs_the_accounts_own_kit_on_its_declared_host(mon
 
 
 def test_the_verbs_are_dispatched(monkeypatch: pytest.MonkeyPatch) -> None:
-    from dev_lab.dev import hpcaccount  # noqa: PLC0415 -- the dispatcher under test
-
     seen: list[tuple[str, ...]] = []
     monkeypatch.setattr(prepretry, 'retry', lambda user, repo: seen.append((user, repo)) or 0)
     monkeypatch.setattr(tick, 'prep_retry', lambda repo: seen.append((repo,)) or 0)

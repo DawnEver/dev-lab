@@ -41,6 +41,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final, TextIO
 
+from lab_commons import launch
 from lab_commons.log import emit
 
 from dev_lab.dev import metrics
@@ -265,7 +266,7 @@ def standby(root: Path, *, issue: str, session: str | None = None) -> Path:
 def _last_commit(cwd: Path) -> datetime | None:
     """The committer time of *cwd*'s HEAD, or ``None`` when no commit is readable."""
     try:
-        done = subprocess.run(
+        done = launch.run(
             [shutil.which('git') or 'git', '-C', str(cwd), 'log', '-1', '--format=%cI'],
             capture_output=True, text=True, encoding='utf-8', check=False, timeout=_GIT_TIMEOUT_S,
         )  # fmt: skip

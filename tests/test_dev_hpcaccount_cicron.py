@@ -16,6 +16,7 @@ from _hpcaccount_fakes import FLEET, HOST, fleet_source, home_of, tools_of
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from dev_lab.dev.hpcaccount import accountset, cicron, cimark, cipause, deploy
+from dev_lab.dev.hpcaccount import spec as spec_module
 from dev_lab.dev.hpcaccount.cronline import MARK, cron_lines
 from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.planrunsteps import LOCAL_VERBS, load_steps
@@ -60,6 +61,8 @@ def issuer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Issuer:
     monkeypatch.setattr(cicron, 'state_dir', lambda _home=None: tmp_path / '.dev-lab-consent')
     monkeypatch.setattr(cicron, '_live', found.redeem)
     monkeypatch.setattr(deploy, 'slurm_dirs', lambda: ['/opt/slurm/bin'])
+    # Every declared repo is served here: the account's one cron line ticks them all (ticked follows served).
+    monkeypatch.setattr(spec_module, 'served', lambda spec: frozenset(repo.name for repo in spec.repos))
     return found
 
 

@@ -56,7 +56,11 @@ def test_the_elements_cross_an_msys_argv_intact() -> None:
     """The path that broke: from a native process into the MSYS runtime every element arrives whole and alone."""
     tail = _tail()
     printed = subprocess.run(
-        [_msys_bash(), '-c', 'printf "%s\n" "$#" "$@"', '_', *tail], capture_output=True, text=True, check=True
+        [_msys_bash(), '-c', 'printf "%s\n" "$#" "$@"', '_', *tail],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=True,
     )
     assert printed.stdout == ''.join(f'{line}\n' for line in [str(len(tail)), *tail])
 
@@ -69,5 +73,7 @@ def test_the_login_shell_runs_the_command_with_its_own_stdin(tmp_path: Path) -> 
     line = ' '.join(_tail()).replace('bash -l ', 'bash ', 1)  # a test host's login profile is not the subject
     script = tmp_path / 'line.sh'
     script.write_bytes(line.encode('ascii'))
-    done = subprocess.run([_msys_bash(), script.as_posix()], input='fed\n', capture_output=True, text=True, check=True)
+    done = subprocess.run(
+        [_msys_bash(), script.as_posix()], input='fed\n', capture_output=True, text=True, encoding='utf-8', check=True
+    )
     assert done.stdout.startswith('fed\na b\n')

@@ -22,7 +22,7 @@ import pytest
 from dev_lab.dev.hpcaccount import cronline, look
 from dev_lab.dev.hpcaccount import spec as deploy_spec
 from dev_lab.dev.hpcaccount.fleet import Target
-from dev_lab.dev.hpcaccount.steps import Step, Tools
+from dev_lab.dev.hpcaccount.steps import Step, Tools, crontab
 
 FORGE: Final = 'https://forge.example/team'
 MINE: Final = '0 1 * * * echo mine'
@@ -88,8 +88,6 @@ def test_the_crontab_writer_refuses_a_foreign_family_line_and_writes_nothing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A family line no deploy wrote is its holder's: refused by name. PLANTED CONTROL: the user's own line is kept."""
-    from dev_lab.dev.hpcaccount.steps import crontab  # noqa: PLC0415 -- the door under test
-
     step, state = _step(tmp_path, f'{MINE}\n{FOREIGN}\n')
     assert crontab(step, [ONE]) == 2
     err = capsys.readouterr().err
@@ -109,8 +107,6 @@ def test_planted_seven_marked_lines_become_exactly_the_one_tick(
     An unmarked line running the deploy's own verb (``dev_lab.dev.hpcaccount``) is the deploy's too; the user's own
     line stays. Each removed line is printed.
     """
-    from dev_lab.dev.hpcaccount.steps import crontab  # noqa: PLC0415 -- the door under test
-
     old = [
         f'{n}-59/15 * * * * cd /r/dev-lab && python -m dev_lab.dev.hpcaccount tick r{n} {cronline.MARK}r{n}'
         for n in range(7)
@@ -123,8 +119,6 @@ def test_planted_seven_marked_lines_become_exactly_the_one_tick(
 
 
 def test_the_crontab_writer_refuses_two_lines(tmp_path: Path) -> None:
-    from dev_lab.dev.hpcaccount.steps import crontab  # noqa: PLC0415 -- the door under test
-
     step, state = _step(tmp_path, None)
     assert crontab(step, [ONE, TWO]) == 2
     assert not state.exists()

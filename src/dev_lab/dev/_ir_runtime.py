@@ -277,7 +277,7 @@ def _order(key: object) -> tuple[object, ...]:
 
 def _shadowed(cls: type, rest: dict[str, object], path: str) -> None:
     """Refuse a foreign rest that holds a declared field's key: it is set as the field."""
-    names = {spec.name for spec in cast('tuple[F, ...]', getattr(cls, '_ir_fields'))}  # noqa: B009 -- generated
+    names = {spec.name for spec in fields_of(cls)}
     if declared := sorted(names & set(rest)):
         fail(f'{path}.{declared[0]}', 'an undeclared key', 'a declared field (set it as the field)')
 
@@ -288,7 +288,7 @@ def post_init(record: object) -> None:
     head = cls.__name__
     dims: dict[str, tuple[int, str]] = {}
     values = {}
-    for spec, value in zip(cls._ir_fields, record._ir_values(), strict=True):  # noqa: SLF001 -- generated
+    for spec, value in zip(fields_of(cls), values_of(record), strict=True):
         path = f'{head}.{spec.name}'
         if value is None:
             if not spec.optional:
@@ -298,21 +298,33 @@ def post_init(record: object) -> None:
         values[spec.name] = _item(spec, value, path, dims, cls._ir_bounds)
         if spec.kind == 'rest':
             _shadowed(cls, values[spec.name], path)
-    for spec in cls._ir_fields:
+    for spec in fields_of(cls):
         if spec.csr_values and values[spec.name] is not None:
             _csr(values[spec.name], values[spec.csr_values], f'{head}.{spec.name}')
     record._ir_set(tuple(values.values()), dims)  # noqa: SLF001 -- generated
 
 
-class _Fielded(Protocol):
-    """A generated record class, as :func:`build` reads it: its field table."""
+class Fielded(Protocol):
+    """A generated record, as the runtime and its tree codec read it: its field table and its values."""
 
     _ir_fields: tuple[F, ...]
+
+    def _ir_values(self) -> tuple[object, ...]: ...
+
+
+def fields_of(cls: type) -> tuple[F, ...]:
+    """The generated record class *cls*'s field table: the one reader of that private slot."""
+    return cast('type[Fielded]', cls)._ir_fields  # noqa: SLF001 -- generated
+
+
+def values_of(record: object) -> tuple[object, ...]:
+    """The generated *record*'s values, in :func:`fields_of` order: the one reader of that private slot."""
+    return cast('Fielded', record)._ir_values()  # noqa: SLF001 -- generated
 
 
 def build(cls: type, kwargs: dict[str, object], path: str) -> object:
     """``cls(**kwargs)`` (keyed by WIRE name) whose validation errors read from *path* rather than from ``cls``."""
-    specs = cast('type[_Fielded]', cls)._ir_fields  # noqa: SLF001 -- generated
+    specs = fields_of(cls)
     attrs: dict[str, str] = {spec.name: spec.attr for spec in specs if spec.attr}
     named: dict[str, object] = {attrs.get(str(name), str(name)): value for name, value in kwargs.items()}
     try:

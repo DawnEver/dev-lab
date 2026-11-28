@@ -825,8 +825,13 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/_ir_runtime.py',
         'SLF001',
-        "specs = cast('type[_Fielded]', cls)._ir_fields",
-    ): "the runtime reads the generated records' field table through the private protocol it defines",
+        "return cast('type[Fielded]', cls)._ir_fields",
+    ): "fields_of: the one reader of the generated records' field table, through the protocol the runtime defines",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        "return cast('Fielded', record)._ir_values()",
+    ): "values_of: the one reader of the generated records' values, through the protocol the runtime defines",
     (
         'src/dev_lab/dev/heavyguard.py',
         'PLC0415',
@@ -877,16 +882,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'SLF001',
         '_merge(dims, value._ir_dims, path, type(value).__name__)',
     ): "the runtime owns the generated records' dims slot it merges",
-    (
-        'src/dev_lab/dev/_ir_runtime.py',
-        'SLF001',
-        'for spec, value in zip(cls._ir_fields, record._ir_values(), strict=True):',
-    ): "the runtime validates through the generated records' private protocol it defines",
-    (
-        'src/dev_lab/dev/_ir_runtime.py',
-        'SLF001',
-        'for spec, value in zip(type(record)._ir_fields, record._ir_values(), strict=True)',
-    ): "the runtime walks the generated records' private protocol it defines",
     (
         'src/dev_lab/dev/_ir_runtime.py',
         'SLF001',
@@ -990,6 +985,51 @@ ALLOWED: Final[dict[Site, str]] = {
         'arg-type',
         'why = ClaimPass._beyond_test_budget(host, part)',
     ): _CLAIMPASS_DOUBLE,
+    (
+        'src/dev_lab/dev/_task_io.py',
+        'PLC0415',
+        'from dev_lab.dev.taskpublish import publish',
+    ): 'taskpublish imports GIT and git from _task_io, so a top-level import would be a cycle',
+    (
+        'src/dev_lab/dev/taskpublish.py',
+        'PLC0415',
+        'from dev_lab.dev.netverb import run_network_verb',
+    ): 'the network retry loop loads only when a ledger write landed and must be pushed',
+    (
+        'src/dev_lab/dev/hpcaccount/__init__.py',
+        'PLC0415',
+        'from dev_lab.dev.hpcaccount.tick import prep_build',
+    ): 'the package imports no verb: tick imports the package, so a top-level import would be a cycle',
+    (
+        'src/dev_lab/dev/hpcaccount/division.py',
+        'PLC0415',
+        'from lab_commons.hpc.reach import TABLE',
+    ): 'every kit import must work on a lab-commons below the reach floor; only the reach question loads it',
+    (
+        'src/dev_lab/dev/hpcaccount/transport.py',
+        'PLC0415',
+        'from lab_commons.hpc.reach import require as declared',
+    ): 'same: the reach declaration loads only when a transport opens, never on a kit import',
+    (
+        'src/dev_lab/dev/hpcaccount/spec.py',
+        'PLC0415',
+        'from dev_lab.dev.githubtests import on_github',
+    ): 'githubtests imports this module (accounthost), so a top-level import would be a cycle',
+    (
+        'src/dev_lab/dev/ircheck.py',
+        'PLR0911',
+        'def _fits(ir: IR, ref: TypeRef, value: object) -> bool:',
+    ): 'one return per IR type kind: a dispatch, split further it only scatters the table',
+    (
+        'src/dev_lab/dev/irrustpy.py',
+        'PLR0911',
+        'def _write(ir: IR, f: Field, ref: TypeRef, var: str) -> str:',
+    ): 'one return per IR type kind: a dispatch, split further it only scatters the table',
+    (
+        'src/dev_lab/dev/irmodel.py',
+        'PLR2004',
+        "if 'one_of' in row and len(named['one_of']) < 2:",
+    ): '"one of" needs two to choose from: the 2 is the definition, not a tunable',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

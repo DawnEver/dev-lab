@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 def _git(root: Path, *args: str) -> str:
     git = shutil.which('git') or 'git'
-    done = subprocess.run([git, '-C', str(root), *args], capture_output=True, text=True, check=True)
+    done = subprocess.run([git, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8', check=True)
     return done.stdout.strip()
 
 
