@@ -32,10 +32,11 @@ THE CLI, so a consumer needs no ``scripts/`` adopter: ``list`` (every untracked 
 and owner, oldest first), ``discard <paths>`` (delete one-off files, and a top-level
 entry DIRECTORY through :func:`clear_scratch` as this session -- its own always, another's under the same in-use
 rule (#1034: an experiment dir had no door out); anything else outside scratch, or its README, is refused and nothing
-is deleted) and ``clear [NAME ...] [--keep NAME ...] [--approved WORDS] --yes`` -- THE door for
+is deleted) and ``clear [NAME ... | --all] [--keep NAME ...] [--approved WORDS] --yes`` -- THE door for
 emptying scratch, named by RECURSIVE-DELETE: it deletes the named UNTRACKED top-level entries (this session's when
-none is named), never a tracked file and never outside scratch, refuses the whole clear when a link or junction
-inside an entry points out of scratch, and clears the read-only/hidden attributes Windows sets so a nested ``.git``
+none is named, saying what of no live session it kept; ``--all`` with the user's words: every one of those),
+never a tracked file and never outside scratch, refuses the whole clear when a link or junction inside an entry
+points out of scratch, and clears the read-only/hidden attributes Windows sets so a nested ``.git``
 deletes. It works on a main checkout: git decides what is deletable, not the kind of checkout.
 
 EVERY ENTRY CARRIES THE SESSION THAT MADE IT (:mod:`dev_lab.dev._scratch_owners`; 2026-11-25: a start-snapshot diff
@@ -67,7 +68,6 @@ from dev_lab.dev._scratch_clear import (
     SCRATCH_README,
     ScratchEscape,
     ScratchInUse,
-    _clear,
     _hook,
     clear_scratch,
     in_use,
@@ -75,6 +75,7 @@ from dev_lab.dev._scratch_clear import (
     owner_label,
     untracked_scratch,
 )
+from dev_lab.dev._scratch_clearcli import clear_verb
 from dev_lab.dev._scratch_owners import owners
 from dev_lab.dev.codeplace import PRUNED_NAMES, PlacementNotDeclared, checkout_root, scratch_placement
 from dev_lab.dev.native_session import session_of
@@ -258,7 +259,7 @@ def _verb(mode: str, rest: list[str], root: Path) -> int:
         for rel, size, age in untracked_scratch(root):
             emit(f'{size:>14,}  {age:7.1f}d  {owner_label(records, rel, session, now=now):<12}  {rel}')
     if mode in {'list', 'clear'}:
-        return _clear(rest, root) if mode == 'clear' else 0
+        return clear_verb(rest, root) if mode == 'clear' else 0
     try:
         for rel in discard_scratch(rest, root=root, session=session_of()):
             emit(f'discarded {rel}')

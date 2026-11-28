@@ -91,6 +91,15 @@ def test_a_live_session_is_refused_and_the_same_tree_once_quiet_is_discarded(lan
     assert discard(lane, _DECLARED, 'lane/x', _WORDS, quiet_s=0)[0] == 0, 'PLANTED CONTROL'
 
 
+def test_a_detached_trees_name_is_refused_naming_its_door(lane: Path, tmp_path: Path) -> None:
+    """dev-lab#1123: ``--discard <tree>`` on a detached tree said only "no local branch"; it names the door."""
+    _run(lane, 'worktree', 'add', '-q', '--detach', str(tmp_path / 'repro'), 'main')
+    code, line = discard(lane, _DECLARED, 'repro', _WORDS, quiet_s=0)
+    assert code == 1
+    assert 'worktrees --remove repro --approved' in line, line
+    assert (tmp_path / 'repro').exists()
+
+
 def test_a_remote_tracking_name_is_not_a_local_branch(lane: Path) -> None:
     code, line = discard(lane, _DECLARED, 'origin/main', _WORDS, quiet_s=0)
     assert (code, 'no local branch' in line) == (1, True), line

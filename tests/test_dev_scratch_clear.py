@@ -296,6 +296,33 @@ def test_keep_acks_an_entry_so_no_stop_names_it_and_refuses_another_live_session
     assert 'scratch/theirs.txt' in _reason(capsys)
 
 
+def test_a_no_names_clear_says_what_it_left_and_all_takes_it_with_approval(tmp_path, monkeypatch, capsys) -> None:
+    """dev-lab#1124: a no-names clear with nothing of its own exited 0 silent beside unowned entries.
+
+    PLANTED CONTROLS: ``--all`` without approval refuses; a live session's entry survives ``--all``.
+    """
+    _repo(tmp_path)
+    _plant(tmp_path, 'scratch/unowned.py')
+    _write(tmp_path, 'scratch/stale.py', session='gone-session')
+    _gone('gone-session')
+    _write(tmp_path, 'scratch/theirs.py', session='other-session')
+    monkeypatch.chdir(tmp_path)
+    assert main(['clear', '--yes']) == 0
+    out = capsys.readouterr().out
+    assert '2 untracked scratch entries of no live session kept' in out, out
+    assert '--all --approved' in out
+    assert (tmp_path / 'scratch/unowned.py').exists()
+    assert main(['clear', '--all', '--yes']) == 2  # PLANTED CONTROL: no approval, nothing cleared
+    assert '--approved' in capsys.readouterr().out
+    assert (tmp_path / 'scratch/unowned.py').exists()
+    assert main(['clear', '--all', '--approved', 'the user: clear it all', '--yes']) == 0
+    assert not (tmp_path / 'scratch/unowned.py').exists()
+    assert not (tmp_path / 'scratch/stale.py').exists()
+    assert (tmp_path / 'scratch/theirs.py').exists(), "PLANTED CONTROL: a live session's entry stays"
+    assert main(['clear', '--yes']) == 0
+    assert 'nothing to clear' in capsys.readouterr().out
+
+
 def test_clear_with_no_native_session_refuses_without_names(tmp_path, monkeypatch, capsys) -> None:
     _repo(tmp_path)
     _plant(tmp_path, 'scratch/probe.py')

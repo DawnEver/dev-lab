@@ -96,10 +96,10 @@ def _planted(tmp_path: Path) -> Path:
 
 
 def _settled(work: Path) -> None:
-    """Age every linked tree's index past the live-session window (``dev_lab.dev.reclaim.QUIET_S``)."""
+    """Age every linked tree's HEAD and reflog past the live-session window (``dev_lab.dev.reclaim.QUIET_S``)."""
     old = time.time() - 2 * 3600
-    for index in (work / '.git' / 'worktrees').glob('*/index'):
-        os.utime(index, (old, old))
+    for head in (work / '.git' / 'worktrees').glob('*/**/HEAD'):
+        os.utime(head, (old, old))
 
 
 def _plant(path: Path, text: str) -> None:
