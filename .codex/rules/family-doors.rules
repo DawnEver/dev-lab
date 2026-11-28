@@ -143,6 +143,24 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "ci", "logs"],
+    decision = "allow",
+    justification = "Read-only: a CI run's jobs and the bounded log of the selected ones.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "ci", "artifact"],
+    decision = "allow",
+    justification = "Read-only: a CI run's artifacts, unpacked under the output dir.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "list"],
+    decision = "allow",
+    justification = "Read-only: the pull requests in one state, optionally of one head branch.",
+)
+
+prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "run", "show"],
     decision = "allow",
     justification = "Read-only: what a cluster run of one commit learned, as the forge published it.",
