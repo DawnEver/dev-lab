@@ -16,6 +16,11 @@ the pinned toolchain); these wheels are for consumers outside the family.
 * Smoke: each wheel installs into a clean venv of the family Python (:data:`dev_lab.dev.pythontoolchain.VERSION`,
   the one interpreter its ``requires-python`` admits) and imports the extension (``[tool.maturin] module-name``, else
   the project name as a module).
+* Attest: every wheel and the sdist carry GitHub's build provenance attestation, made where they were built and
+  checked by ``gh attestation verify <file> --repo <owner>/<repo>``.
+* Sdist: a maturin repo's one sdist (built on the Linux runner, so when ``linux`` is declared) is installed on a
+  fresh Linux runner -- no checkout, the family Rust toolchain (:data:`dev_lab.dev.rusttoolchain.CHANNEL`) -- and its
+  extension imported, so a consumer building from source is tested before anything is published.
 * Publish: the wheels and the sdist go to the rolling prerelease :data:`ROLLING` (replaced on each push to
   ``main``) and, on a tag, to that tag's release. PyPI stays out of scope until a repo asks.
 
@@ -43,6 +48,7 @@ from typing import Any, Final, cast
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.pythontoolchain import VERSION
+from dev_lab.dev.rusttoolchain import CHANNEL
 
 __all__ = ['ROLLING', 'RUNNERS', 'VENDOR_WORKFLOW', 'WORKFLOW', 'vendor_release', 'vendor_workflow', 'wheels_workflow']
 
@@ -54,6 +60,10 @@ ROLLING: Final = 'main-latest'
 RUNNERS: Final = {'linux': 'ubuntu-latest', 'windows': 'windows-latest', 'macos': 'macos-latest'}
 #: The workflow file a repo declaring ``[tool.dev_lab.native.vendor]`` renders.
 VENDOR_WORKFLOW: Final = 'vendor-wheels.yml'
+#: GitHub's build provenance attestation, and what it needs beyond reading the tree: the OIDC token Sigstore
+#: certifies and the attestation store.
+_ATTEST: Final = 'actions/attest-build-provenance@v4'
+_ATTESTS: Final = {'contents': 'read', 'id-token': 'write', 'attestations': 'write'}
 _CIBUILDWHEEL: Final = 'pypa/cibuildwheel@v3.2.1'
 _COMMIT: Final = re.compile(r'[0-9a-f]{40}')
 _UPLOAD: Final = """\
@@ -98,16 +108,21 @@ def wheels_workflow(text: str, origin: str) -> dict[str, Any] | None:
         raise ValueError(msg)
     maturin = data.get('build-system', {}).get('build-backend') == 'maturin'
     module = data.get('tool', {}).get('maturin', {}).get('module-name') or data['project']['name'].replace('-', '_')
+    sdist = maturin and 'linux' in systems  # maturin builds the one sdist on the Linux runner
     return {
         'name': 'Wheels',
         'on': {'push': {'branches': ['main'], 'tags': ['v*']}, 'workflow_dispatch': {}},
         'permissions': {'contents': 'read'},
-        'jobs': {'build': _build(systems, module, maturin=maturin), 'publish': _publish()},
+        'jobs': {
+            'build': _build(systems, module, maturin=maturin),
+            **({'test-sdist': _test_sdist(module)} if sdist else {}),
+            'publish': _publish(['build', 'test-sdist'] if sdist else ['build']),
+        },
     }
 
 
 def _build(systems: list[str], module: str, *, maturin: bool) -> dict[str, Any]:
-    """The matrix job: build one wheel on each system's runner, refuse a non-abi3 wheel, smoke-import it, upload."""
+    """The matrix job: build one wheel on each system's runner, refuse non-abi3, smoke-import, attest, upload."""
     if maturin:
         built = [
             {
@@ -129,12 +144,18 @@ def _build(systems: list[str], module: str, *, maturin: bool) -> dict[str, Any]:
     return {
         'strategy': {'fail-fast': False, 'matrix': {'include': [{'os': RUNNERS[name]} for name in systems]}},
         'runs-on': '${{ matrix.os }}',
+        'permissions': _ATTESTS,
         'steps': [
             {'uses': 'actions/checkout@v4'},
             {'uses': 'actions/setup-python@v5', 'with': {'python-version': VERSION}},
             *built,
             {'name': 'Refuse a wheel that is not abi3', 'shell': 'bash', 'run': _ABI3_CHECK},
             {'name': 'Smoke-import the wheel in a clean venv', 'shell': 'bash', 'run': smoke},
+            {
+                'name': 'Attest the build provenance of what was built',
+                'uses': _ATTEST,
+                'with': {'subject-path': 'dist/*'},
+            },
             {
                 'uses': 'actions/upload-artifact@v4',
                 'with': {'name': 'wheels-${{ matrix.os }}', 'path': 'dist/*'},
@@ -143,15 +164,34 @@ def _build(systems: list[str], module: str, *, maturin: bool) -> dict[str, Any]:
     }
 
 
-def _publish() -> dict[str, Any]:
-    """The release job: every artifact to :data:`ROLLING` on ``main``, to the tag's own release on a tag."""
+def _test_sdist(module: str) -> dict[str, Any]:
+    """The sdist installed on a fresh Linux runner with the family Rust toolchain, then its extension imported."""
+    return {
+        'needs': 'build',
+        'runs-on': 'ubuntu-latest',
+        'steps': [
+            {'uses': 'actions/setup-python@v5', 'with': {'python-version': VERSION}},
+            {
+                'name': f'Install the family Rust toolchain {CHANNEL}',
+                'shell': 'bash',
+                'run': f'rustup toolchain install {CHANNEL} --profile minimal\nrustup default {CHANNEL}',
+            },
+            {'uses': 'actions/download-artifact@v4', 'with': {'name': f'wheels-{RUNNERS["linux"]}', 'path': 'dist'}},
+            {'name': 'Build and install the sdist', 'shell': 'bash', 'run': 'python -m pip install dist/*.tar.gz'},
+            {'name': 'Import the extension', 'shell': 'bash', 'run': f'python -c "import {module}"'},
+        ],
+    }
+
+
+def _publish(needs: list[str]) -> dict[str, Any]:
+    """The release job after *needs*: every artifact to :data:`ROLLING` on ``main``, to the tag's release on a tag."""
     rolling = (
         f'gh release delete {ROLLING} --yes --cleanup-tag || true\n'
         f'gh release create {ROLLING} dist/* --prerelease --target "$GITHUB_SHA" '
         f'--title "{ROLLING}" --notes "Wheels built from main at $GITHUB_SHA."'
     )
     return {
-        'needs': 'build',
+        'needs': needs,
         'runs-on': 'ubuntu-latest',
         'permissions': {'contents': 'write'},
         'env': {'GH_TOKEN': '${{ github.token }}', 'GH_REPO': '${{ github.repository }}'},

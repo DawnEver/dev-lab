@@ -34,6 +34,11 @@
         }
       },
       "runs-on": "${{ matrix.os }}",
+      "permissions": {
+        "contents": "read",
+        "id-token": "write",
+        "attestations": "write"
+      },
       "steps": [
         {
           "uses": "actions/checkout@v4"
@@ -71,6 +76,13 @@
           "run": "python -m venv .smoke && py=.smoke/bin/python && { [ -x \"$py\" ] || py=.smoke/Scripts/python.exe; } && \"$py\" -m pip install dist/*.whl && \"$py\" -c \"import overrides\""
         },
         {
+          "name": "Attest the build provenance of what was built",
+          "uses": "actions/attest-build-provenance@v4",
+          "with": {
+            "subject-path": "dist/*"
+          }
+        },
+        {
           "uses": "actions/upload-artifact@v4",
           "with": {
             "name": "wheels-${{ matrix.os }}",
@@ -79,8 +91,45 @@
         }
       ]
     },
-    "publish": {
+    "test-sdist": {
       "needs": "build",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.14"
+          }
+        },
+        {
+          "name": "Install the family Rust toolchain 1.100.0",
+          "shell": "bash",
+          "run": "rustup toolchain install 1.100.0 --profile minimal\nrustup default 1.100.0"
+        },
+        {
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "name": "wheels-ubuntu-latest",
+            "path": "dist"
+          }
+        },
+        {
+          "name": "Build and install the sdist",
+          "shell": "bash",
+          "run": "python -m pip install dist/*.tar.gz"
+        },
+        {
+          "name": "Import the extension",
+          "shell": "bash",
+          "run": "python -c \"import overrides\""
+        }
+      ]
+    },
+    "publish": {
+      "needs": [
+        "build",
+        "test-sdist"
+      ],
       "runs-on": "ubuntu-latest",
       "permissions": {
         "contents": "write"
