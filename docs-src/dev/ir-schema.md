@@ -49,6 +49,11 @@ values = ["a", "b"]                   # non-empty, unique, lower_snake
 
 [record.<Name>]
 doc = "..."
+rest = "foreign:<package>.<name>"     # every undeclared key is kept as written, typed by that package
+string = "<field>"                    # a bare string written for the record is that str/enum/id field
+array = ["<field>", ...]              # an entry written as an array is these fields, in order
+fill = ["<field>", ...]               # a bare number written for the record fills these int/float fields
+one_of = ["<field>", "<field>", ...]  # exactly one of these optional fields is present
 [record.<Name>.field.<name>]
 type = "float"                        # see the table
 optional = false                      # default false; a required field never has a default
@@ -56,11 +61,16 @@ quantity = "<quantity>"               # float, complex and float/complex arrays 
 doc = "..."
 dtype = "float64"                     # arrays only
 shape = ["n", 3]                      # arrays only: ints and symbolic dims
-unique_by = "id"                      # list:record:<R> only
+unique_by = "id"                      # list:record:<R> only; or ["a", "b"]: the TUPLE is unique
 csr_values = "<array field>"          # int64 1-d array only: this is the CSR offsets of that field
 gauge_reference = "<float field>"     # pressure only: gauge at the boundary, relative to that field
-default = 293.15                      # optional fields only (bool, int, float, str, enum value): CARRIED, never filled
-default_consumer = "compile"          # required with default: the consumer that fills it; the reader never does
+default = 293.15                      # optional fields only; any type, lists and tables included: CARRIED, never filled
+default_consumer = "compile"          # optional: the consumer that fills the default; the reader never does
+default_from = { facet = "space.order", scale = 1, offset = -1 }   # instead of default: scale * facet + offset
+nonempty = true                       # lists only: at least one entry
+requires = "<field>"                  # optional fields only: written only beside that sibling
+minimum = "0.5 mm"                    # int/float only; "<number> <unit>" of the field's quantity, a bare number
+maximum = 1                           #   without one (TOLERANCE-CARRIES-A-UNIT); generated in absolute SI
 ```
 
 | `type` | Python | Rust | Canonical JSON |
@@ -74,6 +84,7 @@ default_consumer = "compile"          # required with default: the consumer that
 | `record:<R>` | the dataclass | the struct | object |
 | `id:<R>` | `NewType('<R>Id', str)` | `struct <R>Id(String)` | string |
 | `list:<type>` | `tuple[T, ...]` | `Vec<T>` | array |
+| `foreign:<package>.<name>` | `object`, kept as written | `serde_json::Value` | as written |
 | `array` | `NDArray[np.<dtype>]`, read-only | `ndarray::ArrayD<T>` | `{"data": base64, "shape": [...]}` |
 
 - A reference `<R>` or `<E>` is local, `<module>.<R>` for another module of this repo, or `<alias>.<R>`
@@ -94,6 +105,15 @@ default_consumer = "compile"          # required with default: the consumer that
 - **Ragged data** is explicit CSR. An int64 `offsets` array names its values with `csr_values`. Offsets
   start at 0, never decrease and end at the values' first extent.
 - No quantity on `int`; counts are pure numbers.
+- **Metadata** (`default`, `default_from`, `one_of`, `requires`, `nonempty`, `string`, `array`, `fill`,
+  `minimum`, `maximum`) is ADMITTED and validated in shape: each names fields that exist, of a kind it can apply
+  to, and a `default` fits its field's type (a float with a quantity writes it `"<number> <unit>"`, like a bound).
+  Readers validate the elaborated form and never fill, desugar or enforce it: that is a later resolver's. A
+  `foreign:` value and a record's `rest` are their owner package's to validate; a record with `rest` declares no
+  field named `rest`.
+- A **`unique_by` key** is an id, str, int or enum field, a list of those, or optional (absent is `null`). Each
+  item's key is its canonical JSON (a tuple of keys a JSON array) in both languages, ordered null < number <
+  string < array; a duplicate is refused as `duplicate <key JSON>`.
 
 ## The quantities catalogue
 
@@ -269,7 +289,12 @@ The consuming crate's `build.rs` runs the generator into `OUT_DIR`; nothing is c
 - One `mod ir_<module>` per schema module, written to `ir.rs`. Dependencies: `serde` (derive),
   `serde_json` and `ndarray`.
 - Records derive `Serialize`/`Deserialize` with `deny_unknown_fields`; optionals are
-  `Option<T>` with `skip_serializing_if`.
+  `Option<T>` with `skip_serializing_if`. A record with `rest` drops `deny_unknown_fields` and carries
+  `#[serde(flatten)] pub rest: serde_json::Map<String, serde_json::Value>` (Python: `rest: dict | None`).
+- Each record exposes its metadata as associated consts: `REST`, `STRING` (`Option<&str>`), `ARRAY`, `FILL`,
+  `ONE_OF`, `NONEMPTY` (`&[&str]`), `REQUIRES` (`(field, sibling)`), `FIELD_BOUNDS` (`(field, Option<f64>,
+  Option<f64>)`, absolute SI), `DEFAULTS` (`(field, canonical JSON)`) and `DEFAULT_FROM` (`(field, facet, scale,
+  offset)`).
 - `validate()` gives the same path messages as Python. `to_json()` writes the canonical bytes with a
   generated writer, because serde_json's float format and key order are not canonical.
 - Behind the crate feature `pyo3` (pyo3 and numpy at `irrustpy.PYO3_VERSION` / `NUMPY_VERSION`, ndarray
@@ -298,7 +323,7 @@ The consuming crate's `build.rs` runs the generator into `OUT_DIR`; nothing is c
 | `IR-NON-SI-UNIT` | a catalogue unit that is prefixed, affine, gauge or logarithmic | use the coherent SI unit |
 | `IR-DIMENSION-MISMATCH` | a catalogue unit disagrees with its dimension, or a port domain is not a power | correct the row |
 | `IR-CONSTANT-SPEC` | a constant missing or emptying `value`/`unit`/`citation`/`reason`, an unknown key, a non-lower_snake name, a non-finite value or an expression outside numbers, `pi`, `e`, `+ - * / **`; a schema module named `constants` | the message names the key or the expression |
-| `IR-FIELD-SPEC` | a misplaced or incomplete key (`dtype`, `shape`, `unique_by`, `csr_values`, `gauge_reference`, `default`) | the message names the key |
+| `IR-FIELD-SPEC` | an unknown field or record key, or a misplaced, ill-typed or incomplete one (`dtype`, `shape`, `unique_by`, `csr_values`, `gauge_reference`, `default`, `default_from`, `one_of`, `requires`, `rest`, `string`, `array`, `fill`, `nonempty`, `minimum`, `maximum`) | the message names the key |
 | `IR-VERSION-NOT-BUMPED` | IR changed, version did not, or the bump is below the class | bump to at least the named class |
 | `IR-OLD-RECORD` | a stored record of an older MAJOR | `python -m dev_lab.dev.irschema migrate <path>` |
 | `IR-UNKNOWN-FIELD` | a stored record carries a field this reader does not know | regenerate; if MAJOR-older, migrate |

@@ -273,7 +273,7 @@ def test_a_unique_by_list_is_sorted_by_key_and_refuses_a_duplicate(ir: SimpleNam
     rest = {'samples': [], 'hit_offsets': np.array([0], dtype=np.int64), 'hit_times': np.zeros(0)}
     batch = ir.s.Batch(widgets=[_widget(ir.w, id='w-2'), _widget(ir.w, id='w-1')], **rest)
     assert [w.id for w in batch.widgets] == ['w-1', 'w-2']
-    with pytest.raises(ir.rt.IRValidationError, match=r"Batch\.widgets: expected unique id, got duplicate 'w-1'"):
+    with pytest.raises(ir.rt.IRValidationError, match=r'Batch\.widgets: expected unique id, got duplicate "w-1"'):
         ir.s.Batch(widgets=[_widget(ir.w), _widget(ir.w)], **rest)
 
 

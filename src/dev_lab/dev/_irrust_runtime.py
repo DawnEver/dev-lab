@@ -248,22 +248,45 @@ pub mod ir_runtime {
         fail(&format!("{path}[-1]"), values_len.to_string(), last.to_string())
     }
 
-    pub fn check_unique<K: Ord + Clone + std::fmt::Debug>(keys: Vec<K>, path: &str, key: &str) -> Res {
-        let mut sorted = keys.clone();
+    /// Each item's key as canonical JSON (`serde_json::to_string` of the key, or of the tuple of keys).
+    pub fn check_unique(keys: Vec<String>, path: &str, key: &str) -> Res {
+        let mut sorted = keys;
         sorted.sort();
         for w in sorted.windows(2) {
             if w[0] == w[1] {
-                return fail(path, format!("unique {key}"), format!("duplicate {:?}", w[0]).replace('"', "'"));
+                return fail(path, format!("unique {key}"), format!("duplicate {}", w[0]));
             }
         }
         Ok(())
     }
 
-    pub fn sort_by_key(value: &mut Value, field: &str, key: &str) {
+    /// The order of two key trees, the Python runtime's `_order`: null < number < string < array.
+    pub fn cmp_key(a: &Value, b: &Value) -> std::cmp::Ordering {
+        fn rank(v: &Value) -> u8 {
+            match v {
+                Value::Null => 0,
+                Value::String(_) => 2,
+                Value::Array(_) => 3,
+                _ => 1,
+            }
+        }
+        match (a, b) {
+            (Value::String(x), Value::String(y)) => x.cmp(y),
+            (Value::Array(x), Value::Array(y)) => {
+                x.iter().zip(y).map(|(p, q)| cmp_key(p, q)).find(|o| o.is_ne()).unwrap_or(x.len().cmp(&y.len()))
+            }
+            (Value::Number(x), Value::Number(y)) => x.as_i64().cmp(&y.as_i64()),
+            _ => rank(a).cmp(&rank(b)),
+        }
+    }
+
+    pub fn sort_by_key(value: &mut Value, field: &str, keys: &[&str]) {
         if let Some(Value::Array(items)) = value.get_mut(field) {
-            items.sort_by(|a, b| match (a[key].as_str(), b[key].as_str()) {
-                (Some(x), Some(y)) => x.cmp(y),
-                _ => a[key].as_i64().cmp(&b[key].as_i64()),
+            items.sort_by(|a, b| {
+                keys.iter()
+                    .map(|key| cmp_key(a.get(*key).unwrap_or(&Value::Null), b.get(*key).unwrap_or(&Value::Null)))
+                    .find(|o| o.is_ne())
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
         }
     }
