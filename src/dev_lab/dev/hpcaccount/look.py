@@ -79,7 +79,7 @@ _LMOD: Final = '. /etc/profile >/dev/null 2>&1; '
 #: The door when the kit's lab-commons predates the machine file's schema (a key it does not know).
 STALE_KIT_DOOR: Final = (
     "the kit's lab-commons is older than the machine file -- sync it: "
-    'python -m dev_lab.dev.dep --sync in the kit (or python -m dev_lab.dev.dep --bootstrap <worktree>)'
+    'python -m dev_lab.dev.dep --sync, run in the kit (or python -m dev_lab.dev.dep --bootstrap <worktree>)'
 )
 #: The closed set of reads, each with what it shows.
 READS: Final = {
