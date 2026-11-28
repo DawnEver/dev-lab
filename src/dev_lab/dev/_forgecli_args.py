@@ -31,7 +31,8 @@ def parser() -> argparse.ArgumentParser:
         epilog=(
             'also: pr breakglass N --reason R, breakglass open|close|ack|status, pr close-landed [N...], '
             'pr close-superseded N... --by <M|sha|ref>, '
-            'issue claim|status N, label create --name N --color C, status post|list SHA; token: auth login|status'
+            'issue claim|status N, label create --name N --color C, status post|list SHA, '
+            'ci logs|artifact <sha|pr:N|run:ID> (read a CI run); token: auth login|status'
         ),
     )
     nouns = built.add_subparsers(dest='noun', required=True)

@@ -12,6 +12,7 @@ for the branch flow, ``tidy`` for declared issue hygiene, ``hosts retire HOST`` 
 ``pr close-landed [N...]`` to close landed PRs, ``pr close-superseded N... --by <M|sha>``
 to close salvaged ones (neither deletes a branch),
 ``cancel-stuck <sha>`` for the forge's own stuck tasks, ``watch <sha>`` to follow a verdict read-only,
+``ci logs|artifact <sha|pr:N|run:ID>`` to read a CI run's job logs and artifacts (read-only),
 ``notices`` for a session's PR notices, ``review again <pr>`` to have a PR reviewed again,
 ``review takeover|plan <sha>`` for a session's advisory review, ``security release <pr> --why`` for a head's new
 security exemptions, ``headgate run --pr <N>`` for a PR head's gate statuses, ``secrets sync --task <task>`` for
@@ -40,6 +41,7 @@ from dev_lab.dev import (
     branchnotices,
     forgeauth,
     forgebreakglass,
+    forgeci,
     forgedraft,
     forgeheadgate,
     forgehold,
@@ -101,6 +103,7 @@ __all__ = ['ISSUE_VERBS', 'NOUNS', 'PR_VERBS', 'issue_and_pr', 'main']
 NOUNS: dict[str, Callable[[list[str]], int]] = {
     'auth': forgeauth.main,
     'breakglass': forgebreakglass.wave_main,
+    'ci': forgeci.main,
     'status': forgestatus.main,
     'protect': forgeprotect.main,
     'publish': forgeoutbox.main,
