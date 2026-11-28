@@ -55,6 +55,8 @@ RUN_SIGNATURES: Final = (
     re.compile(r'scripts[/\\]gate[/\\]prepush_gate\.py\b'),
     # ...and the retry wrapper around it is what the agent holds: one network verb, never anything else (2026-11-13).
     re.compile(r'(?:^|[/\\\s])with-retry\.sh\s+(?:push|fetch|pull|clone|ls-remote)\b'),
+    # A venv build and the follow that started it: the build lock's wall names their pid as its door (#1002).
+    re.compile(r'-m\s+dev_lab.dev\.(?:dep|venvfollow)\b'),
     SERVE,
     WATCH,  # its owner's reader, stopped to free its venv and re-armed (liverun.env_in_use)
 )

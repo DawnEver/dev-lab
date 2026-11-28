@@ -26,6 +26,7 @@ from dev_lab.dev.datedlog import (
     dated_log,
     output_dir,
 )
+from dev_lab.dev.layout import BACKUP_SUFFIXES
 
 
 def test_the_three_parts_are_todays_local_date_two_digits_each() -> None:
@@ -154,3 +155,4 @@ def test_the_family_kinds_declare_formats_never_code_nor_anything() -> None:
             assert shape == '.' or '/' not in shape or shape.rsplit('/', 1)[0] in shapes, (kind, shape)
             assert all(s.startswith('.') and len(s) > 1 for s in suffixes), (kind, shape, suffixes)
             assert not suffixes & set(CODE_SUFFIXES), (kind, shape, suffixes & set(CODE_SUFFIXES))
+            assert not suffixes & BACKUP_SUFFIXES, f'{kind}/{shape}: work is git objects, never a parked backup'

@@ -1,4 +1,4 @@
-"""The deploy's ``femm`` phase: an account declaring ``[capabilities.femm]`` gets the family's ONE FEMM 5 release.
+"""The FEMM build job: an account declaring ``[capabilities.femm]`` gets the family's ONE FEMM 5 release.
 
 User ruling 2026-11-25: "install it through the deploy". WHAT is :data:`dev_lab.dev.toolrelease.FEMM_QT` -- femm-qt
 at its pinned tag, the tag's commit checked before anything is built. FEMM 5 publishes no Linux binary, so it is
@@ -8,8 +8,10 @@ femm-qt resolves its solvers, ``python/`` staging and material libraries from it
 whole ``bin/`` goes there, and beside it femm-qt's build stamp ``generated/version.env``
 (:data:`lab_commons.compute.toolchecks.FEMM_VERSION_FILE`): on Linux that file IS the version lab_commons reads.
 
-WHERE IT RUNS: on the login node, in the tick's environment (cron's PATH, then the grant's ``setup``, which loads
-the cluster's compiler) -- like every venv and native build of this deploy, at :data:`BUILD_JOBS` parallel jobs.
+WHERE IT RUNS: in a Slurm job, never on the login node (ONE-LOGIN-POLLER, user ruling 2026-11-27) -- the deploy
+asks it (``hpcaccount femm-build``, :func:`dev_lab.dev.hpcaccount.deploy.femm_in_job`) where FEMM is declared and not
+installed; the job runs it in the tick's environment (cron's PATH, then the grant's ``setup``, which loads the
+cluster's compiler) at :data:`BUILD_JOBS` parallel jobs.
 ``git``, ``make``, ``gcc`` and ``g++`` must run there (``--version``) or the phase is refused by name; a missing
 ``cmake`` is installed through its one installer (:data:`~dev_lab.dev.hpcaccount.checks.INSTALLERS`).
 
@@ -175,8 +177,8 @@ def install(
     if missing := _build_tools(step, environment):
         return _refuse(
             f'{", ".join(missing)} does not run (`--version`) in the tick environment (`{environment}`) and the deploy '
-            "cannot install it: add the module providing it to this account's [[hpc.grant]] setup in the family "
-            'file, and re-run'
+            "cannot install it: add the module providing it to the setup of this account's cluster "
+            '([hpc.clusters.<name>] setup) in the family file, and re-run'
         )
     what = f'build femm-qt {pin.tag} ({pin.commit[:12]}) from {pin.url}, {" ".join(TARGETS)}, into {final}'
     if step.dry:

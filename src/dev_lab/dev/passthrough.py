@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import deptable, ownerdag, pyfacts, rustdeps, rustsource
+from dev_lab.dev import _ownerdag_tree, deptable, ownerdag, pyfacts, rustdeps, rustsource
 from dev_lab.dev.deptable import Declared, edge_to
 
 if TYPE_CHECKING:
@@ -54,14 +54,14 @@ def _unadded(edges: tuple[deptable.Edge, ...], target: str) -> bool:
 
 
 def _python_problems(root: Path, decl: Declared, files: list[str]) -> list[str]:
-    tree = ownerdag.python_tree(root)
+    tree = _ownerdag_tree.python_tree(root)
     if tree is None or not decl.owners:
         return []
     stages = rustdeps.stages(root, files, None)
     out: list[str] = []
     facts = pyfacts.facts(root, (f for f in files if f.endswith('.py')))  # the set OWNER-DAG asks: one journal
     for rel in sorted(facts):
-        mine = ownerdag.owner_of_path(tree, rel)
+        mine = _ownerdag_tree.owner_of_path(tree, rel)
         if mine is None or mine not in decl.owners:
             continue
         forwards = facts[rel].forwards or ()
@@ -81,7 +81,7 @@ def _python_problems(root: Path, decl: Declared, files: list[str]) -> list[str]:
 def _hop(
     root: Path,
     decl: Declared,
-    tree: ownerdag.PythonTree,
+    tree: _ownerdag_tree.PythonTree,
     stages: Mapping[str, tuple[str, ...]],
     *,
     rel: str,
@@ -89,19 +89,19 @@ def _hop(
     target: str,
 ) -> tuple[str, str, str, str, tuple[deptable.Edge, ...]] | None:
     """``(table, kind, from, to, edges of from)`` for a forward crossing an owner or a sibling edge, else ``None``."""
-    if (stage := ownerdag.native_stage(tree, stages, target)) is not None:
-        here = ownerdag.package_path(tree, rel)
+    if (stage := _ownerdag_tree.native_stage(tree, stages, target)) is not None:
+        here = _ownerdag_tree.package_path(tree, rel)
         found = None if here is None else deptable.hop(decl, here, stage)
         if found is None or found.table == 'child':
             return None
         kind = 'owner' if found.table == 'python.owners' else 'sibling'
         return found.table, kind, found.origin, found.target, found.edges
-    theirs = ownerdag.owner_of_name(tree, decl, target)
+    theirs = _ownerdag_tree.owner_of_name(tree, decl, target)
     if theirs is None:
         return None
     if theirs != mine:
         return 'python.owners', 'owner', mine, theirs, decl.owners[mine]
-    if (hop := ownerdag.sibling_hop(root, tree, rel, target)) is None:
+    if (hop := _ownerdag_tree.sibling_hop(root, tree, rel, target)) is None:
         return None
     parent, child, other = hop
     return f'python.siblings."{parent}"', 'sibling', child, other, decl.siblings.get(parent, {}).get(child, ())

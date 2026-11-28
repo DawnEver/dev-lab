@@ -1,11 +1,24 @@
 """The rules registry, HOOKS part -- pure DATA, the same row shape as ``_rule_rows.py``.
 
-The rows about the agent hooks the family renders: what a hook may cost the session it runs in.
+The rows about the agent hooks the family renders: what the shared deny machinery answers, and what a hook may cost
+the session it runs in. AGENT-GUARD moved here from ``_rule_rows.py`` by subject (2026-11-27).
 """
 
 from __future__ import annotations
 
 ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
+    (
+        'AGENT-GUARD',
+        (
+            'The shared deny machinery, not prose, refuses a hand-written test invocation and a stash; a bare '
+            'network verb is hinted to the retry door (adoption severities raise it), alike in every adopting repo.'
+        ),
+        (
+            '.claude/hooks/deny-commands.js',
+            '.claude/hooks/deny-rules.json',
+            'tests/architecture/gate/test_agent_bash_guard.py',
+        ),
+    ),
     (
         'HOOK-UNDER-FIVE-SECONDS',
         (
@@ -37,5 +50,16 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'the tree is made or moved, and a tree that arrived another way is detected from git`s own list.'
         ),
         ('tests/test_dev_worktreename.py', 'tests/test_dev_hooks.py'),
+    ),
+    (
+        'WORKTREES-DO-NOT-NEST',
+        (
+            # Why: v1 family request FAM-10 (D158) -- an agent given an isolation worktree added a second one.
+            'An agent spawned with worktree isolation already HAS its tree and never adds a second: a tree added '
+            'from inside a linked worktree nests under it, outside the one home every scan and reclaim reads. '
+            'git`s own worktree list is read and a tree lying inside another linked tree is named with the move '
+            'that puts it in the home.'
+        ),
+        ('tests/test_dev_worktreeplace.py',),
     ),
 )

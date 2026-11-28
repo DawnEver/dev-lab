@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
-from typing import Final
+from typing import IO, Final
 
 import pytest
 from _hpcaccount_fakes import FAMILY, FLEET, HOST, fleet_source, home_of, tools_of
 
 from dev_lab.dev import devhost, hpcaccount
 from dev_lab.dev.hpcaccount import accountset, deploy, drift
-from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, load
+from dev_lab.dev.hpcaccount.cronline import MARK, cron_lines
+from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.hpcaccount.steps import Step
 from dev_lab.dev.venvpointer import RETIRED_POINTER
 
@@ -95,7 +96,7 @@ def fleet(
     code = accountset.start_on_selected(
         FLEET, accounts, clusters, home=tmp_path, source=fleet_source(tmp_path), say=said.append, verb=verb,
         serving_only=(lambda target: target.role == 'verification') if ci else None,
-        launch=lambda dest, command, _log: started.append(f'{dest} {command}'),
+        launch=lambda dest, command, _log: started.append(f'{dest} {command}') or 0,
     )  # fmt: skip
     return code, started, said
 
@@ -283,3 +284,22 @@ def test_an_account_at_its_clusters_root_is_compared_at_that_root(tmp_path: Path
     refused = _rootless(tmp_path / 'bare', FAMILY)
     assert isinstance(refused, str)
     assert 'no root declared' in refused
+
+
+def test_drift_fleet_reports_each_outcome_and_a_failed_remote_fails_the_run(tmp_path: Path) -> None:
+    """2026-11-27: drift crashed on ezxmw9 (a SyntaxError) and the fleet never said so. PLANTED CONTROL: exit 0."""
+    source = fleet_source(tmp_path)
+    for status, expected in ((1, 1), (0, 0)):
+        said: list[str] = []
+
+        def launch(_dest: str, _command: str, log: IO[str], status: int = status) -> int:
+            log.write('Traceback: SyntaxError\n' if status else 'agrees\n')
+            return status
+
+        code = accountset.start_on_selected(
+            FLEET, ('alice',), (), home=tmp_path / str(status), source=source, say=said.append,
+            verb='drift', launch=launch,
+        )  # fmt: skip
+        assert code == expected, said
+        assert f'alice: exit {status}' in said
+        assert any('SyntaxError' in line for line in said) == bool(status)

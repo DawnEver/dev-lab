@@ -38,19 +38,23 @@ It writes nothing into the working tree: the project files are :mod:`dev_lab.dev
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Final
+from typing import IO, BinaryIO, Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev._hook_admit import payload_refusal
 from dev_lab.dev._hook_shim import INSTALL_COMMAND, SHIM_MARKER, same_shim, shim
 from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.reports import StepReport
+from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'ABSENT',
@@ -300,7 +304,7 @@ def unwired(repo: Path) -> bool:
     """*repo* declares a hook stage whose shim is absent or stale; ``False`` where git or the table cannot answer."""
     try:
         return hook_installation(repo).verdict == UNPROTECTED
-    except (subprocess.SubprocessError, OSError, ValueError):
+    except subprocess.SubprocessError, OSError, ValueError:
         return False
 
 
@@ -315,12 +319,34 @@ def _retire(repo: Path, path: Path) -> None:
     path.replace(target)
 
 
-def report_installation(argv: list[str] | None = None) -> int:
-    """CLI. Exit 0 = every declared stage is live, 1 = at least one is not, 2 = nothing is declared."""
+def _admit(stdin: BinaryIO, stdout: BinaryIO) -> int:
+    """The agent guard's judge: exit 1 with the refusal when the payload's write verb targets an unwired tree."""
+    try:
+        payload = json.loads(stdin.read().decode('utf-8'))
+    except ValueError, OSError:
+        return 0
+    reason = payload_refusal(payload, unwired, running_interpreter())
+    if reason is None:
+        return 0
+    stdout.write(reason.encode('utf-8') + b'\n')
+    stdout.flush()
+    return 1
+
+
+def report_installation(
+    argv: list[str] | None = None, *, stdin: BinaryIO | None = None, stdout: BinaryIO | None = None
+) -> int:
+    """CLI. Exit 0 = every declared stage is live, 1 = at least one is not, 2 = nothing is declared.
+
+    ``--admit``: judge the shell hook payload on stdin (HOOKS-ARE-WIRED, :mod:`dev_lab.dev._hook_admit`).
+    """
     parser = argparse.ArgumentParser(description='Are the hooks this repository declares installed?')
     parser.add_argument('--repo', type=Path, default=Path.cwd())
     parser.add_argument('--install', action='store_true', help='write the shims (an EXPLICIT request)')
+    parser.add_argument('--admit', action='store_true', help='judge an agent hook payload on stdin')
     args = parser.parse_args(argv)
+    if args.admit:
+        return _admit(stdin or sys.stdin.buffer, stdout or sys.stdout.buffer)
     root = args.repo.resolve()
 
     if args.install:

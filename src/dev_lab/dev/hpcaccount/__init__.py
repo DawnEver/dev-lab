@@ -9,9 +9,14 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   :mod:`~dev_lab.dev.hpcaccount.steps`, its host check :mod:`~dev_lab.dev.hpcaccount.deployhost`, its declaration
   :mod:`~dev_lab.dev.hpcaccount.declaration`, its FEMM 5 build where ``[capabilities.femm]`` is declared
   :mod:`~dev_lab.dev.hpcaccount.femm`.
-* ``tick <repo>... [--lock <path> --wall-minutes <m>]`` (:mod:`~dev_lab.dev.hpcaccount.tick`) is one cron tick: the
-  host refreshes the kit (this package's checkout) and the repo, then the kit's ``forge serve`` runs in the repo's
-  checkout -- under the lock and within the wall the cron line names (:mod:`~dev_lab.dev.hpcaccount.tickwall`).
+* ``tick <repo>... [--lock <path> --wall-minutes <m>]`` (:mod:`~dev_lab.dev.hpcaccount.tick`) is the account's one
+  cron tick: the host refreshes each repo, then the kit's ``forge serve`` runs in the repo's checkout -- under the
+  lock and within the wall the cron line names (:mod:`~dev_lab.dev.hpcaccount.tickwall`). It never builds: a repo
+  whose environment is not current is asked of a Slurm prep job.
+* ``prep-build <repo>`` (:func:`~dev_lab.dev.hpcaccount.tick.prep_build`) is that prep job's body, run ON A
+  COMPUTE NODE: uv to its pin, the repo's ``needs`` probed, its environment built and published.
+* ``femm-build`` (:func:`~dev_lab.dev.hpcaccount.deploy.femm_in_job`) is the FEMM 5 build job's body, run ON A
+  COMPUTE NODE where the deploy found ``[capabilities.femm]`` declared and not installed.
 * ``allocate --until <iso> [name=cpus/mem_gb ...] [--borrow <direction>] | --show | --clear``
   (:mod:`~dev_lab.dev.hpcaccount.allocate`) writes, prints or deletes the ONE expiring allocation record on the forge
   (:mod:`lab_commons.hpc.allocation`); the forge's own submits read it (:mod:`dev_lab.dev.forgeslurm`).
@@ -35,7 +40,7 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   (:mod:`~dev_lab.dev.hpcaccount.credential`) places one minted forge token in the account's ``~/.git-credentials``
   (a role's named ``config_reader``: in its own ``~/.git-credentials.reader``) and confirms the forge answers as
   that login.
-* ``look --account <user> {processes|ticks|log <repo>|crontab|stuck <path>|inventory <path>}``
+* ``look --account <user> {processes|ticks|log|crontab|stuck <path>|inventory <path>}``
   (:mod:`~dev_lab.dev.hpcaccount.look`) is a READ-ONLY look at one account through its rate-limited key ssh: a closed
   set of reads, no free-form command; ``inventory`` judges every git checkout under a path pushed or NOT PUSHED
   (:mod:`~dev_lab.dev.hpcaccount.inventory`).
@@ -43,12 +48,12 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   (:mod:`~dev_lab.dev.hpcaccount.archive`) send ``~/<path>`` to the family's run store as tar parts, each read back
   and its sha256 compared, under a manifest; then delete it through ``lab_commons.hpc clean`` only once that
   archive is proved and the tree unchanged.
-* ``salvage --account <user> <path> [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.salvage`) brings every checkout's
-  own git work under ``~/<path>`` home before the account is cleaned -- a bundle of the commits on no remote, the
-  tracked diff, the untracked files -- through the Runner's stdout, writing nothing on the account, under the
-  invoking checkout's dated ``salvage`` output with a sha256 manifest; ``salvage-fetch <salvaged checkout> --into
-  <repo> [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.salvagefetch`) fetches one bundle into a local repo as
-  ``salvage/<account>/<checkout>/<name>`` branches, matched by its origin's repository name.
+* ``salvage --account <user> <path> [--into <repo> --reason <why> --apply]`` (:mod:`~dev_lab.dev.hpcaccount.salvage`)
+  brings every checkout's own git work under ``~/<path>`` home before the account is cleaned -- the commits on no
+  remote, and the tracked diff with the untracked files as one commit -- through the Runner's stdout, writing nothing
+  on the account, as ``salvage/<yyyymmdd>-<name>`` branches of the local repo its origin's repository name matches;
+  the caller pushes them through ``netverb``, and the invoking checkout's dated ``salvage`` output keeps a JSON
+  record only; the branch names and the git writes are :mod:`~dev_lab.dev.hpcaccount.salvagerepo`'s.
 * ``reclaim-foreign --account <user> <home-relative path> [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.reclaim`)
   removes the entries OTHER declared fleet accounts own under one account's home: grants each owner traverse,
   has each owner delete its own, removes the rest, revokes and re-reads every grant; without ``--apply`` the plan.
@@ -57,6 +62,9 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
 * ``tick-status --account <user>`` / ``tick-stop --account <user> [--repo R]``
   (:mod:`~dev_lab.dev.hpcaccount.tickstop`) read every tick lock's holder, and stop a tick older than its wall --
   verified a tick of that repo, this user's, before it is signaled; a younger one is refused by name.
+* ``prep-retry --account <user> <repo>`` (:mod:`~dev_lab.dev.hpcaccount.prepretry`) resubmits, once, the repo's
+  failed environment prep job for its current key, through the account's own kit -- the door a ``job <id> failed``
+  line names. A failure under an older kit needs none: the tick resubmits it itself.
 * Every remote step above goes through ONE transport, :mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held
   session (:mod:`dev_lab.dev.sshhold`) when one is live, else key-only ssh; a second-factor host with none is refused
   naming ``python -m dev_lab.dev.sshhold open <dest> --hours H``.
@@ -90,10 +98,10 @@ _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
     '{deploy [...] | deploy-fleet [...] | drift[-fleet] [...] | ci-pause[-fleet] [...] | '
     'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | keys [...] | look [...] | '
-    'archive [...] | archive-clean [...] | salvage [...] | salvage-fetch [...] | '
+    'archive [...] | archive-clean [...] | salvage [...] | '
     'reclaim-foreign [...] | storage-check [...] | '
-    'tick-status [...] | tick-stop [...] | '
-    'tick <repo>... [--lock <path> --wall-minutes <m>] | allocate [...]}'
+    'tick-status [...] | tick-stop [...] | prep-retry [...] | '
+    'tick <repo>... [--lock <path> --wall-minutes <m>] | prep-build <repo> | femm-build | allocate [...]}'
 )
 
 
@@ -111,9 +119,9 @@ def main(argv: list[str] | None = None) -> int:
         forget,
         keys,
         look,
+        prepretry,
         reclaim,
         salvage,
-        salvagefetch,
         storage,
         storagecheck,
         tickstop,
@@ -138,11 +146,12 @@ def main(argv: list[str] | None = None) -> int:
         'archive': archive.main,
         'archive-clean': lambda rest: archive.main(rest, verb='archive-clean'),
         'salvage': salvage.main,
-        'salvage-fetch': salvagefetch.main,
         'reclaim-foreign': reclaim.main,
         'tick-status': tickstop.main_status,
         'tick-stop': tickstop.main_stop,
         'tick-stop-here': tickstop.main_here,
+        'prep-retry': prepretry.main,
+        'prep-retry-here': prepretry.main_here,
         'deploy': deploy.main,
         'deploy-fleet': fleet.main,
         'forget': forget.main,
@@ -154,6 +163,12 @@ def main(argv: list[str] | None = None) -> int:
         return verbs[verb](rest)
     if verb == 'tick' and rest:
         return _tick(rest)
+    if verb == 'prep-build' and len(rest) == 1:
+        from dev_lab.dev.hpcaccount.tick import prep_build  # noqa: PLC0415 -- the package imports no verb
+
+        return prep_build(rest[0], home=Path.home())
+    if verb == 'femm-build' and not rest:
+        return deploy.femm_in_job(Path.home())
     emit(retired_refusal('dev_lab.dev.hpcaccount', verb) or _USAGE, err=True)
     return 2
 
@@ -169,10 +184,9 @@ def _tick(argv: list[str]) -> int:
     parser.add_argument('--lock', type=Path, help="this tick's lock; its holder record is written beside it")
     parser.add_argument('--wall-minutes', type=int, default=DEFAULT_TICK_WALL // 60)
     args = parser.parse_args(argv)
-    probed: dict[str, bool] = {}  # one probe per tool per tick, however many repos it serves
 
     def body(wall: tickwall.Wall | None) -> int:
-        return max(tick.tick(name, home=Path.home(), probed=probed, wall=wall) for name in args.repos)
+        return max(tick.tick(name, home=Path.home(), wall=wall) for name in args.repos)
 
     if args.lock is None:
         return body(None)

@@ -165,10 +165,10 @@ What every host still reads, kept small:
   verb -- and only when that cannot land is the lock refused naming why, never written by the old uv.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
-  cluster account's cron line runs `python -m dev_lab.dev.hpcaccount tick <repo>` from the dev-lab checkout, which
-  checks out both at their deployed refs and rebuilds the venv where its inputs or the kit's HEAD moved
-  (`dev_lab.dev.hpcaccount.tick`). A repo whose refresh fails -- dirty, diverged, a sync that exits non-zero
-  -- is released for that tick with its reason, and the other repos are still served. The
+  cluster account's one cron line runs `python -m dev_lab.dev.hpcaccount tick <repo>...` from the dev-lab checkout,
+  which checks out each at its deployed ref and serves it only from an environment built for its inputs -- a Slurm
+  prep job builds one whose inputs moved, never the login node (`dev_lab.dev.hpcaccount.tick`, ONE-LOGIN-POLLER). A
+  repo whose refresh fails -- dirty, diverged, its environment not yet built -- is released for that tick with its reason, and the other repos are still served. The
   ref is the integration branch, not the trunk: a kit following the trunk would refuse the integration commit
   that adds a table, and that commit could then never reach the trunk.
 - **The producer exit contract** (`dev_lab.dev.producer.ProducerExit`): `0` PASS, `1` FAIL, `2` refused
@@ -585,7 +585,9 @@ Agents read and write the forge only through `python -m dev_lab.dev.forge` (`FOR
 no `gh` or `tea` binary is needed.
 
 - Verbs: `issue list|view|create|comment|close|label|claim|status|comments`, `issue comments-since ISO8601`,
-  `pr create|view|close N --reason R` (the reason is commented first; no branch is deleted), `status post|list`. Every verb takes `--json` and returns the same shape on either forge.
+  `issue view N --comments [--since ISO8601|--last K]` (the thread, oldest first, every page), `issue comment-view ID`,
+  `pr list [--state open|closed|all] [--head B] [--limit N]` (`#N [state] head -> base  title  url`, every page read), `pr create|view|close N --reason R` (the reason is commented first; no branch is deleted), `status post|list`. Every verb takes `--json` and returns the same shape on either forge.
+- A raw `client.call` path is absolute (`f'{client.repo}/issues/1/comments?page=2'`); a relative one is refused.
 - The backend is read off `origin`: `github.com` is GitHub REST, any other host is Gitea (`<host>/api/v1`).
 - When `HARNESS_MACHINE` and `HARNESS_AGENT` are set, every created body opens with
   `[<machine> · <agent> · <branch>]`, so a write says which agent made it.

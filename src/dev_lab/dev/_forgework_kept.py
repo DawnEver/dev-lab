@@ -39,7 +39,7 @@ class KeptReads(threading.local):
         if (conn := self.conns.pop(target, None)) is not None:
             try:
                 return self._on(target, conn, exchange)
-            except (ConnectionError, http.client.HTTPException):
+            except ConnectionError, http.client.HTTPException:
                 conn.close()
         return self._on(target, fresh(), exchange)
 

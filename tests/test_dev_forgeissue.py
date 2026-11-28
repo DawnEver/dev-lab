@@ -191,3 +191,101 @@ def test_the_cli_prints_comments_since_as_json(server, tmp_path: Path, capsys) -
     answer('GET', f'{_ROOT}/issues/12/comments', (200, []))
     assert main(argv, cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
     assert json.loads(capsys.readouterr().out) == []
+
+
+_THREE = [
+    {**_raw(31, 'https://forge.example.org/o/r/issues/5', 'first'), 'user': {'login': 'a'}},
+    {**_raw(32, 'https://forge.example.org/o/r/issues/5', 'second'), 'created_at': '2026-10-01T11:00:00Z'},
+    {**_raw(33, 'https://forge.example.org/o/r/issues/5', 'third'), 'created_at': '2026-10-01T12:00:00Z'},
+]
+_ISSUE5 = {
+    'number': 5,
+    'title': 't',
+    'state': 'open',
+    'html_url': 'https://forge.example.org/o/r/issues/5',
+    'body': '',
+    'user': {'login': 'a'},
+}
+
+
+@pytest.mark.parametrize(('forge', 'root', 'page'), [
+    (_FORGE, _ROOT, 'limit='),
+    (Forge('github.com', 'o', 'r'), '/repos/o/r', 'per_page='),
+])  # fmt: skip
+def test_view_with_comments_returns_all_three_in_order_on_both_forges(
+    server, tmp_path: Path, capsys, *, forge: Forge, root: str, page: str
+) -> None:
+    """PLANTED CONTROL: three comments on the fake forge come back as three, oldest first, on Gitea and GitHub."""
+    repo = make_repo(tmp_path, f'https://{forge.host}/o/r.git')
+    answer('GET', f'{root}/issues/5', (200, _ISSUE5))
+    answer('GET', f'{root}/issues/5/comments', (200, _THREE))
+    argv = ['view', '5', '--comments', '--json']
+    assert main(argv, cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert [(c['id'], c['author'], c['created'], c['body']) for c in shown['comments']] == [
+        (31, 'a', '2026-10-01T10:00:00Z', 'first'),
+        (32, 'bot', '2026-10-01T11:00:00Z', 'second'),
+        (33, 'bot', '2026-10-01T12:00:00Z', 'third'),
+    ]
+    assert shown['issue']['number'] == 5
+    assert page in Recorder.received[-1]['path']
+
+
+def test_view_last_keeps_the_newest_k_and_text_names_id_author_time(server, tmp_path: Path, capsys) -> None:
+    repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git')
+    answer('GET', f'{_ROOT}/issues/5', (200, _ISSUE5))
+    answer('GET', f'{_ROOT}/issues/5/comments', (200, _THREE))
+    argv = ['view', '5', '--comments', '--last', '2']
+    assert main(argv, cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
+    out = capsys.readouterr().out
+    assert 'first' not in out
+    assert out.index('#32 bot 2026-10-01T11:00:00Z') < out.index('second') < out.index('#33 bot') < out.index('third')
+
+
+def test_a_missing_issue_is_refused_by_name(server, tmp_path: Path, capsys) -> None:
+    """PLANTED CONTROL: the fake answers 404 for issue 404, and the verb names the issue, not a stack."""
+    repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git')
+    argv = ['view', '404', '--comments']
+    assert main(argv, cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 2
+    assert 'issue #404 does not exist on forge.example.org/o/r' in capsys.readouterr().err
+
+
+def test_comment_view_reads_one_comment_by_id_and_refuses_a_missing_one(server, tmp_path: Path, capsys) -> None:
+    repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git')
+    answer('GET', f'{_ROOT}/issues/comments/32', (200, _THREE[1]))
+    argv = ['comment-view', '32', '--json']
+    assert main(argv, cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        'issue': 5,
+        'id': 32,
+        'author': 'bot',
+        'body': 'second',
+        'created': '2026-10-01T11:00:00Z',
+    }
+    assert main(['comment-view', '99'], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 2
+    assert 'comment 99 does not exist on forge.example.org/o/r' in capsys.readouterr().err
+
+
+def _many(count: int) -> list[dict[str, object]]:
+    return [_raw(100 + n, 'https://forge.example.org/o/r/issues/5', f'c{n}') for n in range(count)]
+
+
+def test_a_forge_that_ignores_page_lists_each_comment_once(server, tmp_path: Path, capsys) -> None:
+    """Gitea's issue-comments listing has no paging: every page answers the WHOLE thread, so it repeated per page."""
+    repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git')
+    answer('GET', f'{_ROOT}/issues/5', (200, _ISSUE5))
+    answer('GET', f'{_ROOT}/issues/5/comments', (200, _many(120)))
+    assert (
+        main(['view', '5', '--comments', '--json'], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server))
+        == 0
+    )
+    shown = [c['id'] for c in json.loads(capsys.readouterr().out)['comments']]
+    assert shown == [100 + n for n in range(120)]
+
+
+def test_a_forge_that_pages_lists_every_page_once(server) -> None:
+    """PLANTED CONTROL: a real multi-page answer (50, 50, 20) still reads all three pages."""
+    rows = _many(120)
+    answer('GET', f'{_ROOT}/issues/5/comments', (200, rows[:50]), (200, rows[50:100]), (200, rows[100:]))
+    found = issue_comments(client(_FORGE, Loopback(server)), 5)
+    assert [c.id for c in found] == [100 + n for n in range(120)]

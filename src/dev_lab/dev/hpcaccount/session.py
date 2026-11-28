@@ -63,7 +63,7 @@ def _cwd_task() -> str | None:
     """The open task the cwd's branch works on, or ``None``: a branch naming no open task grants nothing."""
     try:
         return task_of(Path.cwd())
-    except (ValueError, LookupError):
+    except ValueError, LookupError:
         return None
 
 
@@ -93,7 +93,7 @@ def holder(
     for path in sorted(state_dir(home).glob('*.json')):
         try:
             found = verify(json.loads(path.read_text(encoding='utf-8')), key, now=when)
-        except (ConsentRefused, ValueError, OSError):
+        except ConsentRefused, ValueError, OSError:
             continue
         if (found.action, found.subject) in wanted:
             return wanted[(found.action, found.subject)]

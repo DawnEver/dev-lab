@@ -17,6 +17,7 @@ from lab_commons.outcomes import Conclusion
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, NOT_PARTS
 from dev_lab.dev.forgestatus import CARRIED_FROM, CITED_FROM, DOCS_ONLY, SAME_TREE, state_for
 from dev_lab.dev.partrows import is_row
+from dev_lab.dev.statuscontinuation import incomplete
 from dev_lab.dev.verdictenv import POLICY_CHARS
 
 if TYPE_CHECKING:
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
 
     from dev_lab.dev.forgestatus import CommitStatus
 
-__all__ = ['RESULT', 'Part', 'facts_of', 'latest', 'parsed']
+__all__ = ['RESULT', 'Part', 'facts_of', 'latest', 'parsed', 'quoted']
 
 #: The forge state a settled part reads back as; ``error`` (INCONCLUSIVE) is never a settled part.
 RESULT: Final = {state_for(result): result for result in (Conclusion.PASS, Conclusion.FAIL)}
@@ -84,11 +85,18 @@ def latest(statuses: Sequence[CommitStatus]) -> list[CommitStatus]:
     return list(latest.values())
 
 
+def quoted(description: str) -> str:
+    """*description* quoted for a problem line, naming why it is incomplete when it is (a cut, a lost continuation)."""
+    return f'{description!r}' + (f': {cut}' if (cut := incomplete(description)) else '')
+
+
 def parsed(status: CommitStatus) -> Part | None:
     """The settled part *status* says; ``None`` when it says none (a claim, an ``error``, a foreign description)."""
     if not status.context.startswith(CONTEXT_PREFIX) or status.context in NOT_PARTS:
         return None
     name = status.context.removeprefix(CONTEXT_PREFIX)
+    if incomplete(status.description):  # a cut description can still match, short of its policy: never a part
+        return None
     found = _DESCRIPTION.match(status.description)
     if status.state not in RESULT or found is None or not is_row(name):
         return None

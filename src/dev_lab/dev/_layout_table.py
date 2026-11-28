@@ -18,11 +18,18 @@ from typing import Final
 
 from dev_lab.dev import gitdirs
 from dev_lab.dev._deny_outputcode_row import CODE_SUFFIXES
-from dev_lab.dev.codeplace import FAMILY_HOMES, LAYOUT_FILE, PlacementNotDeclared, placement_table
+from dev_lab.dev.codeplace import (
+    FAMILY_HOMES,
+    LAYOUT_FILE,
+    PlacementNotDeclared,
+    declared_placement,
+    placement_table,
+)
 from dev_lab.dev.datedlog import FAMILY_KINDS
 
 __all__ = [
     'ANY',
+    'DOC_SITE_ROOT',
     'FAMILY_ROWS',
     'OTHER_CONFIG_SUFFIXES',
     'REQUIRED',
@@ -52,6 +59,8 @@ ANY: Final = '*'
 TOOL_CACHE_ROOT: Final = 'output/cache'
 #: Where a named program's job tree lives: ``output/logs/<yy>/<mm>/<dd>/vendor/<program>/`` (D95, 2026-11-25).
 VENDOR_JOB_ROOT: Final = 'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/vendor'
+#: Where a named builder's documentation site lives: ``output/docs/<site>/`` (FAM-08, 2026-11-26).
+DOC_SITE_ROOT: Final = 'output/docs'
 #: One tool's or program's name: a plain word, so an entry can never widen into a glob or a path.
 _TOOL: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*')
 #: ONE-FORMAT-PER-NEED: configuration is TOML, so a second configuration format is never declared -- except where a
@@ -71,6 +80,9 @@ FAMILY_ROWS: Final = {
     for kind, shapes in FAMILY_KINDS.items()
     for shape, suffixes in shapes.items()
 }
+
+#: Directories the family RENDERS into every checkout (dev_lab.dev.vscodesettings): the family's rows, never a repo's.
+RENDERED_ROWS: Final = {'.vscode': frozenset({'.json'})}
 
 
 def family_kind(parts: list[str]) -> str | None:
@@ -95,7 +107,7 @@ def _with_family_rows(manifest: Path, rows: dict[str, frozenset[str]]) -> dict[s
                 f'(dev_lab.dev.datedlog.FAMILY_KINDS: {shapes}); drop the row -- a repo lists only its own kinds, '
                 f'and a family kind that needs another format changes in dev-lab',
             )
-    return {**dict.fromkeys(_DATED_LEVELS, frozenset()), **rows, **FAMILY_ROWS}
+    return {**dict.fromkeys(_DATED_LEVELS, frozenset()), **rows, **FAMILY_ROWS, **RENDERED_ROWS}
 
 
 class LayoutNotDeclared(LookupError):
@@ -111,6 +123,9 @@ class Layout:
     read_only: tuple[str, ...] = ()
     tool_caches: tuple[str, ...] = ()
     vendor_jobs: tuple[str, ...] = ()
+    doc_sites: tuple[str, ...] = ()
+    #: The declared one-off sink (``scratch`` of the placement): its content is never judged by a row (#1034).
+    scratch: str = 'scratch'
     #: MIRROR rows: pattern -> (the mirrored root, the explicit extra names below the row, the depth or None).
     mirrors: dict[str, tuple[str, tuple[str, ...], int | None]] = dataclasses.field(default_factory=dict)
 
@@ -119,7 +134,18 @@ class Layout:
         """The declaration's fingerprint: a changed table invalidates every journalled verdict."""
         rows = sorted((k, sorted(v)) for k, v in self.rows.items())
         mirrors = sorted((k, v[0], list(v[1]), v[2]) for k, v in self.mirrors.items())
-        text = json.dumps([rows, self.pruned_paths, self.read_only, self.tool_caches, mirrors, self.vendor_jobs])
+        text = json.dumps(
+            [
+                rows,
+                self.pruned_paths,
+                self.read_only,
+                self.tool_caches,
+                mirrors,
+                self.vendor_jobs,
+                self.doc_sites,
+                self.scratch,
+            ]
+        )
         return hashlib.sha256(text.encode()).hexdigest()[:16]
 
     def judging(self, parts: list[str]) -> dict[str, frozenset[str]]:
@@ -133,6 +159,10 @@ class Layout:
     def in_vendor_job(self, rel: str) -> bool:
         """Whether repo-relative POSIX *rel* is at or below a NAMED program's job tree (``vendor_jobs``)."""
         return _below(rel, VENDOR_JOB_ROOT, self.vendor_jobs)
+
+    def in_doc_site(self, rel: str) -> bool:
+        """Whether repo-relative POSIX *rel* is at or below a NAMED doc site (``doc_sites``)."""
+        return _below(rel, DOC_SITE_ROOT, self.doc_sites)
 
 
 def _below(rel: str, root: str, names: tuple[str, ...]) -> bool:
@@ -187,10 +217,7 @@ def declared_layout(root: Path) -> Layout:
     if missing:
         raise _refuse(manifest, f'the family home(s) {missing} are not declared')
     for key, allows in rows.items():
-        # A family kind's suffixes are data dev-lab owns (FAMILY_KINDS: salvage keeps .bundle/.diff); a repo row
-        # naming a family kind is refused above, so only the repo's own output rows are judged here.
-        own = key not in FAMILY_ROWS
-        if own and key.split('/', 1)[0] == 'output' and (bad := sorted(allows & {*CODE_SUFFIXES, ANY})):
+        if key.split('/', 1)[0] == 'output' and (bad := sorted(allows & {*CODE_SUFFIXES, ANY})):
             raise _refuse(manifest, f'{key} allows {bad}, which output/ never holds')
         if key.split('/', 1)[0] not in _FORGE_DIRS and (bad := sorted(allows & OTHER_CONFIG_SUFFIXES)):
             raise _refuse(
@@ -202,7 +229,15 @@ def declared_layout(root: Path) -> Layout:
     read_only = tuple(p.strip('/') for p in placement.get('read_only', []) if isinstance(p, str))
     tools = _named(manifest, placement, 'tool_caches', 'tools')
     vendor_jobs = _named(manifest, placement, 'vendor_jobs', 'programs')
-    return Layout(rows, pruned, read_only, tools, vendor_jobs=vendor_jobs, mirrors=mirrors)
+    doc_sites = _named(manifest, placement, 'doc_sites', 'sites')
+    try:
+        sink = declared_placement(root).scratch.strip('/')
+    except PlacementNotDeclared as exc:
+        msg = f'{exc} ({RULE_ID})'
+        raise LayoutNotDeclared(msg) from exc
+    return Layout(
+        rows, pruned, read_only, tools, vendor_jobs=vendor_jobs, doc_sites=doc_sites, mirrors=mirrors, scratch=sink
+    )
 
 
 def _named(manifest: Path, placement: dict, key: str, what: str) -> tuple[str, ...]:

@@ -20,6 +20,8 @@ which also raises when an attempted post fails).
 
 PROVENANCE-FREE ON PURPOSE. CommitStatus descriptions are machine lines, length-limited by the forge, so no
 ``[machine · agent · branch]`` stamp is prepended; the forge records the token's login as ``creator``.
+
+A DESCRIPTION LONGER THAN ITS FORGE STORES CONTINUES, never cut: :mod:`dev_lab.dev.statuscontinuation`.
 """
 
 from __future__ import annotations
@@ -48,7 +50,9 @@ from dev_lab.dev.failprint import Fingerprints, subjects_of
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgework import GITHUB, Client
+from dev_lab.dev.statuscontinuation import CONTINUATION, DESCRIPTION_LIMIT, continued, joined
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -85,9 +89,6 @@ DOCS_ONLY: Final = 'docs-only'
 #: A part CITED from a stored record of the same tree ends ``cited from <sha12>: same tree`` (dev_lab.dev.verdictstore).
 CITED_FROM: Final = 'cited from'
 SAME_TREE: Final = 'same tree'
-
-#: GitHub's description limit, the tighter of the two forges; a longer one is cut, never sent.
-DESCRIPTION_LIMIT: Final = 140
 
 #: A commit named in full, used as given; anything else is resolved through git.
 _FULL_SHA: Final = re.compile(r'[0-9a-f]{40}')
@@ -126,13 +127,14 @@ class CommitStatus:
 def _status(raw: Mapping[str, Any]) -> CommitStatus:
     # Gitea answers the state as ``status``; GitHub as ``state``.
     state = raw.get('state') or raw.get('status') or ''
+    creator: Mapping[str, Any] = raw.get('creator') or {}
     return CommitStatus(
         raw.get('context') or '',
         state,
         raw.get('description') or '',
         raw.get('target_url') or '',
         int(raw.get('id') or 0),
-        (raw.get('creator') or {}).get('login') or '',
+        creator.get('login') or '',
         _forge_time(raw.get('created_at')),
     )
 
@@ -162,12 +164,26 @@ def _commit(sha: str) -> None:
 def status_post(
     client: Client, sha: str, *, context: str, state: str, description: str, target_url: str = ''
 ) -> CommitStatus:
-    """Post one status on *sha*. The description is cut to :data:`DESCRIPTION_LIMIT`, never sent long."""
+    """Post one status on *sha*; a description past the backend's limit continues (module docstring), never cut."""
     _commit(sha)
     if state not in STATES:
         msg = f'a status state is one of {STATES}, not {state!r}'
         raise ValueError(msg)
-    body = {'state': state, 'context': context, 'description': description[:DESCRIPTION_LIMIT]}
+    head, rest = continued(description, client.backend.description_limit)
+    for number, chunk in enumerate(rest, start=1):  # continuations first: a head is never read before its rest
+        _post_one(client, sha, context=f'{context}{CONTINUATION}{number}', state=state, description=chunk)
+    posted = _post_one(client, sha, context=context, state=state, description=head, target_url=target_url)
+    return dataclasses.replace(posted, description=description) if rest and posted.description == head else posted
+
+
+def _post_one(
+    client: Client, sha: str, *, context: str, state: str, description: str, target_url: str = ''
+) -> CommitStatus:
+    limit = client.backend.description_limit
+    if limit is not None and len(description) > limit:  # continued() never builds one: a defect, refused by name
+        msg = f"a {len(description)}-character status description exceeds {client.backend.name}'s limit of {limit}"
+        raise ValueError(msg)
+    body = {'state': state, 'context': context, 'description': description}
     if target_url:
         body['target_url'] = target_url
     listed = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
@@ -185,20 +201,26 @@ def status_list(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     Both forges' LIST endpoint, never GitHub's combined one: only the list records each status's ``creator``,
     which the review gate verifies (D11). The newest (highest ``id``) per context is kept.
     """
-    _commit(sha)
-    path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
-    newest: dict[str, Mapping[str, Any]] = {}
-    for item in sorted(client.call('GET', path), key=lambda item: item.get('id') or 0):
-        newest[item.get('context') or ''] = item
-    raw = list(newest.values())
-    return tuple(sorted((_status(item) for item in raw), key=lambda status: status.context))
+    ordered = _every_status(client, sha)
+    newest = {status.context: status for status in joined(ordered)}
+    return tuple(sorted(newest.values(), key=lambda status: status.context))
 
 
 def status_history(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """EVERY status posted on *sha*, oldest first -- what a claim race is decided on (``id`` order)."""
+    return tuple(joined(_every_status(client, sha)))
+
+
+def _every_status(client: Client, sha: str) -> list[CommitStatus]:
+    """Every status posted on *sha*, oldest first, read across EVERY page of the forge's listing (#1102).
+
+    A forge answers one page, newest first: merge-ready reposts and their continuations bury a part's status
+    past the first. :func:`forgepulls.pages` reads on to the short page, and a forge ignoring paging ends at its
+    repeated page -- never a loop.
+    """
     _commit(sha)
     path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
-    return tuple(sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id))
+    return sorted((_status(item) for item in pages(client, path, {}, bound=None)), key=lambda status: status.id)
 
 
 def _git(root: Path, *args: str) -> str | None:
@@ -404,7 +426,7 @@ def main(
         return 2
     if args.json:
         data = [dataclasses.asdict(status) for status in found]
-        emit(json.dumps(data[0] if args.verb == 'post' else data, indent=2))
+        emit(json.dumps(data[0] if args.verb == 'post' else data, indent=2, default=datetime.isoformat))
     else:
         for status in found:
             emit(f'{status.context}  {status.state}  {status.description}')

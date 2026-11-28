@@ -35,7 +35,7 @@ from typing import Final
 
 import pytest
 from _box_fake import ended
-from lab_commons import box
+from lab_commons import box, launch
 from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Refused, hold, write_ended
 from lab_commons.compute import learned
 from lab_commons.compute.model import Resources
@@ -1428,6 +1428,9 @@ def _unreadable(_path: Path) -> LogRef:
 def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_text: str, pytest_code: int) -> None:
     """Run the REAL ``main`` and ``run_verify`` with the seat free, the hooks clean and the steps planted."""
     _cached(monkeypatch, tmp_path)
+    # A real checkout: the untargeted run's real ``baselines verify`` step reads ``git ls-files``, and a bare
+    # temp directory made it inconclusive, so the planted PASS control could not say PASS.
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, timeout=60)
     (tmp_path / 'tests').mkdir()
     (tmp_path / 'pyproject.toml').write_text(_OUTPUT, encoding='utf-8')
     monkeypatch.setattr(verify, 'lock_freshness', lambda _root: None)
@@ -1479,10 +1482,15 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
     """THE SHELL'S VIEW of the lock-wait path: ``verify && push`` must stop, so the PROCESS exits 3.
 
     A child holds every core of a PRIVATE box ledger, and a second ``python -m dev_lab.dev.verify
-    --lock-wait "0 s"`` runs against that ledger: its pytest step is refused by the box. Its selection is its
-    own, so the run key differs from any enclosing verify and it cannot attach to it.
+    --lock-wait "0 s"`` runs against that ledger: its pytest step is refused by the box.
+
+    LIVE 2026-11-26/27: run in THIS checkout, the inner verify's whole-repo lint steps (pyright joined them that
+    day) ran inside the enclosing verify's box claim, and the box ended the whole producer run at ~79%
+    (``pytest exited 241``, tests/base INCONCLUSIVE). So it runs in a PLANTED git checkout of one probe file:
+    its steps judge that checkout alone, and its log lands in the planted output tree, never the producer's.
     """
     records = {'LAB_COMMONS_RESOURCE_DIR': str(tmp_path), BOX_ENV: str(tmp_path / 'box.sqlite')}
+    planted = _planted_checkout(tmp_path / 'repo')
     # stdout is the handshake channel; stderr (a box's low-disk watermark warning, say) goes to its own
     # file so a diagnostic line can never stand in front of 'held' -- and it is quoted when the handshake fails.
     diagnostics = tmp_path / 'holder.stderr'
@@ -1511,11 +1519,11 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
                 '--lock-wait',
                 '0 s',
                 '--',
-                'tests/test_dev_verify.py',
+                'tests/test_probe.py',
                 '-k',
                 'held_box_probe',
             ],
-            cwd=Path(__file__).resolve().parents[1],
+            cwd=planted,
             env={name: value for name, value in os.environ.items() if name not in {PRODUCING_VAR, INSIDE_ENV}}
             | records,
             capture_output=True,
@@ -1536,6 +1544,43 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
     assert done.returncode == ProducerExit.INCONCLUSIVE, done.stdout + done.stderr
     assert 'this box is held and nothing was measured' in done.stderr
     assert 'planted-holder' in done.stderr, 'the refusal names the holder'
+
+
+#: The modules that stop ANOTHER process tree by pid: a verify that loads none cannot signal an enclosing run.
+_STOPPERS: Final = frozenset({'dev_lab.dev.stoprun', 'dev_lab.dev.stopapproved', 'dev_lab.dev.shellreaper'})
+
+
+def _loaded_stoppers(module: str) -> set[str]:
+    probe = f'import sys, {module}; print(*sorted(sys.modules))'
+    done = subprocess.run(
+        [sys.executable, '-c', probe], capture_output=True, text=True, encoding='utf-8', timeout=120, check=True
+    )
+    return set(done.stdout.split()) & _STOPPERS
+
+
+@pytest.mark.parametrize(('module', 'stops'), [('dev_lab.dev.verify', False), ('dev_lab.dev.shellreaper', True)])
+def test_a_nested_verify_loads_no_door_that_stops_another_tree(module: str, *, stops: bool) -> None:
+    """A verify run inside a producer's tree can end only its OWN children (stallwatch, the box it launched).
+
+    The 2026-11-26 producer deaths were the enclosing box's memory claim, not a signal: this pins that no
+    verify path can reach a pid-stopping door. PLANTED CONTROL: the shell reaper loads one, so the probe says no.
+    """
+    assert bool(_loaded_stoppers(module)) is stops, module
+
+
+def _planted_checkout(root: Path) -> Path:
+    """A git checkout of one lint-clean probe test: a real verify there judges it alone, never this repo."""
+    (root / 'tests').mkdir(parents=True)
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(root)], check=True, timeout=60)
+    (root / 'pyproject.toml').write_text(f'{_OUTPUT}\n[tool.pytest.ini_options]\n', encoding='utf-8')
+    (root / 'tests' / '__init__.py').write_text(_PROBE_DOC, encoding='utf-8')
+    (root / 'tests' / 'test_probe.py').write_text(_PROBE, encoding='utf-8')
+    return root
+
+
+#: The planted checkout's one test, lint-clean so the inner verify's own steps pass on it.
+_PROBE_DOC: Final = '"""The planted probe."""\n'
+_PROBE: Final = _PROBE_DOC + '\n\ndef test_held_box_probe() -> None:\n    """Never judged: the box is held."""\n'
 
 
 #: A child that claims EVERY core of its box ledger and holds them until killed.
@@ -1618,6 +1663,25 @@ def test_a_selection_runs_its_pytest_step_in_the_box_and_a_producer_never_twice(
     monkeypatch.setattr(verifybox, 'inside_a_claim', lambda: True)
     reboxed = verifybox.boxed(Path('r'), ['py'], queue_s=5, outcome=Path('o.json'))
     assert reboxed == (['py'], None), 'PLANTED CONTROL: a tree inside a live claim is not reboxed'
+
+
+@pytest.mark.parametrize(
+    ('selection', 'seats'),
+    [
+        (('-m', 'gpu and not vendor'), ['--seat=exclusive=1', '--seat=gpu=1']),
+        (('-m', 'not gpu and not vendor'), []),  # PLANTED CONTROL: excluding the GPU asks none
+        ((), []),  # PLANTED CONTROL: no part asks none
+    ],
+)
+def test_a_part_needing_a_gpu_asks_the_box_for_one(monkeypatch, selection: tuple[str, ...], seats: list[str]) -> None:
+    """dev-lab #1005: verify asked the box for cores and memory only, so a `gpu` part ran with no GPU granted.
+
+    The part's need-set is its marker expression (:func:`~dev_lab.dev.localpart.part_selection`): each device kind
+    it SELECTS is one device on the claim, which the box grants and names (``CUDA_VISIBLE_DEVICES``).
+    """
+    _boxed_on(monkeypatch, 2.0, xdist=True)
+    argv, _ = verifybox.boxed(Path('r'), ['py', '-m', 'pytest', *selection], queue_s=5, outcome=Path('o.json'))
+    assert [arg for arg in argv[: argv.index('--')] if arg.startswith('--seat=')] == seats
 
 
 def test_a_platform_with_no_box_enforcer_runs_its_step_unboxed_and_says_so(monkeypatch, capsys) -> None:
@@ -1927,6 +1991,19 @@ def test_the_lock_wait_is_a_duration_quantity(capsys: pytest.CaptureFixture[str]
     assert '--lock-wait "<duration>"' in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(('text', 'accepted'), [('60m', '"60 min"'), ('2.5 m', '"2.5 min"'), ('CONTROL-90 s', None)])
+def test_a_minute_spelled_m_is_refused_naming_its_accepted_form(text: str, accepted: str | None) -> None:
+    """``m`` is pint's METER: "60m" stays refused (the unit lives in the value), but the refusal names ``60 min``."""
+    text = text.removeprefix('CONTROL-')
+    if accepted is None:
+        assert lock_wait(text) == pytest.approx(90.0, abs=1e-9)  # s
+        return
+    with pytest.raises(ValueError, match='duration') as refused:
+        lock_wait(text)
+    assert accepted in str(refused.value)
+    assert 'meter' in str(refused.value)
+
+
 @pytest.mark.parametrize('producer', [True, False], ids=['producer', 'CONTROL-developer'])
 def test_a_box_with_no_room_releases_a_producers_claim_claimable(
     monkeypatch, tmp_path: Path, *, producer: bool
@@ -2177,3 +2254,25 @@ def test_a_repo_declares_its_selection_wall_and_the_box_holds_the_selection_to_i
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nwall_s = 7200\n', encoding='utf-8')
     with pytest.raises(ValueError, match=r'wall_s = 7200 is retired.*write wall = "7200 s"'):
         verifybox.declared_wall_s(tmp_path)
+
+
+@pytest.mark.parametrize('sink', ['scratch/', 'work/sink/'])
+def test_the_ruff_lints_never_judge_the_declared_scratch_but_still_judge_code_beside_it(tmp_path, sink) -> None:
+    """#1037: OUTPUT-HOLDS-NO-CODE sends probes to scratch/, and verify's ruff then failed the verdict on them."""
+    (tmp_path / 'layout.toml').write_text(f"scratch = '{sink}'\n", encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.ruff.lint]\nselect = ["F401"]\n', encoding='utf-8')
+    bad = 'import os\nx=1\n'  # F401 for ruff check, unformatted for ruff format --check
+    for rel in (f'{sink}probe/x.py', 'src/pkg/kept.py'):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(bad, encoding='utf-8')
+    ruff_lints = [arguments for name, arguments in verifysteps.LINT_STEPS if name.startswith('ruff')]
+    assert len(ruff_lints) == 2
+    for arguments in ruff_lints:
+        argv = [sys.executable, '-m', *verifysteps.lint_arguments(tmp_path, arguments)]
+        done = launch.run(
+            [*argv, '--no-cache'], cwd=tmp_path, capture_output=True, text=True, encoding='utf-8', check=False
+        )
+        said = done.stdout + done.stderr
+        assert 'probe' not in said, said
+        assert 'kept.py' in said, said  # PLANTED CONTROL: tracked code outside scratch is still judged
+    assert verifysteps.lint_arguments(tmp_path, ('dev_lab.dev.spelling',)) == ('dev_lab.dev.spelling',)

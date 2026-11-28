@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from lab_commons.box.providers import account_seats
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc.account import ClusterAccount
 
@@ -103,12 +104,12 @@ def _capabilities(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rows: str) ->
     monkeypatch.setenv(CONFIG_ENV, str(config))
 
 
-def test_an_accounts_seat_supply_withholds_an_undeclared_vendor_and_keeps_the_declared_one(
+def test_an_accounts_seats_withhold_an_undeclared_vendor_and_keep_the_declared_one(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The cluster standing's seat provider read ``[capabilities]`` itself and raised UndeclaredSeat out of the tick."""
     _capabilities(monkeypatch, tmp_path, '[capabilities.femm]\n[capabilities.jmag]\nseats = 3\n')
-    assert forgeservedeclared.account_tool_seats(None).capacity.seats == {'jmag': 3}
+    assert account_seats(None).capacity.seats == {'jmag': 3}
 
 
 def test_a_fully_declared_account_supplies_every_tool_unchanged(
@@ -116,4 +117,4 @@ def test_a_fully_declared_account_supplies_every_tool_unchanged(
 ) -> None:
     """PLANTED CONTROL: with every vendor declared, femm supplies its declared seats beside jmag."""
     _capabilities(monkeypatch, tmp_path, '[capabilities.femm]\nseats = 2\n[capabilities.jmag]\nseats = 3\n')
-    assert forgeservedeclared.account_tool_seats(None).capacity.seats == {'femm': 2, 'jmag': 3}
+    assert account_seats(None).capacity.seats == {'femm': 2, 'jmag': 3}

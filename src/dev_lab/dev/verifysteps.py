@@ -31,17 +31,18 @@ from lab_commons.box import POLL_S
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev import baselines, cargostep, durations
+from dev_lab.dev import durations
 from dev_lab.dev._logdistil import distil_log
-from dev_lab.dev._verify_address import _git_z, tree_address
+from dev_lab.dev._verify_address import tree_address
 from dev_lab.dev._verify_coverage import cache_env, coverage_args, coverage_env, coverage_report, coverage_total
-from dev_lab.dev.commandtests import declared_command, script_paths, selected_command
+from dev_lab.dev._verify_native import native_steps
+from dev_lab.dev.codeplace import scratch_placement
+from dev_lab.dev.commandtests import script_paths
 from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.gitdirs import run_owner
 from dev_lab.dev.harness import child_env
 from dev_lab.dev.hook_install import read_hooks
-from dev_lab.dev.jsrun import NoEngine, node_path
 from dev_lab.dev.lanepolicy import declares_no_test_roots
 from dev_lab.dev.logref import LogRef
 from dev_lab.dev.pytestout import strip_ansi
@@ -56,9 +57,10 @@ from dev_lab.dev.test_outcomes import (
     RetiredOutcomes,
     outcomes_dir,
     read_cells,
+    recorded_diagnostics,
     recorded_failures,
 )
-from dev_lab.dev.testtemp import reclaim, script_temp_env
+from dev_lab.dev.testtemp import reclaim
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
 from dev_lab.dev.verdictenv import verdict_env
 from dev_lab.dev.verifybox import (
@@ -76,6 +78,7 @@ __all__ = [
     'OUTCOME_PLUGIN',
     'PYTEST_ARGS',
     'build_verdict',
+    'lint_arguments',
     'run_verify',
 ]
 
@@ -97,6 +100,20 @@ LINT_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ('pyright', ('dev_lab.dev.typecheck',)),
     ('cargo lints', ('dev_lab.dev.cargolints',)),
 )
+
+
+def lint_arguments(root: Path, arguments: tuple[str, ...]) -> tuple[str, ...]:
+    """A lint step's module *arguments* for *root*: a ruff step never judges the declared scratch (#1037).
+
+    OUTPUT-HOLDS-NO-CODE sends an agent's one-off code to scratch, which is never committed
+    (SCRATCH-IS-NEVER-COMMITTED), so a ruff verdict over it judged what is no part of the tree. The sink is read
+    from the placement (one source) and excluded by absolute path, so a same-named directory elsewhere is judged.
+    """
+    if arguments[0] != 'ruff':
+        return arguments
+    sink = (root / scratch_placement(root).scratch).resolve()
+    return (*arguments, '--extend-exclude', sink.as_posix())
+
 
 #: What pytest is always given, before anything the caller forwards. None of these three letters is
 #: cosmetic; each one makes pytest NAME something it would otherwise only COUNT, and every check in
@@ -241,68 +258,6 @@ def _tee(
     return process.returncode
 
 
-#: The banner before the declared command's run of the selected script tests.
-SCRIPTS_BANNER: Final = '--- script tests ---\n'
-
-
-def script_step(root: Path, paths: tuple[str, ...], *, handle: IO[str]) -> StepReport:
-    """The selected script tests (``.mjs``/``.cjs``/``.js``), run by the repo's DECLARED command, judged by its exit.
-
-    The command is the command-part producer's (:mod:`dev_lab.dev.commandtests`), cut to *paths*: exit 0 passes,
-    any other exit FAILS each selected path. No declaration, a command that cannot be cut, or one that cannot start
-    measures nothing -- truncated, by name and door, so the run is INCONCLUSIVE rather than a guessed verdict.
-    """
-    name = f'script tests {" ".join(paths)}'
-    handle.write(SCRIPTS_BANNER)
-    try:
-        declared = declared_command((root / 'pyproject.toml').read_text(encoding='utf-8'))
-    except OSError:
-        declared = None
-    if declared is None:
-        return StepReport(
-            name=name,
-            truncated=(
-                (
-                    f'{name}: no test command is declared -- declare it as the producer in pyproject.toml: '
-                    f'[tool.lab_commons.tests] produce = ["-m", "dev_lab.dev.commandpart", "{{part}}", "--", <cmd...>]'
-                ),
-            ),
-        )
-    command = selected_command(root, declared, paths)
-    if isinstance(command, str):
-        return StepReport(name=name, truncated=(f'{name}: {command}',))
-    try:
-        # `node` is the LOCKED engine (:mod:`dev_lab.dev.jsrun`), never the host's; any other program is resolved
-        # on PATH (Windows: `npm` is `npm.cmd`, which a bare name cannot start).
-        program = str(node_path()) if command[0] == 'node' else shutil.which(command[0]) or command[0]
-        with script_temp_env({}) as temp:
-            code = _tee([program, *command[1:]], cwd=root, handle=handle, extra_env=temp)
-    except (OSError, NoEngine) as cannot:
-        return StepReport(name=name, truncated=(f'{name}: cannot start {command[0]!r} here: {cannot}',))
-    return StepReport(name=name, reported=(name, *paths), failures=() if code == 0 else paths)
-
-
-def _native_steps(
-    root: Path, pytest_args: tuple[str, ...], scripts: tuple[str, ...], *, handle: IO[str], cargo: bool
-) -> list[StepReport]:
-    """The steps beside pytest: script tests, then on an untargeted run ``baselines verify`` and cargo.
-
-    ``baselines verify`` is H2's; each cargo workspace's own step (T8) runs only outside a producer, whose part
-    hands it to ``tests/cargo``.
-    """
-    steps = [script_step(root, scripts, handle=handle)] if scripts else []
-    if scripts or is_targeted(root, pytest_args):  # a selection (pytest or script) judges itself, not the tree
-        return steps
-    steps.append(baselines.step(root))
-    if not cargo:
-        return steps
-    tracked = _git_z(root, 'ls-files', '-z') or ()
-    return [
-        *steps,
-        *(cargostep.step(root, one, handle=handle, tee=_tee) for one in cargostep.workspaces(root, tracked)),
-    ]
-
-
 def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec: str, log: LogRef) -> Verdict:
     """Fold the step reports into ONE verdict over the whole verify run.
 
@@ -434,8 +389,12 @@ def run_verify(
             if hooks:
                 reports.append(read_hooks(root, handle=handle))
             for name, arguments in LINT_STEPS:
-                reports.append(read_lint(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
-            reports.extend(_native_steps(root, pytest_args, scripts, handle=handle, cargo=cargo))
+                reports.append(
+                    read_lint(
+                        name, _tee([sys.executable, '-m', *lint_arguments(root, arguments)], cwd=root, handle=handle)
+                    )
+                )
+            reports.extend(native_steps(root, pytest_args, scripts, handle=handle, cargo=cargo, tee=_tee))
             if not no_pytest:
                 handle.write(_PYTEST_BANNER)
                 stamp = {
@@ -506,8 +465,9 @@ def run_verify(
         allowed=allowed,
         complete_census=complete_census,
     )
-    if report.truncated or cut:  # a run that did not settle still names what it recorded failing
+    if report.truncated or cut:  # a run that did not settle still names what it recorded failing, and what each said
         cut = (*cut, *recorded_failures(outcomes_dir(path)))
+        _publish_diagnostics(path, recorded_diagnostics(outcomes_dir(path)))
     report = replace(report, truncated=(*report.truncated, *scope_refusal, *vanished, *cut))
     reports.append(functools.reduce(lambda done, stage: stage.annotate(done), stages, report))
     return build_verdict(
@@ -517,3 +477,16 @@ def run_verify(
         spec=' '.join(('verify', *selection)),
         log=LogRef.of(path),
     )
+
+
+def _publish_diagnostics(log: Path, diagnostics: str) -> None:
+    """A cut run's recorded failure *diagnostics*, appended to its *log* and printed to stderr (a job log keeps it).
+
+    The log is the artifact a CI part keeps; stderr is what a hosted job's own log shows whether or not the
+    artifact was kept. Nothing recorded failing prints nothing.
+    """
+    if not diagnostics:
+        return
+    with log.open('a', encoding='utf-8') as handle:
+        handle.write(diagnostics)
+    emit(diagnostics, err=True)

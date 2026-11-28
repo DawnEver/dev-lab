@@ -346,31 +346,19 @@ def test_a_rust_repo_pins_one_exact_toolchain_version(tmp_path: Path) -> None:
     assert lock_problems(root, _commit(root, {'rust-toolchain.toml': '[toolchain]\nchannel = "1.99.1"\n'})) == ()
 
 
-def _rustup(output: str) -> object:
-    attempt = type('Attempt', (), {'output': output})()
-    return type('Report', (), {'ok': True, 'remedy': '', 'attempts': (attempt,)})()
+def test_the_newest_stable_is_the_highest_rust_release_tag_whatever_toolchains_this_host_holds() -> None:
+    """#996: ``rustup check`` named no stable on a host holding only its pinned toolchain; the tags always do.
 
-
-def test_the_newest_stable_is_what_rustup_check_reports() -> None:
-    behind = (
-        'stable-x86_64-pc-windows-msvc - Update available : 1.93.1 (01f6ddf75 2026-02-11) -> 1.99.1 (58cf8f9c3 '
-        '2026-10-13)\nrustup - Update available : 1.28.2 -> 1.29.2\n'
+    ``1.100.0`` outranks ``1.99.1`` numerically; the old ``0.x`` and pre-release tags never count.
+    PLANTED CONTROL: a listing with no release tag, or a failed one, raises naming the repository.
+    """
+    assert newest_stable(check=lambda: _tags('0.12.0', '1.99.1', '1.100.0', '1.101.0-beta.1', 'release-0.1')) == (
+        '1.100.0'
     )
-    current = 'stable-x86_64-unknown-linux-gnu - Up to date : 1.99.1 (58cf8f9c3 2026-10-13)\n'
-    assert newest_stable(check=lambda: _rustup(behind)) == '1.99.1'
-    assert newest_stable(check=lambda: _rustup(current)) == '1.99.1'
-    # rustup 1.29 on the Ada login nodes: lower case, no space before the colon (measured 2026-10-26).
-    ada = (
-        'stable-x86_64-unknown-linux-gnu - update available: 1.99.0 (b940084d7 2026-09-28) -> 1.99.1 '
-        '(58cf8f9c3 2026-10-13)\nrustup - update available : 1.29.1 -> 1.29.2\n'
-    )
-    assert newest_stable(check=lambda: _rustup(ada)) == '1.99.1'
-    # rustup exits 100 when an update is available (measured on Ada 2026-10-26): the answer is in the output.
-    updates = _rustup(ada)
-    updates.ok = False
-    assert newest_stable(check=lambda: updates) == '1.99.1'
-    with pytest.raises(OSError, match='rustup check named no stable toolchain'):
-        newest_stable(check=lambda: _rustup('nightly-x86_64 - Up to date : 1.100.0-nightly\n'))
+    with pytest.raises(OSError, match='rust-lang/rust listed no Rust release'):
+        newest_stable(check=lambda: _tags('1.101.0-beta.1'))
+    with pytest.raises(OSError, match='retry later'):
+        newest_stable(check=lambda: _tags('1.99.1', ok=False))
 
 
 def test_a_toolchain_behind_the_newest_stable_is_stale_and_pinning_moves_only_its_channel(tmp_path: Path) -> None:
@@ -380,7 +368,7 @@ def test_a_toolchain_behind_the_newest_stable_is_stale_and_pinning_moves_only_it
     )
 
     def fresh(_tree: Path) -> object:
-        return _rustup('')
+        return _tags()
 
     assert stale(tmp_path, resolve=fresh, stable=lambda: '1.99.1') == (
         'rust-toolchain.toml is not the newest stable: 1.99.0 -> 1.99.1',
@@ -419,7 +407,7 @@ def test_a_uv_pin_below_the_newest_release_is_stale_refreshable_and_pinning_move
     pin.write_text('# why\nversion = "0.13.7"\nfollow = "minor"\n', encoding='utf-8')
 
     def fresh(_tree: Path) -> object:
-        return _rustup('')
+        return _tags()
 
     assert stale(tmp_path, resolve=fresh, uv=lambda: '0.13.8') == (), 'D101: a patch release never moves a minor pin'
     found = stale(tmp_path, resolve=fresh, uv=lambda: '0.14.0')

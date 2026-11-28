@@ -37,7 +37,13 @@ prefix_rule(
 prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.worktrees"],
     decision = "allow",
-    justification = "The worktree census; pruning removes only a clean, pushed worktree, archiving moves its outputs home.",
+    justification = "The worktree census; pruning removes only a clean, pushed worktree, removing deletes its output/ with it.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.cloneremove"],
+    decision = "allow",
+    justification = "Removing a whole redundant clone the user approved, refused while anything in it is unique.",
 )
 
 prefix_rule(
@@ -203,9 +209,21 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "edit"],
+    decision = "allow",
+    justification = "Replacing a pull request's body from a file, or adding lines after it (a merge-ready Red-On-Record line).",
+)
+
+prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "continue"],
     decision = "allow",
     justification = "Opening the continuation pull request of a branch whose pull request already merged and whose tip moved past it (LANDED-BRANCH-CONTINUES).",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "retarget"],
+    decision = "allow",
+    justification = "Moving a pull request onto the integration branch or a declared branch, its reason commented first (PRS-TARGET-INTEGRATION).",
 )
 
 prefix_rule(
@@ -326,6 +344,18 @@ prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.hpcaccount", "retention"],
     decision = "allow",
     justification = "Reading each trusted cluster account's quota (files and blocks) and whether its serve ticks, and running that account's own in-flight-aware storage retention through the grant's own login hosts; a dry run unless asked to apply.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.hpcaccount", "archive"],
+    decision = "allow",
+    justification = "Archiving one directory of a trusted cluster account to the family's declared run store as tar parts, each read back from the store and its sha256 compared, under a manifest, through the grant's own login host; a plan unless asked to apply (user ruling 2026-11-25).",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.hpcaccount", "archive-clean"],
+    decision = "allow",
+    justification = "Deleting one directory of a trusted cluster account through the cluster's clean door, only once its archive on the run store is verified and the directory unchanged since; a dry run unless asked to apply.",
 )
 
 prefix_rule(

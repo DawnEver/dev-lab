@@ -67,6 +67,7 @@ RETIRED_SPELLINGS: Final = {
         (
             'dev_lab.dev.testcost: cost is derived from the dev_lab.dev.durations ledger, never a hand-kept marker',
             'user ruling 2026-11-24 (T3/H1): the slow-marker ratchet retired; registered here, not by a module hook',
+            'capability-dropped',
         ),
     ),
     **dict.fromkeys(
@@ -444,6 +445,7 @@ RETIRED_SPELLINGS: Final = {
     'MERGE_OR_LAND': (
         'branchdelete.MERGE_OR_DISCARD (merge it, or the user approves what branchprune discard drops)',
         'dev-lab #611 2026-11-26: an -s ours landing kept the commits as ancestors and lost their content',
+        'renamed',
     ),
     'RETIRED_FILES': (
         "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to strays.retired_copies",
@@ -479,7 +481,7 @@ RETIRED_SPELLINGS: Final = {
         (
             (
                 'dev_lab.dev.taskledger: ledger() (the global tasks repo) and task_of(cwd) (the task its branch '
-                'pr/<slug>/<feature> names); forgefeed.take_task_unread; depneeds.task_extras'
+                'pr/<slug>/<feature> names); _forgefeed_inbox.take_task_unread; depneeds.task_extras'
             ),
             'user ruling 2026-11-23: the task ledger is one global repo and the binding store is cancelled',
             'renamed',

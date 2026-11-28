@@ -248,7 +248,7 @@ def relock(
         ).returncode != 0:
             msg = f'committing the relocked {LOCK} failed: {(done.stderr or done.stdout).strip()}'
             raise RelockFailed(msg)
-    except (OSError, datadeps.DataRefused):
+    except OSError, datadeps.DataRefused:
         _restore(root, _touched(root) - clean)
         raise
     return names

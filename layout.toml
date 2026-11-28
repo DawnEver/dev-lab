@@ -30,7 +30,6 @@ retired = [
 '.codex/rules' = ['.rules']
 '.github' = []
 '.github/workflows' = ['.yml']
-'.vscode' = ['.json']
 'docs-src' = ['.md']
 'docs-src/dev' = ['.md']
 src = []

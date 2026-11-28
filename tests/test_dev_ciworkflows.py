@@ -42,6 +42,7 @@ from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.nightlycron import NIGHTLY_CRON
+from dev_lab.dev.pythontoolchain import SYNC_FLAGS
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 
 #: A repo declares no placement: the roles are the kinds the test carries (_roles_fixtures; EVERY_CI by default).
@@ -56,7 +57,7 @@ _NO_MEASURE = "inputs.measurement_paths == '' && inputs.measurement_sha == ''"
 _JUDGE_REVIEW = '[tool.dev_lab.review]\njudge_login = "judge"\n'
 
 _GITHUB_BASE = {'ci.yml', 'continue.yml', 'merge-tick.yml', 'review-again.yml'}
-_GITEA_BASE = {'review.yml', 'merge.yml'}
+_GITEA_BASE = {'review.yml', 'merge.yml', 'gates.yml'}
 
 
 def _hosted(root: Path, url: str = 'https://github.com/o/r.git') -> Path:
@@ -74,7 +75,9 @@ def test_this_repo_s_workflows_are_exactly_their_render(monkeypatch: pytest.Monk
     # dev-lab is a judge repo (user ruling 2026-11-10): the base set less the review-again workflow, whose one job
     # reviews on the runner (its role, review, is bound to a host); the judge prepares its own bundle (D77).
     carry(monkeypatch, CI_REPO)
-    assert set(workflows(_ROOT)) == _GITHUB_BASE - {'review-again.yml'}, 'a floor: an empty table drifts from nothing'
+    # Its [tool.dev_lab.native.vendor] rows add the vendored-wheels workflow (FAM-16).
+    expected = (_GITHUB_BASE - {'review-again.yml'}) | {'vendor-wheels.yml'}
+    assert set(workflows(_ROOT)) == expected, 'a floor: an empty table drifts from nothing'
     assert drift(_ROOT) == []
 
 
@@ -569,13 +572,49 @@ def test_a_hosted_setup_runs_before_the_tests_and_only_a_secret_withholds_the_pu
     ), 'PLANTED CONTROL: a secret keeps it full-run only'
     produce = _produce_step(linux)
     setup = linux['steps'][linux['steps'].index(produce) - 1]
-    assert setup == {'name': 'Set up tests/linux', 'run': 'sudo apt-get install -y xvfb'}
+    assert setup == {'name': 'Set up tests/linux', 'run': 'uv run --no-sync python -m dev_lab.dev.hostedsetup linux'}, (
+        'the declared setup runs through its door, which posts a failure under its own class (dev-lab#998)'
+    )
     assert produce['run'].endswith('jobparts produce linux')
     assert not any('env' in step or 'credential' in step.get('run', '') for step in linux['steps']), 'no key store'
     runs = [step.get('run', '') for step in live['steps']]
-    assert runs.index('make x') < next(i for i, run in enumerate(runs) if run.endswith('jobparts produce live'))
+    assert runs.index('uv run --no-sync python -m dev_lab.dev.hostedsetup live') < next(
+        i for i, run in enumerate(runs) if run.endswith('jobparts produce live')
+    )
     assert _forgets_keys(live)
     assert {'part-linux', 'part-live'} <= set(jobs['absent-parts']['needs'])
+
+
+_CACHED_HOSTED = """
+[tool.lab_commons.tests]
+resources = ["corpus", "linux"]
+
+[tool.dev_lab.parts.hosted]
+linux = { setup = "x" }
+corpus = { setup = "fetch", cache = { path = "output/cache/corpus", key = "corpus.lock" } }
+
+[tool.dev_lab.ci."ci.yml"]
+"""
+
+
+def test_a_declared_cache_renders_one_cache_step_keyed_on_its_file_just_before_the_setup(tmp_path: Path) -> None:
+    """dev-lab#998: a hosted part's pinned downloads are cached across runs, keyed on the file pinning them.
+
+    PLANTED CONTROL: ``linux`` declares no cache and its job has no cache step.
+    """
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _CACHED_HOSTED, encoding='utf-8')
+    jobs = workflows(tmp_path)['ci.yml']['jobs']
+    steps = jobs['part-corpus']['steps']
+    setup = next(i for i, step in enumerate(steps) if step.get('name') == 'Set up tests/corpus')
+    assert steps[setup - 1] == {
+        'name': 'Restore the tests/corpus download cache',
+        'uses': 'actions/cache@v4',
+        'with': {'path': 'output/cache/corpus', 'key': "corpus-${{ runner.os }}-${{ hashFiles('corpus.lock') }}"},
+    }
+    assert [step for step in steps if 'actions/cache' in step.get('uses', '')] == [steps[setup - 1]], 'one step'
+    assert not any('actions/cache' in step.get('uses', '') for step in jobs['part-linux']['steps']), (
+        'PLANTED CONTROL: no cache declared, no cache step'
+    )
 
 
 def _forgets_keys(job: dict[str, Any]) -> bool:
@@ -1225,7 +1264,7 @@ def test_gitea_renders_no_promoter_because_the_host_s_ops_promote_role_owns_gite
     whose host deliberately does not promote it. GitHub keeps its promote job inside ci.yml.
     PLANTED CONTROL: the GitHub base still promotes.
     """
-    assert base_names('gitea') == {'review.yml', 'merge.yml'}
+    assert base_names('gitea') == {'review.yml', 'merge.yml', 'gates.yml'}
     gitea = _hosted(tmp_path / 'gitea', 'https://gitea.example/o/r.git')
     for name, workflow in workflows(gitea).items():
         assert 'integrate promote' not in render(workflow), name
@@ -1553,7 +1592,7 @@ def test_both_merge_jobs_sync_through_the_repo_s_setup(tmp_path: Path) -> None:
     """
     base = _base_ci(tmp_path)['jobs']
     for job in ('merge-ready', 'merge-rejudge'):
-        assert any(step.get('run') == 'uv sync --frozen' for step in base[job]['steps']), job
+        assert any(step.get('run') == f'uv sync --frozen {SYNC_FLAGS}' for step in base[job]['steps']), job
     (tmp_path / 'pyproject.toml').write_text(
         ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci._steps]\n'
         'setup = [{ name = "Sync the environment", run = "uv sync --frozen --extra dev" }]\n',
@@ -1665,11 +1704,14 @@ def test_every_job_syncs_only_the_declared_extras_and_a_part_adds_its_own_needs(
     (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _EXTRAS, encoding='utf-8')
     flow = workflows(tmp_path)['ci.yml']
     runs = _sync_runs(flow)
-    assert 'uv sync --frozen --extra dev' in runs
+    assert f'uv sync --frozen {SYNC_FLAGS} --extra dev' in runs
     assert not any('--all-extras' in run for run in runs)
     part = [step['run'] for step in flow['jobs']['part']['steps'] if step.get('name') == "Sync the part's extras"]
     assert part == [
-        'uv sync --frozen $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")'
+        (
+            f'uv sync --frozen {SYNC_FLAGS} '
+            '$(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")'
+        )
     ]
 
 

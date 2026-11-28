@@ -86,7 +86,7 @@ def journaled(root: Path) -> tuple[Intent, ...]:
     for path in sorted(directory.glob('*.json')) if directory.is_dir() else ():
         try:
             found.append(Intent(**json.loads(path.read_text(encoding='utf-8'))))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             continue
     return tuple(found)
 

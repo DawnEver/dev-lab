@@ -85,12 +85,14 @@ FAMILY_KINDS: Final[dict[str, dict[str, frozenset[str]]]] = {
     'complexity': {'.': frozenset({'.jsonl'})},  # complexity: one owners.jsonl record per run
     'oraclegc': {'.': frozenset({'.md'})},  # oraclegc report: one report per run
     'deploy-femm': {'.': frozenset({'.log'})},  # hpcaccount.femm: the FEMM build log
-    # hpcaccount.salvage: <user>/<run>/manifest.json and <user>/<run>/<checkout>/ its bundle, diff and tar
-    'salvage': {
-        '.': frozenset(),
-        '*': frozenset(),
-        '*/*': frozenset({'.json'}),
-        '*/*/*': frozenset({'.bundle', '.diff', '.tar'}),
+    # hpcaccount.salvage: one record per run; the work itself is salvage/<yyyymmdd>-<name> branches (#1039)
+    'salvage': {'.': frozenset({'.json'})},
+    # forgeci: each job's whole log; each artifact unpacked as ci_base uploads it (verify log, outcomes, receipt)
+    'ci': {
+        '.': frozenset({'.log'}),
+        '*': frozenset({'.log', '.json'}),
+        '*/*.outcomes': frozenset(),
+        '*/*.outcomes/*': frozenset({'.jsonl'}),
     },
 }
 

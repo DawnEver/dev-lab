@@ -53,8 +53,8 @@ matrix job never runs it: :func:`dev_lab.dev.hostedjobs.hosted_jobs` renders it 
 setup step alone has the bundles in its environment and pipes each
 to ai-lab's loader on stdin -- never argv, never echoed -- before the part is produced. The render names
 a secret; it never holds a value, and it names no provider (ai-lab's routes say which a task uses).
-No pull request has its row, and a PR's merge gate waits on no part but base's rows
-(:func:`dev_lab.dev.forgemergewaits.hand_parts`); the full
+No pull request has its row, and a PR's merge gate waits on no part but the gating ones
+(:func:`dev_lab.dev.forgemergewaits.gates`: base and the merge systems' OS parts); the full
 run produces it, and ``integrate promote`` reads it there.
 """
 
@@ -79,6 +79,7 @@ from lab_commons.hpc.shell import parse_collection_errors, parse_ids
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
+from dev_lab.dev import cargostep
 from dev_lab.dev.commandtests import declared_command
 from dev_lab.dev.famtests.alwayson import assert_required_collected, resource_nodes
 from dev_lab.dev.forgeci import FAILED_JOB
@@ -86,6 +87,7 @@ from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import deliver_unit
 from dev_lab.dev.forgestatus import status_list, status_post
+from dev_lab.dev.harness import actions_run
 from dev_lab.dev.hostedparts import Hosted, hosted_parts
 from dev_lab.dev.partrows import ROW_SEPARATOR, needs_of_row, row_part
 from dev_lab.dev.platformparts import part_context, producer_argv
@@ -104,6 +106,7 @@ __all__ = [
     'Job',
     'absent',
     'command_part',
+    'head_sha',
     'main',
     'matrix',
     'off_gate',
@@ -111,6 +114,7 @@ __all__ = [
     'pytest_collector',
     'rows',
     'run_jobs',
+    'run_url',
     'runner_for',
     'systems_for',
 ]
@@ -194,6 +198,8 @@ def runner_for(part: str) -> str | None:
     2026-11-11): GitHub wires no self-hosted runner, workstation or cluster, so it has no row and nothing waits on
     it -- the test stays, for a consumer's unified run to select (:func:`off_gate`).
     """
+    if part == cargostep.PART:  # dev-lab#1033: rustup on every hosted image; fmt and clippy read no OS
+        return HOSTED_RUNNERS['linux']
     needs = needs_of_row(part)
     systems = needs & set(OS_NAMES.values())
     if needs == systems and len(systems) <= 1:
@@ -232,7 +238,7 @@ def rows(part: str, event: str, declared: Mapping[str, Hosted]) -> list[dict[str
     home = runner_for(part)
     if home is None:
         return []
-    if needs_of_row(part) & set(OS_NAMES.values()):
+    if part == cargostep.PART or needs_of_row(part) & set(OS_NAMES.values()):
         return [{'part': part, 'runs-on': home}]
     runners = {system: HOSTED_RUNNERS[system] for system in systems_for(event)}
     return [
@@ -248,6 +254,7 @@ def matrix(
 
     A part needing a resource the checkout declares ``unproduced`` has no row (:mod:`dev_lab.dev.unproduced`).
     Each part has its :func:`runner_for` row, plus one per further OS of *event* when it names none (:func:`rows`).
+    A checkout tracking a Cargo workspace has the :data:`~dev_lab.dev.cargostep.PART` row too (dev-lab#1033).
     *hosted* keeps only the rows the generic job produces on a GitHub-hosted runner -- a declared hosted row
     (it carries ``secrets``, maybe none) has its own job (:func:`dev_lab.dev.hostedjobs.hosted_jobs`) -- and
     :func:`absent` then names the rest.
@@ -261,6 +268,8 @@ def matrix(
         ids = list(collect(''))
         carrying = {name: set(resource_nodes(root, collect(name))) for name in vocabulary.resources}
         derived = {BASE, *need_sets(ids, carrying).values()}
+    if cargostep.tracked_workspaces(root):
+        derived.add(cargostep.PART)
     names = sorted(derived - unproduced_parts(derived, unproduced(text)))
     declared = hosted_parts(text)
     every = [row for name in names for row in rows(name, event, declared)]
@@ -280,7 +289,7 @@ def no_matrix(client: Client, sha: str, cause: Exception, env: Mapping[str, str]
     """
     description = owned(Owner.CODE, f'{NO_MATRIX}: {cause}')
     status_post(
-        client, sha, context=part_context(BASE), state='error', description=description, target_url=_run_url(env)
+        client, sha, context=part_context(BASE), state='error', description=description, target_url=run_url(env)
     )
     return f'{part_context(BASE)}: error {NO_MATRIX}: {cause}'
 
@@ -352,7 +361,7 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
     else its exit code's (:func:`release_reason`) -- naming this run, and exits non-zero.
     """
     given = os.environ if env is None else env
-    sha = _head(root)
+    sha = head_sha(root)
     argv = producer_argv(root, part, sha=sha)
     context = part_context(part)
     with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
@@ -365,7 +374,7 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
     if _settled(client, sha, context):
         return code
     description = outage_said(said) or release_reason(code, outage=None)
-    status_post(client, sha, context=context, state='error', description=description, target_url=_run_url(given))
+    status_post(client, sha, context=context, state='error', description=description, target_url=run_url(given))
     emit(f'[jobparts] {context}: error {description}', err=True)
     return code or 1
 
@@ -384,7 +393,7 @@ def _settled(client: Client, sha: str, context: str) -> bool:
     return False
 
 
-def _head(root: Path) -> str:
+def head_sha(root: Path) -> str:
     """*root*'s HEAD sha."""
     head = _door.run(
         ['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, encoding='utf-8', check=True
@@ -392,10 +401,9 @@ def _head(root: Path) -> str:
     return head.stdout.strip()
 
 
-def _run_url(env: Mapping[str, str]) -> str:
-    """The web URL of the Actions run *env* names, ``''`` outside one."""
-    parts = (env.get('GITHUB_SERVER_URL', ''), env.get('GITHUB_REPOSITORY', ''), env.get('GITHUB_RUN_ID', ''))
-    return '{}/{}/actions/runs/{}'.format(*parts) if all(parts) else ''
+def run_url(env: Mapping[str, str]) -> str:
+    """The web URL of the Actions run *env* names, ``''`` outside one (:class:`~dev_lab.dev.harness.ActionsRun`)."""
+    return actions_run(env).url
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -421,7 +429,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             found = matrix(args.root, collect=collect, event=args.event, hosted=args.runners == 'hosted')
         except ValueError as cause:  # UndeclaredPart among them
-            emit(f'[jobparts] {no_matrix(client_for(args.root), _head(args.root), cause, os.environ)}', err=True)
+            emit(f'[jobparts] {no_matrix(client_for(args.root), head_sha(args.root), cause, os.environ)}', err=True)
             return 1
         emit(json.dumps(found))
         return 0

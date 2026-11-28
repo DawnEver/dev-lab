@@ -110,7 +110,6 @@ from dev_lab.dev.forgecoalesce import PUBLISHING
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoom import budget_alarm, budget_spent
 from dev_lab.dev.forgeroute import pyproject_at, route
-from dev_lab.dev.forgerunpost import DESCRIPTION_MAX
 from dev_lab.dev.forgerunstate import (
     CLAIMED_PHASE,
     GATHERED,
@@ -124,7 +123,7 @@ from dev_lab.dev.forgerunstate import (
     save,
 )
 from dev_lab.dev.forgeschedule import tip_of
-from dev_lab.dev.forgestatus import CommitStatus, status_history
+from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, CommitStatus, status_history
 from dev_lab.dev.forgesupersede import (
     REF_GONE,
     SUPERSEDED_BY,
@@ -233,7 +232,7 @@ def _gather(
         forgerunpost.killed(client, run, cluster.killed(run), say, tag)
         _settle(root, run, client=client, why=str(why), say=say, alarm=alarm, ran=True)
         return None
-    except (NotSubmitted, Unreachable):  # released by advance / transient: never read as a lost run
+    except NotSubmitted, Unreachable:  # released by advance / transient: never read as a lost run
         raise
     except RuntimeError as why:
         # Its cluster state cannot be read (2026-11-08: the tree's manifest.json gone). With no job of it in
@@ -302,7 +301,7 @@ def _settle(
         reason = f'{RETRYABLE} -- never submitted; claimable again'
     else:
         reason = superseded_reason(tip or REF_GONE, f'never submitted, and {run.ref} moved on')
-    reason = reason[:DESCRIPTION_MAX]
+    reason = reason[:DESCRIPTION_LIMIT]
     alarm(
         Alarm(
             RUN,

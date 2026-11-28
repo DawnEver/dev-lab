@@ -112,7 +112,7 @@ from dev_lab.dev.famtests.alwayson import resource_nodes
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush, run_attempt
-from dev_lab.dev.partfacts import Part, facts_of, latest, parsed
+from dev_lab.dev.partfacts import Part, facts_of, latest, parsed, quoted
 from dev_lab.dev.partrows import is_row, needs_of_row, row_part
 from dev_lab.dev.producer import AUTHORS_RED, Owner, unreachable, whose
 from dev_lab.dev.verdictenv import POLICY_CHARS, verdict_policy_at
@@ -352,7 +352,7 @@ def parts_of(statuses: Sequence[CommitStatus], *, policy: str | None = None) -> 
     An ``error`` problem names its owner (:func:`~dev_lab.dev.producer.whose`): only ``class=code`` is its author's.
     """
     problems = [
-        f'{status.context} is {status.state} ({status.description!r}) -- not a settled part'
+        f'{status.context} is {status.state} ({quoted(status.description)}) -- not a settled part'
         + whose(status.state, status.description)
         for status in latest(statuses)
         if status.context.startswith(CONTEXT_PREFIX) and status.context not in NOT_PARTS and parsed(status) is None

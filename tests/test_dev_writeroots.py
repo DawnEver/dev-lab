@@ -19,7 +19,7 @@ import pytest
 from lab_commons.storage import Storage
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev import writeroots
+from dev_lab.dev import walls, writeroots
 from dev_lab.dev._deny_writeroots_row import WRITES_STAY_IN_THE_TREE
 from dev_lab.dev._writeroots_shell import shell_targets
 from dev_lab.dev.codeplace import main
@@ -222,10 +222,20 @@ def test_an_unusable_declaration_refuses_by_name(monkeypatch: pytest.MonkeyPatch
         ('New-Item -ItemType File D:\\var\\x.txt', [('D:\\var\\x.txt', '')]),
         ('echo x 2>/dev/null > $null', []),
         ('cat /tmp/a | grep b', []),
+        # A backgrounded write in the bounded form BACKGROUND-SHELL-IS-BOUNDED itself asks for: the script is quoted.
+        ("timeout 5m bash -c 'cmd > /tmp/x.log 2>&1' &", [('/tmp/x.log', '')]),
+        ('nohup sh -c "cd /tmp && cmd > x.log" &', [('x.log', '/tmp')]),
+        ("cd /w && bash -lc 'cmd | tee out.txt'", [('out.txt', '/w')]),
+        ("CONTROL: bash -c 'cat /tmp/x.log'", []),
+        # #1006: a redirect target ends at the `)` closing its substitution.
+        ('j=$(timeout 120 python -m x --json 2>/dev/null); echo $j', []),
+        ('x=$(cmd 2>/dev/null); y=$(cmd2 >/dev/null)', []),
+        ('x=$(cmd > /c/elsewhere/f)', [('/c/elsewhere/f', '')]),
+        ('x=$(cmd > "/tmp/a)b")', [('/tmp/a)b', '')]),
     ],
 )
 def test_the_shell_targets_are_every_place_a_line_writes(command: str, targets: list[tuple[str, str]]) -> None:
-    assert shell_targets(command) == targets
+    assert shell_targets(command.removeprefix('CONTROL: ')) == targets
 
 
 @pytest.mark.parametrize('target', ['D:/var/x.txt', 'C:\\tmp\\out.csv'])
@@ -337,3 +347,52 @@ def test_the_job_temp_is_no_door(tmp_path: Path) -> None:
     job = tmp_path / 'jobs' / 'abc'
     found = excluded_paths((), machine={}, env={'CLAUDE_JOB_DIR': str(job)})
     assert job / 'tmp' not in found
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        'echo x > {temp}/ledger.txt',  # #1070 shape 1: the system temp dir
+        'f=$(mktemp); echo x > "$f"',  # a computed variable: truly unplaceable
+        'echo x > $NO_SUCH_VARIABLE_1070/a.txt',  # a variable no one holds
+    ],
+)
+def test_every_refusal_names_its_door_on_a_line_of_its_own(
+    family: dict[str, Path], monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """EVERY-WALL-TEACHES (#1070, #997): the ledger records ``has_remedy`` of the text, which needs a door LINE."""
+    monkeypatch.delenv('NO_SUCH_VARIABLE_1070', raising=False)
+    monkeypatch.delenv('f', raising=False)
+    line = command.format(temp=family['temp'].as_posix())
+    reason = judge(_payload(line, family['repo']), allowed=_fallback(family), admitted=())
+    assert reason is not None, line
+    assert walls.has_remedy(reason), reason
+    assert (family['repo'] / 'scratch').as_posix() + '/' in reason
+    # Planted control: the same cause with its door dropped is door-less, so the assertion above can say no.
+    assert not walls.has_remedy('\n'.join(one for one in reason.splitlines() if 'scratch/' not in one))
+
+
+def test_the_temp_refusal_names_the_literal_scratch_path(family: dict[str, Path]) -> None:
+    reason = refuse_outside_tree(
+        family['temp'] / 'ledger.txt', allowed=_fallback(family), admitted=(), checkout=family['repo']
+    )
+    assert reason is not None
+    assert (family['repo'] / 'scratch' / 'ledger.txt').as_posix() in reason
+
+
+def test_a_variable_assigned_in_the_same_line_is_placed(family: dict[str, Path]) -> None:
+    """#1070 shape 2: ``f=...; ... "$f"`` -- the line itself holds ``f``; inside the tree admitted, outside refused."""
+    inside = judge(_payload('f=scratch/out.txt; echo x > "$f"', family['repo']), allowed=_fallback(family), admitted=())
+    assert inside is None
+    outside = f'f={family["temp"].as_posix()}/out.txt; echo x > "$f"'
+    reason = judge(_payload(outside, family['repo']), allowed=_fallback(family), admitted=())
+    assert reason is not None
+    assert 'is outside every writable root' in reason
+
+
+def test_a_variable_only_read_is_no_target() -> None:
+    """#1070 shape 2, second half: ``grep X "$f"`` reads ``$f``; only writes are targets."""
+    line = (
+        'f=$(ls -t $(find output -name "*.jsonl" 2>/dev/null | head -5) 2>/dev/null | head -1); grep W "$f" | tail -3'
+    )
+    assert shell_targets(line) == []

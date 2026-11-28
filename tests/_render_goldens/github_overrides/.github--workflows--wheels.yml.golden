@@ -1,0 +1,113 @@
+# Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + [tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `python -m dev_lab.dev.ciworkflows render`.
+{
+  "name": "Wheels",
+  "on": {
+    "push": {
+      "branches": [
+        "main"
+      ],
+      "tags": [
+        "v*"
+      ]
+    },
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "build": {
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "os": "ubuntu-latest"
+            },
+            {
+              "os": "windows-latest"
+            },
+            {
+              "os": "macos-latest"
+            }
+          ]
+        }
+      },
+      "runs-on": "${{ matrix.os }}",
+      "steps": [
+        {
+          "uses": "actions/checkout@v4"
+        },
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.14"
+          }
+        },
+        {
+          "uses": "PyO3/maturin-action@v1",
+          "with": {
+            "command": "build",
+            "args": "--release --out dist",
+            "manylinux": "auto"
+          }
+        },
+        {
+          "if": "runner.os == 'Linux'",
+          "uses": "PyO3/maturin-action@v1",
+          "with": {
+            "command": "sdist",
+            "args": "--out dist"
+          }
+        },
+        {
+          "name": "Refuse a wheel that is not abi3",
+          "shell": "bash",
+          "run": "for wheel in dist/*.whl; do case \"$wheel\" in *abi3*) ;; *) echo \"::error::$wheel is not abi3 -- one wheel per OS needs pyo3 abi3 at the requires-python floor ([tool.dev_lab.native], #981)\"; exit 1;; esac; done"
+        },
+        {
+          "name": "Smoke-import the wheel in a clean venv",
+          "shell": "bash",
+          "run": "python -m venv .smoke && py=.smoke/bin/python && { [ -x \"$py\" ] || py=.smoke/Scripts/python.exe; } && \"$py\" -m pip install dist/*.whl && \"$py\" -c \"import overrides\""
+        },
+        {
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "wheels-${{ matrix.os }}",
+            "path": "dist/*"
+          }
+        }
+      ]
+    },
+    "publish": {
+      "needs": "build",
+      "runs-on": "ubuntu-latest",
+      "permissions": {
+        "contents": "write"
+      },
+      "env": {
+        "GH_TOKEN": "${{ github.token }}",
+        "GH_REPO": "${{ github.repository }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "path": "dist",
+            "merge-multiple": true
+          }
+        },
+        {
+          "name": "Replace the rolling main-latest prerelease",
+          "if": "github.ref == 'refs/heads/main'",
+          "run": "gh release delete main-latest --yes --cleanup-tag || true\ngh release create main-latest dist/* --prerelease --target \"$GITHUB_SHA\" --title \"main-latest\" --notes \"Wheels built from main at $GITHUB_SHA.\""
+        },
+        {
+          "name": "Publish the tag release",
+          "if": "startsWith(github.ref, 'refs/tags/')",
+          "run": "gh release create \"$GITHUB_REF_NAME\" dist/* --verify-tag --title \"$GITHUB_REF_NAME\""
+        }
+      ]
+    }
+  }
+}

@@ -93,28 +93,19 @@ def ledger() -> Path:
     raise LedgerUnresolvedError(msg)
 
 
-def _checkouts(cwd: Path) -> list[Path]:
-    """The checkout holding *cwd* (nearest ancestor with ``.git``) and, for a linked worktree, its main checkout."""
+def _checkout(cwd: Path) -> Path | None:
+    """The tree holding *cwd* (nearest ancestor with ``.git``): a linked worktree is its own checkout."""
     start = Path(cwd).resolve()
-    root = next((p for p in (start, *start.parents) if (p / '.git').exists()), None)
-    if root is None:
-        return []
-    found = [root]
-    dot = root / '.git'
-    if dot.is_file():
-        try:
-            gitdir = (root / dot.read_text(encoding='utf-8').split('gitdir:', 1)[1].strip()).resolve()
-            common = (gitdir / (gitdir / 'commondir').read_text(encoding='utf-8').strip()).resolve()
-        except (OSError, IndexError):
-            return found
-        if common.name == '.git' and common.parent != root:
-            found.append(common.parent)
-    return found
+    return next((p for p in (start, *start.parents) if (p / '.git').exists()), None)
 
 
 def retired_stores(cwd: Path) -> list[Path]:
-    """Each retired per-checkout store with content at *cwd*'s checkout or its main checkout."""
-    stores = [c.joinpath(*RETIRED_STORE) for c in _checkouts(cwd)]
+    """The retired per-checkout store with content at the tree committing from *cwd*.
+
+    Never its main checkout's: that is another session's state (#1051).
+    """
+    root = _checkout(cwd)
+    stores = [] if root is None else [root.joinpath(*RETIRED_STORE)]
     return [s for s in stores if s.is_dir() and any(p.is_file() for p in s.rglob('*'))]
 
 
@@ -145,7 +136,7 @@ def task_in(tasks: Path, slug: str) -> str:
         raise ValueError(msg)
     try:
         head = (tasks / slug / 'TASK.md').read_text(encoding='utf-8').split('---')[1]
-    except (OSError, IndexError):
+    except OSError, IndexError:
         msg = f'no task {slug} in the ledger {tasks.as_posix()}'
         raise ValueError(msg) from None
     fields = dict(line.split(':', 1) for line in head.splitlines() if ':' in line)

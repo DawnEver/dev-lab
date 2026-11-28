@@ -18,6 +18,9 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 - The NAME is its own rule, `WORKTREE-NAMES-ITS-TASK` (user ruling 2026-11-22): `<name>` says what the tree does under
   its task, never a hash (`dev_lab.dev.worktreename`). The deny row of that ID refuses `worktree add|move` to a
   hash-like name; `assert_every_worktree_names_its_task(root=...)` detects one made any other way.
+- A tree never NESTS (`WORKTREES-DO-NOT-NEST`): an agent spawned with worktree isolation already has its tree and
+  adds no second one. `assert_no_worktree_nests(root=...)` reads git's list and names a tree lying inside another
+  linked tree with the move that puts it in the home.
 - A deny pattern reads text: it cannot tell whether a `.claude` in the target belongs to this repository. The
   detector reads git's own list, so the two halves are not duplicates.
 
@@ -56,6 +59,20 @@ longer pins its branch forever. `--prune` removes at most `--limit N` trees per 
 each removal deletes a tree's `.venv` (~12.8k files, ~12 s measured 2026-11-17), so an unbounded prune over ~90
 trees outran an agent's 50-minute shell. The exact
 criteria are in [auto mode runs the doors](auto-doors.md).
+
+
+## A lane tree, wired
+
+`git worktree add` alone leaves a tree with no hook stages of its own (under `extensions.worktreeConfig`), and
+every commit, merge or push from it is refused by HOOKS-ARE-WIRED ([refusals](refusals.md#hooks-are-wired)). The
+door makes the tree, bootstraps its venv and installs its hooks in one act:
+
+```text
+<venv python> -m dev_lab.dev.worktrees --add <name> <branch> <base>   # e.g. fam-14 pr/toolchain/fam-14 origin/integrate/main
+```
+
+A tree it made but could not bootstrap or wire is reported `FAILED`, naming the two commands that finish it.
+`--scratch` below wires its tree too.
 
 
 ## A throwaway comparison tree

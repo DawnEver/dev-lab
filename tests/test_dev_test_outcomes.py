@@ -21,6 +21,7 @@ from dev_lab.dev.test_outcomes import (
     CellRecorder,
     RetiredOutcomes,
     read_cells,
+    recorded_diagnostics,
     recorded_failures,
 )
 
@@ -217,6 +218,18 @@ def test_the_failures_a_cut_run_recorded_are_named_dead_workers_first(tmp_path: 
     assert 'a::passes' not in said
 
 
+def test_a_cut_runs_diagnostics_carry_every_recorded_failures_own_text(tmp_path: Path) -> None:
+    """learn-lab #36: the wall cut the session before pytest's failure section, so the cells are the only text."""
+    recorder = CellRecorder(tmp_path / 'parallel' / 'cells.jsonl')
+    _test(recorder, 'a::passes', ('call', 'passed', 'E   never shown'))
+    for index in range(FAILURE_NAMES + 2):
+        _test(recorder, f'a::fails[{index:02}]', ('call', 'failed', f'E   assert {index} == -1'))
+    said = recorded_diagnostics(tmp_path)
+    assert f'{FAILURE_NAMES + 2} test(s)' in said
+    assert f'assert {FAILURE_NAMES + 1} == -1' in said, 'unbounded: every executed failure keeps its diagnostic'
+    assert 'a::passes' not in said
+
+
 def test_planted_control_a_run_that_recorded_no_failure_adds_no_reason(tmp_path: Path) -> None:
     recorder = CellRecorder(tmp_path / 'parallel' / 'cells.jsonl', frozenset({'femm'}))
     _test(recorder, 'a::passes')
@@ -226,9 +239,13 @@ def test_planted_control_a_run_that_recorded_no_failure_adds_no_reason(tmp_path:
     recorder.pytest_runtest_logreport(_report('a::no_femm', 'teardown', 'passed'))
     assert recorded_failures(tmp_path) == ()
     assert recorded_failures(tmp_path / 'absent') == ()
+    assert recorded_diagnostics(tmp_path) == ''
+    assert recorded_diagnostics(tmp_path / 'absent') == ''
 
 
-def test_a_cut_verify_names_what_it_recorded_failing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_cut_verify_names_what_it_recorded_failing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Through the real ``run_verify``: the wall cut the session, so its only named failures are the cells."""
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', 'utf-8')
     (tmp_path / 'tests').mkdir()
@@ -249,6 +266,10 @@ def test_a_cut_verify_names_what_it_recorded_failing(tmp_path: Path, monkeypatch
     said = str(verdict.result)
     assert 'tests/test_one.py::test_wedged' in said
     assert 'tests/test_one.py::test_red' in said
+    log = verdict.log.path.read_text('utf-8')
+    assert 'recorded failure diagnostics' in log, 'the kept log carries the section pytest never printed'
+    assert 'assert 0' in log.split('recorded failure diagnostics', 1)[1]
+    assert 'tests/test_one.py::test_red' in capsys.readouterr().err, 'and the job log shows it'
 
 
 def test_planted_control_a_settled_verify_adds_no_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -269,6 +290,7 @@ def test_planted_control_a_settled_verify_adds_no_reason(tmp_path: Path, monkeyp
     assert verdict.result.outcome is Conclusion.FAIL, verdict.result
     assert verdict.result.failures == ('tests/test_one.py::test_one',)
     assert 'recorded failing' not in str(verdict.result)
+    assert 'recorded failure diagnostics' not in verdict.log.path.read_text('utf-8')
 
 
 def test_a_real_worker_death_is_a_cell_and_the_session_still_ends_on_its_own(tmp_path: Path) -> None:

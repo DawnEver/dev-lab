@@ -122,7 +122,7 @@ def budget_spent(path: Path) -> dict[str, str]:
     """
     try:
         cells = json.loads(gzip.decompress(path.read_bytes()).decode('utf-8')).get('cells') or {}
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     spent = {}
     for node, plain in cells.items():

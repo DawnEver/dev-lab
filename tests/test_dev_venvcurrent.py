@@ -161,6 +161,23 @@ def test_a_plain_venv_moves_aside_on_publish_and_a_held_one_refuses_by_name(tmp_
     assert [p.name.startswith('legacy-') for p in (root / venvpointer.HOME).iterdir()].count(True) == 1
 
 
+def test_an_environment_that_does_not_exist_is_refused_naming_the_rebuild(tmp_path) -> None:
+    """A build reporting success with no environment is refused on every OS, before anything moves.
+
+    Measured 2026-11-27: it was a bare FileNotFoundError on Windows (the junction) and a dangling symlink on POSIX.
+    PLANTED CONTROL: the same environment, once it exists, publishes.
+    """
+    root = tmp_path / 'main'
+    missing = root / venvpointer.HOME / 'never-built'
+    with pytest.raises(venvcurrent.PublishRefused, match='left no environment there') as refused:
+        venvcurrent.publish(root, missing, census=list)
+    assert f'\n{sys.executable} -m dev_lab.dev.dep --bootstrap {root}' in str(refused.value), 'the door, own line'
+    assert not (root / venvpointer.POINTER).exists(), 'nothing was linked'
+    missing.mkdir(parents=True)
+    assert venvcurrent.publish(root, missing, census=list).endswith(str(missing))
+    assert venvpointer.named(root) == missing.resolve()
+
+
 def test_the_retired_pointer_file_is_migrated_once(tmp_path) -> None:
     root = tmp_path / 'main'
     env = root / venvpointer.HOME / 'named'
@@ -225,8 +242,9 @@ def test_a_second_bootstrap_on_one_worktree_is_refused_naming_the_first(tmp_path
     root = tmp_path / 'wt'
     old = _project(root)
     child, pid = _holder(root)
+    running = Process(pid, 1, sys.executable, f'{sys.executable} -c <hold>', 1.0, str(tmp_path))
     try:
-        assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=list) == 1
+        assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=lambda: [running]) == 1
         out = capsys.readouterr().out
         assert f'pid {pid}' in out, out
         assert 'started' in out, out
@@ -275,3 +293,42 @@ def test_a_reclaim_while_a_build_holds_the_worktree_removes_nothing(tmp_path) ->
         _release(child, pid, root)
     assert any(line.startswith('reclaimed') for line in venvcurrent.reclaim(root, census=list)), 'PLANTED CONTROL'
     assert not fresh.exists(), 'PLANTED CONTROL: unheld, the same environment is reclaimed'
+
+
+def _refusal(root: Path, recorded: int, census: Callable[[], list[Process]]) -> str:
+    """The wall a build meets while this process holds *root*'s lock with *recorded* written as its holder."""
+    lock = root / venvpointer.HOME / venvcurrent.BUILD_LOCK
+    with held(lock) as mine:
+        assert mine
+        with lock.open('r+b') as handle:  # past the locked byte 0, where the holder writes it
+            handle.seek(1)
+            handle.write(f'{recorded} 2026-11-26T10:00:00Z\n'.encode())
+        with pytest.raises(venvcurrent.BuildBusy) as refused, venvcurrent.exclusive_build(root, census=census):
+            pass
+    return str(refused.value)
+
+
+def test_a_held_lock_whose_recorded_pid_is_dead_says_so_and_names_the_run_left_behind(tmp_path: Path) -> None:
+    """#1002: the wall named a dead pid as the holder and sent its reader to stop a process that did not exist."""
+    root = tmp_path / 'wt'
+    python = str(Path(sys.executable))
+    left = Process(4242, 1, python, f'{python} -m dev_lab.dev.dep --bootstrap {root}', 60.0, str(root))
+    dead = 4141  # in no process table the census returns
+    said = _refusal(root, dead, lambda: [left])
+    assert f'pid {dead}' in said
+    assert 'NOT running' in said, said
+    assert 'pid 4242' in said, 'the run left behind is named'
+    assert f'stoprun --pid {dead}' not in said, 'never a door onto a dead pid'
+    nobody = _refusal(root, dead, list)
+    assert 'No process working in this worktree' in nobody, nobody
+
+
+def test_planted_a_held_lock_whose_recorded_pid_runs_names_it_as_running(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a live recorded holder is the holder; the probe tells the two apart."""
+    root = tmp_path / 'wt'
+    python = str(Path(sys.executable))
+    holder = Process(4141, 1, python, f'{python} -m dev_lab.dev.dep --bootstrap {root}', 60.0, str(root))
+    said = _refusal(root, holder.pid, lambda: [holder])
+    assert 'running' in said, said
+    assert 'NOT running' not in said, said
+    assert 'stoprun --pid 4141' in said

@@ -51,14 +51,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'inflight',
     'runcache',
     'footprint',
-    'lockreach',
     'localpart',
     'workstationverdict',
     'verdictstore',
     'verdictenv',
     'workstationrevoke',
-    'lockpins',
-    'lockwait',
     'test_outcomes',
     'serialpass',
     'testtemp',
@@ -70,8 +67,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'claudesettings',
     # ORIGINAL: nothing refused a credential value reaching a log line (ruling C, 2026-11-24).
     'secretlog',
-    # ORIGINAL: each Rust repo pinned its own toolchain; the family fact had no source (2026-11-24).
-    'rusttoolchain',
     'cjk',
     'content',
     # ORIGINAL, and both halves are the reason. No consumer file is being replaced -- the mechanism
@@ -85,9 +80,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'docwidth',
     'famconfig',
     'branchnotices',
-    'lockcheck',
-    'relock',
-    'syncpins',
     'reviewturn',
     # ORIGINAL (2026-11-05): a host's ai-lab was a hand-built venv the machine file named; CI alone built it locked.
     'reviewruntime',
@@ -106,6 +98,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
     'partrows',
     'slurmkilled',
+    'slurmstall',  # the stall watch's read, split from forgeslurm at the module-size band (2026-11-28)
     'artifacts',
     'artifactstores',
     # ORIGINAL: the artifact member index, split out of `artifacts` inside the kit; no consumer held them.
@@ -132,8 +125,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: no push read the milestone tags before the 2026-11-13 ruling.
     'milestonebase',
     'branchreview',
-    # ORIGINAL: how far a floated sibling's pin lags its line was never read; split from relock (2026-11-07).
-    'locklag',
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
     'mergeaudit',
     # ORIGINAL: how a conflict was resolved was never recorded; the rule was prose (NEWER-STRUCTURE).
@@ -172,8 +163,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'origin',
     # ORIGINAL: one parse of git's pre-push refspec lines for every pre-push row.
     'refspec',
-    # ORIGINAL: the lock PIN moved from a pre-push row into the repo's own forge-judged suite (2026-10-24).
-    'lockpin',
     # ORIGINAL: the door table and its two renderings are new (AUTO-MODE-RUNS-THE-DOORS).
     'autodoors',
     # ORIGINAL: the injected-text budget and its consumer body are new (INJECTED-TEXT-IS-PROGRESSIVE).
@@ -207,6 +196,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'taskjournal',  # a task's record read: the journal grammar and the union-duplicate reader, new here
     'taskauthority',  # the user's grant to open/close a task, from their own prompt only, new here
     'taskmigrate',  # the one-time move of a checkout's retired task store into the ledger, new here
+    'taskpublish',  # ORIGINAL: 2026-11-27, the ledger pushes its own write (v1 FAM-15), new here
     # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
     'mainsync',
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
@@ -333,6 +323,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'ciworkflowshape',  # a rendered workflow's pure transforms, split from ciworkflows (2026-11-20)
     'backedup',  # a file replaced whole, its previous content kept: the machine-file doors' one write (2026-11-20)
     'nightlycron',  # ORIGINAL: split from ciworkflows: a workflow's nightly declaration as a cron (D63, 2026-11-19)
+    'nativewheels',  # ORIGINAL: no consumer built a wheel per OS before this opt-in (#981, 2026-11-27)
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
@@ -389,7 +380,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
     'purge',  # one door deletes one git-ignored, untracked named path (rulings 2026-11-23), new here
     'strayleaks',  # the leak families the suites left outside temp, removed only by proof, new here
-    'uvfollow',  # uv follows the version its pin needs, through the route it was installed by, new here
     'hpcusage',  # an HPC account's last day read from sacct, new here
     'security',
     # ORIGINAL: the blobless-clone prefetch and the review-code classification are
@@ -440,6 +430,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'hiddenintake',  # ORIGINAL: 2026-11-24, TYPED-VALUES-ARE-SHOWN over every family repo's tracked code
     'secretkit',  # ORIGINAL: 2026-11-24, TYPED-VALUES-ARE-SHOWN, the kit half: a stale kit never prompts
     'machineroutes',  # ORIGINAL: 2026-11-24, MACHINES-MEET-ONLY-THROUGH-THE-FORGE
+    'githubtests',  # ORIGINAL: 2026-11-27, GITHUB-TESTS-ON-ACTIONS
     'notices',  # ORIGINAL: 2026-11-24, the third-party license notice generated from the environment
     'portmeasure',  # ORIGINAL: 2026-11-24, MEASURE-BEFORE-PORTING, a new native crate carries its measured reason
     'priorart',  # ORIGINAL: 2026-11-24, PRIOR-ART-FIRST, a new product module named like an existing one cites it
@@ -449,4 +440,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'envreads',  # ORIGINAL: 2026-11-25, ENV-IS-READ-ONCE, the environment is read in a declared entry only
     'harness',  # ORIGINAL: 2026-11-25, dev-lab's ENV-IS-READ-ONCE entry, the harness context as a typed record
     'complexity',  # ORIGINAL: 2026-11-25, the per-owner complexity report (fan-out, call path, surface), not a gate
+    'branchcensus',  # the branch census and its two ref readers, split from branchset (2026-11-26)
+    'repodeltas',  # loading a repo's DELTAS module, split from famfiles (2026-11-26)
+    'standby',  # ORIGINAL: 2026-11-28, v1 ruling D218, a posted standby is a resting state
 )

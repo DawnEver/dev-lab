@@ -125,8 +125,6 @@ scipy = { owners = ["src/product/benchmarks/references", "tests/unit"], load = "
 "lab_commons.log" = { owners = ["*"], reason = "the one structured log (JSONL, OpenTelemetry names)" }
 "lab_commons.hostenv" = { owners = ["tests"], reason = "tests isolate the family home via its HOME_ENV constant (monkeypatch) or home(Host()); src never reads env (D65, env-is-read-once)" }
 "lab_commons.quantity" = { owners = ["src/product/contracts/generated", "src/product/contracts/serialization", "src/product/presentation"], reason = "the family unit door: values with units parsed once to SI, to_si/from_si for the IR codec incl. affine, gauge and dB, display conversion (D126 F1)" }
-"lab_commons.units" = { owners = [], reason = "retired family-wide (pint<->pydantic; v1 has no pydantic, D40, D125)" }
-"lab_commons.em" = { owners = [], reason = "a domain vocabulary beside v1's layered term vocabulary (D100, D125)" }
 "lab_commons.viz" = { owners = ["src/product/presentation"], reason = "figure DESCRIPTIONS as data; presentation imports no plotting library (D64)" }
 "lab_commons.viz.mpl" = { owners = ["src/product/cli"], load = "deferred", reason = "2.6 s import; the entry point picks the renderer" }
 "lab_commons.viz.bokeh" = { owners = ["src/product/cli"], load = "deferred", reason = "8.8 s import; the entry point picks the renderer" }

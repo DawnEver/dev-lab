@@ -1,9 +1,16 @@
 """THE RUST GENERATOR: one ``ir.rs`` holding the shared runtime and one ``mod ir_<module>`` per schema module.
 
-A crate's ``build.rs`` runs ``python -m dev_lab.dev.irschema rust --out $OUT_DIR`` and ``include!``s the file; nothing
-is committed (``docs-src/dev/ir-schema.md``, "Rust output"). Records derive serde with ``deny_unknown_fields``;
+A crate's ``build.rs`` (printed by ``python -m dev_lab.dev.irschema build-rs``,
+:func:`dev_lab.dev._irrust_buildrs.build_rs`) finds the checkout's
+venv interpreter by probing every :data:`dev_lab.dev.venvpath.VENV_LAYOUTS` spelling upward from the crate -- no
+``PYTHON`` variable, no PATH guess -- runs ``-m dev_lab.dev.irschema rust --out $OUT_DIR`` and ``include!``s the
+file; it reads only ``OUT_DIR``, ENV-IS-READ-ONCE's build-script door. Nothing is committed
+(``docs-src/dev/ir-schema.md``, "Rust output"). Records derive serde with ``deny_unknown_fields``;
 ``validate()`` reports the same ``<path>: expected <x>, got <y>`` as the Python; ``to_json()`` writes the canonical
-bytes the Python writes, so the two languages agree byte for byte on one value.
+bytes the Python writes, so the two languages agree byte for byte on one value. A ``foreign:`` value is a
+``serde_json::Value`` and a record's foreign ``rest`` a flattened ``serde_json::Map`` (that record alone admits unknown
+keys). The admitted metadata (``one_of``, ``requires``, ``nonempty``, bounds in absolute SI, defaults, ``default_from``,
+``string``/``array``/``fill``) is exposed as associated consts of each record; enforcing it is the resolver's.
 """
 
 from __future__ import annotations
@@ -12,8 +19,10 @@ import functools
 import re
 from typing import TYPE_CHECKING, Final
 
+from dev_lab.dev._ir_errors import refuse
+from dev_lab.dev._irrust_metadata import metadata, rust_str
 from dev_lab.dev._irrust_runtime import RUNTIME_RS
-from dev_lab.dev.irmodel import refuse
+from dev_lab.dev.irmodel import CONSTANTS_MODULE
 from dev_lab.dev.irpython import FINGERPRINT_PREFIX, fingerprint
 from dev_lab.dev.irrustpy import PY_RUNTIME_RS, enum_py, id_py, record_py
 
@@ -63,6 +72,8 @@ def _rust_type(ir: IR, f: Field, ref: TypeRef, here: str) -> str:
         return f'ndarray::ArrayD<{_DTYPES[f.dtype]}>'
     if ref.kind == 'list':
         return f'Vec<{_rust_type(ir, f, ref.item, here)}>'
+    if ref.kind == 'foreign':
+        return 'serde_json::Value'
     return _path(ir, ref.target, here, 'Id' if ref.kind == 'id' else '')
 
 
@@ -86,11 +97,12 @@ def _check(ir: IR, f: Field, ref: TypeRef, var: str, path: str) -> list[str]:  #
         lines = []
         if f.unique_by:
             target = ir.record(ref.item.target)
-            key = target.field(f.unique_by)
-            access = {'id': '.0.clone()', 'str': '.clone()', 'int': ''}[key.type.kind]
+            keys = [f'&w.{target.field(k).rust_name}' for k in f.unique_by]
+            tree = keys[0] if len(keys) == 1 else f'&({", ".join(keys)})'
+            key = f'serde_json::to_string({tree}).expect("a key serializes")'
             lines.append(
-                f'ir_runtime::check_unique({var}.iter().map(|w| w.{f.unique_by}{access}).collect(), &{path}, '
-                f'"{f.unique_by}")?;'
+                f'ir_runtime::check_unique({var}.iter().map(|w| {key}).collect(), &{path}, '
+                f'"{", ".join(f.unique_by)}")?;'
             )
         if body:
             lines += [f'for (i, item) in {var}.iter().enumerate() {{', f'    let p = format!("{{{path}}}[{{i}}]");']
@@ -100,7 +112,7 @@ def _check(ir: IR, f: Field, ref: TypeRef, var: str, path: str) -> list[str]:  #
 
 
 def _validate(ir: IR, record: Record) -> list[str]:
-    lines = []
+    lines: list[str] = []
     for f in record.fields:
         path = f'p_{f.name}'
         var = f'x_{f.name}'
@@ -109,20 +121,20 @@ def _validate(ir: IR, record: Record) -> list[str]:
             continue
         lines.append(f'let {path} = format!("{{path}}.{f.name}");')
         if f.optional:
-            lines += [f'if let Some({var}) = &self.{f.name} {{', *(f'    {b}' for b in body), '}']
+            lines += [f'if let Some({var}) = &self.{f.rust_name} {{', *(f'    {b}' for b in body), '}']
         else:
-            lines += [f'let {var} = &self.{f.name};', *body]
+            lines += [f'let {var} = &self.{f.rust_name};', *body]
     for f in record.fields:
         if f.csr_values:
             lines.append(
-                f'ir_runtime::check_csr(&self.{f.name}, self.{f.csr_values}.shape()[0], '
+                f'ir_runtime::check_csr(&self.{f.rust_name}, self.{record.field(f.csr_values).rust_name}.shape()[0], '
                 f'&format!("{{path}}.{f.name}"))?;'
             )
     return lines
 
 
 def _canonicalize(ir: IR, record: Record, here: str) -> list[str]:
-    lines = []
+    lines: list[str] = []
     for f in record.fields:
         ref = f.type.item if f.type.kind == 'list' else f.type
         if ref.kind != 'record':
@@ -135,7 +147,8 @@ def _canonicalize(ir: IR, record: Record, here: str) -> list[str]:
         else:
             lines.append(f'if let Some(x) = v.get_mut("{f.name}") {{ {child}::canonicalize(x); }}')
         if f.unique_by:
-            lines.append(f'ir_runtime::sort_by_key(v, "{f.name}", "{f.unique_by}");')
+            keys = ', '.join(f'"{k}"' for k in f.unique_by)
+            lines.append(f'ir_runtime::sort_by_key(v, "{f.name}", &[{keys}]);')
     return lines
 
 
@@ -145,22 +158,30 @@ def _field_line(ir: IR, f: Field, here: str) -> list[str]:
     if f.type.kind == 'array':
         module = 'opt_array' if f.optional else 'array'
         attributes.append(f'with = "ir_runtime::{module}"')
+    if f.rust_name != f.name:
+        attributes.append(f'rename = "{f.name}"')
     if f.optional:
         attributes += ['default', 'skip_serializing_if = "Option::is_none"']
         rust = f'Option<{rust}>'
     lines = [f'    /// {f.doc}'] if f.doc else []
     if attributes:
         lines.append(f'    #[serde({", ".join(attributes)})]')
-    return [*lines, f'    pub {f.name}: {rust},']
+    return [*lines, f'    pub {f.rust_name}: {rust},']
 
 
 def _record(ir: IR, module: Module, record: Record) -> list[str]:
     name = record.name
     lines = ['', f'/// {record.doc or name}', '#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]']
-    lines += ['#[serde(deny_unknown_fields)]', f'pub struct {name} {{']
+    if not record.rest:
+        lines.append('#[serde(deny_unknown_fields)]')
+    lines.append(f'pub struct {name} {{')
     for f in record.fields:
         lines += _field_line(ir, f, module.name)
+    if record.rest:
+        lines += [f'    /// Every undeclared key, a `foreign:{record.rest}` value its owner validates.']
+        lines += ['    #[serde(flatten)]', '    pub rest: serde_json::Map<String, serde_json::Value>,']
     lines += ['}', '', f'impl {name} {{', f'    pub const NAME: &\'static str = "{module.name}.{name}";']
+    lines += metadata(ir, record)
     lines += [
         '    pub fn validate(&self) -> ir_runtime::Res {',
         '        let mut dims = ir_runtime::Dims::new();',
@@ -186,7 +207,7 @@ def _record(ir: IR, module: Module, record: Record) -> list[str]:
         '        out',
         '    }',
         '',
-        '    pub fn from_json(text: &str) -> Result<Self, String> {',
+        '    pub fn from_json(text: &str) -> std::result::Result<Self, String> {',  # a record may be called Result
         '        let record: Self = serde_json::from_str(text).map_err(|e| e.to_string())?;',
         '        record.validate().map_err(|e| e.to_string())?;',
         '        Ok(record)',
@@ -236,13 +257,37 @@ def _module(ir: IR, module: Module) -> list[str]:
     return [*lines, '}']
 
 
+def _constants(ir: IR) -> list[str]:
+    """``mod ir_constants``: one ``pub const NAME: f64`` per catalogue constant (the Python's ``repr``), and ``ALL``."""
+    lines = [
+        '',
+        f'/// GENERATED from {ir.declaration.quantities}: the catalogue constants, absolute SI.',
+        '#[allow(dead_code, clippy::all)]',
+        f'pub mod ir_{CONSTANTS_MODULE} {{',
+    ]
+    for c in ir.constants.values():
+        lines += [
+            f'/// `{c.expression}` [{c.unit}]. Citation: {c.citation}. Reason: {c.reason}',
+            f'pub const {c.name.upper()}: f64 = {c.value!r};',
+        ]
+    lines.append('/// (name, value in absolute SI, unit, citation, reason) of every constant, in catalogue order.')
+    lines.append('pub const ALL: &[(&str, f64, &str, &str, &str)] = &[')
+    lines += [
+        f'    ({rust_str(c.name)}, {c.name.upper()}, {rust_str(c.unit)}, {rust_str(c.citation)}, {rust_str(c.reason)}),'
+        for c in ir.constants.values()
+    ]
+    return [*lines, '];', '}']
+
+
 def render(ir: IR) -> str:
     """The text of ``ir.rs``."""
-    prints = ' '.join(f'{name}={fingerprint(ir, name)}' for name in ir.modules)
+    names = (*ir.modules, CONSTANTS_MODULE)
+    prints = ' '.join(f'{name}={fingerprint(ir, name)}' for name in names)
     runtime = RUNTIME_RS.rstrip().removesuffix('}') + PY_RUNTIME_RS + '}' + chr(10)
     lines = [f'// {FINGERPRINT_PREFIX[2:]}{prints}', '// GENERATED by dev_lab.dev.irschema; do not edit.', runtime]
     for module in ir.modules.values():
         lines += _module(ir, module)
+    lines += _constants(ir)
     text = '\n'.join(lines) + '\n'
     if named := sorted(UNIT_CRATES.intersection(_CRATE_PATH.findall(text))):
         refuse('IR-UNIT-LIBRARY', 'ir.rs', f'names the unit crate(s) {", ".join(named)}')

@@ -29,6 +29,10 @@ rebuild the original defect with extra steps.
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -206,6 +210,36 @@ def test_the_assertion_reds_on_a_planted_contradiction_and_names_the_remedy(cont
     assert DENIED_ENTRY in message
     assert 'pytest' in message
     assert SANCTIONED in message, 'a red that does not name the exit leaves deletion as the easy repair'
+
+
+def test_an_allowed_history_verb_is_judged_by_its_shape_not_the_scanning_tree_s_hook_wiring(tmp_path: Path) -> None:
+    """INCIDENT (dev-lab fa9d6f2b): an allowed history verb read as a contradiction on a hosted checkout.
+
+    A hosted checkout declares hook stages it never installs, so HOOKS-ARE-WIRED refused every history verb an
+    allow row promises -- a finding about the box, not about the two files. PLANTED CONTROL: the same tree,
+    judged as the tool judges it, IS refused by HOOKS-ARE-WIRED, so the green below is the probe's premise and
+    not a judge that never ran.
+    """
+    entry = 'Bash(git merge --ff-only *)'
+    repo = _guarded_repo(tmp_path / 'hosted', [HARMLESS_ENTRY, entry])
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q'], cwd=repo, check=True, capture_output=True, timeout=60)
+    (repo / 'pyproject.toml').write_text(
+        '[[tool.dev_lab.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n',
+        encoding='utf-8',
+    )
+    if os.name == 'nt':
+        shell = os.environ.get('COMSPEC', 'cmd.exe')
+        subprocess.run([shell, '/c', 'mklink', '/J', str(repo / '.venv'), sys.prefix], check=True, capture_output=True)
+    else:
+        (repo / '.venv').symlink_to(sys.prefix, target_is_directory=True)
+    command = probe_command(entry)
+    assert command is not None
+    reason = agenthooks.run_engine(repo / ENGINE_REL, command, repo / RULES_REL, cwd=repo, live_run=False)
+    assert reason is not None
+    assert reason.startswith('HOOKS-ARE-WIRED:'), reason
+    scan = contradictions(repo / SETTINGS_REL, repo / RULES_REL, cwd=repo)
+    assert entry in scan.probed
+    assert scan.refused == {}, scan.refused
 
 
 def test_an_unwired_repository_refuses_instead_of_reporting_agreement(tmp_path: Path) -> None:

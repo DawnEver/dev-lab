@@ -17,12 +17,16 @@ from pathlib import Path
 
 from dev_lab.dev.disposable import disposable_base
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
+from dev_lab.dev.hook_install import unwired
 from dev_lab.dev.reclaim import reclaim
-from dev_lab.dev.scratchtree import discard, scratch
+from dev_lab.dev.scratchtree import discard, lane, scratch
 from dev_lab.dev.worktrees import main
 
 _GIT = shutil.which('git') or 'git'
 _FILE_PROTOCOL = ('-c', 'protocol.file.allow=always')
+_DECLARES_A_STAGE = (
+    '[[tool.dev_lab.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n'
+)
 
 
 def _run(cwd: Path, *args: str) -> str:
@@ -135,3 +139,62 @@ def test_the_door_makes_and_discards(tmp_path: Path) -> None:
     assert main(['--root', str(work), '--scratch', 'cmp', 'HEAD']) == 0
     assert main(['--root', str(work), '--discard', 'cmp']) == 0
     assert main(['--root', str(work), '--discard', 'cmp']) == 1
+
+
+def test_each_refusal_names_its_one_cause_and_its_door(tmp_path: Path) -> None:
+    """Issue #1029: a path given as NAME, an unreadable root and an undeclared detached tree each say which and how.
+
+    The planted control is the accepted bare name above (``removed``); here each wall must name ONLY its own cause.
+    """
+    work = _repo(tmp_path)
+    tree = work / '.claude' / 'worktrees' / 'plain'
+    _run(work, 'worktree', 'add', '-q', '--detach', str(tree), 'HEAD')
+    pathy = discard(work, '.claude/worktrees/plain', occupied=_free)
+    assert _refused(pathy, 'not one plain directory name'), pathy
+    assert 'git cannot read' not in pathy, pathy
+    assert '--discard plain' in pathy, pathy
+    stray = tmp_path / 'not-a-repo'
+    stray.mkdir()
+    unread = discard(stray, 'plain', occupied=_free)
+    assert _refused(unread, 'git cannot read'), unread
+    assert 'plain directory name' not in unread, unread
+    assert '--root' in unread, unread
+    undeclared = discard(work, 'plain', occupied=_free)
+    assert _refused(undeclared, 'not declared disposable'), undeclared
+    assert '--remove plain' in undeclared, undeclared
+    assert (tree / '.git').is_file()
+
+
+def test_a_tree_the_door_makes_is_wired_and_a_raw_git_worktree_add_is_not(tmp_path: Path) -> None:
+    """HOOKS-ARE-WIRED (v1 FAM-14). PLANTED CONTROL: the same repo's raw ``git worktree add`` stands unwired."""
+    work = _repo(tmp_path)
+    (work / 'pyproject.toml').write_text(_DECLARES_A_STAGE, encoding='utf-8')  # a repo with no table is not judged
+    _run(work, 'add', 'pyproject.toml')
+    _run(work, 'commit', '-q', '-m', 'declare a hook stage')
+    raw = work / '.claude' / 'worktrees' / 'raw'
+    _run(work, 'worktree', 'add', '-q', '--detach', str(raw), 'HEAD')
+    # v1's state (FAM-14): under extensions.worktreeConfig the linked tree's OWN hooks dir is the one git reads, empty.
+    _run(raw, 'config', 'extensions.worktreeConfig', 'true')
+    _run(raw, 'config', '--worktree', 'core.hooksPath', (raw / '.git-hooks-none').as_posix())
+    assert unwired(raw), 'the planted control reads wired: this check cannot say no'
+
+    assert scratch(work, 'base', 'HEAD').startswith('made'), 'the scratch door made its tree'
+    assert not unwired(work / '.claude' / 'worktrees' / 'base')
+
+    bootstrapped: list[Path] = []
+    made = lane(work, 'fam-lane', 'pr/x/fam-lane', 'HEAD', venv=lambda tree: bootstrapped.append(tree) or 0)
+    tree = work / '.claude' / 'worktrees' / 'fam-lane'
+    assert made.startswith('made'), made
+    assert bootstrapped == [tree]
+    assert not unwired(tree)
+    assert _run(tree, 'branch', '--show-current').strip() == 'pr/x/fam-lane'
+
+
+def test_a_lane_whose_bootstrap_fails_is_named_failed_with_both_doors(tmp_path: Path) -> None:
+    work = _repo(tmp_path)
+    made = lane(work, 'nolane', 'pr/x/nolane', 'HEAD', venv=lambda _: 3)
+    assert made.startswith('FAILED'), made
+    assert 'exited 3' in made
+    assert '-m dev_lab.dev.dep --bootstrap' in made
+    assert '-m dev_lab.dev.hook_install --repo' in made
+    assert lane(work, 'nolane', 'pr/x/other', 'HEAD', venv=lambda _: 0).startswith('refused'), 'it stands; not remade'

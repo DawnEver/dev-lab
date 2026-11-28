@@ -122,7 +122,7 @@ def record_manifest(root: Path, sha: str, context: str) -> tuple[str, tuple[tupl
     tree = tree_path(root, sha, context)
     try:
         judged = record_directory(tree, sha)
-    except (UndeclaredPart, FileNotFoundError):
+    except UndeclaredPart, FileNotFoundError:
         return '', ()
     made = sorted(one for one in judged.parents[4].glob(f'*/*/*/parts/{sha}/*') if one.is_file())
     sums = tuple((one.name, hashlib.sha256(one.read_bytes()).hexdigest()) for one in made)

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from dev_lab.dev import envreads
+from dev_lab.dev._envreads_python import python_reads, python_switches
 from dev_lab.dev.envreads import EnvPolicy
 
 if TYPE_CHECKING:
@@ -28,7 +29,7 @@ def _write(root: Path, rel: str, text: str = '') -> None:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = subprocess.run([_GIT, '-C', str(root), *args], check=True, capture_output=True, text=True)
+    done = subprocess.run([_GIT, '-C', str(root), *args], check=True, capture_output=True, text=True, encoding='utf-8')
     return done.stdout.strip()
 
 
@@ -74,7 +75,7 @@ def _manifest(entry: tuple[str, ...] = (), pending: tuple[str, ...] = (), *, str
 )
 def test_a_planted_python_read_is_convicted(source: str) -> None:
     """PLANTED CONTROL: each spelling of an environment read through ``os`` is one finding."""
-    assert envreads.python_reads(source) != ()
+    assert python_reads(source) != ()
 
 
 @pytest.mark.parametrize(
@@ -89,12 +90,12 @@ def test_a_planted_python_read_is_convicted(source: str) -> None:
 )
 def test_a_python_look_alike_passes(source: str) -> None:
     """An explicit child env, another object's ``environ``/``getenv``, prose and other ``os`` calls are not reads."""
-    assert envreads.python_reads(source) == ()
+    assert python_reads(source) == ()
 
 
 def test_the_python_reader_names_each_line() -> None:
     source = "import os\na = os.getenv('A')\nb = 1\nc = os.environ['C']\n"
-    assert envreads.python_reads(source) == (2, 4)
+    assert python_reads(source) == (2, 4)
 
 
 # -- the Rust reader -----------------------------------------------------------------------------------------------
@@ -305,7 +306,7 @@ _OS_PYTEST = 'import os\nimport pytest\n'
 )
 def test_a_planted_test_switch_is_convicted(body: str) -> None:
     """PLANTED CONTROL: a read deciding a skip or an xfail -- directly or through a name it binds -- is a switch."""
-    assert envreads.python_switches(_OS_PYTEST + body) != ()
+    assert python_switches(_OS_PYTEST + body) != ()
 
 
 @pytest.mark.parametrize(
@@ -321,7 +322,7 @@ def test_a_planted_test_switch_is_convicted(body: str) -> None:
 )
 def test_a_read_deciding_no_skip_is_not_a_switch(body: str) -> None:
     """A fact, a child env (its RESULT deciding an xfail), a skip REASON, a fake's input, another condition pass."""
-    assert envreads.python_switches(_OS_PYTEST + body) == ()
+    assert python_switches(_OS_PYTEST + body) == ()
 
 
 _SWITCH = "import os\nimport pytest\nif not os.getenv('LIVE'):\n    pytest.skip('x', allow_module_level=True)\n"
@@ -371,3 +372,30 @@ def test_a_pending_test_switch_is_not_stale_and_the_census_records_it(tmp_path: 
     _write(tmp_path, 'tests/test_a.py', _SWITCH)
     files = ('tests/test_a.py', 'tests/test_b.py')
     assert envreads.census(tmp_path, EnvPolicy(), files) == ('tests/test_a.py',)
+
+
+# -- the build-script door: Cargo hands a build script OUT_DIR only through the environment (FAM-03 c) ---------------
+
+_OUT_DIR = 'fn main() {\n    let out = std::env::var("OUT_DIR").unwrap();\n}\n'
+
+
+@pytest.mark.parametrize('strict', [False, True])
+def test_a_build_script_reading_out_dir_passes_in_every_mode(tmp_path: Path, *, strict: bool) -> None:
+    """THE DOOR: ``env::var("OUT_DIR")`` / ``var_os("OUT_DIR")`` in a crate's ``build.rs`` is Cargo's contract."""
+    files = {'rust/crates/a/build.rs': _OUT_DIR, 'build.rs': 'fn main() { env::var_os( "OUT_DIR" ); }\n'}
+    assert _problems(tmp_path, EnvPolicy(strict=strict), files) == []
+
+
+@pytest.mark.parametrize(
+    ('rel', 'source'),
+    [
+        ('rust/crates/a/src/lib.rs', _OUT_DIR),  # OUT_DIR outside a build script
+        ('rust/crates/a/build.rs', 'fn main() { std::env::var("PYTHON").ok(); }\n'),  # another variable
+        ('rust/crates/a/build.rs', 'fn main() { env::var("OUT_DIR"); env::var("HOME"); }\n'),  # a second read
+        ('rust/crates/a/build_rs.rs', _OUT_DIR),  # only the file named build.rs
+    ],
+)
+def test_the_door_admits_out_dir_in_build_rs_only(tmp_path: Path, rel: str, source: str) -> None:
+    """PLANTED CONTROLS: each is still a read the check refuses."""
+    found = _problems(tmp_path, EnvPolicy(strict=True), {rel: source})
+    assert len(found) == 1, found

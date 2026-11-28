@@ -20,8 +20,9 @@ from dev_lab.dev import _dep_cli, depneeds
 
 _REPO = Path(__file__).resolve().parents[1]
 #: ``-m dev_lab.dev.dep`` and the argv after it: flags, and the values a remedy spells -- a ``<placeholder>``, a
-#: ``{field}``, a ``$VAR``, ``[ROOT]``, or a path-like word. Prose ends the argv (a word with a comma or a paren).
-_VALUE = r'"?(?:<[\w-]+>|\{[\w.]+\}|\$\w+|\[?ROOT\]?|[\w./:~-]+(?<![.,]))"?(?=[\s`\x27")]|$)'
+#: ``{field}``, a ``$VAR``, ``[ROOT]``, the current directory ``.``, or a path-like word. Prose ends the argv (a word
+#: with a comma or a paren, or a sentence's closing period).
+_VALUE = r'"?(?:<[\w-]+>|\{[\w.]+\}|\$\w+|\[?ROOT\]?|\.|[\w./:~-]+(?<![.,]))"?(?=[\s`\x27")]|$)'
 _SPELLED = re.compile(rf'-m dev_lab\.dev\.dep((?:\s+(?:--?[a-z][\w-]*|{_VALUE}))*)')
 #: ``{flags}`` is depneeds' remedy; the flags it stands for are ``--extra`` rows.
 _FILLED = {'{flags}': '--extra x'}

@@ -29,7 +29,6 @@ from dev_lab.ops.consent.client import grant, grant_plan, preflight
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
 from dev_lab.ops.consent.door import (
     CODE_PREFLIGHT_FRESH_S,
-    PLAN_PREFLIGHT_DOOR,
     PREFLIGHT_DOOR,
     RECEIPT_FRESH_S,
     record_preflight,
@@ -195,19 +194,28 @@ def test_a_plan_code_after_a_green_preflight_is_the_first_request(
     assert wire.arrived == 0.0
 
 
-def test_sshhold_refuses_a_given_code_without_a_fresh_green_instead_of_re_running(tmp_path: Path) -> None:
-    """A re-run costs the code its window; a given code is refused BEFORE it, naming the preflight door."""
+def test_sshhold_re_runs_a_stale_green_before_a_given_code_and_refuses_on_red(tmp_path: Path) -> None:
+    """Issue #1064: a given code on a stale green is not refused with "re-run preflight"; the door re-runs it.
+
+    PLANTED CONTROL: the same re-run red refuses the code, ``no code used``.
+    """
     plan = _plan(tmp_path)
     record_preflight(parsed(_PLAN), home=tmp_path / 'home', now=NOW - CODE_PREFLIGHT_FRESH_S - 1)
     reran: list[str] = []
 
-    def offered(*, code_given: bool) -> str:
-        return sshholdplan.offered(plan, None, code_given=code_given, rerun=lambda _p, _s: reran.append('x') or [],
+    def rerun(_p: Path, _s: Path | None, *, red: bool) -> list[str]:
+        reran.append('x')
+        if red:
+            msg = 'no code used: the preflight this door ran itself is not green now'
+            raise ConsentRefused(msg)
+        return []
+
+    def offered(*, red: bool) -> str:
+        return sshholdplan.offered(plan, None, code_given=True, rerun=lambda p, s: rerun(p, s, red=red),
                                    held=lambda _d: False, home=tmp_path / 'home', now=NOW)  # fmt: skip
 
-    with pytest.raises(HoldRefused, match='no code used') as refused:
-        offered(code_given=True)
-    assert PLAN_PREFLIGHT_DOOR in str(refused.value)
-    assert reran == []
-    offered(code_given=False)  # PLANTED CONTROL: a code asked at the prompt comes after the re-run
+    assert 'code is sent now' in offered(red=False)
     assert reran == ['x']
+    with pytest.raises(HoldRefused, match='no code used'):
+        offered(red=True)
+    assert reran == ['x', 'x']

@@ -132,4 +132,27 @@ def reached_machine(accounts: Sequence[str] = ()) -> Machine:
     machine = load_grants()
     for user in accounts:
         machine.grant(user)
+    if why := session_reach_refusal(machine, config.section('hpc'), accounts):
+        raise AccessRefused(why)
     return machine
+
+
+def session_reach_refusal(machine: Machine, hpc: Mapping[str, Any], accounts: Sequence[str] = ()) -> str | None:
+    """Why a session role (the integrator's) may not use its accounts here: their cluster's reach is undeclared.
+
+    A session role carries a session to accounts its machine does not reach by itself, so the machine must declare
+    how its network reaches their cluster (``[dev] hpc_reach``, rendered as ``[hpc.cluster_reach]``; user ruling
+    2026-11-27) -- refused by name before any ssh, never discovered as a timeout. *hpc* is the machine file's ``[hpc]``.
+    """
+    from lab_commons.hpc.reach import TABLE  # noqa: PLC0415 -- every kit import must not need it before the floor rises
+
+    own = set(hpc.get('reach', ()))
+    used = [g for g in machine.grants if g.role not in own and (not accounts or g.user in accounts)]
+    missing = sorted({g.cluster_name for g in used} - set(hpc.get(TABLE, {})))
+    if not missing:
+        return None
+    return (
+        f'a session role reaches accounts on {missing} and this machine declares no reach for '
+        f'{"it" if len(missing) == 1 else "them"}: declare [dev] hpc_reach = {{ {missing[0]} = "direct" | "vpn" }} in '
+        "this machine's host file of the config source and re-render the machine file"
+    )

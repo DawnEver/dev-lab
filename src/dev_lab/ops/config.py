@@ -25,7 +25,7 @@ import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.tablequantity import quantity
@@ -333,10 +333,11 @@ def load(
     arrive (root: the file unreadable; non-root: no ``SUPERVISE_*`` variable), a duplicate repo name, a bad role.
     """
     merged = load_config(path, environ=environ)
-    ops = merged.get('ops')
-    if not isinstance(ops, dict):
+    table = merged.get('ops')
+    if not isinstance(table, dict):
         msg = f'{path} has no [ops] table'
         raise TypeError(msg)
+    ops = cast('dict[str, Any]', table)
     refuse_retired(ops)
     if unknown := sorted(set(ops) - OPS_KEYS):
         msg = f'[ops] has unknown keys {unknown}; known: {sorted(OPS_KEYS)}'

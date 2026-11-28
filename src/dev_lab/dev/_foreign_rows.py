@@ -73,7 +73,9 @@ SCAN_FLOOR: Final = 80
 #: RE-MEASURED 2026-10-15 at **162** after box P3 deleted the lease/seat prose.
 #: RE-MEASURED 2026-10-22 at **141** over src/dev_lab after the split (the scan root moved off src/lab_commons).
 #: RE-MEASURED 2026-11-25 at **134** on the 1124 wave (its prose rewrites dropped seven sibling mentions).
-PROSE_CEILING: Final = 134
+#: RE-MEASURED 2026-11-27 at **133** on integrate/main 039122c (one more sibling mention gone).
+#: RE-MEASURED 2026-11-27 at **132** on dev-lab #1086 (the family Python retired the ruff rows' repo-keyed data).
+PROSE_CEILING: Final = 132
 
 #: ``'<repo-relative module>::<kind>' -> why the deletion is not in this pass``. One handle per
 #: module per kind, so a new module or a new kind cannot arrive under an existing waiver.
@@ -106,9 +108,13 @@ EVICTED: Final[dict[str, str]] = {
         'The machine rows of the same registry, split out of `_rule_rows.py` by concept (2026-11-26): their '
         'mechanism paths belong to that registry, under the same HEADLINE row and the same migration.'
     ),
-    'src/dev_lab/dev/_famconfig_ruff_rows.py::data': (
-        '3 repo-keyed rows in the ruff base. The base/delta renderer is right; the per-repo delta '
-        'belongs in the repo whose delta it is.'
+    'src/dev_lab/dev/_rule_rows_hooks.py::path': (
+        'The agent-hook rows of the same registry; AGENT-GUARD moved there from `_rule_rows.py` by concept '
+        '(2026-11-27): its mechanism paths belong to that registry, under the same HEADLINE row and migration.'
+    ),
+    'src/dev_lab/dev/_rule_rows_units.py::path': (
+        'The units rows of the same registry, split out of `_rule_rows.py` by concept (2026-11-26): their '
+        'mechanism paths belong to that registry, under the same HEADLINE row and the same migration.'
     ),
     'src/dev_lab/dev/famtests/_placement_readings.py::data': (
         '12 readings keyed by roster name. THE WEAKEST OF THE EVICTIONS and deliberately last: '
@@ -155,10 +161,6 @@ SYNTHETIC: Final[dict[str, str]] = {
     'src/dev_lab/dev/automode.py::path': (
         '`.claude/automode.json`, the machine-local file this module WRITES into a consumer checkout; '
         'it is gitignored, so it resolves only where it was rendered and names no tracked file.'
-    ),
-    'src/dev_lab/dev/durations.py::path': (
-        '6 illustrative paths in refusal text -- `tests/integration/test_planted_wedge.py` and the '
-        '`tests/a/*` trio -- naming the SHAPE of a slow test, not a file in anybody`s repo.'
     ),
     'src/dev_lab/dev/famtests/venvspelling.py::path': (
         '3 worked examples: `planted/recipe.py`, `planted/narrative.py` and a `dev_lab/dev/`'

@@ -501,7 +501,8 @@ def test_a_roster_that_imports_no_kit_module_is_not_a_mismatch(tmp_path: Path) -
 # RE-MEASURED 2026-09-19 at 22 sub-package modules, 2 past the old ceiling of 8 + 12.
 # RE-MEASURED 2026-10-04 at 31 after the three-lane merge and `famtests.branchset`; re-taken the same way.
 # RE-MEASURED 2026-10-28 at 53 when `famtests.hostnode` tipped the 26 floor past binding; 53 - 12 headroom.
-NESTED_FLOOR = 50
+# RE-MEASURED 2026-11-27 at 107 (hpcaccount and famtests grew) when 50 stopped binding; 107 - 12 headroom.
+NESTED_FLOOR = 95
 NESTED_HEADROOM = 12
 
 #: The declared spellings. A floor rather than a pin, because the remedy for a spelling nobody

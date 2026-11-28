@@ -14,4 +14,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'evidencerefs',  # no consumer judged a recorded value's provenance in the output tree (dev-lab#843)
     'guardcollection',  # no guard judged whether a rule's test mechanism collects and runs (dev-lab#599)
     'volumefloor',  # no hook said a checkout volume under the [storage] floor at session start (dev-lab#46)
+    'heavyguard',  # ORIGINAL: 2026-11-26, NO-LOCAL-HEAVY, a repo's declared heavy entries refused on a workstation
+    'ruletext',  # ORIGINAL: 2026-11-27, BARE-PYTHON in prose, a rule page's code span names its interpreter
 )

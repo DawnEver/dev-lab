@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 import pytest
 from lab_commons.config import CONFIG_ENV
@@ -26,11 +28,13 @@ from dev_lab.dev.hpcaccount.fleet import (
     deploy_command,
     deploy_fleet,
     first_install,
+    in_checkout,
     layer_target,
     render_command,
     repo_dir,
 )
 from dev_lab.dev.hpcaccount.fleetguard import stale_render
+from dev_lab.dev.pythontoolchain import SYNC_FLAGS, VERSION, minor_check
 from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
@@ -91,7 +95,7 @@ def _run(
         source=_source(tmp_path, deploy=deploy),
         dry_run=False,
         say=said.append,
-        launch=lambda dest, command, _log: started.append([dest, command]),
+        launch=lambda dest, command, _log: started.append([dest, command]) or 0,
     )
     return code, started, said
 
@@ -150,7 +154,7 @@ def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path
         source=_source(tmp_path),
         dry_run=False,
         say=said.append,
-        launch=lambda dest, command, _log: started.append([dest, command]),
+        launch=lambda dest, command, _log: started.append([dest, command]) or 0,
         division=division,
     )
     assert code == 2
@@ -160,7 +164,9 @@ def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path
 
 def test_the_remote_runs_the_accounts_own_deploy() -> None:
     argv = [deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC)]
-    assert f'cd /r/src/repos/dev-lab && {shell_interpreter(".")} -m dev_lab.dev.hpcaccount deploy' in argv[-1]
+    python = shell_interpreter('.')
+    checked = f'cd /r/src/repos/dev-lab && {python} -c {shlex.quote(minor_check(VERSION))} && {python}'
+    assert f'{checked} -m dev_lab.dev.hpcaccount deploy' in argv[-1], 'its minor is checked before it runs'
     assert '--grant-table' in argv[-1], 'the declared slice is the one source of the grant the deploy writes'
 
 
@@ -178,7 +184,7 @@ def _two_grants(tmp_path: Path, role: str, accounts: tuple[str, ...]) -> tuple[i
         source=_source(tmp_path),
         dry_run=True,
         say=said.append,
-        launch=lambda _dest, _command, _log: None,
+        launch=lambda _dest, _command, _log: 0,
     )
     return code, said
 
@@ -232,7 +238,7 @@ def test_a_short_host_two_grant_hosts_share_is_refused(tmp_path: Path) -> None:
         source=_source(tmp_path, users=('bob',), deploy={'bob': '[deploy]\nhost = "login01"\nroot = "/r/src"\n'}),
         dry_run=False,
         say=said.append,
-        launch=lambda dest, command, _log: started.append([dest, command]),
+        launch=lambda dest, command, _log: started.append([dest, command]) or 0,
     )
     assert code == 2
     assert started == []
@@ -302,7 +308,7 @@ def _rendered(tmp_path: Path, source: ConfigSource, *, dry_run: bool = False) ->
         source=source,
         dry_run=dry_run,
         say=said.append,
-        launch=lambda dest, command, _log: started.append([dest, command]),
+        launch=lambda dest, command, _log: started.append([dest, command]) or 0,
     )
     return code, started, said
 
@@ -403,7 +409,7 @@ def test_a_grant_naming_no_cluster_is_refused(tmp_path: Path) -> None:
     said: list[str] = []
     bare = (Grant(user='alice', hosts=_HOSTS, slurm_account='acct'),)
     code = deploy_fleet(bare, (), home=tmp_path, source=_source(tmp_path), dry_run=True, say=said.append,
-                        launch=lambda *_: None)  # fmt: skip
+                        launch=lambda *_: 0)  # fmt: skip
     assert code == 2
     assert any('names no cluster' in line for line in said)
 
@@ -477,8 +483,16 @@ def test_a_first_install_precedes_the_kits_tick_and_clones_the_layers_repos() ->
     assert command.index('[first-install]') < command.index('+refs/heads/main:refs/remotes/origin/main')
     assert f'[ -x {shell_interpreter("/r/src/repos/dev-lab")} ] ||' in command
     assert 'git clone -q --branch main https://forge.example/team/dev-lab.git /r/src/repos/dev-lab' in command
-    assert '( cd /r/src/repos/dev-lab && uv sync --frozen )' in command
-    assert 'https://astral.sh/uv/install.sh' in command
+    job = command.index('sbatch --wait')
+    assert command.index('git clone') < job < command.index('uv sync --frozen'), 'cloned here, synced in the job'
+    assert command.index('https://astral.sh/uv/install.sh') > job, "uv's install runs in the job too"
+
+
+#: A fake ``sbatch``: records its flags, then runs the ``--wrap`` script as the job would, returning its exit code.
+_SBATCH = (
+    '#!/bin/sh\necho sbatch "$@" >> "$HOME/calls"\n'
+    'while [ $# -gt 0 ]; do\n  if [ "$1" = --wrap ]; then sh -c "$2"; exit $?; fi\n  shift\ndone\nexit 2\n'
+)
 
 
 def _first_install(tmp_path: Path, *, venv: bool) -> str:
@@ -492,6 +506,8 @@ def _first_install(tmp_path: Path, *, venv: bool) -> str:
     for tool in ('uv', 'git', 'curl'):
         (stubs / tool).write_text(f'#!/bin/sh\necho {tool} "$@" >> "$HOME/calls"\n', encoding='utf-8', newline='\n')
         (stubs / tool).chmod(0o755)
+    (stubs / 'sbatch').write_text(_SBATCH, encoding='utf-8', newline='\n')
+    (stubs / 'sbatch').chmod(0o755)
     if venv:
         python = root / 'repos' / 'dev-lab' / '.venv' / 'bin' / 'python'
         python.write_text('#!/bin/sh\n', encoding='utf-8', newline='\n')
@@ -504,10 +520,14 @@ def _first_install(tmp_path: Path, *, venv: bool) -> str:
     return calls.read_text(encoding='utf-8') if calls.is_file() else ''
 
 
-def test_a_kit_with_no_venv_is_first_installed(tmp_path: Path) -> None:
+def test_a_kit_with_no_venv_is_first_installed_in_a_slurm_job(tmp_path: Path) -> None:
+    """ONE-LOGIN-POLLER (user ruling 2026-11-27): the sync runs in ONE waited-for Slurm job, never on the login node."""
     calls = _first_install(tmp_path, venv=False)
-    assert 'uv sync --frozen' in calls
-    assert 'curl' not in calls, 'a uv already on PATH is not reinstalled'
+    lines = calls.splitlines()
+    submitted = next(i for i, line in enumerate(lines) if line.startswith('sbatch --wait'))
+    synced = next(i for i, line in enumerate(lines) if line.startswith('uv sync --frozen'))
+    assert submitted < synced, 'the sync is the job'
+    assert not [line for line in lines if line.startswith('curl')], 'a uv already on PATH is not reinstalled'
 
 
 def test_a_kit_with_its_venv_skips_the_first_install(tmp_path: Path) -> None:
@@ -533,7 +553,8 @@ def test_a_declared_kit_ref_moves_the_kit_itself_never_through_the_stale_machine
     checkout = command.index('checkout -q -B integrate/main', moved)
     synced = command.index('uv sync --frozen', checkout)
     assert 'flock -w 600' in command
-    assert '/serve/dev-lab.lock' in command
+    assert '/serve/tick.lock' in command, "the account's one tick lock"
+    assert command.index('sbatch --wait') < synced, 'the re-sync runs in a Slurm job'
     assert synced < command.index('-m dev_lab.dev.devhost render')
     assert 'hpcaccount tick dev-lab' not in command
     unnamed = deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC)
@@ -625,10 +646,11 @@ def test_every_account_leaves_its_dated_log_even_when_it_exits_early(tmp_path: P
     """
     said: list[str] = []
 
-    def launch(dest: str, _command: str, _log: object) -> None:
+    def launch(dest: str, _command: str, _log: object) -> int:
         if dest.startswith('bob@'):
             msg = 'the held session of bob is recorded but its holder does not answer'
             raise RuntimeError(msg)
+        return 0
 
     code = deploy_fleet(
         _FLEET, (), home=tmp_path, source=_source(tmp_path, deploy=_DEPLOY), dry_run=False, say=said.append,
@@ -640,3 +662,81 @@ def test_every_account_leaves_its_dated_log_even_when_it_exits_early(tmp_path: P
     assert 'holder does not answer' in logs['bob']
     assert 'refused' in logs['carol']
     assert 'started' in logs['alice']
+
+
+class _Remote:
+    """A started remote verb: prints *output* into its log, then exits *status* on its second poll."""
+
+    def __init__(self, log: IO[str], output: str, status: int) -> None:
+        log.write(output)
+        self.polls, self.status = 0, status
+
+    def poll(self) -> int | None:
+        self.polls += 1
+        return self.status if self.polls > 1 else None
+
+
+def _outcome(tmp_path: Path, statuses: dict[str, int]) -> tuple[int, list[str], str]:
+    said: list[str] = []
+    code = deploy_fleet(
+        _FLEET, tuple(statuses), home=tmp_path, source=_source(tmp_path), dry_run=False, say=said.append,
+        launch=lambda dest, _command, log: _Remote(log, f'remote says {dest}\n', statuses[dest.partition('@')[0]]),
+        nap=lambda _s: None,
+    )  # fmt: skip
+    return code, said, next(tmp_path.rglob('alice.log')).read_text(encoding='utf-8')
+
+
+def test_each_accounts_outcome_and_remote_tail_are_reported_and_a_failed_remote_fails_the_fleet(
+    tmp_path: Path,
+) -> None:
+    """2026-11-27: deploy-fleet exited 0 with logs holding only 'started'. Each outcome is now waited for and said.
+
+    PLANTED CONTROL: the same run with every remote exiting 0 exits 0.
+    """
+    code, said, log = _outcome(tmp_path / 'red', {'alice': 3, 'bob': 0})
+    assert code == 1, said
+    assert 'alice: exit 3' in said
+    assert 'bob: exit 0' in said
+    assert '  remote says alice@login02.example' in said, 'the remote output tail rides along'
+    assert '[deploy-fleet] alice: exit 3' in log
+    code, said, _ = _outcome(tmp_path / 'green', {'alice': 0, 'bob': 0})
+    assert code == 0, said
+
+
+_KIT_REF = (('dev-lab', 'https://forge.example/dev-lab.git', 'integrate/main'),)
+
+
+def test_the_kit_sync_rebuilds_its_venv_on_the_family_python() -> None:
+    """2026-11-27: ezxmw9's kit checkout moved to 3.14 code while its venv stayed 3.13 (a SyntaxError in drift).
+
+    Every kit ``uv sync`` -- the refresh's and a first install's -- names the family interpreter, uv-managed
+    (``pythontoolchain.SYNC_FLAGS``), so a venv on another minor is rebuilt on it, inside the Slurm job.
+    PLANTED CONTROL: the sync without the flags is what the old line ran, and it is no longer there.
+    """
+    target = Target('login02.example', '/r/src', repos=_KIT_REF)
+    for line in (deploy_command(_FLEET[0], target, _SRC), first_install(_FLEET[0], target)):
+        assert f'uv sync --frozen {SYNC_FLAGS}' in line
+        assert 'uv sync --frozen"' not in line
+        assert "uv sync --frozen'" not in line
+        assert 'sbatch' in line
+
+
+def test_a_kit_venv_on_another_minor_is_refused_by_name_never_run() -> None:
+    """Every verb run in the kit checks the venv's minor first: drift says so by name instead of a SyntaxError.
+
+    The check runs here on this interpreter. PLANTED CONTROL: the same check demanding another minor exits non-zero,
+    naming both minors and the door; the family minor passes.
+    """
+    line = in_checkout(Target('login02.example', '/r/src'), ['-m', 'dev_lab.dev.hpcaccount', 'drift'])
+    assert line.index(shlex.quote(minor_check(VERSION))) < line.index('-m dev_lab.dev.hpcaccount drift')
+    ok = subprocess.run(
+        [sys.executable, '-c', minor_check(VERSION)], capture_output=True, text=True, encoding='utf-8', check=False
+    )
+    assert ok.returncode == 0, ok.stderr
+    off = subprocess.run(
+        [sys.executable, '-c', minor_check('3.99')], capture_output=True, text=True, encoding='utf-8', check=False
+    )
+    assert off.returncode != 0
+    assert f'runs Python {VERSION}' in off.stderr
+    assert 'requires 3.99' in off.stderr
+    assert 'deploy-fleet' in off.stderr

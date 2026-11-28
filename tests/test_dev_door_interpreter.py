@@ -53,7 +53,7 @@ def test_a_family_door_is_printed_with_the_sessions_interpreter_never_the_target
     assert reason is not None, 'a recursive delete was let through'
     sibling_python = sibling.joinpath('.venv', *_TAIL).as_posix()
     assert f'{sibling_python} -m dev_lab.dev.worktrees --remove' not in reason, "the target's older kit named"
-    assert '-m dev_lab.dev.worktrees --remove <name>' in reason
+    assert 'dev_lab.dev.worktrees --remove <name>' in reason
     assert DOOR_SLOT not in reason, 'the slot was printed unfilled'
     assert sibling_python not in reason, 'every door of this row is a family door'
 
@@ -67,8 +67,25 @@ def test_planted_control_the_python_slot_still_names_the_targets_own_interpreter
     assert Path(own.removesuffix(' -m y')).samefile(sibling.joinpath('.venv', *_TAIL)), 'python names the target'
 
 
-def test_every_door_of_the_delete_row_carries_the_door_slot() -> None:
+#: The doors the RECURSIVE-DELETE remedy itself must name (user ruling 2026-11-27, #1041): the 285-char deny-remedy
+#: budget stays, so the remedy carries only these; every other door lives in refusals.md#recursive-delete.
+ESSENTIAL_DOORS = ('dev_lab.dev.worktrees --remove', 'dev_lab.dev.scratch clear', 'never a worktree, else ask the user')
+
+
+def missing_essentials(remedy: str) -> tuple[str, ...]:
+    """The essential doors *remedy* fails to name, or a family door printed without the session's interpreter."""
+    missing = tuple(door for door in ESSENTIAL_DOORS if door not in remedy)
+    return missing if f'{DOOR_SLOT} -m ' in remedy else (*missing, DOOR_SLOT)
+
+
+def test_the_delete_row_names_its_essential_doors_with_the_door_slot() -> None:
     remedy = str(RECURSIVE_DELETE['remedy'])
-    for door in ('scratch clear', 'branchset --apply', 'branchset --discard', 'worktrees --remove', 'venvprune'):
-        assert f'{DOOR_SLOT} -m dev_lab.dev.{door}' in remedy, f'{door} is named without its interpreter'
+    assert missing_essentials(remedy) == (), 'the remedy lost an essential door'
     assert PYTHON_SLOT not in remedy, 'a family door names the target kit'
+
+
+def test_planted_control_a_remedy_missing_an_essential_door_is_named() -> None:
+    remedy = str(RECURSIVE_DELETE['remedy'])
+    for door in ESSENTIAL_DOORS:
+        assert missing_essentials(remedy.replace(door, '')) == (door,)
+    assert missing_essentials(remedy.replace(f'{DOOR_SLOT} ', '', 1)) == (DOOR_SLOT,)

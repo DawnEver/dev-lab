@@ -131,6 +131,7 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(_forge('status', 'list'), SUBAGENT, 'Read-only: the commit statuses the forge holds for one commit.'),
     Door(_forge('ci', 'logs'), SUBAGENT, "Read-only: a CI run's jobs and the bounded log of the selected ones."),
     Door(_forge('ci', 'artifact'), SUBAGENT, "Read-only: a CI run's artifacts, unpacked under the output dir."),
+    Door(_forge('pr', 'list'), SUBAGENT, 'Read-only: the pull requests in one state, optionally of one head branch.'),
     Door(
         _forge('run', 'show'),
         SUBAGENT,
@@ -201,6 +202,13 @@ POLICY: Final[tuple[Door, ...]] = (
         MAIN,
         'Opening the continuation pull request of a branch whose pull request already merged and '
         'whose tip moved past it (LANDED-BRANCH-CONTINUES).',
+        _FORGE_WRITE,
+    ),
+    Door(
+        _forge('pr', 'retarget'),
+        MAIN,
+        'Moving a pull request onto the integration branch or a declared branch, its reason commented first '
+        '(PRS-TARGET-INTEGRATION).',
         _FORGE_WRITE,
     ),
     Door(

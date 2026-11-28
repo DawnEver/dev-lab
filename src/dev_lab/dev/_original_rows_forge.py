@@ -25,6 +25,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgework',
     'forgeclient',  # the one place a forge Client is built, split from forgework (module-size band)
     'forgestatus',
+    # ORIGINAL: 2026-11-27, a status description longer than its forge stores continues, never cut.
+    'statuscontinuation',
     'forgeoutbox',
     'forgelabels',
     'forgepublish',
@@ -161,4 +163,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgerecordpurge',
     # ORIGINAL: the read-only secret-name list (2026-11-10); no consumer listed names.
     'forgesecretnames',
+    'producerpriority',  # below-normal producer process priority, split from forgeproduce (2026-11-26)
+    'hostsissue',  # the hosts issue (identity, lookup, opening), split from forgehosts (2026-11-26)
+    'hostedsetup',  # ORIGINAL: 2026-11-27, a hosted part's setup posts its own failure class (dev-lab#998)
 )

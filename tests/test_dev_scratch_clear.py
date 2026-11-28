@@ -367,3 +367,23 @@ def test_a_blocked_stop_is_this_sessions_wall_with_its_remedy(tmp_path, capsys) 
         True,
         'this-session',
     )
+
+
+def test_discard_removes_a_directory_this_session_owns_and_refuses_one_it_does_not(tmp_path, monkeypatch) -> None:
+    """#1034: ``discard`` deleted files only, so an experiment dir (a probe checkout) had no door out of scratch."""
+    _repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    beat('other-session')
+    _write(tmp_path, 'scratch/hbprobe1/.git/config')
+    (tmp_path / 'scratch/hbprobe1/.git/config').chmod(stat.S_IREAD)
+    _write(tmp_path, 'scratch/theirs/x.py', session='other-session')
+    _plant(tmp_path, 'src/pkg/x.py')
+    assert main(['discard', 'scratch/theirs']) == 2  # PLANTED CONTROL: another live session's entry survives
+    assert (tmp_path / 'scratch/theirs/x.py').exists()
+    assert main(['discard', 'src/pkg']) == 2  # PLANTED CONTROL: never a directory outside scratch
+    assert main(['discard', 'scratch/hbprobe1/.git']) == 2  # only a top-level entry, as clear names them
+    assert main(['discard', 'scratch']) == 2
+    assert (tmp_path / 'src/pkg/x.py').exists()
+    assert main(['discard', 'scratch/hbprobe1/']) == 0
+    assert not (tmp_path / 'scratch/hbprobe1').exists()
+    assert (tmp_path / 'scratch/tracked.txt').exists()

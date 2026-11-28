@@ -219,8 +219,13 @@ def test_a_scoped_row_binds_only_its_own_scope() -> None:
     ],
 )
 def test_main_session_publishes_and_a_subagent_is_still_refused(command: str) -> None:
-    """MAIN-SESSION-PUBLISHES: the doors the allow rows open are free to a main session, never a subagent."""
-    assert denies(DENY_RULES, command) is None
+    """MAIN-SESSION-PUBLISHES: the doors the allow rows open are free to a main session, never a subagent.
+
+    An ASKING row (HOOKS-ARE-WIRED) reads as refused on its prefilter here; its module judges the tree, so it is not
+    a pattern this test can open (test_dev_hook_admit drives it).
+    """
+    patterned = tuple(rule for rule in DENY_RULES if rule.asks is None)
+    assert denies(patterned, command) is None
     if 'push' in command:
         assert denies(DENY_RULES, command, scope='subagent') == 'SUBAGENT-NO-PUSH'
 
@@ -296,7 +301,9 @@ def test_an_unknown_severity_raises() -> None:
 ASKING_ROWS = {
     'TRACKED-CITES-NO-EPHEMERAL': 'dev_lab.dev.journaldoor',
     'USER-FROZEN-FILES': 'dev_lab.dev.frozen',
+    'MACHINE-FILE-IS-RENDERED': 'dev_lab.dev.machineguard',
     'WRITES-STAY-IN-THE-TREE': 'dev_lab.dev.writeroots',
+    'HOOKS-ARE-WIRED': 'dev_lab.dev.hook_install',
 }
 
 

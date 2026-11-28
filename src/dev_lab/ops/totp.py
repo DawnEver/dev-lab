@@ -147,7 +147,7 @@ def adopt(secret_file: Path, secret: str) -> bool:
     secret = secret.strip().upper().rstrip('=')
     try:
         bits = len(_key(secret)) * 8
-    except (ValueError, base64.binascii.Error):
+    except ValueError, base64.binascii.Error:
         bits = 0
     if bits < _MIN_BITS:
         msg = f'the adopted secret is not base32 of at least {_MIN_BITS} bits'

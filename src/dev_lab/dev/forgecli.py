@@ -1,7 +1,8 @@
 """``python -m dev_lab.dev.forge <noun> <verb>`` -- the one noun dispatch over the ``forge*`` doors.
 
-``status`` for commit statuses, ``issue claim|status|comments|comments-since`` for derived issue
-state and comment reads, ``auth`` for the token, ``protect plan|check|apply`` for the declared branch protection,
+``status`` for commit statuses, ``issue claim|status|comments|comments-since|comment-view|view --comments``
+for derived issue state and comment reads, ``auth`` for the token, ``protect plan|check|apply`` for the declared
+branch protection,
 ``publish`` for the status outbox, ``records`` for
 run records, ``run show <sha>`` for what a cluster run published (each round's losses, the final
 failing ids), ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
@@ -36,6 +37,7 @@ from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
 from dev_lab.dev import (
+    _forgecli_args,
     branchnotices,
     forgeauth,
     forgebreakglass,
@@ -76,11 +78,11 @@ from dev_lab.dev import (
     pradmit,
     prcontinue,
     prcurrent,
-    privatemarkers,
     prlanded,
     prsuperseded,
     pushwatch,
     servelock,
+    standby,
     walls,
 )
 from dev_lab.dev.forge import Transport, forge_transport
@@ -88,9 +90,10 @@ from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed, within
 from dev_lab.dev.forgefeedstatus import unheard_notice
 from dev_lab.dev.forgelabels import LabelMissing, relabel
+from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest
-from dev_lab.dev.issuekind import KINDS
 from dev_lab.dev.labsession import ENV
+from dev_lab.dev.native_session import session_of
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -140,7 +143,7 @@ PR_VERBS: dict[str, Callable[[list[str]], int]] = {
 }
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.
-ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since'})
+ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since', 'comment-view'})
 
 
 def main(argv: Sequence[str]) -> int:
@@ -162,80 +165,20 @@ def _route(args: list[str]) -> int:
         return NOUNS[args[0]](args[1:])
     if args[:1] == ['pr'] and args[1:2] and args[1] in PR_VERBS:
         return PR_VERBS[args[1]](args[2:])
-    if args[:1] == ['issue'] and args[1:2] and args[1] in ISSUE_VERBS:
+    if args[:1] == ['issue'] and ((args[1:2] and args[1] in ISSUE_VERBS) or _threaded(args)):
         return forgeissue.main(args[1:])
     return issue_and_pr(args)
 
 
-def _verb(group: argparse._SubParsersAction, name: str) -> argparse.ArgumentParser:
-    sub = group.add_parser(name)
-    sub.add_argument('--json', action='store_true', help='print the normalized result as JSON')
-    return sub
+def _threaded(args: Sequence[str]) -> bool:
+    """``issue view N --comments``: the issue WITH its thread is :mod:`forgeissue`'s; the bare view stays here."""
+    return args[1:2] == ['view'] and '--comments' in args
 
 
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog='dev_lab.dev.forge',
-        description='issue and PR verbs on the forge',
-        epilog=(
-            'also: pr breakglass N --reason R, breakglass open|close|ack|status, pr close-landed [N...], '
-            'pr close-superseded N... --by <M|sha|ref>, '
-            'issue claim|status N, label create --name N --color C, status post|list SHA, '
-            'ci logs|artifact <sha|pr:N|run:ID> (read a CI run); token: auth login|status'
-        ),
-    )
-    nouns = parser.add_subparsers(dest='noun', required=True)
-    issue = nouns.add_parser('issue').add_subparsers(dest='verb', required=True)
-    listing = _verb(issue, 'list')
-    listing.add_argument('--state', choices=('open', 'closed', 'all'), default='open')
-    listing.add_argument('--limit', type=int, default=30)
-    listing.add_argument('--label', action='append', default=[], help='only issues carrying it (repeatable)')
-    for name in ('view', 'close'):
-        _verb(issue, name).add_argument('number', type=int)
-    create = _verb(issue, 'create')
-    create.add_argument('--title', required=True)
-    create.add_argument('--body', default='')
-    create.add_argument('--kind', required=True, choices=KINDS, help='an issue is a need, defect or decision')
-    create.add_argument('--label', action='append', default=[], help='also label it; a missing one is created')
-    label = _verb(issue, 'label')
-    label.add_argument('number', type=int)
-    label.add_argument('--add', nargs='+', default=[], help='labels to put on it; a missing one is created first')
-    label.add_argument('--remove', nargs='+', default=[], help='labels to take off it')
-    comment = _verb(issue, 'comment')
-    comment.add_argument('number', type=int)
-    comment.add_argument('--body', required=True)
-    pr = nouns.add_parser('pr').add_subparsers(dest='verb', required=True)
-    _verb(pr, 'view').add_argument('number', type=int)
-    closing = _verb(pr, 'close')
-    closing.add_argument('number', type=int)
-    closing.add_argument(
-        '--reason', required=True, help='why; posted as a comment before the close (no branch deleted)'
-    )
-    editing = _verb(pr, 'edit')
-    editing.add_argument('number', type=int)
-    edits = editing.add_mutually_exclusive_group(required=True)
-    edits.add_argument('--body-file', help='replace the body with this UTF-8 file')
-    edits.add_argument(
-        '--append-line', action='append', default=[], help='add this line after the current body (repeatable)'
-    )
-    opened = _verb(pr, 'create')
-    opened.add_argument('--title', required=True)
-    opened.add_argument('--body', default='')
-    opened.add_argument('--head', required=True)
-    opened.add_argument('--base', required=True)
-    opened.add_argument(
-        '--ready', action='store_true',
-        help='open it ready for review; the default is a DRAFT, marked ready by `forge pr ready N` (D53)',
-    )  # fmt: skip
-    opened.add_argument(
-        '--ready-when-current', action='store_true',
-        help=f'open a DRAFT the serve marks ready once its head is current (`{forgedraft.READY_WHEN}` in the body)',
-    )  # fmt: skip
-    return parser
-
-
-def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
-    verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
+def _dispatch(
+    client: Client, args: argparse.Namespace, root: Path
+) -> Issue | PullRequest | Comment | tuple[Issue | PullRequest, ...]:
+    verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue | PullRequest, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit, labels=args.label),
         ('issue', 'view'): lambda: client.issue_view(args.number),
         ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind, args.label),
@@ -245,13 +188,23 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
         ('pr', 'create'): lambda: client.pr_create(
             args.title, _declared_body(args), head=args.head, base=args.base, draft=not args.ready
         ),
+        ('pr', 'list'): lambda: _pulls(client, args),
         ('pr', 'view'): lambda: client.pr_view(args.number),
         ('pr', 'close'): lambda: forgepr.pr_close(client, args.number, args.reason),
+        ('pr', 'retarget'): lambda: forgepr.pr_retarget(
+            client, args.number, args.base, allowed=forgepr.declared_bases(root), reason=args.reason
+        ),
         ('pr', 'edit'): lambda: forgepr.pr_edit(
             client, args.number, body=forgepr.edit_text(args) if args.body_file else None, append=args.append_line
         ),
     }
     return verbs[args.noun, args.verb]()
+
+
+def _pulls(client: Client, args: argparse.Namespace) -> tuple[PullRequest, ...]:
+    """The first *args.limit* pulls in *args.state* (every page read), only those from *args.head* when it is named."""
+    listed = pr_list(client, state=args.state)
+    return tuple(pull for pull in listed if args.head in {None, pull.head})[: args.limit]
 
 
 def _relabeled(client: Client, args: argparse.Namespace) -> Issue:
@@ -260,7 +213,16 @@ def _relabeled(client: Client, args: argparse.Namespace) -> Issue:
     return client.issue_view(args.number)
 
 
-def _show(args: argparse.Namespace, result: Issue | PullRequest | Comment | tuple[Issue, ...], root: Path) -> None:
+def _labels(args: argparse.Namespace) -> Sequence[str]:
+    """The labels an issue verb names: ``label --add`` and ``list``/``create --label``; the other verbs name none."""
+    if args.verb == 'label':
+        return args.add
+    return args.label if args.verb in {'list', 'create'} else ()
+
+
+def _show(
+    args: argparse.Namespace, result: Issue | PullRequest | Comment | tuple[Issue | PullRequest, ...], root: Path
+) -> None:
     """Print *result* (JSON with ``--json``); an issue verb that subscribed a task nobody hears says so."""
     items = result if isinstance(result, tuple) else (result,)
     if args.json:
@@ -269,9 +231,14 @@ def _show(args: argparse.Namespace, result: Issue | PullRequest | Comment | tupl
     else:
         for item in items:
             emit(_render(item))
-    labels = getattr(args, 'add', None) or getattr(args, 'label', ())
-    if args.noun == 'issue' and (said := unheard_notice(root, labels)):
+    if args.noun == 'issue' and (said := unheard_notice(root, _labels(args))):
         emit(f'[forge] {said}', err=True)  # TASK-HEARS-ITS-FORGE-EVENTS: a subscription nobody hears is said
+
+
+def _record_standby(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str] | None) -> None:
+    """A standby comment this session posted is recorded for the stop hook (STANDBY-IS-RESTING)."""
+    if isinstance(result, Comment) and standby.posted(args.body) and (who := session_of(env)):
+        walls.standby(root, issue=result.url, session=who)
 
 
 def _declared_body(args: argparse.Namespace) -> str:
@@ -284,46 +251,9 @@ def _declared_body(args: argparse.Namespace) -> str:
 def _render(item: Issue | PullRequest | Comment) -> str:
     if isinstance(item, Comment):
         return item.url
+    if isinstance(item, PullRequest):
+        return f'#{item.number} [{item.state}] {item.head} -> {item.base}  {item.title}  {item.url}'
     return f'#{item.number} [{item.state}] {item.title}  {item.url}'
-
-
-def _refused(
-    parser: argparse.ArgumentParser,
-    args: argparse.Namespace,
-    root: Path,
-    env: Mapping[str, str] | None,
-    transport: Transport,
-) -> str | None:
-    """Why the verb is refused before any write: a reasonless close, a PUBLIC repo's text naming a private value.
-
-    Every verb in :data:`_PUBLISHED_TEXT` publishes what a person typed; a private repository is where private
-    names belong, and an unreadable visibility is scanned (fail closed).
-    """
-    if (args.noun, args.verb) == ('pr', 'close') and not args.reason.strip():
-        parser.error('pr close: --reason must say why')
-    if (args.noun, args.verb) == ('pr', 'create') and args.ready and args.ready_when_current:
-        parser.error('pr create: --ready opens it ready; --ready-when-current opens a draft -- choose one')
-    if (published := _PUBLISHED_TEXT.get((args.noun, args.verb))) is None:
-        return None
-    what, texts = published
-    private, why = privatemarkers.repo_is_private(root, env=env, transport=transport)
-    if private:
-        return None
-    if why:
-        emit(f'[forge] scanning the {what} for private markers: {why}', err=True)
-    public = privatemarkers.public_names(root, env=env, transport=transport)
-    return privatemarkers.text_refusal('\n'.join(texts(args)), what, public=public)
-
-
-#: Each write verb that publishes typed text: what a refusal calls it, and the argument fields that hold it.
-_PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, Callable[[argparse.Namespace], tuple[str, ...]]]] = {
-    ('pr', 'create'): ('PR title or body', lambda a: (a.title, a.body)),
-    ('pr', 'close'): ('close reason', lambda a: (a.reason,)),
-    ('pr', 'edit'): ('PR body', lambda a: (forgepr.edit_text(a),)),
-    ('issue', 'create'): ('issue title or body', lambda a: (a.title, a.body)),
-    ('issue', 'comment'): ('comment body', lambda a: (a.body,)),
-    ('issue', 'label'): ('label names', lambda a: (*a.add, *a.remove)),
-}
 
 
 #: The whole time an issue verb (or ``pr view``) may wait on the forge: one full 30 s attempt and a cut second.
@@ -333,7 +263,7 @@ READ_BUDGET_S: Final = 45.0
 
 
 def _budgeted(noun: str, verb: str) -> bool:
-    return noun == 'issue' or (noun, verb) == ('pr', 'view')
+    return noun == 'issue' or (noun, verb) in {('pr', 'view'), ('pr', 'list')}
 
 
 def issue_and_pr(
@@ -346,14 +276,14 @@ def issue_and_pr(
 ) -> int:
     """``python -m dev_lab.dev.forge issue|pr <verb> ...`` (:mod:`forgework`); exit 1 with netverb's remedy.
 
-    An issue verb and ``pr view`` end within *budget_s* (:data:`READ_BUDGET_S`), naming the cause.
+    An issue verb, ``pr view`` and ``pr list`` end within *budget_s* (:data:`READ_BUDGET_S`), naming the cause.
     """
-    parser = _parser()
+    parser = _forgecli_args.parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     if _budgeted(args.noun, args.verb):
         transport = within(transport, time.monotonic() + budget_s, f'forge {args.noun} {args.verb}', budget_s)
-    if (refused := _refused(parser, args, root, env, transport)) is not None:
+    if (refused := _forgecli_args.refused(parser, args, root, env, transport)) is not None:
         emit(refused, err=True)
         walls.refused_text(root, refused, reason=f'forge {args.noun} {args.verb}')
         return 1
@@ -366,7 +296,7 @@ def issue_and_pr(
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
             emit('\n'.join(f'[forge] {line}' for line in lines), err=True)
             args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
-        result = _dispatch(client, args)
+        result = _dispatch(client, args, root)
         if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
             emit(f'[forge] {forgemergecall.auto_merge(client, result.number)}', err=True)
             if head := result.head_sha or pushwatch.pushed_sha(root, f'refs/remotes/origin/{result.head}'):
@@ -379,6 +309,7 @@ def issue_and_pr(
         emit(f'[forge] {stopped}', err=True)
         return 1
     forgetask.record(args, result, root)
+    _record_standby(args, result, root, env)
     _show(args, result, root)
     if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
         emit(forgedraft.opened_line(result))  # the exact next step for a draft, on stdout (D53)

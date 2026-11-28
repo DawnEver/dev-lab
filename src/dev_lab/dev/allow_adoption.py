@@ -94,6 +94,7 @@ from typing import Any, Final
 
 from dev_lab.dev._allow_settings import BASH, ROW, block_problems, live_bash_rows, merged_permissions
 from dev_lab.dev._allow_settings import promised_command as _promised
+from dev_lab.dev._hook_admit import RULE_ID as HOOKS_ARE_WIRED
 from dev_lab.dev.agentpolicy import Door
 from dev_lab.dev.autodoors import claude_rows
 from dev_lab.dev.doorrows import literal_rows
@@ -336,13 +337,18 @@ def self_refused(allow: AllowAdoption, rules: Sequence[DenyRule] = DENY_RULES) -
     engine, which splits nested command positions. An ``argument``-matched rule is searched anywhere
     and is fully reachable, which is the shape this module's own control is planted on. Deciding
     what a shell line executes belongs to ``deny-commands.js``, and the guard drives the real one.
+
+    A SHAPE IS JUDGED IN A WIRED TREE. HOOKS-ARE-WIRED refuses by the box's state (the target tree's hook
+    shims), never by the command's shape, so its pattern alone would read every sanctioned ``git merge
+    --ff-only`` door as refused; it is left to the live judge, as the famtest shape probes leave it.
     """
+    shaped = [rule for rule in rules if rule.id != HOOKS_ARE_WIRED]
     out: list[str] = []
     for entry in allow_entries(allow, rules):
         command = _promised(entry)
         if not command:
             continue
-        fired = denies(rules, command, allow.adoption.remedies)
+        fired = denies(shaped, command, allow.adoption.remedies)
         if fired is not None:
             out.append(f'{entry}  ->  promises {command!r}, which {fired} refuses')
     return tuple(out)

@@ -74,7 +74,7 @@ def checkout_lag(checkout: str, ref: str) -> Lag | None:
 
     try:
         return lag_of(git, 'HEAD', f'origin/{ref}')
-    except (RelockFailed, OSError):
+    except RelockFailed, OSError:
         return None
 
 

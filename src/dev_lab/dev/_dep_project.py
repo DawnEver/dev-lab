@@ -16,7 +16,6 @@ from lab_commons.log import emit
 from dev_lab.dev import uvrelease
 from dev_lab.dev._dep_network import CHILD_WALL_S, run_change
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.installdoor import floating_requirements
 from dev_lab.dev.lockcheck import (
     TOOLCHAIN,
     UV_PIN,
@@ -31,6 +30,17 @@ from dev_lab.dev.lockcheck import (
 from dev_lab.dev.uvfollow import follow
 from dev_lab.dev.venvpath import VENV_LAYOUTS
 from dev_lab.dev.venvpointer import current
+
+#: The package every family kit builds on: a kit moved without it imports modules its floor does not carry (#994).
+FAMILY_FLOOR: Final = 'lab-commons'
+_FAMILY_SUFFIX: Final = '-lab'
+
+
+def with_family_floor(packages: set[str]) -> set[str]:
+    """*packages* plus :data:`FAMILY_FLOOR` when any of them is a family kit (``*-lab``); else unchanged."""
+    if any(name.endswith(_FAMILY_SUFFIX) for name in packages):
+        return {*packages, FAMILY_FLOOR}
+    return set(packages)
 
 
 def _checkout(cwd: Path, git_binary: str) -> tuple[Path, Path] | None:
@@ -129,7 +139,15 @@ def own_interpreter(root: Path, python: str) -> str:
     resolved = candidate.absolute()
     owned = tuple(base / name for base in {root.absolute(), root.resolve()} for name in ('.venvs', '.venv'))
     if Path(python).is_file() and any(resolved.is_relative_to(home) for home in owned):
-        return python
+        if env_fits(root, python):
+            return python
+        msg = (
+            f'ENV-FITS-ITS-PROJECT: the environment of {python} runs Python '
+            f'{".".join(map(str, env_version(python) or ()))}, which {root} refuses (requires-python '
+            f'{requires_python(root)}); a sync or relock under it fails at uv. Rebuild it on a fitting interpreter '
+            f'first:\n{sys.executable} -m dev_lab.dev.dep --bootstrap {root}'
+        )
+        raise UnfitEnvRefused(msg)
     msg = (
         f'SYNC-OWNS-ITS-ENV: the interpreter {candidate} is not inside the own .venvs/ or .venv of the checkout '
         f'{root}, and a sync never runs under a foreign environment.\n'
@@ -138,18 +156,76 @@ def own_interpreter(root: Path, python: str) -> str:
     raise ForeignEnvRefused(msg)
 
 
+class UnfitEnvRefused(ValueError):
+    """A sync or relock would run under the checkout's own environment, built on an interpreter it refuses."""
+
+
+def requires_python(root: Path) -> str:
+    """*root*'s ``[project] requires-python``; ``''`` where it declares none (or has no manifest)."""
+    manifest = root / 'pyproject.toml'
+    data = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
+    declared: dict[str, Any] = data.get('project', {})
+    return str(declared.get('requires-python') or '')
+
+
+def env_version(python: str) -> tuple[int, ...] | None:
+    """The Python release the environment of *python* was built on, from its ``pyvenv.cfg``; ``None`` unread."""
+    cfg = Path(python).parent.parent / 'pyvenv.cfg'
+    lines = cfg.read_text(encoding='utf-8', errors='replace').splitlines() if cfg.is_file() else []
+    for key, _, value in (line.partition('=') for line in lines):
+        if key.strip() in {'version_info', 'version'} and (release := re.findall(r'\d+', value)[:3]):
+            return tuple(int(part) for part in release)
+    return None
+
+
+def env_fits(root: Path, python: str) -> bool:
+    """Whether the environment of *python* fits *root*'s ``requires-python`` (an unread version is not refused)."""
+    spec, version = requires_python(root), env_version(python)
+    return not spec or version is None or _fits(version, spec)
+
+
 def bootstrap_python(root: Path, *, running: tuple[int, ...] = tuple(sys.version_info[:3])) -> str:
     """The interpreter a first environment of *root* is built with: the caller when it fits, else the target's spec.
 
     MEASURED 2026-11-24: a repo requiring 3.13 was bootstrapped from a 3.12 caller and ``uv sync --python
     <caller>`` refused it. The TARGET declares what it runs on: a caller fitting its ``requires-python`` (or a repo
-    declaring none) builds under the caller, as before; otherwise uv is handed the specifier and finds (or
-    fetches) a fitting interpreter.
+    declaring none) builds under the caller, as before; otherwise uv is handed the specifier and finds a fitting
+    interpreter (:func:`fetch_python` fetched one first where the host had none).
     """
-    manifest = root / 'pyproject.toml'
-    declared = tomllib.loads(manifest.read_text(encoding='utf-8')).get('project', {}) if manifest.is_file() else {}
-    spec = str(declared.get('requires-python') or '')
+    spec = requires_python(root)
     return sys.executable if not spec or _fits(running, spec) else spec
+
+
+def fetch_python(root: Path, *, run: Callable[..., Any], environment: dict[str, str] | None) -> str:
+    """Fetch an interpreter fitting *root*'s ``requires-python`` when uv finds none; ``''`` once one is there.
+
+    MEASURED 2026-11-27 (the family Python moved to 3.14, dev-lab #1045): a host holding only 3.15 and 3.13 cannot
+    build a family environment until uv installs 3.14. The fetch is a network verb, so it runs through the one retry
+    door (:func:`~dev_lab.dev._dep_network.run_change`); a fetch that fails answers why, with the door to rerun.
+    """
+    spec, uv = requires_python(root), shutil.which('uv')
+    if not spec or uv is None or _found(uv, spec):
+        return ''
+    emit(f'[dep] no interpreter on this host fits {root} (requires-python {spec}): uv fetches one')
+    if run_change([uv, 'python', 'install', spec], run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment):
+        return (
+            f'uv could not fetch a Python fitting {spec}, which {root} requires -- rerun the fetch once the network '
+            f'answers: {sys.executable} -m dev_lab.dev.netverb -- {uv} python install "{spec}"'
+        )
+    return ''
+
+
+def _found(uv: str, spec: str) -> bool:
+    """Whether *uv* finds an installed interpreter fitting *spec* (a local read, no download)."""
+    done = _door.run(
+        [uv, 'python', 'find', '--no-python-downloads', spec],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+        timeout=60,
+    )
+    return done.returncode == 0
 
 
 #: One requires-python clause: an operator and a dotted release, optionally ``.*``.
@@ -184,50 +260,43 @@ def follow_pin(uv: str, required: str) -> str:
     return follow(uv, required, version_of=installed_uv_version)
 
 
-def uv_command(
-    root: Path,
-    python: str,
-    selected: Sequence[str],
-    *,
-    syncing: bool,
-    upgrade_packages: Sequence[str],
-    frozen: bool = False,
-) -> list[str]:
-    """One target-addressed command; a sync re-resolves every declared floating Git requirement.
+def uv_command(root: Path, python: str, selected: Sequence[str], *, frozen: bool = False) -> list[str]:
+    """One target-addressed ``uv sync``: it installs exactly the committed ``uv.lock`` and never writes it.
 
-    A *frozen* sync builds exactly the committed ``uv.lock`` (``--frozen``) and re-resolves nothing: how a
-    commit's own environment is materialized, so two hosts on two days build the same revisions.
-    Only a frozen sync with no environment yet -- a bootstrap -- builds
-    one under the target's ``requires-python`` (:func:`bootstrap_python`); every other command
+    A *frozen* sync builds the lock without asking whether it still matches ``pyproject.toml`` -- a bootstrap, and
+    the sync that follows a relock. Every other sync is ``--locked``: it refuses a lock that no longer matches
+    (:func:`stale_lock_note` names the door), so ``dep --sync`` leaves ``uv.lock`` byte-identical (user ruling
+    2026-11-27). The one writer of a lock is :func:`lock_upgrade_command`; a family kit moves through it.
+    Only a frozen sync with no environment yet, or one built on an interpreter the target's ``requires-python``
+    refuses -- a bootstrap -- builds under that requirement (:func:`bootstrap_python`); every other command
     runs under the checkout's own (:func:`own_interpreter`).
     """
     uv = shutil.which('uv')
     if uv is None:
         msg = 'bootstrap/sync requires uv on PATH'
         raise FileNotFoundError(msg)
-    first = syncing and frozen and not Path(python).is_file()
-    interpreter = bootstrap_python(root) if first else own_interpreter(root, python)
-    command = [
-        uv,
-        'sync' if syncing else 'lock',
-        '--project',
-        str(root),
-        '--python',
-        interpreter,
-    ]
-    if syncing:
-        command.append('--compile-bytecode')  # D24: the first hook after a relock never compiles its imports
-        for extra in selected:
-            command.extend(('--extra', extra))
-    if frozen:
-        return [*command, '--frozen']
-    command[0] = lock_writer(uv, uv_version(root), pin_file(root))  # an unfrozen sync or lock may rewrite uv.lock
-    upgrades = set(upgrade_packages)
-    if syncing:
-        upgrades.update(floating_requirements(root / 'pyproject.toml'))
-    for package in sorted(upgrades):
-        command.extend(('--upgrade-package', package))
-    return command
+    built = Path(python).is_file() and env_fits(root, python)
+    interpreter = bootstrap_python(root) if frozen and not built else own_interpreter(root, python)
+    command = [uv, 'sync', '--project', str(root), '--python', interpreter]
+    command.append('--compile-bytecode')  # D24: the first hook after a relock never compiles its imports
+    for extra in selected:
+        command.extend(('--extra', extra))
+    return [*command, '--frozen' if frozen else '--locked']
+
+
+def lock_check_command(sync: Sequence[str]) -> list[str]:
+    """``uv lock --check`` under the same uv, project and interpreter as the *sync* command: read-only."""
+    at = list(sync).index('--project')
+    return [sync[0], 'lock', '--check', *sync[at : at + 4]]
+
+
+def stale_lock_note(root: Path) -> str:
+    """Why a ``--locked`` sync of *root* was refused, and the door that relocks it."""
+    return (
+        f'REFUSED: {root / "uv.lock"} no longer matches {root / "pyproject.toml"}, and dep --sync installs the '
+        f'committed lock and never writes it. Relock: {sys.executable} -m dev_lab.dev.dep --lock-upgrade {root} '
+        '[--upgrade-package NAME], then commit uv.lock'
+    )
 
 
 def lock_upgrade_command(root: Path, python: str, required: str, packages: Sequence[str] = ()) -> list[str]:
@@ -241,7 +310,8 @@ def lock_upgrade_command(root: Path, python: str, required: str, packages: Seque
         raise FileNotFoundError(msg)
     interpreter = own_interpreter(root, python)
     uv = lock_writer(uv, required, pin_file(root))
-    moves = [part for package in packages for part in ('--upgrade-package', package)] or ['--upgrade']
+    moves = [part for package in sorted(with_family_floor(set(packages))) for part in ('--upgrade-package', package)]
+    moves = moves or ['--upgrade']
     return [uv, 'lock', *moves, '--project', str(root), '--python', interpreter]
 
 
@@ -263,15 +333,17 @@ def anchor_paths(root: Path, anchors: object) -> tuple[Path, ...]:
 def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tuple[str, ...], tuple[Path, ...]]:
     """Validate target-owned environment, extras and anchors before mutation.
 
+    The extras are the repo's declared ones (``[tool.dev_lab.dep] extras``) followed by every *requested* one: a
+    named extra adds to the always-on set and never drops it.
+
     Anchors live in their own ``[tool.dev_lab.anchors] paths``: ``[tool.dev_lab.dep]`` is
     :mod:`lab_commons.extras`'s closed table, read by that one reader, which refuses any key it does not own.
     """
     manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
     available = manifest.get('project', {}).get('optional-dependencies', {})
-    selected = requested if requested is not None else extras.extras_for(manifest, (), str(root / 'pyproject.toml'))
-    if not isinstance(selected, (list, tuple)) or any(not isinstance(name, str) for name in selected):
-        msg = 'tool.dev_lab.dep.extras must be an array of declared extra names'
-        raise ValueError(msg)
+    declared = extras.extras_for(manifest, (), str(root / 'pyproject.toml'))
+    # A named extra ADDS to the always-on ones (dev-lab #1005): `--extra gpu` replacing `dev` left no dev_lab.
+    selected = tuple(dict.fromkeys([*declared, *(requested or ())]))
     unknown = set(selected) - set(available)
     if unknown:
         msg = f'unknown dependency extras: {sorted(unknown)}'
@@ -315,16 +387,18 @@ def lock_upgrade(
         return 1
     try:
         required = uv_due(root, newest()) if (root / UV_PIN).is_file() and not packages else uv_version(root)
+        # Read BEFORE anything is written (#996): a toolchain that cannot be resolved refuses a run that moved nothing.
+        toolchain = stable() if not packages and (root / TOOLCHAIN).is_file() else None
         command = lock_upgrade_command(root, python, required, packages)
-    except (OtherUvRefused, ForeignEnvRefused, OSError) as exc:
+    except (OtherUvRefused, ForeignEnvRefused, UnfitEnvRefused, OSError) as exc:
         emit(f'REFUSED: {exc}')
         return 1
     if dry_run:
         emit('would run: ' + ' '.join(command))
         return 0
     code = run_change(command, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment)
-    if code == 0 and not packages and (root / TOOLCHAIN).is_file():
-        pin_stable(root, stable())
+    if code == 0 and toolchain is not None:
+        pin_stable(root, toolchain)
     if code == 0 and not packages and (root / UV_PIN).is_file():
         moved = uvrelease.release(pin_file(root), required)
         pin_uv(root, required, {key: digest for key, (_asset, digest) in moved.assets.items()})

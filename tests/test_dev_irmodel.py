@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import math
 import shutil
 from pathlib import Path
 
 import pytest
 
+from dev_lab.dev._ir_errors import IRSchemaError
 from dev_lab.dev.ircheck import load
-from dev_lab.dev.irmodel import IRSchemaError
 
 FIXTURE = Path(__file__).parent / 'data' / 'ir_schema' / 'repo'
 
@@ -29,10 +30,32 @@ def test_the_fixture_repo_loads_every_module_record_and_quantity(repo: Path) -> 
     batch = ir.modules['samples'].records['Batch']
     widgets = batch.field('widgets')
     assert (widgets.type.kind, widgets.type.item.kind, widgets.type.item.target) == ('list', 'record', 'widgets.Widget')
-    assert widgets.unique_by == 'id'
+    assert widgets.unique_by == ('id',)
     assert ir.modules['samples'].dims == {'n': (1, None)}
     assert ir.quantities['sound_pressure'].db == (2e-5, 20)
     assert ir.quantities['force'].dimension == (1, 1, -2, 0, 0, 0, 0)
+    assert set(ir.constants) == {'mu0', 'boltzmann', 'turns_ratio'}
+
+
+def test_a_constant_evaluates_its_expression_exactly(repo: Path) -> None:
+    ir = load(repo)
+    assert ir is not None
+    mu0 = ir.constants['mu0']
+    assert mu0.value == 4e-7 * math.pi
+    assert (mu0.expression, mu0.unit) == ('4e-7 * pi', 'H/m')
+    assert 'FEMM' in mu0.reason
+    assert mu0.citation
+    # Planted control: CODATA 2018's measured mu0 is a DIFFERENT float, so the equality above can say no.
+    assert mu0.value != 1.25663706212e-6
+    assert ir.constants['turns_ratio'].value == 2.0
+
+
+def test_a_constant_named_like_a_module_is_refused(repo: Path) -> None:
+    _edit(repo, 'pyproject.toml', 'widgets = ', 'constants = ')
+    _edit(repo, 'ir/samples.toml', 'widgets.', 'constants.')
+    with pytest.raises(IRSchemaError) as caught:
+        load(repo)
+    assert caught.value.code == 'IR-CONSTANT-SPEC'
 
 
 def test_a_repo_without_a_declaration_has_no_ir(tmp_path: Path) -> None:
@@ -70,6 +93,18 @@ REFUSALS = [
     ('IR-FIELD-SPEC', W, 'gauge_reference = "ambient_pressure"', 'gauge_reference = "mass"'),
     ('IR-FIELD-SPEC', S, 'type = "list:str"', 'type = "list:array"'),
     ('IR-FIELD-SPEC', W, 'values = ["raw", "painted", "anodized"]', 'values = ["raw", "class"]'),
+    ('IR-CONSTANT-SPEC', Q, 'unit = "J/K"\n', ''),
+    ('IR-CONSTANT-SPEC', Q, 'citation = "SI Brochure, 9th edition (BIPM 2019), Table 1"\n', ''),
+    ('IR-CONSTANT-SPEC', Q, 'reason = "exact by the 2019 SI definition"\n', ''),
+    ('IR-CONSTANT-SPEC', Q, 'reason = "exact by the 2019 SI definition"', 'reason = "  "'),
+    ('IR-CONSTANT-SPEC', Q, 'value = 1.380649e-23\n', ''),
+    ('IR-CONSTANT-SPEC', Q, 'value = 1.380649e-23', 'value = "__import__(\'os\')"'),
+    ('IR-CONSTANT-SPEC', Q, 'value = 1.380649e-23', 'value = "tau"'),
+    ('IR-CONSTANT-SPEC', Q, 'value = 1.380649e-23', 'value = "1e308 * 10"'),
+    ('IR-CONSTANT-SPEC', Q, 'value = 1.380649e-23', 'value = true'),
+    ('IR-CONSTANT-SPEC', Q, '[constant.boltzmann]', '[constant.Boltzmann]'),
+    ('IR-CONSTANT-SPEC', Q, 'reason = "exact by the 2019 SI definition"', 'reason = "x"\nnote = "y"'),
+    ('IR-NON-SI-UNIT', Q, 'unit = "H/m"', 'unit = "uH/m"'),
 ]
 
 

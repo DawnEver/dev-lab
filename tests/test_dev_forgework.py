@@ -29,7 +29,7 @@ from _forge_fake import credential_env, serve
 from _forge_fake import make_repo as _repo
 from _forge_fake import run_git as _run
 
-from dev_lab.dev import branchnotices, forge, forgecred, pradmit
+from dev_lab.dev import branchnotices, forge, forgecred, pradmit, walls
 from dev_lab.dev.forge import Forge, NoCredential
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgecli import issue_and_pr
@@ -182,6 +182,43 @@ def test_pr_create_and_view(server, forge, host, root, auth) -> None:
         assert (drafted['title'], drafted['draft']) == ('a fix', True)
     else:
         assert (drafted['title'], 'draft' in drafted) == ('WIP: a fix', False), 'Gitea 1.27 has no draft field'
+
+
+@pytest.mark.parametrize(
+    ('forge', 'root'),
+    [(Forge('forge.example.org', 'o', 'r'), '/api/v1/repos/o/r'), (Forge('github.com', 'o', 'r'), '/repos/o/r')],
+)
+def test_pr_list_prints_open_pulls_filters_by_head_and_an_empty_listing_prints_nothing(
+    server, forge, root, tmp_path: Path, capsys
+) -> None:
+    """``forge pr list`` (#1076): every page read, ``--head`` keeps only that branch's pulls.
+
+    PLANTED CONTROLS: the other head's pull is absent under ``--head``; a full first page forces page 2;
+    an empty listing prints nothing and still exits 0.
+    """
+    remote = 'https://github.com/o/r.git' if forge.host == 'github.com' else 'https://forge.example.org/o/r.git'
+    repo, env = _repo(tmp_path, remote), credential_env(tmp_path)
+    size = 'per_page' if forge.host == 'github.com' else 'limit'
+    full = [{**_PR, 'number': 100 + n, 'head': {'ref': f'lane/{n}'}} for n in range(50)]
+    _answer('GET', f'{root}/pulls?state=open&{size}=50&page=1', (200, full))
+    _answer('GET', f'{root}/pulls?state=open&{size}=50&page=2', (200, [_PR]))
+
+    def listed(*argv: str) -> list[dict]:
+        assert issue_and_pr(['pr', 'list', *argv, '--json'], cwd=repo, env=env, transport=_Loopback(server)) == 0
+        return json.loads(capsys.readouterr().out)
+
+    every = listed('--limit', '100')
+    assert [one['number'] for one in every] == [9, *range(100, 150)], 'both pages, lowest number first'
+    assert [(one['number'], one['head'], one['base']) for one in listed('--head', 'feature')] == [
+        (9, 'feature', 'main')
+    ]
+    assert issue_and_pr(['pr', 'list', '--head', 'feature'], cwd=repo, env=env, transport=_Loopback(server)) == 0
+    assert capsys.readouterr().out.strip() == '#9 [open] feature -> main  a fix  https://x/o/r/pulls/9'
+    assert issue_and_pr(['pr', 'list', '--head', 'nobody'], cwd=repo, env=env, transport=_Loopback(server)) == 0
+    assert capsys.readouterr().out == ''
+    _answer('GET', f'{root}/pulls?state=closed&{size}=50&page=1', (200, []))
+    assert issue_and_pr(['pr', 'list', '--state', 'closed'], cwd=repo, env=env, transport=_Loopback(server)) == 0
+    assert capsys.readouterr().out == ''
 
 
 def test_github_requests_carry_the_headers_its_api_demands(server) -> None:
@@ -483,6 +520,18 @@ def test_the_cli_stamps_from_the_environment(server, tmp_path: Path, capsys) -> 
     )
     assert _Recorder.received[-1]['body'] == {'body': '[g · claude · lane]\n\nhello'}
     assert 'u' in capsys.readouterr().out
+
+
+def test_a_standby_comment_this_session_posts_is_recorded_for_the_stop_hook(server, tmp_path: Path) -> None:
+    """STANDBY-IS-RESTING: the forge door records this session's standby post; an ordinary comment records none."""
+    repo = _repo(tmp_path, 'https://f.example/o/r.git', branch='lane')
+    env = credential_env(tmp_path) | {'CLAUDE_CODE_SESSION_ID': 'session-standby'}
+    for body in ('just progress', 'standby: queue empty -- waiting on the integrator'):
+        _answer('POST', '/api/v1/repos/o/r/issues/7/comments', (201, {'id': 1, 'body': body, 'html_url': 'u7'}))
+        assert (
+            issue_and_pr(['issue', 'comment', '7', '--body', body], cwd=repo, env=env, transport=_Loopback(server)) == 0
+        )
+        assert walls.resting(repo, 'session-standby') is body.startswith('standby:')
 
 
 def test_the_cli_reports_a_refusal_and_exits_nonzero(server, tmp_path: Path, capsys) -> None:
@@ -815,3 +864,26 @@ def test_a_kept_connection_the_forge_dropped_is_replaced_without_a_retry_wait() 
     assert len(opened) == 2
     assert opened[0].closed
     assert slept == []
+
+
+@pytest.mark.parametrize('path', ['repos/o/r/issues/1/comments', 'issues/1/comments', 'pulls?state=open'])
+def test_a_relative_path_is_refused_naming_the_repository_collection(server, path: str) -> None:
+    """The 400 Gitea gave a raw ``client.call('GET', 'repos/...')``: the request line carried no leading slash.
+
+    PLANTED CONTROL: nothing reaches the forge, and the refusal names the absolute form to send instead.
+    """
+    gitea = _client(Forge('forge.example.org', 'o', 'r'), _Loopback(server))
+    with pytest.raises(ValueError, match=r"absolute.*client\.repo.*'/api/v1/repos/o/r'"):
+        gitea.call('GET', path)
+    assert _Recorder.received == []
+
+
+def test_an_absolute_path_keeps_its_query_string(server) -> None:
+    _answer('GET', '/api/v1/repos/o/r/pulls', (200, []))
+    assert (
+        _client(Forge('forge.example.org', 'o', 'r'), _Loopback(server)).call(
+            'GET', '/api/v1/repos/o/r/pulls?state=open&limit=5'
+        )
+        == []
+    )
+    assert _Recorder.received[-1]['path'] == '/api/v1/repos/o/r/pulls?state=open&limit=5'

@@ -1,6 +1,6 @@
 """Check a config-source repository OFF its hosts: the CI of the repository ``[ops.config] source`` names.
 
-Five checks, each generic (the repository's own facts arrive as the files it holds):
+Six checks, each generic (the repository's own facts arrive as the files it holds):
 
 - a HOST file is a server's (``[ops]``), a development machine's (``[dev]``, :mod:`dev_lab.dev.devhost`,
   checked with the family file: a restated family key is refused; the machine tables it renders are open, but
@@ -21,6 +21,8 @@ Five checks, each generic (the repository's own facts arrive as the files it hol
   and the binding are one fact, the binding its source;
 - no development machine's host file declares a route (ssh jump, host key, endpoint) to another one
   (:func:`check_routes`, MACHINES-MEET-ONLY-THROUGH-THE-FORGE): they meet only through the forge;
+- a GitHub repo is tested by GitHub Actions alone (:mod:`dev_lab.dev.githubtests`, GITHUB-TESTS-ON-ACTIONS): a
+  ``tests`` binding off ``"ci"`` for one, or an account's ``[deploy] repos`` row that would serve one, is refused;
 - a change NEEDS CONSENT when it touches a boundary key (:func:`dev_lab.ops.configdoor.boundary`): merging it
   grants nothing, applying it still needs the user's ``ops.config`` consent, so the PR is labeled :data:`LABEL`.
 
@@ -39,7 +41,17 @@ from urllib.parse import urlsplit
 
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devschema, devservers, oraclegc, rolecheck, roles, testcost, writeroots
+from dev_lab.dev import (
+    accounthost,
+    devschema,
+    devservers,
+    githubtests,
+    oraclegc,
+    rolecheck,
+    roles,
+    testcost,
+    writeroots,
+)
 from dev_lab.dev.machineroutes import route_defects
 from dev_lab.ops import clientkeys
 from dev_lab.ops import config as opsconfig
@@ -97,7 +109,8 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
     table = parsed.get('writeroots', {})
     allow = [f'{path.name}: {line}' for line in writeroots.allow_defects(table.get('allow', []))] if table else []
     if accounthost.is_account(parsed):
-        return allow + [f'{path.name}: {line}' for line in accounthost.check(path, parsed, shared)]
+        found = allow + [f'{path.name}: {line}' for line in accounthost.check(path, parsed, shared)]
+        return found + [f'{path.name}: {line}' for line in githubtests.account_refusals(path.stem, parsed, shared)]
     found = allow + rolecheck.host_refusals(path.name, parsed)
     found += [f'{path.name}: [{name}] is a family fact ({why}); it lives in family.toml'
               for name, why in FAMILY_ONLY.items() if name in parsed]  # fmt: skip
@@ -193,6 +206,7 @@ def check_family(path: Path) -> list[str]:
     except tomllib.TOMLDecodeError as bad:
         return [f'{path.name}: not TOML: {bad}']
     found = [f'{path.name}: {line}' for line in devschema.check_family(parsed)]
+    found += [f'{path.name}: {line}' for line in githubtests.family_refusals(parsed)]
     servers = parsed.get('dev', {}).get(devservers.KEY)
     if servers is not None and not devservers.defects(servers):  # a malformed one is devschema's line above
         try:

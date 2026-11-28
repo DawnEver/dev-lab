@@ -23,8 +23,15 @@ from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev import devhost, storage
 from dev_lab.dev.hpcaccount import drift
-from dev_lab.dev.hpcaccount.fleet import Target, deploy_command, grant_slice
-from dev_lab.dev.hpcaccount.grantslice import REDEPLOY_DOOR, Unreadable, machine_table, read_machine, render_grant
+from dev_lab.dev.hpcaccount.fleet import Target, deploy_command
+from dev_lab.dev.hpcaccount.grantslice import (
+    REDEPLOY_DOOR,
+    Unreadable,
+    grant_slice,
+    machine_table,
+    read_machine,
+    render_grant,
+)
 from dev_lab.dev.hpcaccount.spec import load
 
 #: The fake account as a RESEARCH account (it never serves tests), and its grant as deploy-fleet holds it.

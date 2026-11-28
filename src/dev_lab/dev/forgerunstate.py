@@ -24,7 +24,6 @@ import hashlib
 import json
 import os
 import re
-import sys
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -36,6 +35,7 @@ from lab_commons.compute.model import Supply
 from lab_commons.config import config_path
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.shell import FULL
+from lab_commons.log import emit
 
 from dev_lab.dev.forgeclaim import Claim
 
@@ -412,8 +412,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     lines = migrate(apply=args.apply)
     for line in lines:
-        sys.stdout.write(f'{line}\n')
-    sys.stdout.write(f'{len(lines)} run file(s) with a retired key under {directory()}\n')
+        emit(line)
+    emit(f'{len(lines)} run file(s) with a retired key under {directory()}')
     return 0
 
 

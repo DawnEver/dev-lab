@@ -29,7 +29,7 @@ def requires_python(root: Path) -> str | None:
     """*root*'s ``[project] requires-python``, else ``None`` (no pyproject, no project table, no bound)."""
     try:
         data = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError, tomllib.TOMLDecodeError:
         return None
     spec = data.get('project', {}).get('requires-python')
     return spec if isinstance(spec, str) else None
@@ -48,8 +48,10 @@ def fits(version: str, spec: str | None) -> bool:
 def probe(python: str) -> str | None:
     """*python*'s version when it runs and imports dev_lab, else ``None``."""
     try:
-        done = _door.run([python, '-c', _PROBE], capture_output=True, text=True, timeout=30, check=False)
-    except (OSError, subprocess.SubprocessError):
+        done = _door.run(
+            [python, '-c', _PROBE], capture_output=True, text=True, encoding='utf-8', timeout=30, check=False
+        )
+    except OSError, subprocess.SubprocessError:
         return None
     return done.stdout.strip() or None if done.returncode == 0 else None
 
