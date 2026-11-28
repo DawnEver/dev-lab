@@ -24,7 +24,7 @@ import base64
 import contextlib
 import os
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Any, Final, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol, cast
 from urllib.parse import quote
 
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
@@ -46,10 +46,12 @@ __all__ = [
     'RERUN',
     'VERDICT_STATES',
     'DeclarationUnread',
+    'app_missing',
     'app_verdicts',
     'forge_posted',
     'github_posted',
     'job_run_url',
+    'judge_missing',
     'manifest_at',
     'post_review',
     'posted_verdicts',
@@ -196,6 +198,45 @@ def app_verdicts(client: Client, head: str) -> list[dict[str, Any]]:
     listed: Any = client.call('GET', f'{client.repo}/commits/{head}/check-runs?check_name={JUDGE_CHECK}&per_page=100')
     runs = listed.get('check_runs') if isinstance(listed, dict) else None
     return [row for row in runs or [] if isinstance(row, dict)]
+
+
+def judge_missing(
+    statuses: Sequence[CommitStatus], reviews: Sequence[Mapping[str, Any]], *, head: str, judge: str
+) -> str | None:
+    """Why *head* carries no approving verdict of the DECLARED *judge* login, or ``None`` when it does: a REPORT.
+
+    The latest standing verdict review (:func:`standing_verdicts`) *judge* left AT *head* decides: ``APPROVED``
+    (then the hold is read) is reviewed; none, or a ``REQUEST_CHANGES``, is named. Another login's approval, one at
+    an older head, a dismissed or stale one is no verdict. Advisory: the merge decision reports it, never waits.
+    """
+    verdicts = standing_verdicts(reviews, login=judge, head=head)
+    latest = max(verdicts, key=lambda row: int(row.get('id') or 0), default=None)
+    if latest is None:
+        return f'no verdict by the judge {judge!r} at {head[:12]} yet: the judge reviews a head called due'
+    if latest.get('state') != APPROVED:
+        return f'the judge {judge!r} requested changes at {head[:12]}'
+    return _hold_missing(statuses)
+
+
+def app_missing(
+    statuses: Sequence[CommitStatus], runs: Sequence[Mapping[str, Any]], *, head: str, app_id: int
+) -> str | None:
+    """Why *head* carries no approving :data:`JUDGE_CHECK` run FROM App *app_id*, or ``None`` when it does: a REPORT.
+
+    Only a completed run whose ``app.id`` IS the declared App counts; its latest at *head* decides: ``success``
+    (then the hold is read) is reviewed, any other conclusion is named.
+    """
+    own = [
+        row for row in runs
+        if row.get('name') == JUDGE_CHECK and row.get('head_sha') == head and row.get('status') == 'completed'
+        and cast('Mapping[str, Any]', row.get('app') or {}).get('id') == app_id
+    ]  # fmt: skip
+    latest = max(own, key=lambda row: int(row.get('id') or 0), default=None)
+    if latest is None:
+        return f'no {JUDGE_CHECK} verdict by the judge App {app_id} at {head[:12]} yet'
+    if latest.get('conclusion') != 'success':
+        return f'the judge App {app_id} concluded {latest.get("conclusion")!r} at {head[:12]}: changes requested'
+    return _hold_missing(statuses)
 
 
 def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitStatus], bool]) -> str | None:

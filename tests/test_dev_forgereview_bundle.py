@@ -349,6 +349,21 @@ def test_a_host_that_is_not_the_declared_judge_judges_nothing(prepared: Prepared
     assert 'judge_login' in said[0]
 
 
+def test_a_declaration_naming_no_judge_names_the_identity_to_declare(prepared: Prepared) -> None:
+    """D226 (every wall teaches): a host-bound review declaring no judge says which key makes this host its judge.
+
+    PLANTED CONTROL: a declared login that is not this host's is named as someone else's, never as missing.
+    """
+    forge = prepared.forge
+    judged = forge.manifest
+    forge.manifest = judged.replace('judge_login = "review-bot"\n', '')
+    said, seen = _judged(prepared, _findings(None))
+    assert (seen, forge.verdicts()) == ([], [])
+    assert f'no judge identity: declare judge_login = {forge.login!r}' in said[0]
+    forge.manifest, forge.login = judged, 'someone-else'
+    assert 'no judge identity' not in _judged(prepared, _findings(None))[0][0]
+
+
 _APP = App(5619495, 'acme-review')
 
 

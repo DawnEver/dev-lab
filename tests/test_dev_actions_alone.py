@@ -6,6 +6,7 @@ Every test pairs the GitHub refusal with its PLANTED CONTROL on Gitea, so neithe
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from _protect_fakes import GITEA_TEXT, GITHUB_TEXT
@@ -26,9 +27,14 @@ from dev_lab.dev._forgebackends import (
 from dev_lab.dev._protect_gitea import body as gitea_body
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import JUDGE_CHECK, MERGE_READY_CONTEXT, REVIEW_CONTEXT
+from dev_lab.dev.forgemerge import Decision
 from dev_lab.dev.forgeprotect import INTEGRATION, TRUNK, required_contexts, targets
+from dev_lab.dev.forgereview_declared import Review
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.roles import CI, HOST
+
+if TYPE_CHECKING:
+    from dev_lab.dev.forgework import Client
 
 JUDGE_LOGIN = '[tool.dev_lab.review]\njudge_login = "judge"\n'
 JUDGE_APP = '[tool.dev_lab.review]\njudge_app = 5619495\n'
@@ -81,15 +87,25 @@ def test_a_serve_host_s_integration_requires_no_context_and_its_trunk_still_requ
 def test_no_merge_gate_waits_on_the_judge_on_either_forge(monkeypatch: pytest.MonkeyPatch, backend, judge_app) -> None:
     """User ruling 2026-11-11: the judge's verdict is advisory on both forges, never waited on.
 
-    PLANTED CONTROL: a repo reviewed on CI with no tests/review posted still waits on its review.
+    D226: its reading is still READ (it is what asks the judge), so an unjudged head is NAMED -- and the decision
+    carrying that reading is ready all the same. PLANTED CONTROL: a repo reviewed on CI with no tests/review posted
+    is named too, and a decision with another missing condition is not ready.
     """
     assert JUDGE_HOST in ADVISORY
-    assert judge_app in {0, 5619495}  # the judge's identity never changes the reading
+    declared = Review(judge_app=judge_app) if judge_app else Review(judge_login='judge')
+    monkeypatch.setattr(forgereview_gate, 'forge_review', lambda _client, _base: declared)
+    monkeypatch.setattr(forgereview_gate, 'app_verdicts', lambda _client, _head: [])
+    monkeypatch.setattr(forgereview_gate, 'pages', lambda *_args: [])
     unapproved = [CommitStatus('tests/base', 'success', 'scope=full ran=1 hands=-', '')]
-    client = SimpleNamespace(backend=backend)
-    assert forgereview_gate.review_gate(client, base='integrate/main', by=HOST)(unapproved) is None
+    client = cast('Client', SimpleNamespace(backend=backend, repo='repos/o/r'))
+    reading = forgereview_gate.review_gate(client, base='integrate/main', by=HOST, number=1, head='c' * 40)(unapproved)
+    assert reading is not None
+    assert 'judge' in reading
+    assert Decision(others=(), message='m', review=reading).ready, 'advisory: the reading never waits'
+    assert not Decision(others=('a red part',), message='m', review=reading).ready
     monkeypatch.setattr(forgereview_gate, 'forge_posted', lambda _client: lambda _status: True)
-    assert forgereview_gate.review_gate(client, base='integrate/main', by=CI)(unapproved) is not None
+    ci = forgereview_gate.review_gate(client, base='integrate/main', by=CI, number=1, head='c' * 40)(unapproved)
+    assert ci is not None
 
 
 @pytest.mark.parametrize(('backend', 'waived'), [(GITHUB, {'femm'}), (GITEA, set())])

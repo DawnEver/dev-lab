@@ -278,6 +278,8 @@ def _not_the_judge(client: Client, review: Review, me: str) -> str | None:
         return None if held == review.judge_app else f'judge_app = {review.judge_app}; this host is App {held}'
     if app_of(client) is None and me == review.judge_login:
         return None
+    if not review.judge_login:
+        return f'no judge identity: declare judge_login = {me!r} there if this host is its judge'
     return f'judge_login = {review.judge_login!r}; this host is {me!r}'
 
 
