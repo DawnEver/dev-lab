@@ -6,13 +6,21 @@ command, or a retired host field (``{capabilities.*}``, ``{runtimes.sharp_review
 
 from __future__ import annotations
 
+import argparse
 import json
+import re
+import tomllib
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Final
 
 import pytest
 
-from dev_lab.dev.famtests.reviewcommand import assert_the_review_declares_only_its_difference
+from dev_lab.dev.famtests.reviewcommand import (
+    assert_the_family_commands_parse,
+    assert_the_requirement_precedence_agrees,
+    assert_the_review_declares_only_its_difference,
+)
 from dev_lab.dev.forgereview_declared import (
     FAMILY_COMMAND,
     FAMILY_MODEL,
@@ -183,3 +191,64 @@ def test_the_planted_manifest_is_convicted_by_the_famtest(tmp_path: Path) -> Non
     (tmp_path / 'pyproject.toml').write_text(bad, encoding='utf-8')
     with pytest.raises(AssertionError, match='sharp_review'):
         assert_the_review_declares_only_its_difference(tmp_path)
+
+
+# --- the engine side of the contract (review items 2 and 7 on #1121): ai-lab runs these over its own code ---------
+
+
+def _engine(*, takes_requirements: bool) -> argparse.ArgumentParser:
+    """A stand-in of the engine's parser: every flag the family commands hand it, ``--requirements`` optionally."""
+    parser = argparse.ArgumentParser(exit_on_error=False)
+    given = parser.add_mutually_exclusive_group(required=True)
+    given.add_argument('--range')
+    given.add_argument('--bundle')
+    for flag in ('--lens', '--model', '--rules', '--principles', '--disposed'):
+        parser.add_argument(flag)
+    parser.add_argument('--paths', nargs='*')
+    parser.add_argument('--no-summary', action='store_true')
+    parser.add_argument('--no-batch', action='store_true')
+    if takes_requirements:
+        parser.add_argument('--requirements', required=True)
+    return parser
+
+
+def test_the_family_commands_parse_with_an_engine_that_takes_them() -> None:
+    """PLANTED CONTROL: an engine without ``--requirements`` (ai-lab before #72) is named as the drift."""
+    assert_the_family_commands_parse(_engine(takes_requirements=True).parse_args)
+    with pytest.raises(AssertionError, match='the engine does not take FAMILY_COMMAND'):
+        assert_the_family_commands_parse(_engine(takes_requirements=False).parse_args)
+
+
+def test_the_requirement_precedence_is_one_order_on_both_sides(tmp_path: Path) -> None:
+    """PLANTED CONTROL: an engine combining in another order is refused, naming both orders."""
+    method = tmp_path / 'method.toml'
+    order = '["violated", "amended", "unverified", "met", "untouched"]'
+    method.write_text(f'[merge.requirements]\nprecedence = {order}\n', encoding='utf-8')
+    assert_the_requirement_precedence_agrees(method)
+    method.write_text('[merge.requirements]\nprecedence = ["amended", "violated", "unverified", "met", "untouched"]\n',
+                      encoding='utf-8')  # fmt: skip
+    with pytest.raises(AssertionError, match='one order, change both'):
+        assert_the_requirement_precedence_agrees(method)
+
+
+#: The first ai-lab commit count (its version's ``devN``) that can take ``--requirements``: the count of the commit
+#: that added it (7851d06, 468) plus one, a LOWER BOUND until the lock bump records the merge of ai-lab #72.
+_AI_LAB_TAKES_REQUIREMENTS: Final = 469
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason='uv.lock pins ai-lab 732194db (dev464), before --requirements: the lock bump to the merge of ai-lab #72 '
+    'is the last commit of dev-lab #1121, and it removes this marker (a strict xfail turns red once it passes)',
+)
+def test_the_lock_pins_an_ai_lab_that_takes_the_family_commands() -> None:
+    """Review item 2: FAMILY_COMMAND hands ``--requirements``, so the ai-lab the lock pins must take it.
+
+    The pinned ai-lab is not importable here (the ``review`` group is not installed), so its version's commit count
+    is the reading: ``0.0.1.devN+g<sha>``, N counting the commits of that ai-lab.
+    """
+    lock = tomllib.loads((_ROOT / 'uv.lock').read_text(encoding='utf-8'))
+    (pinned,) = [one['version'] for one in lock['package'] if one['name'] == 'ai-lab']
+    found = re.fullmatch(r'.*\.dev(\d+)\+g[0-9a-f]+', pinned)
+    assert found is not None, pinned
+    assert int(found[1]) >= _AI_LAB_TAKES_REQUIREMENTS, f'uv.lock pins ai-lab {pinned}'
