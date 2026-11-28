@@ -360,7 +360,8 @@ class SlurmCluster:
     def standing(self) -> Standing:
         """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota.
 
-        The supply also lists the needs this checkout's prep job proved on a compute node (:func:`proven`).
+        The supply also lists AND counts the needs this checkout's prep job proved on a compute node (:func:`proven`):
+        a part's demand asks one of each need, and a proven tool is no seat -- every task may run it (``math.inf``).
         """
         read: list[tuple[Snapshot, str]] = []
         probed: list[tuple[Grant, Snapshot]] = []
@@ -373,7 +374,9 @@ class SlurmCluster:
         account = SlurmAccount(read, files=math.inf if left is None else left)
         supply = Engine({self.scope: [account, account_seats(cached())]}).available(self.scope)
         # a need is never probed on the login node: the prep job proved it on a compute node (hpcaccount.prep.TOOLS)
-        supply = replace(supply, listed=supply.present | proven(self.root))
+        tools = proven(self.root)  # counted too: a part's demand asks one of each need, and a proven tool is no seat
+        counted = {**supply.resources, **{tool: math.inf for tool in tools if not supply.resources[tool]}}
+        supply = replace(supply, resources=type(supply.resources)(counted), listed=supply.present | tools)
         snapshot, qos = read[0]
         shell = self.connect(self.machine.grants[0])
         facts: dict[str, object] = {

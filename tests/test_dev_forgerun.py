@@ -1354,6 +1354,26 @@ def test_a_cargo_part_is_admitted_once_the_prep_job_stamped_cargo_proven(
     assert {'cargo', 'cpu'} <= supply.present, 'the measured names stay listed beside it'
 
 
+def test_a_proven_need_is_counted_as_well_as_listed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ada 2026-11-28, after #1106: v1's cargo part still waited ``lacking cargo (1 asked, 0 free)``.
+
+    A cluster part's demand asks ONE of each need (``Run.demand``), so listing a proven need present is not enough:
+    the supply must also COUNT it. A tool proven on the compute nodes is not a seat -- every task may run it.
+    PLANTED CONTROL: before the stamp, the same demand waits ``lacking cargo``.
+    """
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: _snapshot_untagged())
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(user='alice', slurm_account='a')])
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _g: lambda *_a: '', lambda: None)
+    needs = frozenset({'cargo'})
+    part, demand = Job('repo', 'a' * 40, 'tests/cargo', needs), learned.CLUSTER_PRIOR.demand(needs)
+    assert demand['cargo'] == 1, 'the shape of the demand this test guards'
+    assert admit(part, demand, cluster.standing().supply).lacking == ('cargo',)
+    (tmp_path / '.venv').mkdir()
+    prep.stamp_tools(tmp_path, ['cargo'])
+    verdict = admit(part, demand, cluster.standing().supply)
+    assert verdict.admitted, verdict.why
+
+
 def _snapshot_untagged() -> Snapshot:
     quota = Quota(account='a', cpus=8, mem_mb=None, gpus=None, default_qos='q', qos_max_submit={}, queued={})
     return Snapshot(
