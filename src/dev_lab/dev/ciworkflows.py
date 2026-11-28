@@ -55,7 +55,7 @@ AND-guarded at render by :data:`~dev_lab.dev.forgedraft.READY_ONLY` (:func:`read
 
 WHO PRODUCES IS THE FORGE'S DATA (:attr:`~dev_lab.dev._forgebackends.Backend.producers`, user ruling 2026-11-11):
 a repo whose review is a producer its forge does not wire is refused at render (:func:`placed`). The judge host is
-wired on both forges, and ADVISORY: its verdict never gates a merge (:data:`~dev_lab.dev._forgebackends.ADVISORY`).
+wired on both forges, and ADVISORY: its verdict never gates a merge (user ruling 2026-11-11).
 
 A HOSTED PART (a setup, secrets or both) gets its own job, cut from the matrix ``part`` job
 (:func:`dev_lab.dev.hostedjobs.hosted_jobs`): the one place a repo's

@@ -43,7 +43,7 @@ SECURITY_CONTEXT: Final = f'{CONTEXT_PREFIX}security'
 MERGE_READY_CONTEXT: Final = f'{CONTEXT_PREFIX}merge-ready'
 
 #: The CHECK RUN a GitHub App judge posts its verdict as (:mod:`dev_lab.dev.forgereview_bundle`): ``success``
-#: approves, ``failure`` requests changes. ADVISORY (:data:`dev_lab.dev._forgebackends.ADVISORY`): no merge or
+#: approves, ``failure`` requests changes. ADVISORY (user ruling 2026-11-11): no merge or
 #: ruleset requires it. Outside ``tests/``: it is no status and never a part.
 JUDGE_CHECK: Final = 'review/judge'
 

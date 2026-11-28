@@ -15,7 +15,6 @@ from _roles_fixtures import CI_REPO, EVERY_CI, carry
 from dev_lab.dev import forgereview_gate, integrate
 from dev_lab.dev._forgebackends import (
     ACTIONS,
-    ADVISORY,
     BACKENDS,
     FORGE_SERVE,
     GITEA,
@@ -91,7 +90,6 @@ def test_no_merge_gate_waits_on_the_judge_on_either_forge(monkeypatch: pytest.Mo
     carrying that reading is ready all the same. PLANTED CONTROL: a repo reviewed on CI with no tests/review posted
     is named too, and a decision with another missing condition is not ready.
     """
-    assert JUDGE_HOST in ADVISORY
     declared = Review(judge_app=judge_app) if judge_app else Review(judge_login='judge')
     monkeypatch.setattr(forgereview_gate, 'forge_review', lambda _client, _base: declared)
     monkeypatch.setattr(forgereview_gate, 'app_verdicts', lambda _client, _head: [])
