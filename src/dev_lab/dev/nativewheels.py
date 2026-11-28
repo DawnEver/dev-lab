@@ -219,7 +219,14 @@ def vendor_workflow(text: str, origin: str) -> dict[str, Any] | None:
             {
                 'uses': _CIBUILDWHEEL,
                 'with': {'package-dir': 'src', 'output-dir': 'dist'},
-                'env': {'CIBW_BUILD': f'cp{VERSION.replace(".", "")}-*', 'CIBW_ARCHS': 'native'},
+                # The test is an import of the built wheel: an upstream pyproject's own test-command may name a
+                # test tree its pinned commit lacks (Actions run 46093742941), so it is overridden, never inherited.
+                'env': {
+                    'CIBW_BUILD': f'cp{VERSION.replace(".", "")}-*',
+                    'CIBW_ARCHS': 'native',
+                    'CIBW_TEST_COMMAND': 'python -c "import ${{ matrix.dist }}"',
+                    'CIBW_TEST_REQUIRES': '',
+                },
             },
             {
                 'uses': 'actions/upload-artifact@v4',

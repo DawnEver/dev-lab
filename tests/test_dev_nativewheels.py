@@ -139,6 +139,15 @@ def test_a_vendored_commit_builds_family_python_wheels_on_every_os_from_that_com
     assert f'cp{nativewheels.VERSION.replace(".", "")}-*' in steps
 
 
+def test_a_vendored_wheel_is_tested_by_importing_it_not_by_the_upstream_test_tree(tmp_path: Path) -> None:
+    # The upstream pyproject's own cibuildwheel test-command (`pytest {project}/tests`) named a directory the pinned
+    # commit lacks (Actions run 46093742941): the build must not depend on the upstream test tree.
+    build = workflows(_repo(tmp_path, _VENDORED))[nativewheels.VENDOR_WORKFLOW]['jobs']['build']
+    env = next(step['env'] for step in build['steps'] if 'env' in step)
+    assert env['CIBW_TEST_COMMAND'] == 'python -c "import ${{ matrix.dist }}"'
+    assert env['CIBW_TEST_REQUIRES'] == ''
+
+
 def test_a_vendored_commit_publishes_to_its_own_immutable_release() -> None:
     flow = nativewheels.vendor_workflow(_VENDORED, 'x')
     assert flow is not None
