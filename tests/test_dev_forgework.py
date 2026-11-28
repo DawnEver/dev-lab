@@ -184,6 +184,43 @@ def test_pr_create_and_view(server, forge, host, root, auth) -> None:
         assert (drafted['title'], 'draft' in drafted) == ('WIP: a fix', False), 'Gitea 1.27 has no draft field'
 
 
+@pytest.mark.parametrize(
+    ('forge', 'root'),
+    [(Forge('forge.example.org', 'o', 'r'), '/api/v1/repos/o/r'), (Forge('github.com', 'o', 'r'), '/repos/o/r')],
+)
+def test_pr_list_prints_open_pulls_filters_by_head_and_an_empty_listing_prints_nothing(
+    server, forge, root, tmp_path: Path, capsys
+) -> None:
+    """``forge pr list`` (#1076): every page read, ``--head`` keeps only that branch's pulls.
+
+    PLANTED CONTROLS: the other head's pull is absent under ``--head``; a full first page forces page 2;
+    an empty listing prints nothing and still exits 0.
+    """
+    remote = 'https://github.com/o/r.git' if forge.host == 'github.com' else 'https://forge.example.org/o/r.git'
+    repo, env = _repo(tmp_path, remote), credential_env(tmp_path)
+    size = 'per_page' if forge.host == 'github.com' else 'limit'
+    full = [{**_PR, 'number': 100 + n, 'head': {'ref': f'lane/{n}'}} for n in range(50)]
+    _answer('GET', f'{root}/pulls?state=open&{size}=50&page=1', (200, full))
+    _answer('GET', f'{root}/pulls?state=open&{size}=50&page=2', (200, [_PR]))
+
+    def listed(*argv: str) -> list[dict]:
+        assert issue_and_pr(['pr', 'list', *argv, '--json'], cwd=repo, env=env, transport=_Loopback(server)) == 0
+        return json.loads(capsys.readouterr().out)
+
+    every = listed('--limit', '100')
+    assert [one['number'] for one in every] == [9, *range(100, 150)], 'both pages, lowest number first'
+    assert [(one['number'], one['head'], one['base']) for one in listed('--head', 'feature')] == [
+        (9, 'feature', 'main')
+    ]
+    assert issue_and_pr(['pr', 'list', '--head', 'feature'], cwd=repo, env=env, transport=_Loopback(server)) == 0
+    assert capsys.readouterr().out.strip() == '#9 [open] feature -> main  a fix  https://x/o/r/pulls/9'
+    assert issue_and_pr(['pr', 'list', '--head', 'nobody'], cwd=repo, env=env, transport=_Loopback(server)) == 0
+    assert capsys.readouterr().out == ''
+    _answer('GET', f'{root}/pulls?state=closed&{size}=50&page=1', (200, []))
+    assert issue_and_pr(['pr', 'list', '--state', 'closed'], cwd=repo, env=env, transport=_Loopback(server)) == 0
+    assert capsys.readouterr().out == ''
+
+
 def test_github_requests_carry_the_headers_its_api_demands(server) -> None:
     _answer('GET', '/repos/o/r/issues/7', (200, _ISSUE))
     _client(Forge('github.com', 'o', 'r'), _Loopback(server)).issue_view(7)

@@ -88,6 +88,7 @@ from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed, within
 from dev_lab.dev.forgefeedstatus import unheard_notice
 from dev_lab.dev.forgelabels import LabelMissing, relabel
+from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest
 from dev_lab.dev.labsession import ENV
 from dev_lab.dev.native_session import session_of
@@ -173,8 +174,8 @@ def _threaded(args: Sequence[str]) -> bool:
 
 def _dispatch(
     client: Client, args: argparse.Namespace, root: Path
-) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
-    verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
+) -> Issue | PullRequest | Comment | tuple[Issue | PullRequest, ...]:
+    verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue | PullRequest, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit, labels=args.label),
         ('issue', 'view'): lambda: client.issue_view(args.number),
         ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind, args.label),
@@ -184,6 +185,7 @@ def _dispatch(
         ('pr', 'create'): lambda: client.pr_create(
             args.title, _declared_body(args), head=args.head, base=args.base, draft=not args.ready
         ),
+        ('pr', 'list'): lambda: _pulls(client, args),
         ('pr', 'view'): lambda: client.pr_view(args.number),
         ('pr', 'close'): lambda: forgepr.pr_close(client, args.number, args.reason),
         ('pr', 'retarget'): lambda: forgepr.pr_retarget(
@@ -194,6 +196,12 @@ def _dispatch(
         ),
     }
     return verbs[args.noun, args.verb]()
+
+
+def _pulls(client: Client, args: argparse.Namespace) -> tuple[PullRequest, ...]:
+    """The first *args.limit* pulls in *args.state* (every page read), only those from *args.head* when it is named."""
+    listed = pr_list(client, state=args.state)
+    return tuple(pull for pull in listed if args.head in {None, pull.head})[: args.limit]
 
 
 def _relabeled(client: Client, args: argparse.Namespace) -> Issue:
@@ -209,7 +217,9 @@ def _labels(args: argparse.Namespace) -> Sequence[str]:
     return args.label if args.verb in {'list', 'create'} else ()
 
 
-def _show(args: argparse.Namespace, result: Issue | PullRequest | Comment | tuple[Issue, ...], root: Path) -> None:
+def _show(
+    args: argparse.Namespace, result: Issue | PullRequest | Comment | tuple[Issue | PullRequest, ...], root: Path
+) -> None:
     """Print *result* (JSON with ``--json``); an issue verb that subscribed a task nobody hears says so."""
     items = result if isinstance(result, tuple) else (result,)
     if args.json:
@@ -238,6 +248,8 @@ def _declared_body(args: argparse.Namespace) -> str:
 def _render(item: Issue | PullRequest | Comment) -> str:
     if isinstance(item, Comment):
         return item.url
+    if isinstance(item, PullRequest):
+        return f'#{item.number} [{item.state}] {item.head} -> {item.base}  {item.title}  {item.url}'
     return f'#{item.number} [{item.state}] {item.title}  {item.url}'
 
 
@@ -248,7 +260,7 @@ READ_BUDGET_S: Final = 45.0
 
 
 def _budgeted(noun: str, verb: str) -> bool:
-    return noun == 'issue' or (noun, verb) == ('pr', 'view')
+    return noun == 'issue' or (noun, verb) in {('pr', 'view'), ('pr', 'list')}
 
 
 def issue_and_pr(
@@ -261,7 +273,7 @@ def issue_and_pr(
 ) -> int:
     """``python -m dev_lab.dev.forge issue|pr <verb> ...`` (:mod:`forgework`); exit 1 with netverb's remedy.
 
-    An issue verb and ``pr view`` end within *budget_s* (:data:`READ_BUDGET_S`), naming the cause.
+    An issue verb, ``pr view`` and ``pr list`` end within *budget_s* (:data:`READ_BUDGET_S`), naming the cause.
     """
     parser = _forgecli_args.parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
