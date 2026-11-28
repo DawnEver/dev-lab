@@ -42,7 +42,7 @@ from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.nightlycron import NIGHTLY_CRON
-from dev_lab.dev.pythontoolchain import SYNC_FLAGS
+from dev_lab.dev.pythontoolchain import MACOS_PROVISION, RUNNER_SYNC_FLAGS
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 
 #: A repo declares no placement: the roles are the kinds the test carries (_roles_fixtures; EVERY_CI by default).
@@ -311,7 +311,7 @@ def test_a_dispatch_naming_a_pr_is_that_pr_s_run(tmp_path: Path) -> None:
         assert _evaluated(own, 'workflow_dispatch', smoke=True, pr='') is False, f'PLANTED CONTROL: {name}'
         assert _evaluated(own, 'push') is False, f'PLANTED CONTROL: {name}'
     told = {
-        name: [step['run'] for step in jobs[name]['steps'] if '--pr' in step.get('run', '')]
+        name: [step['run'] for step in jobs[name]['steps'] if '--pr ' in step.get('run', '')]
         for name in ('security', 'head-gates', 'merge-ready')
     }
     assert {name: ['--pr "$PR_NUMBER"' in run for run in runs] for name, runs in told.items()} == {
@@ -1592,16 +1592,17 @@ def test_both_merge_jobs_sync_through_the_repo_s_setup(tmp_path: Path) -> None:
     """
     base = _base_ci(tmp_path)['jobs']
     for job in ('merge-ready', 'merge-rejudge'):
-        assert any(step.get('run') == f'uv sync --frozen {SYNC_FLAGS}' for step in base[job]['steps']), job
+        assert any(step.get('run') == f'uv sync --frozen {RUNNER_SYNC_FLAGS}' for step in base[job]['steps']), job
     (tmp_path / 'pyproject.toml').write_text(
         ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci._steps]\n'
-        'setup = [{ name = "Sync the environment", run = "uv sync --frozen --extra dev" }]\n',
+        'setup = [{ name = "Brew", run = "@macos-python@" },'
+        ' { name = "Sync the environment", run = "uv sync --frozen @python@ --extra dev" }]\n',
         encoding='utf-8',
     )
     narrowed = workflows(tmp_path)['ci.yml']['jobs']
     for job in ('merge-ready', 'merge-rejudge'):
         runs = [str(step.get('run', '')) for step in narrowed[job]['steps']]
-        assert 'uv sync --frozen --extra dev' in runs, job
+        assert f'uv sync --frozen {RUNNER_SYNC_FLAGS} --extra dev' in runs, job
         assert not any('--all-extras' in run for run in runs), job
 
 
@@ -1704,12 +1705,12 @@ def test_every_job_syncs_only_the_declared_extras_and_a_part_adds_its_own_needs(
     (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _EXTRAS, encoding='utf-8')
     flow = workflows(tmp_path)['ci.yml']
     runs = _sync_runs(flow)
-    assert f'uv sync --frozen {SYNC_FLAGS} --extra dev' in runs
+    assert f'uv sync --frozen {RUNNER_SYNC_FLAGS} --extra dev' in runs
     assert not any('--all-extras' in run for run in runs)
     part = [step['run'] for step in flow['jobs']['part']['steps'] if step.get('name') == "Sync the part's extras"]
     assert part == [
         (
-            f'uv sync --frozen {SYNC_FLAGS} '
+            f'uv sync --frozen {RUNNER_SYNC_FLAGS} '
             '$(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")'
         )
     ]
@@ -1729,3 +1730,39 @@ def test_a_layer_syncing_every_extra_is_refused_by_name() -> None:
     with pytest.raises(ValueError, match='ALL-EXTRAS-REFUSED'):
         ciworkflows.refuse_everything(['uv sync --extra all'], 'x')
     ciworkflows.refuse_everything({'steps': [{'run': 'uv sync --frozen --extra dev'}]}, 'x')
+
+
+def test_every_syncing_job_provisions_the_macos_interpreter_before_it_syncs(tmp_path: Path) -> None:
+    """dev-lab #1105: a part on macOS runs on Homebrew's Python and its Tk, installed in the same job, before any sync.
+
+    The rendered sync names that interpreter on macOS and the uv-managed one elsewhere (:data:`RUNNER_SYNC_FLAGS`).
+    """
+    _hosted(tmp_path)
+    for name, flow in workflows(tmp_path).items():
+        for job_name, job in flow.get('jobs', {}).items():
+            runs = [step.get('run', '') for step in job.get('steps', [])]
+            syncs = [at for at, run in enumerate(runs) if 'uv sync' in run]
+            if syncs:
+                assert MACOS_PROVISION in runs[: syncs[0]], (name, job_name)
+                assert all(RUNNER_SYNC_FLAGS in runs[at] for at in syncs), (name, job_name)
+
+
+@pytest.mark.parametrize(
+    ('setup', 'said'),
+    [
+        ('[{ name = "Sync", run = "uv sync --frozen @python@" }]', 'before it syncs'),
+        (
+            '[{ name = "Brew", run = "@macos-python@" }, { name = "Sync", run = "uv sync --frozen --python 3.14" }]',
+            'syncs without',
+        ),
+    ],
+)
+def test_a_job_whose_macos_interpreter_is_not_the_provisioned_one_is_refused_at_render(
+    tmp_path: Path, setup: str, said: str
+) -> None:
+    """PLANTED CONTROL for the arm above (dev-lab #1105): no provisioning, or a typed interpreter, renders nothing."""
+    (tmp_path / 'pyproject.toml').write_text(
+        ACTIONS_REPO + f'[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci._steps]\nsetup = {setup}\n', encoding='utf-8'
+    )
+    with pytest.raises(ValueError, match=f'MACOS-INTERPRETER.*{said}'):
+        workflows(tmp_path)

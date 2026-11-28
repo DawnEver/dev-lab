@@ -170,6 +170,24 @@ def _git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
+def _refuse_work_tree_hooks(repo: Path) -> None:
+    """Refuse a ``core.hooksPath`` outside the git dir: shims there are untracked files in the work tree.
+
+    The family installs into the git dir (or a linked worktree's own, :func:`_scope_linked_worktree`); a
+    path into the tree is a retired pre-family setting (``.githooks``) left in ``.git/config``.
+    """
+    common = Path(_git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')).resolve()
+    directory = hooks_dir(repo).resolve()
+    if directory == common or common in directory.parents:
+        return
+    msg = (
+        f'core.hooksPath points the hooks at {directory}, outside the git dir {common}: the shims would be '
+        f'untracked files in the work tree. It is a retired setting; run `git -C {repo} config --unset '
+        f'core.hooksPath`, then re-run `{INSTALL_COMMAND}`.'
+    )
+    raise HookInstallError(msg)
+
+
 def _scope_linked_worktree(repo: Path) -> None:
     """In a linked worktree, point a worktree-scoped ``core.hooksPath`` at its own git dir's ``hooks``."""
     git_dir = Path(_git(repo, 'rev-parse', '--absolute-git-dir'))
@@ -253,6 +271,7 @@ def install(repo: Path) -> InstallReport:
 
     """
     _scope_linked_worktree(repo)
+    _refuse_work_tree_hooks(repo)
     _publish_under_own_name(repo)
     before = hook_installation(repo)
     for leftover in _predecessor_leftovers(before.hooks_dir, {stage.stage for stage in before.stages}):

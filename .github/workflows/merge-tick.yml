@@ -48,8 +48,13 @@
           }
         },
         {
+          "name": "Install the macOS interpreter and its Tk",
+          "if": "${{ runner.os == 'macOS' }}",
+          "run": "HOMEBREW_NO_AUTO_UPDATE=1 brew install python@3.14 python-tk@3.14"
+        },
+        {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --python 3.14 --managed-python --extra test --extra ops"
+          "run": "uv sync --frozen ${{ runner.os == 'macOS' && '--python \"$(brew --prefix python@3.14)/bin/python3.14\" --no-managed-python' || '--python 3.14 --managed-python' }} --extra test --extra ops"
         },
         {
           "id": "ready",

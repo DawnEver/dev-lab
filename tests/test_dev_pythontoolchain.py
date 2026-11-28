@@ -17,8 +17,12 @@ from dev_lab.dev.ciworkflowshape import BASE_PATH
 from dev_lab.dev.famtests.pythontoolchain import ForeignPython, assert_the_family_python
 from dev_lab.dev.hpcaccount.spec import DEFAULT_PYTHON
 from dev_lab.dev.pythontoolchain import (
+    MACOS_FORMULAE,
+    MACOS_PROVISION,
+    MACOS_SYNC_FLAGS,
     REQUIRES_PYTHON,
     RUFF_TARGET,
+    RUNNER_SYNC_FLAGS,
     SYNC_FLAGS,
     VERSION,
     drift,
@@ -57,6 +61,16 @@ def test_every_derived_fact_reads_the_one_version() -> None:
     assert f'py{major}{minor}' == RUFF_TARGET
     assert f'--python {VERSION} --managed-python' == SYNC_FLAGS
     assert DEFAULT_PYTHON == VERSION, 'a cluster venv on another minor would install no family repo'
+    assert (f'python@{VERSION}', f'python-tk@{VERSION}') == MACOS_FORMULAE
+    assert all(formula in MACOS_PROVISION for formula in MACOS_FORMULAE)
+    assert f'python@{VERSION})/bin/python{VERSION}' in MACOS_SYNC_FLAGS
+    assert '--no-managed-python' in MACOS_SYNC_FLAGS
+
+
+def test_a_runner_syncs_the_provisioned_interpreter_on_macos_and_the_managed_one_elsewhere() -> None:
+    """dev-lab #1105: ONE interpreter per OS -- the one its setup installed -- chosen by the runner at run time."""
+    assert f"${{{{ runner.os == 'macOS' && '{MACOS_SYNC_FLAGS}' || '{SYNC_FLAGS}' }}}}" == RUNNER_SYNC_FLAGS
+    assert "'" not in MACOS_SYNC_FLAGS + SYNC_FLAGS, 'a quote would end the expression literal'
 
 
 def test_the_ci_base_types_no_python_version() -> None:
@@ -104,10 +118,10 @@ def test_a_repo_with_no_ruff_table_gets_one(tmp_path: Path) -> None:
 def test_a_rendered_sync_without_the_family_interpreter_is_named(tmp_path: Path) -> None:
     root = _repo(tmp_path / 'consumer')
     write(root)
-    workflow = _workflow(root, 'uv sync --frozen --extra test')
+    _workflow(root, 'uv sync --frozen --extra test')
     with pytest.raises(ForeignPython, match=r'\.github/workflows/ci\.yml: `uv sync --frozen --extra test`'):
         assert_the_family_python(root=root)
-    workflow.write_text(workflow.read_text(encoding='utf-8').replace('--frozen', f'--frozen {SYNC_FLAGS}'))
+    _workflow(root, f'uv sync --frozen {RUNNER_SYNC_FLAGS} --extra test')
     assert_the_family_python(root=root)
 
 
@@ -124,7 +138,8 @@ def test_a_hand_written_workflow_is_not_this_bodys_to_parse(tmp_path: Path) -> N
 @pytest.mark.parametrize(
     ('workflow', 'unpinned'),
     [
-        ({'run': f'uv sync --frozen {SYNC_FLAGS}'}, []),
+        ({'run': f'uv sync --frozen {RUNNER_SYNC_FLAGS}'}, []),
+        ({'run': f'uv sync --frozen {SYNC_FLAGS}'}, [f'uv sync --frozen {SYNC_FLAGS}']),
         ({'steps': [{'run': 'echo hi\nuv sync --frozen'}]}, ['uv sync --frozen']),
         ([{'run': 'uv run --no-sync python -m x'}], []),
     ],
