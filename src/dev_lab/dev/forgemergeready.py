@@ -27,7 +27,7 @@ from dev_lab.dev.forgehold import HELD, is_held
 from dev_lab.dev.forgemerge import EXTERNAL, Decision, external, judged
 from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
-from dev_lab.dev.forgestatus import status_post
+from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.lanepolicy import (
     FAMILY_INTEGRATION,
     UNDECLARED_INTEGRATION,
@@ -77,10 +77,10 @@ def ready(root: Path, client: Client, number: int) -> str:
         return waiting(client, pull) or f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: draft'
     elif is_held(pull.labels):  # HOLD: pending, naming the release door -- it waits on its holder, not on a check
         said = HELD.format(n=number)
-        status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state='pending', description=said)
+        _decide(client, pull.head_sha, 'pending', said)
         return f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: {said}'
     elif external(client, pull):  # pending: it waits on a maintainer, never on a check
-        status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state='pending', description=EXTERNAL)
+        _decide(client, pull.head_sha, 'pending', EXTERNAL)
         return f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: {EXTERNAL}'
     else:
         decision = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha)
@@ -94,7 +94,7 @@ def ready(root: Path, client: Client, number: int) -> str:
         why = f'{READY}{suffix}, WARNED -- {decision.unreviewed}'
     elif decision.review is not None and not missing:
         why = f'{READY}{suffix}, WARNED -- its advisory review: {decision.review}'
-    status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)
+    _decide(client, pull.head_sha, state, why)
     turn = review_turn(client, number, pull.head_sha, decision)  # the advisory review is asked for here
     said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}{turn}'
     if missing or roles_at(root).kind(MERGE) != CI:
@@ -103,6 +103,17 @@ def ready(root: Path, client: Client, number: int) -> str:
     if unpassed := decision.unreviewed or decision.review:
         client.issue_comment(number, f'Merged WITHOUT a passing review (advisory) -- {unpassed}')
     return said
+
+
+def _decide(client: Client, head: str, state: str, why: str) -> None:
+    """Post *head* its decision -- ONLY when it differs from the one standing there (dev-lab #1066).
+
+    The decision is RE-TAKEN on every pass (a part's status event, the scheduled tick, the serve), so a head judged
+    waiting before its last part settled is judged again once it has; an unchanged decision posts nothing new.
+    """
+    standing = next((one for one in status_list(client, head) if one.context == MERGE_READY_CONTEXT), None)
+    if standing is None or (standing.state, standing.description) != (state, why):
+        status_post(client, head, context=MERGE_READY_CONTEXT, state=state, description=why)
 
 
 def _merged(root: Path, client: Client, pull: PullRequest, message: str, said: str) -> str:
