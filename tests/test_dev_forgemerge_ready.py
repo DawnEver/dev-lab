@@ -500,3 +500,42 @@ def test_a_ready_status_without_a_message_row_says_messages_are_not_declared(tmp
 def _bound(monkeypatch: pytest.MonkeyPatch) -> None:
     """A Gitea repo merged by its HPC executor (planted); the CI merge tests carry EVERY_CI."""
     carry(monkeypatch, HPC_REVIEWED)
+
+
+def _decisions(forge: StateForge, head: str) -> list[str]:
+    return [one['state'] for one in forge.statuses.get(head, []) if one['context'] == MERGE_READY_CONTEXT]
+
+
+def test_a_head_judged_waiting_before_its_last_part_settles_is_re_judged_ready_and_merged_on_the_next_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """dev-lab #1066: a part posted after the first judgment is read by the next decision pass, which merges."""
+    carry(monkeypatch, EVERY_CI)
+    work, head = _work(tmp_path)
+    (work / 'pyproject.toml').write_text(_MANIFEST + _INTEGRATOR, encoding='utf-8')
+    forge = StateForge(_HUB)
+    number = forge.add_pull('pr/x', 'integrate/main', sha=head)
+    for context, description in _GREEN[1:]:  # every part but tests/base
+        forge.login = 'github-actions[bot]' if context == 'tests/review' else 'a'
+        status_post(forge, head, context=context, state='success', description=description)
+    forge.login = 'github-actions[bot]'
+    status_post(forge, head, context='tests/base', state='pending', description='running')
+    assert forgemergeready.main(['ready'], cwd=work, client=forge) == 0
+    assert _merge_ready(forge, head)[0] == 'pending'
+    assert forge.merges == []
+    status_post(forge, head, context='tests/base', state='success', description=_GREEN[0][1])
+    assert forgemergeready.main(['ready'], cwd=work, client=forge) == 0
+    assert _merge_ready(forge, head)[0] == 'success'
+    assert [merged for merged, _ in forge.merges] == [number]
+
+
+def test_a_decision_that_did_not_change_posts_nothing_new(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the test above: an unchanged pass is silent, a changed one posts once."""
+    work, forge, number, head = _pr(tmp_path, green=False)
+    ready(work, forge, number)
+    ready(work, forge, number)
+    assert _decisions(forge, head) == ['pending']
+    status_post(forge, head, context='tests/security', state='failure', description='a finding')
+    ready(work, forge, number)
+    ready(work, forge, number)
+    assert _decisions(forge, head) == ['pending', 'failure']

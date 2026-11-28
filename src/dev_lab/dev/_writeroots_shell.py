@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Final
 
-__all__ = ['shell_targets']
+__all__ = ['shell_assignments', 'shell_targets']
 
 _TOKEN: Final = re.compile(r"""\d?>>?|&>>?|\|\||&&|[|;&\n]|<<?|(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s|;&<>"'])+""")
 _HEREDOC: Final = re.compile(r"""<<-?\s*(["']?)([A-Za-z_][A-Za-z0-9_]*)\1""")
@@ -132,3 +132,17 @@ def shell_targets(command: str) -> list[tuple[str, str]]:
         elif token not in ('<', '<<'):
             segment.append(token)
     return [(target, where) for target, where in found if target and target.casefold() not in _DISCARDS]
+
+
+#: ``NAME=value`` opening a segment: an assignment a later target of the same line may name (#1070).
+_ASSIGNMENT: Final = re.compile(
+    r"""(?:^|[;&|\n]\s*)([A-Za-z_]\w*)=("[^"$`]*"|'[^']*'|[^\s;&|<>"'$`()]*)(?=[\s;&|]|$)"""
+)
+
+
+def shell_assignments(command: str) -> dict[str, str]:
+    """Each variable *command* assigns a LITERAL value, last one winning; a computed one (``$(...)``) is absent.
+
+    ``f=out.txt; echo x > "$f"`` writes ``out.txt``: the variable is held by the line itself, not the session.
+    """
+    return {name: _unquote(value) for name, value in _ASSIGNMENT.findall(_without_heredoc_bodies(command))}

@@ -98,6 +98,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
     'partrows',
     'slurmkilled',
+    'slurmstall',  # the stall watch's read, split from forgeslurm at the module-size band (2026-11-28)
     'artifacts',
     'artifactstores',
     # ORIGINAL: the artifact member index, split out of `artifacts` inside the kit; no consumer held them.
@@ -195,6 +196,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'taskjournal',  # a task's record read: the journal grammar and the union-duplicate reader, new here
     'taskauthority',  # the user's grant to open/close a task, from their own prompt only, new here
     'taskmigrate',  # the one-time move of a checkout's retired task store into the ledger, new here
+    'taskpublish',  # ORIGINAL: 2026-11-27, the ledger pushes its own write (v1 FAM-15), new here
     # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
     'mainsync',
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
@@ -202,6 +204,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: no consumer ever removed a finished worktree; the lease decision is new here.
     'reclaim',
     'reclaimrun',
+    'livesession',  # a tree is live while its HEAD moves, never by an index a read refreshed (split from reclaim)
     'venvprune',  # ORIGINAL: no door swept superseded .venvs/ environments across checkouts
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
     # consumer held a copy, which is why each published one had no guard at all.
@@ -440,4 +443,5 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'complexity',  # ORIGINAL: 2026-11-25, the per-owner complexity report (fan-out, call path, surface), not a gate
     'branchcensus',  # the branch census and its two ref readers, split from branchset (2026-11-26)
     'repodeltas',  # loading a repo's DELTAS module, split from famfiles (2026-11-26)
+    'standby',  # ORIGINAL: 2026-11-28, v1 ruling D218, a posted standby is a resting state
 )

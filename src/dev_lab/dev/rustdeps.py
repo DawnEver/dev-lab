@@ -141,7 +141,7 @@ def _features(key: str, spec: object, workspace: Mapping[str, Any]) -> set[str]:
 
 
 def _allowed(grant: Grant, crate: str) -> bool:
-    return ALL in grant.holders or crate in grant.holders
+    return ALL in grant.holders or _norm(crate) in {_norm(h) for h in grant.holders}
 
 
 def _only(grant: Grant) -> str:
@@ -149,15 +149,16 @@ def _only(grant: Grant) -> str:
 
 
 def _external(crate: Crate, kind: str, real: str, have: set[str], decl: Declared) -> str | None:
-    grant = decl.external.get(real)
+    row = next((k for k in decl.external if _norm(k) == real), None)  # Cargo: '-' and '_' name one package
     head = f'{crate.manifest_path}: crate {crate.name} depends on {real} ({kind})'
-    if grant is None:
+    if row is None:
         return f'{head}, which no [rust.external] row names'
+    grant = decl.external[row]
     if kind not in _GRANTS[grant.kind]:
-        return f'{head}, but [rust.external] {real} is kind {grant.kind}'
-    tests_only = kind == 'dev' and (ALL in grant.dev_holders or crate.name in grant.dev_holders)
+        return f'{head}, but [rust.external] {row} is kind {grant.kind}'
+    tests_only = kind == 'dev' and (ALL in grant.dev_holders or crate.name in {_norm(h) for h in grant.dev_holders})
     if not tests_only and not _allowed(grant, crate.name):
-        return f'{head}, but [rust.external] {real} allows it only in {_only(grant)}'
+        return f'{head}, but [rust.external] {row} allows it only in {_only(grant)}'
     if missing := sorted(set(grant.features) - have):
         return f'{head} without the required feature(s) {missing} ({grant.reason})'
     return None
@@ -213,7 +214,7 @@ def _stale_rows(decl: Declared, found: Mapping[str, Crate], layout: Layout | Non
     return [
         f'dependencies.toml [rust.{table}] {key} names crate {name}, {nowhere}'
         for table, key, name in named
-        if name != ALL and name not in found and name not in planned
+        if name != ALL and _norm(name) not in found and name not in planned
     ]
 
 

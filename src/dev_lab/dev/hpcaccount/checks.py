@@ -53,6 +53,7 @@ __all__ = [
     'INSTALLERS',
     'LOGIN_MARK',
     'MERGE_TREE_GIT',
+    'PINNED_RUST',
     'association_refusal',
     'follow_uv',
     'login_files',
@@ -77,6 +78,9 @@ INSTALLERS: Final = {
     'cmake': 'uv tool install cmake',
     'rclone': f'{shlex.quote(sys.executable)} -m dev_lab.dev.toolrelease install rclone',
 }
+
+#: Installs the toolchain the checkout's ``rust-toolchain.toml`` pins (rustup reads it from the working directory).
+PINNED_RUST: Final = 'rustup toolchain install'
 
 #: The tools every account needs whatever its repos declare: ``uv`` runs every tick, ``rclone`` every store (D76).
 ALWAYS: Final = ('uv', 'rclone')

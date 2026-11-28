@@ -417,6 +417,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
 * :mod:`dev_lab.dev.statuscontinuation` -- a status description past its forge's limit continues, never cut.
 * :mod:`dev_lab.dev.forgewatch` -- ``forge watch <sha>...``: read-only, verdicts until one sha settles or a deadline.
+* :mod:`dev_lab.dev.forgeci` -- ``forge ci logs|artifact <ref>``: read-only, a CI run's job logs and artifacts.
 * :mod:`dev_lab.dev.forgestuck` -- STUCK-RUN-CANCEL: ``forge cancel-stuck <sha>`` scancels only its stuck forge tasks.
 * :mod:`dev_lab.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`dev_lab.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
@@ -464,6 +465,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
 * :mod:`dev_lab.dev.forgesubmit` -- a cluster submit (build, collection) in its own process and lock, off the tick.
 * :mod:`dev_lab.dev.slurmkilled` -- the jobs ``sacct`` says Slurm killed for memory or time, and what each used.
+* :mod:`dev_lab.dev.slurmstall` -- which RUNNING forge tasks stopped progressing past their walls (the stall watch).
 * :mod:`dev_lab.dev.hpcusage` -- an account's last day from its one ``sacct`` read: run budget and card table;
   ``report --json``, every declared grant's day, quota and budget for a reader outside dev-lab.
 * :mod:`dev_lab.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
@@ -542,7 +544,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.memory` -- memory written (add, amend, redact, rename) and searched, at each repo root, no index.
 * :mod:`dev_lab.dev.remretired` -- REM-RETIRED: rem's leftovers refused; the repo migration, the machine uninstall.
 * :mod:`dev_lab.dev.ledgerguard` -- LEDGER-WRITES-THROUGH-ITS-DOOR: a task file is written by the ledger CLI alone.
-* :mod:`dev_lab.dev.nativewheels` -- ``[tool.dev_lab.native] wheels``: the opt-in one-wheel-per-OS workflow (#981).
+* :mod:`dev_lab.dev.nativewheeljobs` -- the jobs of the native ``wheels.yml``: build, test, sdist test, publish.
+* :mod:`dev_lab.dev.nativewheels` -- ``[tool.dev_lab.native] wheels``: the opt-in native wheels and their options.
 * :mod:`dev_lab.dev.rendergoldens` -- every family render of the declaration fixtures, pinned byte for byte as goldens.
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review again|takeover|cap|run``: the review's doors (takeover is advice).
 * :mod:`dev_lab.dev.forgereview_job` -- the forge's review job: ``review run --pr N`` on its one PR, and its exit.
@@ -555,6 +558,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.metrics_compute` -- the plan's figures from the recorded lines, forge pulls and git landings.
 * :mod:`dev_lab.dev.metrics_report` -- the family's metrics over one window, and the metrics CLI.
 * :mod:`dev_lab.dev.walls` -- the wall ledger: every refusal is a session's wall; one naming no door holds the stop.
+* :mod:`dev_lab.dev.standby` -- the family standby marker; a fresh posted standby is a resting state (D218).
 * :mod:`dev_lab.dev.blobfetch` -- fetch what a partial clone lacks in one request per chunk, before git reads it.
 * :mod:`dev_lab.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.
 * :mod:`dev_lab.dev.rangebase` -- the family's one answer to where *head*'s range starts, for every range-reading check.
@@ -572,6 +576,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.taskjournal` -- a task's record read: TASK.md fields and the journal grammar, union repeats named.
 * :mod:`dev_lab.dev.taskauthority` -- the user's grant to open or close a task, from their own prompt, spent once.
 * :mod:`dev_lab.dev.taskmigrate` -- the one-time move of a retired task store into the ledger; open tasks get issues.
+* :mod:`dev_lab.dev.taskpublish` -- the task ledger publishes its own write: each ledger commit pushed to its origin.
 * :mod:`dev_lab.dev.taskgate` -- an opt-in repo refuses an agent push from a branch naming no open task.
 * :mod:`dev_lab.dev.tickholder` -- the holder record beside a cluster tick's lock: its pid, wall and phase.
 * :mod:`dev_lab.dev.tmpsweep` -- the census, Stop report and age sweep over those write-prone roots.
@@ -693,6 +698,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.salvage` -- ``worktrees --salvage`` and ``--reap-orphans``: a tree's unreachable work is
   recorded on a salvage commit before anything is reclaimed.
 * :mod:`dev_lab.dev.disposable` -- the DISPOSABLE declaration of a throwaway worktree, in its git admin directory.
+* :mod:`dev_lab.dev.livesession` -- LIVE SESSION: a tree is live while its HEAD moves; a read never makes it so.
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
 * :mod:`dev_lab.dev.boxmigrate` -- LEDGER-MIGRATES-ON-INSTALL: each lab-commons install door migrates the box ledger.
 * :mod:`dev_lab.dev.backgroundrun` -- the shared detached-run and per-repo lock helpers every background hook uses.
@@ -734,6 +740,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgethreads` -- the threads a task hears: the issues-since read, its cursor, own comments.
 * :mod:`dev_lab.dev.accounthost` -- an HPC account's host file: its own tables; its role is its family grant's.
 * :mod:`dev_lab.dev.vendordetect` -- each declared vendor's install home on this machine, from the family's patterns.
+* :mod:`dev_lab.dev.vendorhome` -- a vendor's declared install home: the placeholder, its fill remedy and its read.
 * :mod:`dev_lab.dev.tomlleaves` -- a parsed TOML table's leaf keys by path, and their ``[table].key`` spelling.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only;
   drift named key by key with its owning layer; ``local set|unset``, the one door into the local layer.
@@ -802,7 +809,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   caught. NOT RE-EXPORTED -- ``read`` and ``write`` say nothing once flattened.
 * :mod:`dev_lab.dev.baselines` -- baselines live in the run store; the repo keeps ``tests/baselines.lock``; a
   rewrite quotes old and new numbers; tracked data under ``tests/`` is refused (``get|put|verify``).
-* :mod:`dev_lab.dev.cargostep` -- each cargo workspace's ``cargo fmt --check``, ``clippy -D warnings`` and ``test``:
+* :mod:`dev_lab.dev.cargostep` -- each cargo workspace's ``fmt --check``, ``clippy``/``doc -D warnings``, ``test``:
   each its own verify step and result, produced as ``tests/cargo`` by a hosted job -- never wrapped in a pytest test.
 * :mod:`dev_lab.dev.testcost` -- cost is DERIVED: the ledger against the host's ``[test_budget]`` runs what
   fits here (each with a deadline) and hands the rest; a hand-kept ``slow``/``heavy`` marker is refused.

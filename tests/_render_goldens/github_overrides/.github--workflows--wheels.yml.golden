@@ -22,18 +22,32 @@
         "matrix": {
           "include": [
             {
-              "os": "ubuntu-latest"
+              "os": "ubuntu-latest",
+              "python": "3.14",
+              "artifact": "wheels-ubuntu-latest",
+              "sdist": true
             },
             {
-              "os": "windows-latest"
+              "os": "windows-latest",
+              "python": "3.14",
+              "artifact": "wheels-windows-latest",
+              "sdist": false
             },
             {
-              "os": "macos-latest"
+              "os": "macos-latest",
+              "python": "3.14",
+              "artifact": "wheels-macos-latest",
+              "sdist": false
             }
           ]
         }
       },
       "runs-on": "${{ matrix.os }}",
+      "permissions": {
+        "contents": "read",
+        "id-token": "write",
+        "attestations": "write"
+      },
       "steps": [
         {
           "uses": "actions/checkout@v4"
@@ -41,7 +55,7 @@
         {
           "uses": "actions/setup-python@v5",
           "with": {
-            "python-version": "3.14"
+            "python-version": "${{ matrix.python }}"
           }
         },
         {
@@ -53,7 +67,7 @@
           }
         },
         {
-          "if": "runner.os == 'Linux'",
+          "if": "${{ matrix.sdist }}",
           "uses": "PyO3/maturin-action@v1",
           "with": {
             "command": "sdist",
@@ -63,7 +77,7 @@
         {
           "name": "Refuse a wheel that is not abi3",
           "shell": "bash",
-          "run": "for wheel in dist/*.whl; do case \"$wheel\" in *abi3*) ;; *) echo \"::error::$wheel is not abi3 -- one wheel per OS needs pyo3 abi3 at the requires-python floor ([tool.dev_lab.native], #981)\"; exit 1;; esac; done"
+          "run": "for wheel in dist/*.whl; do case \"$wheel\" in *abi3*) ;; *) echo \"::error::$wheel is not abi3 -- one wheel per OS needs pyo3 abi3 at the requires-python floor, or declare abi3 = false ([tool.dev_lab.native], #981)\"; exit 1;; esac; done"
         },
         {
           "name": "Smoke-import the wheel in a clean venv",
@@ -71,16 +85,60 @@
           "run": "python -m venv .smoke && py=.smoke/bin/python && { [ -x \"$py\" ] || py=.smoke/Scripts/python.exe; } && \"$py\" -m pip install dist/*.whl && \"$py\" -c \"import overrides\""
         },
         {
+          "name": "Attest the build provenance of what was built",
+          "uses": "actions/attest-build-provenance@v4",
+          "with": {
+            "subject-path": "dist/*"
+          }
+        },
+        {
           "uses": "actions/upload-artifact@v4",
           "with": {
-            "name": "wheels-${{ matrix.os }}",
+            "name": "${{ matrix.artifact }}",
             "path": "dist/*"
           }
         }
       ]
     },
-    "publish": {
+    "test-sdist": {
       "needs": "build",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.14"
+          }
+        },
+        {
+          "name": "Install the family Rust toolchain 1.100.0",
+          "shell": "bash",
+          "run": "rustup toolchain install 1.100.0 --profile minimal\nrustup default 1.100.0"
+        },
+        {
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "name": "wheels-ubuntu-latest",
+            "path": "dist"
+          }
+        },
+        {
+          "name": "Install the sdist",
+          "shell": "bash",
+          "run": "python -m pip install dist/*.tar.gz"
+        },
+        {
+          "name": "Import the extension",
+          "shell": "bash",
+          "run": "python -c \"import overrides\""
+        }
+      ]
+    },
+    "publish": {
+      "needs": [
+        "build",
+        "test-sdist"
+      ],
       "runs-on": "ubuntu-latest",
       "permissions": {
         "contents": "write"

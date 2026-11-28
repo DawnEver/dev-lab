@@ -64,13 +64,22 @@ def test_a_failing_cargo_run_is_its_own_named_red_and_a_passing_one_its_own_gree
 
 def test_rustfmt_and_clippy_are_steps_of_their_own_beside_cargo_test() -> None:
     """dev-lab#1033: formatting and lint drift is a named red, never a later child's re-format."""
-    assert cargostep.COMMANDS == ('fmt', 'clippy', 'test')
+    assert cargostep.COMMANDS == ('fmt', 'clippy', 'doc', 'test')
     assert cargostep.argv('cargo', 'Cargo.toml', 'fmt') == [
         'cargo', 'fmt', '--manifest-path', 'Cargo.toml', '--all', '--', '--check'
     ]  # fmt: skip
     assert cargostep.argv('cargo', 'Cargo.toml', 'clippy') == [
         'cargo', 'clippy', '--manifest-path', 'Cargo.toml', '--workspace', '--all-targets', '--locked',
         '--', '-D', 'warnings',
+    ]  # fmt: skip
+
+
+def test_rustdoc_is_a_step_of_its_own_denying_warnings() -> None:
+    """dev-lab#1082: a broken intra-doc link or bare URL is a named red, ``cargo doc <manifest>``."""
+    assert cargostep.node('Cargo.toml', 'doc') == 'cargo doc Cargo.toml'
+    assert cargostep.argv('cargo', 'Cargo.toml', 'doc') == [
+        'cargo', 'doc', '--manifest-path', 'Cargo.toml', '--workspace', '--no-deps', '--locked',
+        '--config', 'build.rustdocflags=["-D", "warnings"]',
     ]  # fmt: skip
 
 
@@ -103,12 +112,20 @@ def test_the_cargo_part_posts_one_cell_per_workspace_as_tests_cargo(
     """PLANTED CONTROL, both sides: the part is red exactly when cargo is, and it is tests/cargo's own record."""
     posted: list[dict[str, Any]] = []
     _producing(monkeypatch, posted)
-    fmt_only = cargostep.produce(_repo(tmp_path), run=lambda argv: code if argv[1] == 'fmt' else 0, cargo='cargo')
+    doc_only = cargostep.produce(
+        _repo(tmp_path / 'doc'), run=lambda argv: code if argv[1] == 'doc' else 0, cargo='cargo'
+    )
+    assert doc_only == exit_code, 'a red rustdoc alone reds the part'
+    assert posted.pop()['cells']['cargo doc rust/Cargo.toml']['status'] == status
+    fmt_only = cargostep.produce(
+        _repo(tmp_path / 'fmt'), run=lambda argv: code if argv[1] == 'fmt' else 0, cargo='cargo'
+    )
     assert fmt_only == exit_code, 'an unformatted file alone reds the part'
     (record,) = posted
     assert record['platform'] == 'cargo'
     assert record['cells']['cargo fmt rust/Cargo.toml']['status'] == status
     assert record['cells']['cargo clippy rust/Cargo.toml']['status'] == 'ok'
+    assert record['cells']['cargo doc rust/Cargo.toml']['status'] == 'ok'
     assert record['cells']['cargo test rust/Cargo.toml']['status'] == 'ok'
 
 
@@ -121,6 +138,6 @@ def test_a_pytest_part_hands_each_workspace_to_the_cargo_part(tmp_path: Path) ->
     """How the forge DISCOVERS tests/cargo: the base part's record hands it the workspace cells."""
     tracked = _plant(tmp_path, {'rust/Cargo.toml': '[workspace]\n'})
     assert cargostep.handed(tmp_path, tracked) == {
-        f'cargo {command} rust/Cargo.toml': 'cargo' for command in ('fmt', 'clippy', 'test')
+        f'cargo {command} rust/Cargo.toml': 'cargo' for command in ('fmt', 'clippy', 'doc', 'test')
     }
     assert cargostep.handed(tmp_path, []) == {}

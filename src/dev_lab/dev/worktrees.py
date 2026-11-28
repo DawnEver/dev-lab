@@ -153,15 +153,19 @@ def _standing(main: Path, name: str) -> Path | tuple[bool, str]:
     return True, f'removed  {tree}  (its directory was already gone; its stale record was pruned)'
 
 
-def remove(root: Path, name: str, *, census: Census = processes, quiet_s: float = QUIET_S) -> tuple[bool, str]:
+def remove(
+    root: Path, name: str, *, approved: str = '', census: Census = processes, quiet_s: float = QUIET_S
+) -> tuple[bool, str]:
     """THE NAMED-TREE REMOVAL DOOR: remove linked worktree *name*, branch or detached; ``(removed, the line)``.
 
     Refused, nothing touched: no linked tree of that name (the main checkout never is one); a process holding it
-    (the REMOVAL lock, :func:`dev_lab.dev.liverun.removal_holders`); a detached commit no ref contains; unlanded
-    work in it -- a tracked change or an untracked, not-ignored file (:func:`dev_lab.dev.reclaim.unlanded_work`),
-    named with its doors (D31: merged or cleaned, never parked). Then the same
-    all-or-nothing delete ``branchset --discard`` uses (:func:`dev_lab.dev.reclaim.removed_approved`), whose own
-    refusals stand: a live session, outputs that cannot move home. A branch stays for ``branchset --apply``.
+    (the REMOVAL lock, :func:`dev_lab.dev.liverun.removal_holders`); a detached commit no ref contains (salvage
+    it first: ``--salvage NAME``); unlanded work in it -- a tracked change or an untracked, not-ignored file
+    (:func:`dev_lab.dev.reclaim.unlanded_work`), named with its doors (D31: merged or cleaned, never parked) --
+    unless *approved* carries the user's words (issue dev-lab#1123: a DETACHED tree has no branch for
+    ``branchset --discard``), echoed into the line as that door's record is. Then the same all-or-nothing delete
+    ``branchset --discard`` uses (:func:`dev_lab.dev.reclaim.removed_approved`), whose own refusals stand: a live
+    session, outputs that cannot move home. A branch stays for ``branchset --apply``.
     """
     main = root.resolve()
     tree = _standing(main, name)
@@ -170,14 +174,18 @@ def remove(root: Path, name: str, *, census: Census = processes, quiet_s: float 
     if live := removal_holders(tree, census=census):
         return False, f'refused  {name}: the tree is live; nothing was removed\n{describe(live)}'
     if head := unheld_head(tree):
-        return False, f'refused  {name}: detached {head} -- no ref contains it; branch it and land it through a PR'
+        return False, (
+            f'refused  {name}: detached {head} -- no ref contains it; salvage it first '
+            f'(python -m dev_lab.dev.worktrees --salvage {name}) or branch it and land it through a PR'
+        )
     recorded = salvaged(tree, name)
-    if not recorded and (work := unlanded_work(tree)):
-        return False, f'refused  {name}: {work}; nothing was removed'
+    words = approved.strip()
+    if not recorded and not words and (work := unlanded_work(tree)):
+        return False, f'refused  {name}: {work.replace("<name>", name)}; nothing was removed'
     if why := removed_approved(main, tree, quiet_s=0 if recorded else quiet_s):
-        wait = f'; re-run once it has been quiet {quiet_s / 60:g} min' if why.startswith('index changed') else ''
-        return False, f'refused  {name}: {why}{wait}'
-    return True, f'removed  {tree}  (it held nothing unlanded; a branch it held stays for branchset --apply)'
+        return False, f'refused  {name}: {why}'
+    kept = 'it held nothing unlanded; a branch it held stays for branchset --apply'
+    return True, f'discarded {tree} -- approved: "{words}"' if words else f'removed  {tree}  ({kept})'
 
 
 def hook_payload(stdin: TextIO, *, wait_s: float = HOOK_READ_S) -> dict[str, object] | None:
@@ -218,7 +226,7 @@ def _named(args: argparse.Namespace) -> int | None:
         return None
     done = [salvage(args.root, name) for name in args.salvage or ()]
     reaped = reap_orphans(args.root, salvage=args.salvage is not None) if args.reap_orphans else ()
-    done += [remove(args.root, name) for name in args.remove]
+    done += [remove(args.root, name, approved=args.approved) for name in args.remove]
     for line in (*(line for _, line in done), *reaped):
         emit(line)
     return 0 if all(ok for ok, _ in done) and not any(line.startswith('FAILED') for line in reaped) else 1
@@ -247,6 +255,12 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         default=[],
         metavar='NAME',
         help='remove worktree NAME (branch or detached) holding nothing unlanded, its outputs moved home first',
+    )
+    parser.add_argument(
+        '--approved',
+        default='',
+        metavar='WORDS',
+        help="with --remove: the user's words approving the discard of the unlanded work in it",
     )
     parser.add_argument(
         '--add',

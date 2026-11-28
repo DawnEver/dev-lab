@@ -50,12 +50,15 @@ from dev_lab.dev.failprint import Fingerprints, subjects_of
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgework import GITHUB, Client
 from dev_lab.dev.statuscontinuation import CONTINUATION, DESCRIPTION_LIMIT, continued, joined
+from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'CARRIED_FROM',
     'CITED_FROM',
+    'CI_LOGS_DOOR',
     'DESCRIPTION_LIMIT',
     'DOCS_ONLY',
     'SAME_TREE',
@@ -90,6 +93,9 @@ SAME_TREE: Final = 'same tree'
 #: A commit named in full, used as given; anything else is resolved through git.
 _FULL_SHA: Final = re.compile(r'[0-9a-f]{40}')
 
+#: The door a red part a CI job produced names for its job log (:mod:`dev_lab.dev.forgeci`, which reads this module).
+CI_LOGS_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.forge ci logs {{sha}} --failed'
+
 #: How many failing node ids ``status show`` prints before it says how many it left out.
 FAILING_LIMIT: Final = 20
 
@@ -121,13 +127,14 @@ class CommitStatus:
 def _status(raw: Mapping[str, Any]) -> CommitStatus:
     # Gitea answers the state as ``status``; GitHub as ``state``.
     state = raw.get('state') or raw.get('status') or ''
+    creator: Mapping[str, Any] = raw.get('creator') or {}
     return CommitStatus(
         raw.get('context') or '',
         state,
         raw.get('description') or '',
         raw.get('target_url') or '',
         int(raw.get('id') or 0),
-        (raw.get('creator') or {}).get('login') or '',
+        creator.get('login') or '',
         _forge_time(raw.get('created_at')),
     )
 
@@ -194,18 +201,26 @@ def status_list(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     Both forges' LIST endpoint, never GitHub's combined one: only the list records each status's ``creator``,
     which the review gate verifies (D11). The newest (highest ``id``) per context is kept.
     """
-    _commit(sha)
-    path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
-    ordered = sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id)
+    ordered = _every_status(client, sha)
     newest = {status.context: status for status in joined(ordered)}
     return tuple(sorted(newest.values(), key=lambda status: status.context))
 
 
 def status_history(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """EVERY status posted on *sha*, oldest first -- what a claim race is decided on (``id`` order)."""
+    return tuple(joined(_every_status(client, sha)))
+
+
+def _every_status(client: Client, sha: str) -> list[CommitStatus]:
+    """Every status posted on *sha*, oldest first, read across EVERY page of the forge's listing (#1102).
+
+    A forge answers one page, newest first: merge-ready reposts and their continuations bury a part's status
+    past the first. :func:`forgepulls.pages` reads on to the short page, and a forge ignoring paging ends at its
+    repeated page -- never a loop.
+    """
     _commit(sha)
     path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
-    return tuple(joined(sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id)))
+    return sorted((_status(item) for item in pages(client, path, {}, bound=None)), key=lambda status: status.id)
 
 
 def _git(root: Path, *args: str) -> str | None:
@@ -337,6 +352,8 @@ def status_show(client: Client, sha: str, *, part: str = '', against: str = '') 
         lines.append(f'{status.context}  {status.state}  {status.description}')
         if status.state != 'success':
             lines += list(_red_lines(status, client, known))
+        if status.state in {'failure', 'error'} and '/actions/' in urlsplit(status.url).path:
+            lines.append(f'  its job log (a CI job produced it): {CI_LOGS_DOOR.format(sha=sha)}')
     return tuple(lines if len(lines) > bool(against) else (f'{sha[:12]} carries no {part or "tests/<part>"} status',))
 
 
@@ -409,7 +426,7 @@ def main(
         return 2
     if args.json:
         data = [dataclasses.asdict(status) for status in found]
-        emit(json.dumps(data[0] if args.verb == 'post' else data, indent=2))
+        emit(json.dumps(data[0] if args.verb == 'post' else data, indent=2, default=datetime.isoformat))
     else:
         for status in found:
             emit(f'{status.context}  {status.state}  {status.description}')

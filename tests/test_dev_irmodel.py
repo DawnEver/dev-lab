@@ -30,7 +30,7 @@ def test_the_fixture_repo_loads_every_module_record_and_quantity(repo: Path) -> 
     batch = ir.modules['samples'].records['Batch']
     widgets = batch.field('widgets')
     assert (widgets.type.kind, widgets.type.item.kind, widgets.type.item.target) == ('list', 'record', 'widgets.Widget')
-    assert widgets.unique_by == 'id'
+    assert widgets.unique_by == ('id',)
     assert ir.modules['samples'].dims == {'n': (1, None)}
     assert ir.quantities['sound_pressure'].db == (2e-5, 20)
     assert ir.quantities['force'].dimension == (1, 1, -2, 0, 0, 0, 0)

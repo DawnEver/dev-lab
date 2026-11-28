@@ -21,6 +21,8 @@ from typing import Any, cast
 
 import pytest
 from lab_commons.compute import learned, measured
+from lab_commons.compute.admission import admit
+from lab_commons.compute.model import Job
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import records
 from lab_commons.hpc import run as hpc_run
@@ -58,6 +60,7 @@ from dev_lab.dev.forgecoalesce import DRAINING
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, CommitStatus
 from dev_lab.dev.forgework import GITEA
+from dev_lab.dev.hpcaccount import prep
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart, PartRefusal, part_context
 from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, owner_of, release_reason
@@ -1331,6 +1334,46 @@ def test_the_standing_carries_the_most_any_grant_gives(tmp_path: Path, monkeypat
     assert cluster.standing().ceiling_gb is None
 
 
+def test_a_cargo_part_is_admitted_once_the_prep_job_stamped_cargo_proven(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ada 2026-11-28: every v1 cargo part waited ``not admitted: lacking cargo`` -- the supply never named it.
+
+    The supply lists the needs the prep job proved on a compute node (``hpcaccount.prep.TOOLS``); the login node
+    probes none. PLANTED CONTROL: before the stamp, the same part waits ``lacking cargo``.
+    """
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: _snapshot_untagged())
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(user='alice', slurm_account='a')])
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _g: lambda *_a: '', lambda: None)
+    part = Job('repo', 'a' * 40, 'tests/cargo', frozenset({'cargo'}))
+    assert admit(part, {}, cluster.standing().supply).why == 'lacking cargo'
+    (tmp_path / '.venv').mkdir()
+    prep.stamp_tools(tmp_path, ['cargo'])
+    supply = cluster.standing().supply
+    assert admit(part, {}, supply).admitted
+    assert {'cargo', 'cpu'} <= supply.present, 'the measured names stay listed beside it'
+
+
+def test_a_proven_need_is_counted_as_well_as_listed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ada 2026-11-28, after #1106: v1's cargo part still waited ``lacking cargo (1 asked, 0 free)``.
+
+    A cluster part's demand asks ONE of each need (``Run.demand``), so listing a proven need present is not enough:
+    the supply must also COUNT it. A tool proven on the compute nodes is not a seat -- every task may run it.
+    PLANTED CONTROL: before the stamp, the same demand waits ``lacking cargo``.
+    """
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: _snapshot_untagged())
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(user='alice', slurm_account='a')])
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _g: lambda *_a: '', lambda: None)
+    needs = frozenset({'cargo'})
+    part, demand = Job('repo', 'a' * 40, 'tests/cargo', needs), learned.CLUSTER_PRIOR.demand(needs)
+    assert demand['cargo'] == 1, 'the shape of the demand this test guards'
+    assert admit(part, demand, cluster.standing().supply).lacking == ('cargo',)
+    (tmp_path / '.venv').mkdir()
+    prep.stamp_tools(tmp_path, ['cargo'])
+    verdict = admit(part, demand, cluster.standing().supply)
+    assert verdict.admitted, verdict.why
+
+
 def _snapshot_untagged() -> Snapshot:
     quota = Quota(account='a', cpus=8, mem_mb=None, gpus=None, default_qos='q', qos_max_submit={}, queued={})
     return Snapshot(
@@ -1665,7 +1708,7 @@ def test_a_forge_task_whose_stream_stalls_past_its_bound_is_cancelled_and_a_slow
     """Ada 2026-10-24..26: eight tasks ran 34-41 h on one hung test each and no tick noticed; RUNNING was healthy.
 
     The bound is the manifest's own per-test walls (the ones the item runner kills at) times
-    :data:`forgeslurm.STALL_MULTIPLE`: a stream silent past twice its longest wall, or a task past twice the sum
+    :data:`slurmstall.STALL_MULTIPLE`: a stream silent past twice its longest wall, or a task past twice the sum
     of its walls, has a runner that is not enforcing them. PLANTED CONTROLS: a slow task whose stream moves and
     whose walls cover its run is kept; a task with no walls declared is never judged; a non-forge job is ignored.
     """

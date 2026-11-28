@@ -19,6 +19,16 @@ from typing import Any, Final, cast
 
 from dev_lab.dev._ir_catalogue import LOWER, Constant, Quantity, catalogue
 from dev_lab.dev._ir_errors import refuse
+from dev_lab.dev._ir_metadata import (
+    NUMERIC,
+    DefaultFrom,
+    check_default,
+    check_metadata,
+    default_from,
+    foreign,
+    rest,
+    string,
+)
 
 __all__ = [
     'CONSTANTS_MODULE',
@@ -43,9 +53,11 @@ DTYPES: Final = ('bool', 'int32', 'int64', 'float32', 'float64', 'complex128')
 _FIELD_KEYS: Final = frozenset(
     {
         'type', 'optional', 'quantity', 'doc', 'dtype', 'shape', 'unique_by', 'csr_values', 'gauge_reference',
-        'default', 'default_consumer',
+        'default', 'default_consumer', 'default_from', 'nonempty', 'requires', 'minimum', 'maximum',
     }
 )  # fmt: skip
+#: A record's own keys: its doc, its fields, and the surface metadata a reader desugars (docs-src/dev/ir-schema.md).
+_RECORD_KEYS: Final = frozenset({'doc', 'field', 'rest', 'string', 'array', 'fill', 'one_of'})
 #: Rust's reserved words: a field so spelled is emitted as a raw identifier (``r#use``), its wire name unchanged.
 RUST_KEYWORDS: Final = frozenset({
     'as', 'async', 'await', 'break', 'const', 'continue', 'dyn', 'else', 'enum', 'extern', 'false', 'fn', 'for',
@@ -55,8 +67,6 @@ RUST_KEYWORDS: Final = frozenset({
 })  # fmt: skip
 #: Keywords a raw identifier cannot spell: such a field becomes ``<name>_`` with a serde rename.
 _RUST_UNRAW: Final = frozenset({'self', 'super', 'crate'})
-#: A default's Python types per kind: an optional field's ``default`` is carried, never filled on read (D135).
-_DEFAULT_TYPES: Final = {'bool': (bool,), 'int': (int,), 'float': (int, float), 'str': (str,), 'enum': (str,)}
 #: The generated module holding the catalogue's constants (``_ir_constants.py``, Rust ``mod ir_constants``).
 CONSTANTS_MODULE: Final = 'constants'
 _UPPER: Final = re.compile(r'^[A-Z][A-Za-z0-9]*$')
@@ -66,8 +76,8 @@ _UPPER: Final = re.compile(r'^[A-Z][A-Za-z0-9]*$')
 class TypeRef:
     """A field type: a kind, its qualified target, and a list's element type."""
 
-    kind: str  # bool int float complex str enum id record list array
-    target: str = ''  # 'module.Name' for enum/id/record
+    kind: str  # bool int float complex str enum id record list array foreign
+    target: str = ''  # 'module.Name' for enum/id/record; '<package>.<name>' for foreign
     item: TypeRef | None = None
 
 
@@ -82,12 +92,23 @@ class Field:
     doc: str = ''
     dtype: str = ''
     shape: tuple[int | str, ...] = ()
-    unique_by: str = ''
+    #: The listed record's key fields whose TUPLE is unique (one name: the single-key map).
+    unique_by: tuple[str, ...] = ()
     csr_values: str = ''
     gauge_reference: str = ''
     #: An optional field's declared default, CARRIED for its named consumer and never filled by the reader (D135).
     default: object = None
     default_consumer: str = ''
+    #: A derived default, exclusive with :attr:`default`; resolved by the consumer, never by the reader.
+    default_from: DefaultFrom | None = None
+    #: A list that holds at least one entry.
+    nonempty: bool = False
+    #: The sibling field this optional field is written only beside.
+    requires: str = ''
+    #: Bounds AS WRITTEN: a bare number on a field without a quantity, ``"<number> <unit>"`` on one with a
+    #: quantity; :func:`dev_lab.dev.ircheck.bounds` gives them in absolute SI.
+    minimum: object = None
+    maximum: object = None
 
     @property
     def py_name(self) -> str:
@@ -110,6 +131,16 @@ class Record:
     name: str
     fields: tuple[Field, ...]
     doc: str = ''
+    #: ``<package>.<name>`` of the foreign type every undeclared key is kept as (``rest = "foreign:..."``).
+    rest: str = ''
+    #: The field a bare string written for the record is.
+    string: str = ''
+    #: The fields, in order, an entry written as an array is.
+    array: tuple[str, ...] = ()
+    #: The numeric fields a bare number written for the record fills.
+    fill: tuple[str, ...] = ()
+    #: The optional fields of which exactly one is present.
+    one_of: tuple[str, ...] = ()
 
     def field(self, name: str) -> Field:
         """The field called *name*."""
@@ -207,6 +238,8 @@ def _type(text: str, module: str, where: str) -> TypeRef:
     if text in SCALARS or text == 'array':
         return TypeRef(text)
     head, _, rest = text.partition(':')
+    if head == 'foreign':
+        return TypeRef('foreign', foreign(text, where))
     if head == 'list' and rest:
         item = _type(rest, module, where)
         if item.kind in ('list', 'array'):
@@ -229,7 +262,8 @@ def _field(module: str, record: str, name: str, row: dict[str, Any]) -> Field:
     if is_array != ('dtype' in row) or is_array != ('shape' in row):
         refuse('IR-FIELD-SPEC', where, 'dtype and shape belong to, and complete, an array')
     shape = tuple(row.get('shape', ()))
-    _check_default(row, kind, where)
+    check_default(row, where)
+    check_metadata(row, kind, where)
     if is_array and (row['dtype'] not in DTYPES or not all(isinstance(d, (int, str)) for d in shape)):
         refuse('IR-FIELD-SPEC', where, f'dtype one of {DTYPES}, shape of ints and dim names')
     return Field(
@@ -240,28 +274,31 @@ def _field(module: str, record: str, name: str, row: dict[str, Any]) -> Field:
         doc=row.get('doc', ''),
         dtype=row.get('dtype', ''),
         shape=shape,
-        unique_by=row.get('unique_by', ''),
+        unique_by=_names(row, 'unique_by', where),
         csr_values=row.get('csr_values', ''),
         gauge_reference=row.get('gauge_reference', ''),
         default=cast('object', row.get('default')),
         default_consumer=str(row.get('default_consumer', '')),
+        default_from=default_from(row, kind, where),
+        nonempty=bool(row.get('nonempty', False)),
+        requires=str(row.get('requires', '')),
+        minimum=row.get('minimum'),
+        maximum=row.get('maximum'),
     )
 
 
-def _check_default(row: dict[str, Any], kind: TypeRef, where: str) -> None:
-    """A ``default`` belongs to an OPTIONAL scalar or enum field, is of its type, and names its consumer."""
-    if 'default' not in row:
-        if 'default_consumer' in row:
-            refuse('IR-FIELD-SPEC', where, '`default_consumer` names who fills a `default`, and there is none')
-        return
-    value: object = row['default']
-    if not row.get('optional', False):
-        refuse('IR-FIELD-SPEC', where, 'a required field has no default; only an optional field carries one')
-    if not row.get('default_consumer'):
-        refuse('IR-FIELD-SPEC', where, 'a `default` names its consumer (`default_consumer`): the reader never fills it')
-    types = _DEFAULT_TYPES.get(kind.kind)
-    if types is None or isinstance(value, bool) is not (kind.kind == 'bool') or not isinstance(value, types):
-        refuse('IR-FIELD-SPEC', where, f'default {value!r} is not a {kind.kind} (a default is a scalar or enum value)')
+def _names(row: dict[str, Any], key: str, where: str) -> tuple[str, ...]:
+    """A key naming fields: one name or a list of distinct names (``unique_by``, ``array``, ``fill``, ``one_of``)."""
+    value: object = row.get(key, [])
+    listed = [value] if isinstance(value, str) else value
+    if not isinstance(listed, list) or not all(
+        isinstance(n, str) and LOWER.match(n) for n in cast('list[object]', listed)
+    ):
+        refuse('IR-FIELD-SPEC', where, f'`{key}` is a field name or a list of field names, got {value!r}')
+    names = tuple(str(n) for n in cast('list[object]', listed))
+    if len(set(names)) != len(names):
+        refuse('IR-FIELD-SPEC', where, f'`{key}` names a field twice: {list(names)!r}')
+    return names
 
 
 def _enum_values(where: str, row: dict[str, Any], read: Reader | None) -> tuple[str, ...]:
@@ -304,17 +341,36 @@ def load_module(
     for record_name, row in data.get('record', {}).items():
         if not _UPPER.match(record_name):
             refuse('IR-FIELD-SPEC', f'{name}.{record_name}', 'a record name is UpperCamel')
-        fields = tuple(_field(name, record_name, f, r) for f, r in row.get('field', {}).items())
-        records[record_name] = Record(name, record_name, fields, row.get('doc', ''))
-        for f in fields:
-            owner, _, enum = f.type.target.partition('.')
-            local = f.type.kind == 'enum' and owner == name and enum in enums
-            if local and f.default is not None and f.default not in enums[enum].values:
-                where = f'{name}.{record_name}.{f.name}'
-                refuse('IR-FIELD-SPEC', where, f'default {f.default!r} is not a value of {enum}')
+        records[record_name] = _record(name, record_name, row)
     dims = {d: (row.get('min'), row.get('max')) for d, row in data.get('dim', {}).items()}
     terms = tuple(sorted({row['terms'] for row in data.get('enum', {}).values() if 'terms' in row}))
     return Module(name, source, records, enums, dims, python, terms)
+
+
+def _record(module: str, name: str, row: dict[str, Any]) -> Record:
+    """One record: its fields, then its record-level metadata checked against them."""
+    where = f'{module}.{name}'
+    if extra := sorted(set(row) - _RECORD_KEYS):
+        refuse('IR-FIELD-SPEC', where, f'unknown record key {extra[0]!r} (one of {sorted(_RECORD_KEYS)})')
+    fields = tuple(_field(module, name, f, r) for f, r in row.get('field', {}).items())
+    by_name = {f.name: f for f in fields}
+    named = {key: _names(row, key, where) for key in ('array', 'fill', 'one_of')}
+    for key, names in named.items():
+        if key in row and not names:
+            refuse('IR-FIELD-SPEC', where, f'`{key}` lists at least one field')
+        if missing := [n for n in names if n not in by_name]:
+            refuse('IR-FIELD-SPEC', where, f'`{key}` names {missing[0]!r}, which is no field of the record')
+    if bad := [n for n in named['fill'] if by_name[n].type.kind not in NUMERIC]:
+        refuse('IR-FIELD-SPEC', where, f'`fill` fills numbers; {bad[0]} is a {by_name[bad[0]].type.kind}')
+    if 'one_of' in row and len(named['one_of']) < 2:  # noqa: PLR2004 -- "one of" needs two to choose from
+        refuse('IR-FIELD-SPEC', where, '`one_of` names at least two fields')
+    if required := [n for n in named['one_of'] if not by_name[n].optional]:
+        refuse('IR-FIELD-SPEC', where, f'`one_of` chooses among optional fields; {required[0]} is required')
+    for f in fields:
+        if f.requires and (f.requires == f.name or f.requires not in by_name):
+            refuse('IR-FIELD-SPEC', f'{where}.{f.name}', f'`requires` names a sibling field, got {f.requires!r}')
+    rest_, string_ = rest(row, by_name, where), string(row, by_name, where)
+    return Record(module, name, fields, row.get('doc', ''), rest_, string_, *named.values())
 
 
 def _external(alias: str, module_name: str) -> Module:

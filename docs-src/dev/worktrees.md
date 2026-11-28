@@ -97,5 +97,7 @@ still refuses an undeclared tree, a main checkout, a lock, a tracked change, a H
 tree on a branch or detached -- never the raw git removal, which `RECURSIVE-DELETE` refuses. It refuses a tree
 holding unlanded work (a tracked change or an untracked, not-ignored file, named with its doors), a detached
 commit no ref contains, a holding process, a live session and the main checkout; otherwise it removes it, its
-run outputs with it. A branch the tree held
+run outputs with it. With `--approved "<the user words>"` it discards the unlanded work too (the door for a
+DETACHED tree, which has no branch for `branchset --discard`; dev-lab#1123); a process and an unheld commit still
+refuse. A live session is a HEAD moved within the hour, never an index a read refreshed (dev-lab#1125). A branch the tree held
 stays for `branchset --apply`. D31 retired the flag that saved a tree's work aside; it is refused by name.

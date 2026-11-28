@@ -30,12 +30,11 @@ from dev_lab.dev.hpcaccount.fleet import (
     first_install,
     in_checkout,
     layer_target,
-    minor_check,
     render_command,
     repo_dir,
 )
 from dev_lab.dev.hpcaccount.fleetguard import stale_render
-from dev_lab.dev.pythontoolchain import SYNC_FLAGS, VERSION
+from dev_lab.dev.pythontoolchain import SYNC_FLAGS, VERSION, minor_check
 from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
@@ -730,9 +729,13 @@ def test_a_kit_venv_on_another_minor_is_refused_by_name_never_run() -> None:
     """
     line = in_checkout(Target('login02.example', '/r/src'), ['-m', 'dev_lab.dev.hpcaccount', 'drift'])
     assert line.index(shlex.quote(minor_check(VERSION))) < line.index('-m dev_lab.dev.hpcaccount drift')
-    ok = subprocess.run([sys.executable, '-c', minor_check(VERSION)], capture_output=True, text=True, check=False)
+    ok = subprocess.run(
+        [sys.executable, '-c', minor_check(VERSION)], capture_output=True, text=True, encoding='utf-8', check=False
+    )
     assert ok.returncode == 0, ok.stderr
-    off = subprocess.run([sys.executable, '-c', minor_check('3.99')], capture_output=True, text=True, check=False)
+    off = subprocess.run(
+        [sys.executable, '-c', minor_check('3.99')], capture_output=True, text=True, encoding='utf-8', check=False
+    )
     assert off.returncode != 0
     assert f'runs Python {VERSION}' in off.stderr
     assert 'requires 3.99' in off.stderr

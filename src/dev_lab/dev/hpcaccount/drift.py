@@ -7,7 +7,7 @@ useless, everything worth keeping is in the config source). Two renders are comp
   (:func:`dev_lab.dev.devhost.render`) with NO local table carried over -- a table only the live file holds is
   exactly what a lost account loses -- diffed table-by-key against the live file;
 * ``crontab -l``, against the lines the deploy writes from that render
-  (:func:`~dev_lab.dev.hpcaccount.spec.cron_lines`).
+  (:func:`~dev_lab.dev.hpcaccount.cronline.cron_lines`).
 
 Each yields three lists: ONLY ON THE ACCOUNT (drift: fold it into the config source or discard it), ONLY IN THE
 RENDER (what the next render adds) and DIFFERING values. A third report, ``old copies`` (:func:`strays`), lists
@@ -43,8 +43,9 @@ from dev_lab.dev.backedup import backups_dir, replace_backed_up
 from dev_lab.dev.devdeclared import layered
 from dev_lab.dev.diskusage import count_files
 from dev_lab.dev.hpcaccount import deploy
+from dev_lab.dev.hpcaccount.cronline import MARK, cron_lines
 from dev_lab.dev.hpcaccount.grantslice import Unreadable, read_machine
-from dev_lab.dev.hpcaccount.spec import MARK, VERIFICATION, cron_lines, parse
+from dev_lab.dev.hpcaccount.spec import VERIFICATION, parse
 from dev_lab.dev.hpcaccount.steps import Step, Tools
 from dev_lab.dev.oldcopies import DOOR, left_behind
 

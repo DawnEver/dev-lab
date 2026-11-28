@@ -6,6 +6,7 @@ import io
 from typing import Any
 
 import pytest
+from lab_commons.hpc import reach
 from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 
@@ -88,7 +89,7 @@ def test_no_held_session_is_key_only_ssh(monkeypatch: pytest.MonkeyPatch) -> Non
     transport.start(_DEST, 'deploy', io.StringIO())
     assert opened == ['alice@login01.example']
     assert started[0][:3] == ['ssh', '-o', 'BatchMode=yes']
-    assert started[0][-2] == _DEST
+    assert started[0][-4] == _DEST  # then the command's three elements (remote.login_argv)
     assert ran == []
 
 
@@ -155,8 +156,6 @@ def test_the_named_login_host_is_tried_first_and_a_failover_host_is_probed_brief
 
 def test_an_undeclared_reach_is_refused_before_any_ssh_or_held_session(monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED CONTROL: the same steps with ``direct`` declared go through; undeclared, none opens anything."""
-    from lab_commons.hpc import reach  # noqa: PLC0415 -- the declaration this test plants
-
     ran = _hold(monkeypatch, recorded={_DEST}, alive=True)
     clusters = {'clusters': {'ada': {'hosts': list(_GRANT.hosts)}}}
     steps = (

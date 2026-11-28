@@ -62,6 +62,9 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
 * ``tick-status --account <user>`` / ``tick-stop --account <user> [--repo R]``
   (:mod:`~dev_lab.dev.hpcaccount.tickstop`) read every tick lock's holder, and stop a tick older than its wall --
   verified a tick of that repo, this user's, before it is signaled; a younger one is refused by name.
+* ``prep-retry --account <user> <repo>`` (:mod:`~dev_lab.dev.hpcaccount.prepretry`) resubmits, once, the repo's
+  failed environment prep job for its current key, through the account's own kit -- the door a ``job <id> failed``
+  line names. A failure under an older kit needs none: the tick resubmits it itself.
 * Every remote step above goes through ONE transport, :mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held
   session (:mod:`dev_lab.dev.sshhold`) when one is live, else key-only ssh; a second-factor host with none is refused
   naming ``python -m dev_lab.dev.sshhold open <dest> --hours H``.
@@ -97,7 +100,7 @@ _USAGE = (
     'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | keys [...] | look [...] | '
     'archive [...] | archive-clean [...] | salvage [...] | '
     'reclaim-foreign [...] | storage-check [...] | '
-    'tick-status [...] | tick-stop [...] | '
+    'tick-status [...] | tick-stop [...] | prep-retry [...] | '
     'tick <repo>... [--lock <path> --wall-minutes <m>] | prep-build <repo> | femm-build | allocate [...]}'
 )
 
@@ -116,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         forget,
         keys,
         look,
+        prepretry,
         reclaim,
         salvage,
         storage,
@@ -146,6 +150,8 @@ def main(argv: list[str] | None = None) -> int:
         'tick-status': tickstop.main_status,
         'tick-stop': tickstop.main_stop,
         'tick-stop-here': tickstop.main_here,
+        'prep-retry': prepretry.main,
+        'prep-retry-here': prepretry.main_here,
         'deploy': deploy.main,
         'deploy-fleet': fleet.main,
         'forget': forget.main,

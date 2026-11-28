@@ -23,7 +23,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.hpc.grants import declared_grants
+from lab_commons.hpc.grants import Grant, declared_grants
 from lab_commons.log import emit
 
 from dev_lab.dev._machinefile import dumps
@@ -35,6 +35,7 @@ __all__ = [
     'Unreadable',
     'grant_refusal',
     'grant_setup',
+    'grant_slice',
     'granted_root',
     'login_hosts',
     'machine_table',
@@ -229,3 +230,20 @@ def grant_setup(path: Path, user: str) -> tuple[str, ...]:
     grants, _ = declared_grants(hpc)
     mine = (row.get('user'), row.get('cluster'))
     return next((grant.setup for grant in grants if (grant.user, grant.cluster_name) == mine), ())
+
+
+def grant_slice(grant: Grant) -> dict[str, Any]:
+    """*grant* as the ``[hpc]`` slice its account's own machine file holds: its cluster, its grant, its role reached."""
+    account: dict[str, Any] = {'billed': grant.billed}
+    if grant.budget is not None:
+        hours = grant.budget.core_time / 3600
+        account['budget'] = {'core_time': f'{hours:g} h', 'since': grant.budget.since, 'until': grant.budget.until}
+    cluster: dict[str, Any] = {'hosts': list(grant.hosts), 'slurm_accounts': {grant.slurm_account: account}}
+    optional = {
+        'partitions': list(grant.partitions), 'qos': dict(grant.qos), 'setup': list(grant.setup),
+        'architecture': grant.architecture, 'root': grant.root,
+    }  # fmt: skip
+    cluster.update({key: value for key, value in optional.items() if value})
+    row = {'user': grant.user, 'cluster': grant.cluster_name, 'slurm_account': grant.slurm_account, 'role': grant.role}
+    row.update({key: value for key, value in (('owner', grant.owner), ('priority', grant.priority)) if value})
+    return {'reach': [grant.role], 'clusters': {grant.cluster_name: cluster}, 'grant': [row]}

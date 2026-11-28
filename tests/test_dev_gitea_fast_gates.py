@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 def _git(root: Path, *args: str) -> str:
     git = shutil.which('git') or 'git'
-    done = subprocess.run([git, '-C', str(root), *args], capture_output=True, text=True, check=True)
+    done = subprocess.run([git, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8', check=True)
     return done.stdout.strip()
 
 
@@ -58,6 +58,7 @@ def test_a_commit_s_workspaces_are_read_from_git_at_that_commit(tmp_path: Path) 
     assert cargostep.items(tmp_path, rust) == [
         {'manifest': 'rust/Cargo.toml', 'command': command} for command in cargostep.COMMANDS
     ]
+    assert {'manifest': 'rust/Cargo.toml', 'command': 'doc'} in cargostep.items(tmp_path, rust)
 
 
 @pytest.mark.parametrize(

@@ -59,19 +59,20 @@ _DEFAULT = 'doc = "Absent when the widget has no rated temperature."'
 
 
 def test_an_optional_field_carries_its_default_and_consumer(repo: Path) -> None:
-    _edit(repo, _DEFAULT, f'{_DEFAULT}\ndefault = 293.15\ndefault_consumer = "compile"')
+    _edit(repo, _DEFAULT, f'{_DEFAULT}\ndefault = "293.15 K"\ndefault_consumer = "compile"')
     ir = load(repo)
     assert ir is not None
     f = ir.modules['widgets'].records['Widget'].field('operating_temperature')
-    assert (f.default, f.default_consumer) == (293.15, 'compile')
+    assert (f.default, f.default_consumer) == ('293.15 K', 'compile')
 
 
 @pytest.mark.parametrize(
     ('field', 'extra'),
     [
         ('mass', 'default = 1.0\ndefault_consumer = "compile"'),  # PLANTED: a required field never has one
-        ('operating_temperature', 'default = 1.0'),  # a default names who fills it
-        ('operating_temperature', 'default = "hot"\ndefault_consumer = "compile"'),  # of the field's type
+        ('operating_temperature', 'default_consumer = "compile"'),  # a consumer fills a default, and there is none
+        ('operating_temperature', 'default = "hot"\ndefault_consumer = "compile"'),  # of the field's quantity
+        ('operating_temperature', 'default = 293.15'),  # PLANTED: a quantity's default carries its unit
         ('finish', 'optional = true\ndefault = "chrome"\ndefault_consumer = "compile"'),  # an enum value
     ],
 )
@@ -84,7 +85,7 @@ def test_a_default_is_refused_where_it_cannot_hold(repo: Path, field: str, extra
 
 def test_a_default_never_fills_on_read(repo: Path, imported) -> None:
     """The codec validates only (D135): the named consumer fills it, so an absent optional stays None."""
-    _edit(repo, _DEFAULT, f'{_DEFAULT}\ndefault = 293.15\ndefault_consumer = "compile"')
+    _edit(repo, _DEFAULT, f'{_DEFAULT}\ndefault = "293.15 K"\ndefault_consumer = "compile"')
     widgets = imported()
     assert widgets.Widget.__dataclass_fields__['operating_temperature'].default is None
 

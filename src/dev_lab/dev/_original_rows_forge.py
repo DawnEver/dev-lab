@@ -25,6 +25,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgework',
     'forgeclient',  # the one place a forge Client is built, split from forgework (module-size band)
     'forgestatus',
+    # ORIGINAL: 2026-11-27, a status description longer than its forge stores continues, never cut.
+    'statuscontinuation',
     'forgeoutbox',
     'forgelabels',
     'forgepublish',

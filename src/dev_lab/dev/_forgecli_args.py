@@ -31,7 +31,8 @@ def parser() -> argparse.ArgumentParser:
         epilog=(
             'also: pr breakglass N --reason R, breakglass open|close|ack|status, pr close-landed [N...], '
             'pr close-superseded N... --by <M|sha|ref>, '
-            'issue claim|status N, label create --name N --color C, status post|list SHA; token: auth login|status'
+            'issue claim|status N, label create --name N --color C, status post|list SHA, '
+            'ci logs|artifact <sha|pr:N|run:ID> (read a CI run); token: auth login|status'
         ),
     )
     nouns = built.add_subparsers(dest='noun', required=True)
@@ -55,6 +56,10 @@ def parser() -> argparse.ArgumentParser:
     comment.add_argument('number', type=int)
     comment.add_argument('--body', required=True)
     pr = nouns.add_parser('pr').add_subparsers(dest='verb', required=True)
+    pulls = _verb(pr, 'list')
+    pulls.add_argument('--state', choices=('open', 'closed', 'all'), default='open')
+    pulls.add_argument('--limit', type=int, default=30)
+    pulls.add_argument('--head', help='only pulls from this branch')
     _verb(pr, 'view').add_argument('number', type=int)
     closing = _verb(pr, 'close')
     closing.add_argument('number', type=int)

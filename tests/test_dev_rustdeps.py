@@ -266,3 +266,26 @@ def test_a_build_kind_std_row_judges_build_scripts_only(tmp_path: Path) -> None:
 def test_a_normal_std_row_never_judges_a_build_script(tmp_path: Path) -> None:
     """build.rs reading OUT_DIR under the normal ``std::env`` row granting nowhere stays free (the base tree)."""
     assert _problems(tmp_path, {'rust/crates/middle/build.rs': 'fn main() { std::env::var("OUT_DIR"); }\n'}) == []
+
+
+SPELLED = DECLARED.replace(
+    '[rust.external]\n',
+    '[rust.external]\nnum-bigint = { crates = ["middle"], reason = "exact arithmetic" }\n'
+    'num_rational = { crates = ["middle"], reason = "exact arithmetic" }\n',
+)
+
+
+@pytest.mark.parametrize('dep', ['num_bigint = "0.4"', 'num-rational = "0.4"'])
+def test_a_row_admits_its_crate_under_either_cargo_spelling(tmp_path: Path, dep: str) -> None:
+    """Cargo treats '-' and '_' as one package name, so a hyphen row admits the underscore form and vice versa."""
+    deps = f'base = {{ path = "../base" }}\nrayon = "1"\n{dep}'
+    extra = {'rust/crates/middle/Cargo.toml': _crate('middle', deps=deps, build='cc = "1"')}
+    assert _problems(tmp_path, extra, declared=SPELLED) == []
+
+
+def test_a_spelling_equivalent_row_still_judges_its_holders_and_an_unknown_crate_is_refused(tmp_path: Path) -> None:
+    extra = {'rust/crates/base/Cargo.toml': _crate('base', deps='num_bigint = "0.4"\nnum_integer = "0.1"')}
+    found = _problems(tmp_path, extra, declared=SPELLED)
+    held = 'depends on num_bigint (normal), but [rust.external] num-bigint allows it only in middle'
+    assert any(held in m for m in found)
+    assert any('depends on num_integer (normal), which no [rust.external] row names' in m for m in found)

@@ -106,6 +106,8 @@ class FakeRunCluster:
             return self.queue
         if 'state.json' in command:
             return self.states.get(command.split()[1], '')
+        if command.startswith('for f in') and '.txt' in command:
+            return self._prep()
         if command.startswith('for c in'):
             return ''.join(f'@@@ missing {c}\n' for c in self.lacking)
         if command.startswith('echo "@@@ nodes"'):
@@ -154,6 +156,20 @@ class FakeRunCluster:
             return self._streams()
         return ''
 
+    def _prep(self) -> str:
+        """The prep job's step outputs as :func:`lab_commons.hpc.prep.read_prep` reads them, stopping where it stops."""
+        asked = len(self.calls)  # the steps' answers are the fake's own; they are not calls the flow made
+        said = {'needs': ''.join(f'@@@ missing {c}\n' for c in self.lacking)}
+        if not self.lacking:
+            said['fetch'] = 'have\n' if self.have else 'missing\n'
+        if 'fetch' in said and self.have:
+            said['built'] = self('@@@ facts')
+        if 'built' in said and not self.build_fails:
+            said['collected'] = self('--collect-only')
+            said['also-0'] = self('--collect-only (win)')  # the one declared resource, 'win'
+        del self.calls[asked:]
+        return ''.join(f'@@@ prep-file {step}\n{text}' for step, text in said.items())
+
     def _streams(self) -> str:
         out = []
         dying = len(self.manifests) <= self.kills
@@ -186,15 +202,18 @@ def _submit(fake: FakeRunCluster, **kw: object) -> str:
     return submit_run(spec, MACHINE, lambda _g: fake, cost=COST, policy=POLICY, stamp='t0', **kw)
 
 
-def _gather(fake: FakeRunCluster) -> dict | None:
-    return gather_run(SHA, BASE, MACHINE, lambda _g: fake, cost=COST, policy=POLICY)
+def _gather(fake: FakeRunCluster, **kw: object) -> dict | None:
+    return gather_run(SHA, BASE, MACHINE, lambda _g: fake, cost=COST, policy=POLICY, **kw)
 
 
-def _run(fake: FakeRunCluster, **kw: object) -> dict:
-    """Submit, then gather until the record comes back -- each gather one short call, as a caller makes them."""
+def _run(fake: FakeRunCluster, carry: object = None, **kw: object) -> dict:
+    """Submit, then gather until the record comes back -- each gather one short call, as a caller makes them.
+
+    *carry* is the gather's: the prep job's build names the env whose carried cells are asked for.
+    """
     _submit(fake, **kw)
     for _ in range(2 + RETRIES):
-        record = _gather(fake)
+        record = _gather(fake, carry=carry)
         if record is not None:
             return record
     pytest.fail('the gathers never returned a record')
@@ -267,8 +286,9 @@ def test_carried_ids_are_never_submitted_and_the_record_names_their_origin() -> 
 def test_a_run_whose_every_id_is_carried_writes_its_record_without_a_job() -> None:
     fake = FakeRunCluster()
     ids = ['tests/a.py::t1', 'tests/a.py::t2', 'tests/b.py::t3', 'tests/b.py::t4', 'tests/b.py::t5']
-    state = _submit(fake, carry=lambda _env: dict.fromkeys(ids, (OK_CELL, A_SHA, A_SHA)))
+    _submit(fake)
+    record = _gather(fake, carry=lambda _env: dict.fromkeys(ids, (OK_CELL, A_SHA, A_SHA)))
     assert not fake.manifests, 'nothing was submitted'
-    assert state['rounds'] == []
-    assert _gather(fake) == state['record']
-    assert part_of(state['record']).ran == 0
+    assert json.loads(fake.state)['rounds'] == []
+    assert record is not None
+    assert part_of(record).ran == 0

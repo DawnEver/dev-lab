@@ -1,0 +1,117 @@
+# The draft-schema grammar admitted as metadata (irmodel Part A, a consumer's draft-grammar request):
+# defaults of any type, default_from, multi-key unique_by, one_of/requires, foreign:/rest, string/array/fill,
+# nonempty and unit-carrying bounds. Declared as module `drafts` only by tests/test_dev_ir_drafts.py.
+
+[enum.Generator]
+values = ["lap", "wave"]
+
+[record.Connection]
+doc = "Exactly one form: a library path, a generator (with its parameters) or explicit paths."
+string = "library"
+one_of = ["library", "generator", "paths"]
+[record.Connection.field.library]
+type = "str"
+optional = true
+[record.Connection.field.generator]
+type = "enum:Generator"
+optional = true
+[record.Connection.field.parameters]
+type = "record:Parameters"
+optional = true
+requires = "generator"
+[record.Connection.field.paths]
+type = "list:record:Path"
+optional = true
+nonempty = true
+
+[record.Parameters]
+doc = "Typed counts; every other key is the generator package's own."
+rest = "foreign:coil_pkg.connection"
+[record.Parameters.field.pole_count]
+type = "int"
+optional = true
+minimum = 2
+[record.Parameters.field.hidden]
+type = "list:int"
+optional = true
+default = [16, 16]
+
+[record.Path]
+doc = "One port's cells."
+[record.Path.field.name]
+type = "str"
+[record.Path.field.cells]
+type = "list:int"
+nonempty = true
+
+[record.Point]
+doc = "A 2-D point, written [x, y]."
+array = ["x_axis", "y_axis"]
+[record.Point.field.x_axis]
+type = "float"
+quantity = "length"
+minimum = "-0.5 m"
+maximum = "500 mm"
+[record.Point.field.y_axis]
+type = "float"
+quantity = "length"
+
+[record.Flare]
+doc = "A bare number fills both arms."
+fill = ["start", "end"]
+[record.Flare.field.start]
+type = "float"
+minimum = 0
+maximum = 1
+[record.Flare.field.end]
+type = "float"
+
+[record.Isogeometric]
+doc = "Facets one method reads."
+[record.Isogeometric.field.continuity]
+type = "int"
+optional = true
+default_from = { facet = "space.order", offset = -1 }
+[record.Isogeometric.field.axis]
+type = "list:float"
+optional = true
+default = [0.0, 0.0, 1.0]
+[record.Isogeometric.field.lead]
+type = "float"
+quantity = "length"
+optional = true
+default = "5 mm"
+[record.Isogeometric.field.flare]
+type = "record:Flare"
+optional = true
+default = { start = 0.25, end = 0.5 }
+
+[record.FieldReference]
+doc = "One stored field per cell per rung."
+[record.FieldReference.field.selection]
+type = "list:str"
+[record.FieldReference.field.refinement_factor]
+type = "int"
+optional = true
+[record.FieldReference.field.status]
+type = "foreign:lab_commons.outcomes.Status"
+
+[record.StageRetention]
+doc = "One stage's retention, keyed by an enum."
+[record.StageRetention.field.stage]
+type = "enum:Generator"
+[record.StageRetention.field.days]
+type = "int"
+
+[record.Result]
+doc = "Fields keyed by the (selection, refinement_factor) tuple."
+[record.Result.field.fields]
+type = "list:record:FieldReference"
+unique_by = ["selection", "refinement_factor"]
+[record.Result.field.stages]
+type = "list:record:StageRetention"
+unique_by = "stage"
+optional = true
+[record.Result.field.connection]
+type = "record:Connection"
+optional = true

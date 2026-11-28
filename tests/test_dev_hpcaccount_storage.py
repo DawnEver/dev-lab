@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ from dev_lab.dev.diskusage import MMLSQUOTA
 from dev_lab.dev.hpcaccount import storage
 from dev_lab.dev.hpcaccount.fleet import Target
 from dev_lab.dev.hpcaccount.storage import retention_fleet
+from dev_lab.dev.pythontoolchain import VERSION, minor_check
 from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
@@ -27,8 +29,10 @@ _QUOTA = 'Disk quotas for user alice\n  /home  29G  30G  30G  999k* 1000k 1000k'
 
 
 def _line(argv: str) -> str:
-    """The remote line in the account's dev-lab checkout, run by its current environment (the one resolver)."""
-    return f'export LAB_ROOT=/r/src && cd /r/src/repos/dev-lab && {shell_interpreter(".")} {argv}'
+    """The remote line in the account's dev-lab checkout, run by its current environment after its minor check."""
+    python = shell_interpreter('.')
+    checked = f'{python} -c {shlex.quote(minor_check(VERSION))}'
+    return f'export LAB_ROOT=/r/src && cd /r/src/repos/dev-lab && {checked} && {python} {argv}'
 
 
 def _account(*, ticks: str = '2', unreachable: bool = False, seen: list[str]) -> Runner:

@@ -49,10 +49,11 @@ def _write(path: Path, data: bytes) -> None:
 
 
 def _quiet(tree: Path) -> None:
-    """Age *tree*'s index past the live-session window."""
-    index = Path(_git(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'index').strip())
+    """Age *tree*'s HEAD and reflog past the live-session window."""
+    heads = _git(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'HEAD', '--git-path', 'logs/HEAD')
     old = time.time() - 2 * 3600
-    os.utime(index, (old, old))
+    for head in heads.splitlines():
+        os.utime(head, (old, old))
 
 
 def _planted(tmp_path: Path) -> Path:
@@ -100,7 +101,7 @@ def test_a_run_reclaims_the_landed_keeps_the_edited_and_logs_both(planted: Path)
     for gone in ('crlf', 'generated'):
         assert not (home / gone).exists(), gone
         assert f'deleted  local   {gone}' in text, text
-    for kept, why in (('edited', 'tracked changes'), ('live', 'a live session')):
+    for kept, why in (('edited', 'tracked changes'), ('live', 'live session: its HEAD moved')):
         assert (home / kept).is_dir(), kept
         assert any(line.startswith('kept') and kept in line and why in line for line in text.splitlines()), text
     assert (home / 'edited' / 'text.txt').read_bytes() == b'a\nREAL EDIT\n', 'a real edit is never touched'

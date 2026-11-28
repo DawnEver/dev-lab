@@ -2,8 +2,9 @@
 
 The forge (a self-hosted Gitea, or GitHub) is where every verdict lives. A pushed sha that lacks a
 `tests/<part>` status is work; a `forge serve` host claims it, runs the suite once and posts the result.
-You push, then read `python -m dev_lab.dev.forge queue` or `forge status list <sha>`. You never run a full
-suite to learn whether a sha is green, and you never wait for one to push.
+You push, then read `python -m dev_lab.dev.forge queue` or `forge status list <sha>`; a red a CI job produced is
+read with `forge ci logs <sha> --failed` ([reading a CI run](#reading-a-ci-runs-logs-forge-ci)). You never run a
+full suite to learn whether a sha is green, and you never wait for one to push.
 
 ## Parts
 
@@ -511,6 +512,28 @@ their stream for longer than `N x` the longest measured duration of the shard's 
 every host prices from). A shard holding an unmeasured test is floored at `M` minutes, named `unmeasured` in the
 output. Every other task of the sha is listed as healthy; no other job is cancelled.
 
+### Reading a CI run's logs: `forge ci`
+
+A part a CI job produced (GitHub Actions, or Gitea Actions where the forge serves its Actions run API) says only
+why it is red in one line; the cause is in the job's log and in the verify log the job uploaded. Both are read
+through the forge door, READ-ONLY (user ruling 2026-11-26: never a re-run, a cancel, or a token taken from git's
+store by hand):
+
+```
+python -m dev_lab.dev.forge ci logs <sha|branch|pr:N|run:ID> [--failed] [--job <name|glob>]... [--tail N] [--grep RE] [--out DIR]
+python -m dev_lab.dev.forge ci artifact <sha|branch|pr:N|run:ID> [--name <name|glob>]... [--tail N] [--grep RE] [--out DIR]
+```
+
+- `logs` lists every job of the ref's runs with its conclusion; with `--failed` (failure, cancelled, timed out) or
+  `--job`, each selected job's WHOLE log is written under the checkout's output directory
+  (`<output>/<yy>/<mm>/<dd>/ci/`, or `--out` inside it) and only its last `--tail` lines (default 40, after
+  `--grep`) up to the failed step's first `##[error]` are printed (`--until end`: the log's end, which on GitHub is
+  post-job cleanup), timestamps and colors dropped. With no selection it lists the jobs and the run's artifacts.
+- `artifact --name verify-log-*` downloads the part's uploaded verify log, unpacks it there and prints the tail of
+  each `.log` in it -- the real pytest failure.
+- `forge status show <sha>` names this door under a red part whose target is a CI job. No credential refuses naming
+  `forge auth login`; a token the forge refuses names the Actions read permission it lacks.
+
 ## Alarms
 
 `forgealarm` writes one JSON line `{"event": "lab_commons.forge.alarm", "kind", "repo", "subject", "body",
@@ -563,7 +586,7 @@ no `gh` or `tea` binary is needed.
 
 - Verbs: `issue list|view|create|comment|close|label|claim|status|comments`, `issue comments-since ISO8601`,
   `issue view N --comments [--since ISO8601|--last K]` (the thread, oldest first, every page), `issue comment-view ID`,
-  `pr create|view|close N --reason R` (the reason is commented first; no branch is deleted), `status post|list`. Every verb takes `--json` and returns the same shape on either forge.
+  `pr list [--state open|closed|all] [--head B] [--limit N]` (`#N [state] head -> base  title  url`, every page read), `pr create|view|close N --reason R` (the reason is commented first; no branch is deleted), `status post|list`. Every verb takes `--json` and returns the same shape on either forge.
 - A raw `client.call` path is absolute (`f'{client.repo}/issues/1/comments?page=2'`); a relative one is refused.
 - The backend is read off `origin`: `github.com` is GitHub REST, any other host is Gitea (`<host>/api/v1`).
 - When `HARNESS_MACHINE` and `HARNESS_AGENT` are set, every created body opens with
@@ -585,8 +608,8 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
   The same credential then serves `git push`/`fetch` over https and the forge verbs. No environment variable
   is read, nothing is written into a repo, and only a hash prefix is ever printed.
 - **Gitea**: User Settings -> Applications -> Generate Token, scopes `write:issue`, `write:repository`,
-  `read:user`. **GitHub**: a fine-grained token with Issues, Pull requests and Contents read/write, or let Git
-  Credential Manager's OAuth store it on the first push.
+  `read:user`. **GitHub**: a fine-grained token with Issues, Pull requests and Contents read/write and Actions read
+  (`forge ci`), or let Git Credential Manager's OAuth store it on the first push.
 - Rotate by running `auth login` again; a revoked token shows as a failing `auth status`.
 - **A new machine takes every forge credential in one pipe** (run from a family checkout on the old one):
 

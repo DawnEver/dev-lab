@@ -51,6 +51,7 @@ def ir(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]
         s=importlib.import_module('sample_pkg._ir_samples'),
         codec=importlib.import_module('sample_pkg._ir_codec'),
         rt=importlib.import_module('sample_pkg._ir_runtime'),
+        tree=importlib.import_module('sample_pkg._ir_tree'),
         root=repo,
     )
     _purge()
@@ -109,7 +110,7 @@ def test_every_generated_file_carries_its_fingerprint_and_is_ignored(repo: Path)
     ir = _loaded(repo)
     written = irpython.write(ir)
     names = {p.name for p in written}
-    templates = {'_ir_runtime.py', '_ir_surface.py', '_ir_codec.py'}
+    templates = {'_ir_runtime.py', '_ir_tree.py', '_ir_surface.py', '_ir_codec.py'}
     assert names == {*templates, '_ir_ids.py', '_ir_constants.py', '_ir_widgets.py', '_ir_samples.py', '.gitignore'}
     first = (repo / 'src' / 'sample_pkg' / '_ir_widgets.py').read_text(encoding='utf-8').splitlines()[0]
     assert first == irpython.FINGERPRINT_PREFIX + irpython.fingerprint(ir, 'widgets')
@@ -236,7 +237,7 @@ def test_the_content_hash_never_includes_the_version(ir: SimpleNamespace, tmp_pa
     stored = json.loads((tmp_path / 'w.json').read_bytes())
     assert stored['schema_version'] == '1.0.0'
     assert stored['record'] == 'widgets.Widget'
-    assert ir.rt.canonical(stored['value']) == widget.to_json()
+    assert ir.tree.canonical(stored['value']) == widget.to_json()
 
 
 def test_arrays_serialize_as_little_endian_base64_and_round_trip(ir: SimpleNamespace) -> None:
@@ -273,7 +274,7 @@ def test_a_unique_by_list_is_sorted_by_key_and_refuses_a_duplicate(ir: SimpleNam
     rest = {'samples': [], 'hit_offsets': np.array([0], dtype=np.int64), 'hit_times': np.zeros(0)}
     batch = ir.s.Batch(widgets=[_widget(ir.w, id='w-2'), _widget(ir.w, id='w-1')], **rest)
     assert [w.id for w in batch.widgets] == ['w-1', 'w-2']
-    with pytest.raises(ir.rt.IRValidationError, match=r"Batch\.widgets: expected unique id, got duplicate 'w-1'"):
+    with pytest.raises(ir.rt.IRValidationError, match=r'Batch\.widgets: expected unique id, got duplicate "w-1"'):
         ir.s.Batch(widgets=[_widget(ir.w), _widget(ir.w)], **rest)
 
 
@@ -298,12 +299,12 @@ def test_non_finite_and_wrong_kinds_are_refused(ir: SimpleNamespace) -> None:
 def test_a_reader_refuses_an_older_major_and_an_unknown_field_by_name(ir: SimpleNamespace, tmp_path: Path) -> None:
     value = json.loads(_widget(ir.w).to_json())
     old = tmp_path / 'old.json'
-    old.write_bytes(ir.rt.canonical({'record': 'widgets.Widget', 'schema_version': '0.9.0', 'value': value}))
+    old.write_bytes(ir.tree.canonical({'record': 'widgets.Widget', 'schema_version': '0.9.0', 'value': value}))
     with pytest.raises(ir.rt.IRReadError, match=r'IR-OLD-RECORD: .*old\.json: schema_version 0\.9\.0.*migrate'):
         ir.w.Widget.load(old)
     newer = tmp_path / 'newer.json'
     newer.write_bytes(
-        ir.rt.canonical({'record': 'widgets.Widget', 'schema_version': '1.1.0', 'value': {**value, 'color': 'red'}})
+        ir.tree.canonical({'record': 'widgets.Widget', 'schema_version': '1.1.0', 'value': {**value, 'color': 'red'}})
     )
     with pytest.raises(ir.rt.IRReadError, match=r'IR-UNKNOWN-FIELD: .*Widget\.color.*generate'):
         ir.w.Widget.load(newer)

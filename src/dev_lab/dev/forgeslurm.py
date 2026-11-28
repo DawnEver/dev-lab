@@ -25,21 +25,19 @@ no run file names at all -- its run lost to another owner, or dropped -- had nob
 A RUNNING FORGE TASK THAT STOPPED PROGRESSING IS CANCELLED (:meth:`SlurmCluster.stalled`; Ada 2026-10-24..26:
 eight tasks of long-superseded shas ran 34-41 h at 100 % of a core, each on one hung test, until a human
 cancelled them -- RUNNING read as healthy). The bound is the task's OWN manifest: the per-test walls the item
-runner kills at (:class:`lab_commons.hpc.builds.ItemWall`), times :data:`STALL_MULTIPLE`. Every task, whatever
-its run -- current, draining for a newer tip, or one no run file names -- is judged, every tick.
+runner kills at (:class:`lab_commons.hpc.builds.ItemWall`), times :data:`dev_lab.dev.slurmstall.STALL_MULTIPLE`.
+Every task, whatever its run -- current, draining for a newer tip, or one no run file names -- is judged, every tick.
 """
 
 from __future__ import annotations
 
-import contextlib
 import functools
 import json
 import math
-import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Final, cast
+from typing import Any
 
 from lab_commons.box.providers import account_seats
 from lab_commons.compute import learned
@@ -74,29 +72,19 @@ from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgescope import ReachedFiles
 from dev_lab.dev.forgestuck import parse_duration, remote_path
+from dev_lab.dev.hpcaccount.prep import proven
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.slurmkilled import KILLED_FIELDS, killed_jobs
+from dev_lab.dev.slurmstall import FORGE_JOB, stalled_tasks
 
 __all__ = [
-    'STALL_MULTIPLE',
     'SlurmCluster',
     'progress_text',
     'scoped_files',
     'slurm_cluster',
     'standing_of',
 ]
-
-#: A forge job's name (:func:`lab_commons.hpc.run.job_name`, and the schema-1 ``run-<sha12>``).
-_FORGE_JOB: Final = re.compile(r'run-[0-9a-f]{12}(-.+)?')
-#: How many times its per-test walls a RUNNING task may go before it is STALLED: its round's stream silent past
-#: this times its LONGEST wall, or the task running past this times the SUM of its walls. The item runner
-#: (:mod:`lab_commons.hpc.pytest_item`) writes a line at every test's start and end and kills any test at its
-#: wall, collection included, so a runner that works never comes near ONE times either; the second factor is
-#: headroom for the poll, the kill, a pytest relaunch and two clocks, never a second chance for the test.
-STALL_MULTIPLE: Final = 2.0
-#: Every RUNNING task of the account: its id, name, elapsed time and work dir (the round's run dir), and the clock.
-_RUNNING: Final = "date +%s; squeue -h --me -t RUNNING -o '%i|%j|%M|%Z'"
 
 
 def scoped_files(root: Path, run: Run) -> ReachedFiles | None:
@@ -109,39 +97,6 @@ def scoped_files(root: Path, run: Run) -> ReachedFiles | None:
         return None
     reached = reached_tests(root, load_policy(root).integration, run.sha)
     return ReachedFiles(reached) if reached else None
-
-
-def stall_of(items: list[dict[str, Any]], *, idle_s: float, elapsed_s: float) -> str:
-    """Why a task running *items* is stalled -- ``''`` when it is not, or when any of its ids declares no wall.
-
-    *idle_s* is how long its round's stream has taken no line, *elapsed_s* how long it has run.
-    """
-    walls = [item.get('walls', {}).get(node) for item in items for node in item.get('ids', ())]
-    if not walls or None in walls:
-        return ''
-    longest, total = max(walls), sum(walls)
-    if idle_s > STALL_MULTIPLE * longest:
-        return (
-            f'its stream took no line for {idle_s / 60:.0f} min, past {STALL_MULTIPLE:g} x its longest test wall '
-            f'({longest / 60:.0f} min)'
-        )
-    if elapsed_s > STALL_MULTIPLE * total:
-        ran, bound = elapsed_s / 60, total / 60
-        return f"it ran {ran:.0f} min, past {STALL_MULTIPLE:g} x the sum of its tests' walls ({bound:.0f} min)"
-    return ''
-
-
-def _last_started(text: str, items: set[object]) -> str:
-    """The id the last ``start`` line of one of *items* names; ``''`` when none started."""
-    last = ''
-    for raw in text.splitlines():
-        with contextlib.suppress(json.JSONDecodeError):
-            line: object = json.loads(raw)
-            if isinstance(line, dict):
-                entry = cast('dict[str, object]', line)  # a JSON object's keys are strings
-                if entry.get('item') in items and 'start' in entry:
-                    last = str(entry['start'])
-    return last
 
 
 def progress_text(where_: Progress) -> str:
@@ -343,41 +298,18 @@ class SlurmCluster:
         shell = self.connect(self.machine.grants[0])
         jobs = [line.partition('|') for line in shell("squeue -h --me -o '%F|%j'", None).splitlines()]
         names = held()
-        stray = sorted({job for job, _, name in jobs if _FORGE_JOB.fullmatch(name) and name not in names})
+        stray = sorted({job for job, _, name in jobs if FORGE_JOB.fullmatch(name) and name not in names})
         if stray:
             scancel(shell, stray)
         return stray
 
     def stalled(self) -> list[Stalled]:
-        """Cancel every RUNNING forge task past its stall bound (:func:`stall_of`); those cancelled, in queue order.
+        """Cancel every RUNNING forge task past its stall bound (:func:`~dev_lab.dev.slurmstall.stalled_tasks`).
 
-        A task's run dir is its Slurm work dir, so its manifest -- its items, their walls and stream -- is read
-        from the task itself, never from a run file that may be gone. A task of a manifest without walls is
-        never judged: nothing says what its tests may take.
+        Those cancelled, in queue order.
         """
         shell = self.connect(self.machine.grants[0])
-        lines = shell(_RUNNING, None).splitlines()
-        now = float(lines[0])
-        manifests: dict[str, dict[str, Any]] = {}
-        found: list[Stalled] = []
-        for row in lines[1:]:
-            job_id, name, elapsed, run_dir = row.split('|', 3)
-            index = job_id.partition('_')[2]
-            if not _FORGE_JOB.fullmatch(name) or not index.isdigit():
-                continue
-            if run_dir not in manifests:
-                manifests[run_dir] = json.loads(shell(f'cat {remote_path(run_dir)}/manifest.json', None))
-            start, stop = manifests[run_dir]['shards'][int(index)]
-            items = manifests[run_dir]['items'][start:stop]
-            tree = run_dir.rsplit('/', 2)[0]  # <tree>/.lab-hpc/<run>
-            streams = ' '.join(sorted({remote_path(f'{tree}/{item["stream"]}') for item in items}))
-            stamps = [float(w) for w in shell(f'stat -c %Y {streams} 2>/dev/null || true', None).split() if w.isdigit()]
-            elapsed_s = parse_duration(elapsed)
-            idle_s = now - max(stamps) if stamps else elapsed_s
-            if why := stall_of(items, idle_s=idle_s, elapsed_s=elapsed_s):
-                started = shell(f'grep -hF \'"start"\' {streams} 2>/dev/null || true', None)
-                last = _last_started(started, {item.get('item') for item in items})
-                found.append(Stalled(job_id, name, tree.rsplit('/', 1)[-1], last, why))
+        found = stalled_tasks(shell)
         if found:
             scancel(shell, [one.job_id for one in found])
         return found
@@ -426,7 +358,11 @@ class SlurmCluster:
         return list(ids)
 
     def standing(self) -> Standing:
-        """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota."""
+        """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota.
+
+        The supply also lists AND counts the needs this checkout's prep job proved on a compute node (:func:`proven`):
+        a part's demand asks one of each need, and a proven tool is no seat -- every task may run it (``math.inf``).
+        """
         read: list[tuple[Snapshot, str]] = []
         probed: list[tuple[Grant, Snapshot]] = []
         for grant in self.machine.grants:
@@ -437,6 +373,10 @@ class SlurmCluster:
         left = quotawatch.admitted_files(usage, policy := quotawatch.declared_lines())
         account = SlurmAccount(read, files=math.inf if left is None else left)
         supply = Engine({self.scope: [account, account_seats(cached())]}).available(self.scope)
+        # a need is never probed on the login node: the prep job proved it on a compute node (hpcaccount.prep.TOOLS)
+        tools = proven(self.root)  # counted too: a part's demand asks one of each need, and a proven tool is no seat
+        counted = {**supply.resources, **{tool: math.inf for tool in tools if not supply.resources[tool]}}
+        supply = replace(supply, resources=type(supply.resources)(counted), listed=supply.present | tools)
         snapshot, qos = read[0]
         shell = self.connect(self.machine.grants[0])
         facts: dict[str, object] = {

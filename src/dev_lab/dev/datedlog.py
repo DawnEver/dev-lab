@@ -87,6 +87,13 @@ FAMILY_KINDS: Final[dict[str, dict[str, frozenset[str]]]] = {
     'deploy-femm': {'.': frozenset({'.log'})},  # hpcaccount.femm: the FEMM build log
     # hpcaccount.salvage: one record per run; the work itself is salvage/<yyyymmdd>-<name> branches (#1039)
     'salvage': {'.': frozenset({'.json'})},
+    # forgeci: each job's whole log; each artifact unpacked as ci_base uploads it (verify log, outcomes, receipt)
+    'ci': {
+        '.': frozenset({'.log'}),
+        '*': frozenset({'.log', '.json'}),
+        '*/*.outcomes': frozenset(),
+        '*/*.outcomes/*': frozenset({'.jsonl'}),
+    },
 }
 
 

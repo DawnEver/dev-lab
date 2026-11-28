@@ -99,6 +99,12 @@ build-backend = "hatchling.build"
 source = "vcs"
 fallback-version = "0.0.0"
 
+# Only a version tag (v<digits>...) names a version: the repo also carries release tags that are not versions
+# (`vendor-<dist>-<rev12>` from nativewheels, `run-records`), and a bare `git describe` picked
+# `vendor-triangle-595b43eb6682` and failed every build of dev-lab from git (2026-11-28).
+[tool.hatch.version.raw-options]
+git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "v[0-9]*"]
+
 [tool.hatch.build.hooks.vcs]
 version-file = "src/dev_lab/__version__.py"
 template = "__version__ = version = \"{version}\"\n__version_tuple__ = version_tuple = {version_tuple}\n"
@@ -209,6 +215,13 @@ ephemeral = ['pr/*']
 BARE-TEST-INVOCATION = "<venv python> -m dev_lab.dev.verify -- <paths>  (the measure door; a full run is the forge producer's; a hand-written pytest line has none)"
 PUSH-NO-VERIFY = "push without skipping the hook; no hook runs a test, and the forge produces the part"
 NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- <git push|fetch|pull|clone|ls-remote|submodule update ...  or  uv lock|add|remove ...>  (retries 3x, then reports a diagnosis); an environment change is <venv python> -m dev_lab.dev.dep --sync (installs the committed lock) and a lock change <venv python> -m dev_lab.dev.dep --lock-upgrade . [--upgrade-package NAME], both retrying inside"
+
+# VENDORED WHEELS (FAM-16, dev_lab.dev.nativewheels): a third-party pin that only builds from source, built here
+# by Actions for the family Python on every OS, so no consumer needs a compiler. v1's [[tool.uv.index]] "vendor-triangle"
+# reads the release vendor-triangle-595b43eb6682; a new rev is a new release, never a replaced wheel.
+[tool.dev_lab.native.vendor.triangle]
+git = "https://github.com/drufat/triangle"
+rev = "595b43eb6682992a0b1012b9671bf860c0e6ae56"
 
 [tool.dev_lab.render]
 # What the family renderers read from this repo (dev_lab.dev._famfiles_registry.RENDERERS); a relock re-runs each one due.
@@ -333,7 +346,7 @@ typeCheckingMode = "basic"
 
 # TYPES-RATCHET (dev_lab.dev.typecheck): pyright errors per owner, only ever lowered (measured 2026-11-25).
 [tool.dev_lab.typecheck]
-errors = {dev = 4158, dev_lab = 2, ops = 551, supervise = 192, tests = 1095}
+errors = {dev = 4102, dev_lab = 2, ops = 551, supervise = 192, tests = 1093}
 
 [tool.coverage.html]
 # Every tool cache and report under output/ (user ruling 2026-11-24): never htmlcov/ at the root.

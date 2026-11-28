@@ -210,3 +210,18 @@ def test_a_host_holding_a_fitting_interpreter_fetches_nothing(tmp_path, monkeypa
     calls: list[tuple[str, ...]] = []
     assert _dep_project.fetch_python(root, run=_uv_answers(0, '', calls), environment=None) == ''
     assert calls == []
+
+
+@pytest.mark.parametrize(('cfg', 'reused'), [('version_info = 3.12.12', False), ('version_info = 3.14.10', True)])
+def test_a_bootstrap_builds_on_requires_python_and_reuses_only_a_matching_env(
+    tmp_path, monkeypatch, cfg, *, reused
+) -> None:
+    """dev-lab #1093: a 3.12 env under ``==3.14.*`` is rebuilt on a fitting Python; a 3.14 env is reused."""
+    root = _project(tmp_path / 'config')
+    (root / 'pyproject.toml').write_text('[project]\nname="e"\nrequires-python = "==3.14.*"\n', encoding='utf-8')
+    env = str(_own_env(root, cfg))
+    monkeypatch.setattr(_dep_project.shutil, 'which', lambda _name: 'uv')
+    command = _dep_project.uv_command(root, env, (), frozen=True)
+    built_on = command[command.index('--python') + 1]
+    assert built_on == (env if reused else _dep_project.bootstrap_python(root))
+    assert built_on != env or reused, 'the 3.12 interpreter is never handed to uv'

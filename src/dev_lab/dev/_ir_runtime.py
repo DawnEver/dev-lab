@@ -3,18 +3,18 @@
 :mod:`dev_lab.dev.irpython` writes the copy, so this file imports nothing from dev-lab.
 
 The one runtime every generated IR module of this package shares: validation driven by each record's
-field table, the canonical JSON and the import-time freshness check; the stored envelope and the record
-surface are its sibling template ``_ir_surface.py``. numpy only.
+field table and the import-time freshness check; the canonical JSON tree is its sibling template
+``_ir_tree.py``, the stored envelope and the record surface ``_ir_surface.py``. numpy only.
 """
 
 from __future__ import annotations
 
-import base64
 import dataclasses
 import hashlib
 import json
 import math
 from collections.abc import Callable, Iterable
+from enum import Enum
 from pathlib import Path
 from typing import NamedTuple, NoReturn, Protocol, cast
 
@@ -75,9 +75,9 @@ class F(NamedTuple):
     """One field of a record: everything validation, serialization and the codec need."""
 
     name: str
-    kind: str  # bool int float complex str enum id record list array
+    kind: str  # bool int float complex str enum id record list array foreign rest
     optional: bool = False
-    target: str = ''  # 'module.Name' of the Enum or record class, resolved through REGISTRY
+    target: str = ''  # 'module.Name' of the Enum or record class (REGISTRY); a foreign's '<package>.<name>'
     item: F | None = None  # a list's element
     dtype: str = ''
     shape: tuple[int | str, ...] = ()
@@ -93,19 +93,19 @@ class F(NamedTuple):
 # -- scalars ------------------------------------------------------------------------------------------------
 
 
-def _type_name(value: object) -> str:
+def type_name(value: object) -> str:
     return type(value).__name__
 
 
 def _boolean(_spec: F, value: object, path: str) -> bool:
     if not isinstance(value, bool):
-        fail(path, 'bool', _type_name(value))
+        fail(path, 'bool', type_name(value))
     return value
 
 
 def _integer(_spec: F, value: object, path: str) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
-        fail(path, 'int', _type_name(value))
+        fail(path, 'int', type_name(value))
     if not _I64[0] <= int(value) <= _I64[1]:
         fail(path, 'a signed 64-bit int', str(value))
     return int(value)
@@ -113,7 +113,7 @@ def _integer(_spec: F, value: object, path: str) -> int:
 
 def _real(_spec: F, value: object, path: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)):
-        fail(path, 'float', _type_name(value))
+        fail(path, 'float', type_name(value))
     if not math.isfinite(value):
         fail(path, 'a finite float (IR-NON-FINITE)', repr(float(value)))
     return float(value)
@@ -121,7 +121,7 @@ def _real(_spec: F, value: object, path: str) -> float:
 
 def _complex(_spec: F, value: object, path: str) -> complex:
     if isinstance(value, bool) or not isinstance(value, (int, float, complex, np.number)):
-        fail(path, 'complex', _type_name(value))
+        fail(path, 'complex', type_name(value))
     value = complex(value)
     if not (math.isfinite(value.real) and math.isfinite(value.imag)):
         fail(path, 'a finite complex (IR-NON-FINITE)', repr(value))
@@ -130,7 +130,7 @@ def _complex(_spec: F, value: object, path: str) -> complex:
 
 def _text(spec: F, value: object, path: str) -> str:
     if not isinstance(value, str):
-        fail(path, spec.kind, _type_name(value))
+        fail(path, spec.kind, type_name(value))
     if spec.kind == 'id' and not value:
         fail(path, 'a non-empty id', "''")
     return value
@@ -139,11 +139,24 @@ def _text(spec: F, value: object, path: str) -> str:
 def _instance(spec: F, value: object, path: str) -> object:
     cls = target(spec)
     if not isinstance(value, cls):
-        fail(path, cls.__name__, _type_name(value))
+        fail(path, cls.__name__, type_name(value))
     return value
 
 
+def _foreign(_spec: F, value: object, _path: str) -> object:
+    return value  # another package's value, kept as written: its owner validates it
+
+
+def _rest(spec: F, value: object, path: str) -> dict[str, object]:
+    table = cast('dict[object, object]', value) if isinstance(value, dict) else None
+    if table is None or not all(isinstance(k, str) for k in table):
+        fail(path, f'a table of foreign:{spec.target}', type_name(value))
+    return {str(k): v for k, v in table.items()}
+
+
 _SCALARS = {
+    'foreign': _foreign,
+    'rest': _rest,
     'bool': _boolean,
     'int': _integer,
     'float': _real,
@@ -179,7 +192,7 @@ def _bind(dims: dict[str, tuple[int, str]], name: str, extent: int, path: str, b
 
 def _array(spec: F, value: object, path: str, dims: dict[str, tuple[int, str]], bounds: _Bounds) -> np.ndarray:
     if not isinstance(value, np.ndarray):
-        fail(path, 'ndarray', _type_name(value))
+        fail(path, 'ndarray', type_name(value))
     if value.dtype != np.dtype(spec.dtype):
         fail(f'{path}.dtype', spec.dtype, str(value.dtype))
     if value.ndim != len(spec.shape):
@@ -224,19 +237,49 @@ def _item(spec: F, value: object, path: str, dims: dict, bounds: dict) -> object
         return _array(spec, value, path, dims, bounds)
     if spec.kind == 'list':
         if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            fail(path, 'a sequence', _type_name(value))
+            fail(path, 'a sequence', type_name(value))
         items = tuple(_item(spec.item, v, f'{path}[{i}]', dims, bounds) for i, v in enumerate(value))
         if spec.unique_by:
-            keys = [spec.key(v) for v in items]
-            seen = {k for k in keys if keys.count(k) > 1}
-            if seen:
-                fail(path, f'unique {spec.unique_by}', f'duplicate {min(seen)!r}')
-            items = tuple(sorted(items, key=spec.key))
+            items = _unique(spec, items, path)
         return items
     value = _scalar(spec, value, path)
     if spec.kind == 'record':
         _merge(dims, value._ir_dims, path, type(value).__name__)  # noqa: SLF001 -- the runtime owns the slot
     return value
+
+
+def _unique(spec: F, items: tuple[object, ...], path: str) -> tuple[object, ...]:
+    """*items* in key order, refusing a duplicate key; a key is its canonical JSON, as the generated Rust's."""
+    read = cast('Callable[[object], object]', spec.key)
+    keys = [_plain(read(item)) for item in items]
+    tokens = [json.dumps(k, separators=(',', ':'), ensure_ascii=False) for k in keys]
+    if seen := {t for t in tokens if tokens.count(t) > 1}:
+        fail(path, f'unique {spec.unique_by}', f'duplicate {min(seen)}')
+    order = [_order(k) for k in keys]
+    return tuple(items[i] for i in sorted(range(len(items)), key=order.__getitem__))
+
+
+def _plain(key: object) -> object:
+    """A ``unique_by`` key as its JSON tree: an enum its value, a tuple a list, an absent optional ``None``."""
+    if isinstance(key, tuple):
+        return [_plain(k) for k in cast('tuple[object, ...]', key)]
+    return cast('Enum', key).value if isinstance(key, Enum) else key
+
+
+def _order(key: object) -> tuple[object, ...]:
+    """The sort order of a key tree, the generated Rust's ``cmp_key``: null < number < string < array."""
+    if key is None:
+        return (0,)
+    if isinstance(key, list):
+        return (3, tuple(_order(k) for k in cast('list[object]', key)))
+    return (2, key) if isinstance(key, str) else (1, key)
+
+
+def _shadowed(cls: type, rest: dict[str, object], path: str) -> None:
+    """Refuse a foreign rest that holds a declared field's key: it is set as the field."""
+    names = {spec.name for spec in fields_of(cls)}
+    if declared := sorted(names & set(rest)):
+        fail(f'{path}.{declared[0]}', 'an undeclared key', 'a declared field (set it as the field)')
 
 
 def post_init(record: object) -> None:
@@ -245,7 +288,7 @@ def post_init(record: object) -> None:
     head = cls.__name__
     dims: dict[str, tuple[int, str]] = {}
     values = {}
-    for spec, value in zip(cls._ir_fields, record._ir_values(), strict=True):  # noqa: SLF001 -- generated
+    for spec, value in zip(fields_of(cls), values_of(record), strict=True):
         path = f'{head}.{spec.name}'
         if value is None:
             if not spec.optional:
@@ -253,120 +296,41 @@ def post_init(record: object) -> None:
             values[spec.name] = None
             continue
         values[spec.name] = _item(spec, value, path, dims, cls._ir_bounds)
-    for spec in cls._ir_fields:
+        if spec.kind == 'rest':
+            _shadowed(cls, values[spec.name], path)
+    for spec in fields_of(cls):
         if spec.csr_values and values[spec.name] is not None:
             _csr(values[spec.name], values[spec.csr_values], f'{head}.{spec.name}')
     record._ir_set(tuple(values.values()), dims)  # noqa: SLF001 -- generated
 
 
-class _Fielded(Protocol):
-    """A generated record class, as :func:`build` reads it: its field table."""
+class Fielded(Protocol):
+    """A generated record, as the runtime and its tree codec read it: its field table and its values."""
 
     _ir_fields: tuple[F, ...]
+
+    def _ir_values(self) -> tuple[object, ...]: ...
+
+
+def fields_of(cls: type) -> tuple[F, ...]:
+    """The generated record class *cls*'s field table: the one reader of that private slot."""
+    return cast('type[Fielded]', cls)._ir_fields  # noqa: SLF001 -- generated
+
+
+def values_of(record: object) -> tuple[object, ...]:
+    """The generated *record*'s values, in :func:`fields_of` order: the one reader of that private slot."""
+    return cast('Fielded', record)._ir_values()  # noqa: SLF001 -- generated
 
 
 def build(cls: type, kwargs: dict[str, object], path: str) -> object:
     """``cls(**kwargs)`` (keyed by WIRE name) whose validation errors read from *path* rather than from ``cls``."""
-    specs = cast('type[_Fielded]', cls)._ir_fields  # noqa: SLF001 -- generated
+    specs = fields_of(cls)
     attrs: dict[str, str] = {spec.name: spec.attr for spec in specs if spec.attr}
     named: dict[str, object] = {attrs.get(str(name), str(name)): value for name, value in kwargs.items()}
     try:
         return cls(**named)
     except IRValidationError as error:
         raise error.under(cls.__name__, path) from None
-
-
-# -- canonical JSON -----------------------------------------------------------------------------------------
-
-
-def _array_tree(value: np.ndarray) -> dict:
-    data = value.astype(value.dtype.newbyteorder('<'), copy=False)
-    if data.dtype.kind == 'b':
-        data = data.view(np.uint8)
-    raw = np.ascontiguousarray(data).tobytes(order='C')
-    return {'data': base64.b64encode(raw).decode('ascii'), 'shape': list(value.shape)}
-
-
-def _tree_of(spec: F, value: object) -> object:
-    kind = spec.kind
-    if kind == 'array':
-        return _array_tree(value)
-    if kind == 'list':
-        return [_tree_of(spec.item, v) for v in value]
-    if kind == 'record':
-        return to_tree(value)
-    if kind == 'enum':
-        return value.value
-    if kind == 'complex':
-        return [value.real, value.imag]
-    return value
-
-
-def to_tree(record: object) -> dict:
-    """The JSON tree of *record*; absent optionals are omitted."""
-    return {
-        spec.name: _tree_of(spec, value)
-        for spec, value in zip(type(record)._ir_fields, record._ir_values(), strict=True)  # noqa: SLF001
-        if value is not None
-    }
-
-
-def canonical(tree: object) -> bytes:
-    """The canonical bytes of a JSON tree: sorted keys, no whitespace, ``repr`` floats, no NaN."""
-    return json.dumps(tree, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode()
-
-
-def _from_array(spec: F, tree: object, path: str) -> np.ndarray:
-    if not isinstance(tree, dict) or set(tree) != {'data', 'shape'}:
-        fail(path, '{"data", "shape"}', _type_name(tree))
-    dtype = np.dtype(spec.dtype)
-    raw = base64.b64decode(tree['data'], validate=True)
-    wire = np.dtype(np.uint8) if dtype.kind == 'b' else dtype.newbyteorder('<')
-    flat = np.frombuffer(raw, dtype=wire)
-    if dtype.kind == 'b':
-        flat = flat.astype(bool)
-    shape = tuple(tree['shape'])
-    if math.prod(shape) != flat.size:
-        fail(f'{path}.shape', f'{flat.size} elements', str(list(shape)))
-    return flat.astype(dtype).reshape(shape)
-
-
-def _from_tree_item(spec: F, tree: object, path: str) -> object:
-    kind = spec.kind
-    if kind == 'array':
-        return _from_array(spec, tree, path)
-    if kind == 'list':
-        if not isinstance(tree, list):
-            fail(path, 'a list', _type_name(tree))
-        return tuple(_from_tree_item(spec.item, v, f'{path}[{i}]') for i, v in enumerate(tree))
-    if kind == 'record':
-        return from_tree(target(spec), tree, path)
-    if kind == 'enum':
-        try:
-            return target(spec)(tree)
-        except ValueError:
-            fail(path, f'one of {[m.value for m in target(spec)]}', repr(tree))
-    if kind == 'complex':
-        if not (isinstance(tree, list) and len(tree) == len('ri')):
-            fail(path, '[re, im]', repr(tree))
-        return complex(tree[0], tree[1])
-    return tree
-
-
-def from_tree(cls: type, tree: object, path: str | None = None) -> object:
-    """Rebuild *cls* from its JSON tree; an unknown key is refused by name (IR-UNKNOWN-FIELD)."""
-    path = path or cls.__name__
-    if not isinstance(tree, dict):
-        fail(path, 'an object', _type_name(tree))
-    known = {spec.name: spec for spec in cls._ir_fields}
-    unknown = sorted(set(tree) - set(known))
-    if unknown:
-        fail(f'{path}.{unknown[0]}', f'a field of {cls.__name__}', 'an unknown field (IR-UNKNOWN-FIELD)')
-    kwargs = {name: _from_tree_item(known[name], value, f'{path}.{name}') for name, value in tree.items()}
-    missing = [s.name for s in cls._ir_fields if not s.optional and s.name not in kwargs]
-    if missing:
-        fail(f'{path}.{missing[0]}', 'a value', 'nothing')
-    return build(cls, kwargs, path)
 
 
 def ir_dims() -> object:
