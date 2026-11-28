@@ -199,11 +199,11 @@ def _submit(fake: FakeRunCluster, **kw: object) -> str:
         builds=Builds(install='true', env_key='k1'),
         vocabulary=Vocabulary(('win',)),
     )
-    return submit_run(spec, MACHINE, lambda _g: fake, cost=COST, policy=POLICY, stamp='t0', **kw)
+    return submit_run(spec, MACHINE, lambda _g: fake, policy=POLICY, stamp='t0', **kw)
 
 
 def _gather(fake: FakeRunCluster, **kw: object) -> dict | None:
-    return gather_run(SHA, BASE, MACHINE, lambda _g: fake, cost=COST, policy=POLICY, **kw)
+    return gather_run(SHA, BASE, MACHINE, lambda _g: fake, policy=POLICY, **kw)
 
 
 def _run(fake: FakeRunCluster, carry: object = None, **kw: object) -> dict:

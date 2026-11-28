@@ -58,7 +58,9 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   backed up to `<file>.lab-deploy.bak` first, so the login shell runs what the tick runs; replaces its own marked
   crontab lines with the account's one line. **It builds nothing on the login node** (ONE-LOGIN-POLLER, user ruling
   2026-11-27): each repo whose environment is not stamped with the key of its inputs gets its Slurm PREP JOB asked
-  (`dev_lab.dev.hpcaccount.prep`), which runs the kit's own `hpcaccount prep-build <repo>` on a compute node --
+  (`dev_lab.dev.hpcaccount.prep`) at the memory, CPUs and wall the repo's `[tool.lab_commons.hpc] prep`
+  declares (default sized for a release Rust build: `lab_commons.hpc.builds.PrepAsk`; an ask no grant's ceiling
+  holds is refused by name before `sbatch`), which runs the kit's own `hpcaccount prep-build <repo>` on a compute node --
   `uv` and the Rust toolchain from their official installers into `~/.local` and `~/.cargo`, `cmake` through
   `uv tool`, any other missing `needs` refused by name (`<tool> --version` on the node: a rustup shim with no
   toolchain is not a cargo), then the `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native`

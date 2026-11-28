@@ -168,7 +168,6 @@ class SlurmCluster:
             spec,
             self.machine,
             self.connect,
-            cost=self.config.cost,
             policy=self.config.policy,
             history=learned.learned(run.repo_url),
         )
@@ -236,7 +235,6 @@ class SlurmCluster:
             run.platform,
             self.machine,
             self.connect,
-            cost=self.config.cost,
             policy=self.config.policy,
             carry=functools.partial(self.carry_of, run),
         )
