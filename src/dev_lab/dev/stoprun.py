@@ -45,7 +45,15 @@ signature, RAW-PROCESS-KILL forbade ``taskkill``, and the memory they held kept 
       [tool.dev_lab.stoprun]
       orphans = ["designer.exe.* --process-link", "JobSystem.exe -s "]
 
-A refusal names the condition that failed -- a live parent is named, so the run it belongs to is stopped instead.
+AN ORPHAN OF THIS CHECKOUT (2026-11-28, forge comment 44829 on v1 #1): TaskStop killed the shell above a
+``sh mutate2.sh`` tree (sh -> rustup -> cargo -> a growing test exe); it matched no signature and no orphan role, and
+RAW-PROCESS-KILL left no door. The third condition is also met by WHERE the root sits: its OWN cwd or executable lies
+in the caller's checkout (``--repo`` or the cwd's) under a regenerable tree (:data:`dev_lab.dev.layout.NO_COPY_ROOTS`:
+``output/``, ``scratch/``; :func:`~dev_lab.dev.stopsignatures.regenerable_place`). The ROOT's place, never a
+descendant's: measured that day, 149 of 479 processes on a workstation had a gone parent -- ``explorer.exe`` and every
+agent session's ``node.exe`` among them -- so a descendant that merely cd-ed into ``output/`` would admit a session.
+A refusal names EVERY condition that failed -- a live parent (so the run it belongs to is stopped instead), and why
+the root's cwd and executable are no place of this checkout's (outside it, its root, or a tracked tree).
 A REFUSAL IS NEVER BARE (2026-11-13: an agent got "no signature" and nothing to act on): it says WHAT the pid is
 (its command line), WHO started it (its parent), whether it descends from this session (:func:`whose`), and the
 exit -- ask the user, or declare the run's command line as a signature when it is a run of this repo.
@@ -84,7 +92,17 @@ from lab_commons.proc import pid_alive
 
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.gitdirs import checkout_of, run_owner, same_owner
-from dev_lab.dev.proctable import INIT, Proc, process_cwds, process_table, subtree, unstoppable, whose
+from dev_lab.dev.layout import NO_COPY_ROOTS
+from dev_lab.dev.proctable import (
+    INIT,
+    Proc,
+    process_cwds,
+    process_executables,
+    process_table,
+    subtree,
+    unstoppable,
+    whose,
+)
 from dev_lab.dev.servelock import note_stopped
 from dev_lab.dev.stopapproved import ApprovedRun, stop_approved
 from dev_lab.dev.stopsignatures import (
@@ -94,6 +112,7 @@ from dev_lab.dev.stopsignatures import (
     declared_orphans,
     declared_signatures,
     orphan_role,
+    regenerable_place,
     why_stoppable,
 )
 
@@ -120,17 +139,26 @@ def _orphan_refusal(
     orphans: tuple[str, ...],
     claimed: Callable[[], set[int]],
     born: CreationClock,
+    *,
+    place: tuple[str | None, list[str]] | None = None,
 ) -> str | None:
-    """Why *pid* is NOT a stoppable orphan, or ``None`` when it is (the module docstring's three conditions)."""
-    cmdline = table[pid][1]
-    if not orphan_role(cmdline, orphans):
+    """Why *pid* is NOT a stoppable orphan, or ``None`` when it is (the module docstring's three conditions).
+
+    *place* is :func:`regenerable_place` of the root in the caller's checkout; ``None`` when no checkout was given.
+    """
+    failed: list[str] = []
+    if not orphan_role(table[pid][1], orphans) and (place is None or place[0] is None):
         builtin = ', '.join(repr(sig.pattern) for sig in BUILTIN_ORPHANS)
-        return f'no orphan signature either (built-in {builtin} or {TABLE} orphans)'
+        trees = ', '.join(f'{tree}/' for tree in NO_COPY_ROOTS)
+        nowhere = f'; nor is it an orphan of this checkout ({trees}): {"; ".join(place[1])}' if place else ''
+        failed.append(f'no orphan signature either (built-in {builtin} or {TABLE} orphans){nowhere}')
     ppid = table[pid][0]
     if ppid > INIT and ppid in table:  # POSIX reparents an orphan to init: its parent is gone
         parent, child = born(ppid), born(pid)
         if parent is None or child is None or parent <= child:
-            return f'its parent {ppid} is alive ({table[ppid][1][:120]!r}) -- stop that run instead'
+            failed.append(f'its parent {ppid} is alive ({table[ppid][1][:120]!r}) -- stop that run instead')
+    if failed:
+        return '; and '.join(failed)
     try:
         held = claimed() & set(subtree(table, pid))
     except (OSError, sqlite3.Error) as exc:
@@ -215,10 +243,12 @@ def stop(
     fresh: Callable[[], Mapping[int, Proc]] = process_table,
     checkout: Path | None = None,
     cwds: Mapping[int, str | None] | None = None,
+    executables: Mapping[int, str | None] | None = None,
 ) -> tuple[int, list[str]]:
     """Stop *pid*'s subtree if it is an identifiable run or a stoppable orphan. ``(exit code, lines)``; 3 refused.
 
-    With *checkout*, a run matched by signature must be that checkout's (its cwd per *cwds*), else it is refused.
+    With *checkout*, a run matched by signature must be that checkout's (its cwd per *cwds*), else it is refused;
+    and an orphan whose root's cwd or executable (*executables*) is in its regenerable trees is an orphan of it.
     """
     if never := unstoppable(pid, table):
         return 3, [f'refused: {never}']
@@ -237,9 +267,17 @@ def stop(
         )
     matched = why_stoppable(table, pid, signatures, born)
     if matched is None:
-        if why := _orphan_refusal(pid, table, orphans, claimed, born):
+        place = None
+        if checkout is not None:
+            where = {'cwd': (cwds or {}).get(pid), 'executable': (executables or {}).get(pid)}
+            place = regenerable_place(checkout, where)
+        if why := _orphan_refusal(pid, table, orphans, claimed, born, place=place):
             return 3, _refusal(table, pid, why, os.getpid() if me is None else me, manifest)
-        lines = [f'an orphan: its parent is gone and it holds no box claim: {table[pid][1][:120]!r}']
+        said = f'{table[pid][1][:120]!r}'
+        if place is not None and place[0] is not None and not orphan_role(table[pid][1], orphans):
+            lines = [f'an orphan of this checkout: its parent is gone, {place[0]}, and it holds no box claim: {said}']
+        else:
+            lines = [f'an orphan: its parent is gone and it holds no box claim: {said}']
     else:
         if checkout is not None and (foreign := owner_refusal(pid, table, cwds or {}, checkout)):
             return 3, foreign
@@ -315,6 +353,7 @@ def main(argv: list[str] | None = None) -> int:
         approved=approved,
         checkout=root,
         cwds=process_cwds(),
+        executables=process_executables(),
     )
     for line in lines:
         emit(f'[stoprun] {line}', err=bool(code))

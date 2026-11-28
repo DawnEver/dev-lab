@@ -10,14 +10,15 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from lab_commons.liveness import creation_stamp
+from lab_commons.liveness import CreationClock, creation_stamp
 from lab_commons.proc import pid_alive
 
 from dev_lab.dev import stoprun as door
-from dev_lab.dev.proctable import process_table, subtree
+from dev_lab.dev.proctable import process_cwds, process_executables, process_table, subtree
 from dev_lab.dev.servelock import was_stopped
 from dev_lab.dev.stopapproved import ApprovedRun
 from dev_lab.dev.stoprun import stop
@@ -439,7 +440,16 @@ class _ApprovedScene:
         }
         return ApprovedRun(**(fields | changes))
 
-    def stop(self, *, approved=None, dry_run=False, **changes: object) -> tuple[int, list[str]]:
+    def stop(
+        self,
+        *,
+        approved: ApprovedRun | None = None,
+        dry_run: bool = False,
+        signatures: tuple[str, ...] = (),
+        orphans: tuple[str, ...] = (),
+        notes: Path | None = None,
+        claimed: Callable[[], set[int]] = _none_claimed,
+    ) -> tuple[int, list[str]]:
         return door.stop(
             30,
             dict(self.table),
@@ -449,7 +459,10 @@ class _ApprovedScene:
             fresh=self.fresh,
             kill=self.kill,
             gone=lambda pid, _seconds: pid not in self.table,
-            **changes,
+            signatures=signatures,
+            orphans=orphans,
+            notes=notes,
+            claimed=claimed,
         )
 
 
@@ -1013,3 +1026,159 @@ def test_a_venv_build_and_its_follow_are_runs_the_build_lock_wall_may_name() -> 
     assert identify('python.exe -m dev_lab.dev.dep --bootstrap D:/r/.claude/worktrees/w')
     assert identify('python.exe -m dev_lab.dev.venvfollow --root D:/r/.claude/worktrees/w')
     assert not identify('python.exe -m dev_lab.dev.depcites'), 'PLANTED CONTROL: a sibling module is no build'
+
+
+# AN ORPHAN OF THIS CHECKOUT (2026-11-28, forge comment 44829 on v1 #1): a `sh mutate2.sh` tree whose shell TaskStop
+# had killed matched no signature and no orphan role, RAW-PROCESS-KILL refused taskkill, and nothing could stop it.
+# Its root sat in the checkout's regenerable output/; that place -- the ROOT's own, never a descendant's -- is the role.
+
+_SH = r'"D:\Program Files\Git\usr\bin\sh.exe" mutate2.sh'
+_SH_EXE = r'D:\Program Files\Git\usr\bin\sh.exe'
+
+
+def _mutation_tree(checkout: Path, cwd: Path | str) -> tuple[dict, dict, dict]:
+    """The measured shape: an orphaned sh -> sh -> cargo -> a test exe built under output/."""
+    table = {45588: (38460, _SH), 51136: (45588, _SH), 11972: (51136, 'cargo.exe test'), 32384: (11972, 'geom.exe')}
+    cwds = dict.fromkeys(table, str(cwd))
+    exes = {45588: _SH_EXE, 51136: _SH_EXE, 11972: r'C:\cargo.exe', 32384: str(checkout / 'output' / 'geom.exe')}
+    return table, cwds, exes
+
+
+def _stop_in(
+    checkout: Path,
+    table: dict,
+    cwds: dict,
+    exes: dict,
+    killed: list[int],
+    *,
+    claimed: Callable[[], set[int]] = _none_claimed,
+    born: CreationClock = creation_stamp,
+) -> tuple[int, list[str]]:
+    return stop(
+        45588, table, dry_run=False, kill=killed.append, claimed=claimed, born=born, checkout=checkout, cwds=cwds,
+        executables=exes,
+    )  # fmt: skip
+
+
+def test_an_orphan_whose_root_sits_in_the_checkout_s_output_is_stopped_whole_children_first(tmp_path: Path) -> None:
+    table, cwds, exes = _mutation_tree(tmp_path, tmp_path / 'output' / 'logs' / 'review')
+    killed: list[int] = []
+    code, lines = _stop_in(tmp_path, table, cwds, exes, killed)
+    assert code == 0, lines
+    assert killed == [32384, 11972, 51136, 45588]
+    assert 'orphan of this checkout' in lines[0]
+    assert 'output' in lines[0]
+
+
+def test_an_orphan_whose_root_runs_a_scratch_executable_is_an_orphan_of_this_checkout(tmp_path: Path) -> None:
+    table, cwds, exes = _mutation_tree(tmp_path, tmp_path.parent)
+    exes[45588] = str(tmp_path / 'scratch' / 'probe.exe')
+    code, lines = _stop_in(tmp_path, table, cwds, exes, [])
+    assert code == 0, lines
+    assert 'scratch' in lines[0]
+
+
+def test_an_orphan_of_this_checkout_is_refused_naming_each_condition_that_failed(tmp_path: Path) -> None:
+    """PLANTED CONTROLS: outside the checkout, a live unrelated parent, a tracked tree -- each alone refuses."""
+    killed: list[int] = []
+
+    def refused(cwd: Path | str, table_edit: dict | None = None, born: CreationClock = creation_stamp) -> str:
+        table, cwds, exes = _mutation_tree(tmp_path, cwd)
+        table.update(table_edit or {})
+        code, lines = _stop_in(tmp_path, table, cwds, exes, killed, born=born)
+        assert code == 3, lines
+        return '\n'.join(lines)
+
+    outside = refused(tmp_path.parent / 'elsewhere')
+    assert 'outside this checkout' in outside
+    assert 'cwd' in outside
+    assert 'executable' in outside
+    alive = {45588: (7, _SH), 7: (1, 'explorer.exe')}
+    parented = refused(tmp_path / 'output', alive, born={45588: 200, 7: 100}.get)
+    assert 'parent 7 is alive' in parented
+    tracked = refused(tmp_path / 'src' / 'pkg')
+    assert "under 'src'" in tracked
+    assert 'output/' in tracked
+    assert 'scratch/' in tracked
+    assert killed == []
+
+
+def test_a_descendant_in_output_does_not_make_an_orphaned_root_this_checkout_s(tmp_path: Path) -> None:
+    """The ROOT's place decides, never a descendant's.
+
+    MEASURED 2026-11-28: 149 of 479 processes on a workstation had a gone parent -- explorer.exe and every agent
+    session's node.exe among them. A descendant's place would admit a session whose shell merely cd-ed into output/.
+    """
+    table, cwds, exes = _mutation_tree(tmp_path, tmp_path / 'output')
+    cwds[45588] = str(tmp_path)  # the root sits at the checkout's top, like an agent session
+    exes[32384] = r'C:\elsewhere\geom.exe'
+    killed: list[int] = []
+    code, lines = _stop_in(tmp_path, table, cwds, exes, killed)
+    assert code == 3, lines
+    assert killed == []
+    assert 'checkout root' in '\n'.join(lines)
+
+
+def test_an_orphan_of_this_checkout_still_may_not_hold_a_box_claim(tmp_path: Path) -> None:
+    table, cwds, exes = _mutation_tree(tmp_path, tmp_path / 'output')
+    killed: list[int] = []
+    code, lines = _stop_in(tmp_path, table, cwds, exes, killed, claimed=lambda: {32384})
+    assert code == 3
+    assert 'holds a box claim' in lines[0]
+    assert killed == []
+
+
+def test_another_worktree_s_output_is_not_this_checkout_s(tmp_path: Path) -> None:
+    lane = tmp_path / '.claude' / 'worktrees' / 'lane'
+    table, cwds, exes = _mutation_tree(tmp_path, lane / 'output')
+    code, lines = _stop_in(tmp_path, table, cwds, exes, [])
+    assert code == 3, lines
+    assert "under '.claude'" in '\n'.join(lines)
+
+
+def test_a_real_orphan_working_in_output_is_stopped_and_one_working_at_the_top_is_spared(tmp_path: Path) -> None:
+    """End to end on the census: the cwd it reads is the one the door judges (PLANTED: the same orphan, elsewhere).
+
+    The orphan is the BASE interpreter: a Windows venv's ``python.exe`` is a launcher whose own cwd the census reads as
+    the temp directory (measured 2026-11-28), while the interpreter it starts holds the real one.
+    """
+    sleeper = 'import time; time.sleep(120)'
+    spawn = (
+        'import subprocess, sys; d = subprocess.DEVNULL; '
+        f'print(subprocess.Popen([sys.argv[2], "-c", "{sleeper}"], cwd=sys.argv[1], '
+        'stdin=d, stdout=d, stderr=d).pid)'
+    )
+    interpreter = getattr(sys, '_base_executable', sys.executable)
+    (tmp_path / 'output' / 'run').mkdir(parents=True)
+    orphans = []
+    for cwd in (tmp_path / 'output' / 'run', tmp_path):
+        launched = subprocess.run(
+            [sys.executable, '-c', spawn, str(cwd), interpreter], capture_output=True, text=True, encoding='utf-8',
+            timeout=60, check=True,
+        )  # fmt: skip
+        orphans.append(int(launched.stdout.strip()))
+    working, at_top = orphans
+    try:
+        cwds = process_cwds()
+        for _ in range(100):
+            if cwds.get(working) and cwds.get(at_top):
+                break
+            time.sleep(0.1)
+            cwds = process_cwds()
+        table, exes = process_table(), process_executables()
+        for pid, expect in ((at_top, 3), (working, 0)):
+            code, lines = stop(
+                pid, table, dry_run=False, claimed=_none_claimed, checkout=tmp_path, cwds=cwds, executables=exes
+            )
+            assert code == expect, lines
+            assert expect == 0 or 'checkout root' in '\n'.join(lines)
+        for _ in range(100):
+            if working not in process_table():
+                break
+            time.sleep(0.1)
+        assert working not in process_table()
+        assert at_top in process_table()
+    finally:
+        for pid in orphans:
+            with contextlib.suppress(OSError):
+                os.kill(pid, signal.SIGTERM)

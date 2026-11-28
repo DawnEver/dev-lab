@@ -3,23 +3,26 @@
 Split from :mod:`dev_lab.dev.stoprun` (2026-11-15, module-size band). The declarations are DATA in the
 repo's ``pyproject.toml`` (``[tool.dev_lab.stoprun] signatures`` / ``orphans``); a value that is not a
 list of valid regex strings raises :class:`SignaturesNotDeclared`. An orphaned multiprocessing worker
-is PROVEN from the table (:func:`orphaned_worker`), never recognized from its command line's shape.
+is PROVEN from the table (:func:`orphaned_worker`), never recognized from its command line's shape. An orphan
+of THIS CHECKOUT is recognized by WHERE its root sits (:func:`regenerable_place`), not by what it runs.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import tomllib
+from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.liveness import CreationClock, creation_stamp
 
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.layout import NO_COPY_ROOTS
 from dev_lab.dev.liverun import SPAWN_WORKER, WATCH
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-    from pathlib import Path
 
     from dev_lab.dev.proctable import Proc
 
@@ -36,6 +39,7 @@ __all__ = [
     'identify',
     'orphan_role',
     'orphaned_worker',
+    'regenerable_place',
     'why_stoppable',
 ]
 
@@ -166,3 +170,33 @@ def why_stoppable(table: Mapping[int, Proc], pid: int, signatures: tuple[str, ..
 def orphan_role(command: str, orphans: tuple[str, ...]) -> bool:
     """The existing declared orphan roles, shared by ordinary and approved policy checks."""
     return any(sig.search(command) for sig in (*BUILTIN_ORPHANS, *(re.compile(s) for s in orphans)))
+
+
+def regenerable_place(checkout: Path, places: Mapping[str, str | None]) -> tuple[str | None, list[str]]:
+    """Which of *places* (``{'cwd': path, 'executable': path}``) lies in *checkout*'s regenerable trees.
+
+    The trees are :data:`dev_lab.dev.layout.NO_COPY_ROOTS` (what a program regenerates, and the one-off sink).
+    ``(the place that admits, [])``, or ``(None, why each place does not)`` -- outside the checkout, its root,
+    or a tree it tracks -- so a refusal names the condition that failed.
+    """
+    top = os.path.normcase(os.path.normpath(Path(checkout).resolve()))
+    misses: list[str] = []
+    for label, path in places.items():
+        if not path:
+            misses.append(f'its {label} is unreadable')
+            continue
+        at = os.path.normcase(os.path.normpath(path))
+        try:
+            inside = os.path.commonpath([at, top]) == top
+        except ValueError:  # another drive
+            inside = False
+        head = next(iter(Path(os.path.relpath(at, top)).parts), os.curdir) if inside else ''
+        if not inside:
+            misses.append(f'its {label} {path!r} is outside this checkout ({checkout})')
+        elif head == os.curdir:
+            misses.append(f'its {label} {path!r} is the checkout root')
+        elif head in NO_COPY_ROOTS:
+            return f'its {label} {path!r} is in {head}/', []
+        else:
+            misses.append(f'its {label} {path!r} is in this checkout but under {head!r}')
+    return None, misses

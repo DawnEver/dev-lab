@@ -24,7 +24,7 @@ holder instead.
 | tool | what it does |
 |---|---|
 | a tool-level stop, or closing the shell | ends the wrapper only |
-| `python -m dev_lab.dev.stoprun --pid PID [--dry-run]` | stops one identified run and its subtree; refuses a pid that matches no run signature |
+| `python -m dev_lab.dev.stoprun --pid PID [--repo PATH] [--dry-run]` | stops one identified run and its subtree, or an orphan (parent gone, no box claim) that is a declared orphan role or whose ROOT's cwd or executable lies in the checkout's `output/` or `scratch/`; a refusal names every condition that failed |
 | a repo's reaper script | reaps orphans box-wide, and refuses while any live controller exists |
 
 - A reaper decides at the box level: a test process is an orphan only when no live controller is anywhere on
