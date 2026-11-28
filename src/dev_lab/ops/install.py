@@ -34,7 +34,7 @@ from lab_commons.config import CONFIG_ENV, FAMILY_TABLE
 
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.taskkeys import REVIEW_TASK, loader
-from dev_lab.ops import forcecommand, forgerunner
+from dev_lab.ops import forcecommand, forgerunner, sshca
 from dev_lab.ops.access import Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.caddy import Door, install_caddy
@@ -170,7 +170,7 @@ def _consent(config: OpsConfig) -> dict[str, str]:
     role = config.consent
     if role is None:
         return {}
-    forced = forcecommand.files(_UNIT, role.account, role.keys, door(config, 'consent', 'serve'))
+    forced = forcecommand.files(_UNIT, role.account, role.keys, door(config, 'consent', 'serve'), config.ssh_ca)
     return {**forced, **_https_door(config, 'consent', role, role.account)}
 
 
@@ -190,7 +190,7 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
     return {
         f'etc/systemd/system/{_UNIT}-breakglass-tick.service': tick_service,
         f'etc/systemd/system/{_UNIT}-breakglass-tick.timer': tick_timer,
-        **forcecommand.files(_UNIT, role.account, role.keys, door(config, 'breakglass', 'serve')),
+        **forcecommand.files(_UNIT, role.account, role.keys, door(config, 'breakglass', 'serve'), config.ssh_ca),
         **_https_door(config, 'breakglass', role, role.account),
         **machine,
     }
@@ -200,8 +200,9 @@ def files(config: OpsConfig) -> dict[str, str]:
     """Every file the configuration renders, by path relative to the root."""
     if config.access is not None:
         secret_file(config)  # refuse two TOTP secrets on one host before anything renders
-    access = access_files(config.access) if config.access is not None else {}
+    access = access_files(config.access, config.ssh_ca) if config.access is not None else {}
     return {
+        **(sshca.files(config.ssh_ca) if config.ssh_ca is not None else {}),
         **_promote(config),
         **_judge(config),
         **_breakglass(config),
@@ -221,11 +222,13 @@ def _consent_steps(config: OpsConfig, root: Path) -> list[str]:
         steps.append(door(config, 'consent', 'keygen'))
     if not under(root, issuer.totp).is_file():
         steps.append(door(config, 'consent', 'enroll'))
+    if (ca := config.ssh_ca) is not None and ca.key and not under(root, ca.key).is_file():
+        steps.append(door(config, 'consent', 'ca-keygen'))  # once; its public line is [ops.ssh_ca] public_key
     return steps
 
 
 def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared | None) -> tuple[str, ...]:
-    steps = []
+    steps = sshca.steps() if config.ssh_ca is not None else []  # the KRL exists before any sshd reload
     if config.promote is not None:
         steps += [f'id {config.promote.user} || useradd --system --home-dir {config.home} {config.promote.user}',
                   *prepared, 'systemctl daemon-reload', f'systemctl enable --now {_UNIT}-promote.timer']  # fmt: skip

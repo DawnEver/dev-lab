@@ -14,18 +14,21 @@ a use, its ``amount`` -- never a code, a param, a signature or a key.
 
 A PLAN's credentials are also kept as issued, one private file each under ``<state>/issued/``, so
 :meth:`Issuer.unspent` can deliver one AGAIN when the client lost it before its use (see there for the boundary).
+
+:meth:`Issuer.certify` turns a LIVE credential into a short-lived ssh user certificate (:mod:`dev_lab.ops.sshca`).
 """
 
 from __future__ import annotations
 
 import json
 import math
+import secrets
 import uuid
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, load_pem_private_key
@@ -33,8 +36,9 @@ from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption,
 from dev_lab.ops.consent.actions import ACTIONS, CAMPAIGN, Action
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, full_digest, params_hash, sign, verify
 from dev_lab.ops.consent.plan import parsed, request
-from dev_lab.ops.consentrole import Consent
+from dev_lab.ops.consentrole import Consent, SshCa
 from dev_lab.ops.lockout import guarded
+from dev_lab.ops.sshca import CertRefused, sign_certificate
 from dev_lab.ops.statelock import exclusive
 from dev_lab.ops.totp import TotpRefused, accept, write_private
 
@@ -51,6 +55,18 @@ def keygen(key_file: Path, *, force: bool = False) -> Ed25519PrivateKey:
         raise ConsentRefused(msg)
     key = Ed25519PrivateKey.generate()
     write_private(key_file, key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()).decode())
+    return key
+
+
+def _private_at(path: Path, what: str, door: str) -> Ed25519PrivateKey:
+    """The Ed25519 private key at *path*; refused by name (and the verb that makes it) when absent or another type."""
+    if not path.is_file():
+        msg = f'no {what} key at {path}: run the {door} verb first'
+        raise ConsentRefused(msg)
+    key = load_pem_private_key(path.read_bytes(), password=None)
+    if not isinstance(key, Ed25519PrivateKey):
+        msg = f'{path} is not an Ed25519 private key'
+        raise ConsentRefused(msg)
     return key
 
 
@@ -119,6 +135,8 @@ class Issuer:
     lockout_minutes: float = 15.0
     on_lock: Callable[[float], None] = lambda _until: None
     max_grants: int = Consent.max_grants
+    #: The declared ssh user CA (``[ops.ssh_ca]``, its ``key`` here); ``None``: this issuer signs no certificate.
+    ca: SshCa | None = None
 
     @property
     def ledger(self) -> Path:
@@ -126,14 +144,7 @@ class Issuer:
         return self.state / 'ledger.jsonl'
 
     def _private(self) -> Ed25519PrivateKey:
-        if not self.key.is_file():
-            msg = f'no consent key at {self.key}: run the consent keygen verb first'
-            raise ConsentRefused(msg)
-        key = load_pem_private_key(self.key.read_bytes(), password=None)
-        if not isinstance(key, Ed25519PrivateKey):
-            msg = f'{self.key} is not an Ed25519 private key'
-            raise ConsentRefused(msg)
-        return key
+        return _private_at(self.key, 'consent', 'consent keygen')
 
     def public(self) -> Ed25519PublicKey:
         """The public half of the signing key: what a verifier on this host checks with."""
@@ -241,6 +252,55 @@ class Issuer:
                 for pair, found in live.items()
                 for credential in sorted(found, key=lambda c: c['issued'], reverse=True)[: max(owed[pair], 0)]
             ]
+
+    def certify(self, credential: object, public: object, principals: object) -> str:
+        """An ssh user certificate over *public* (an OpenSSH key line) for *principals*, riding on *credential*.
+
+        THE BOUNDARY, as :meth:`unspent`'s: the user's code already authorized *credential*; certifying it asks no code
+        and spends no use. The certificate lives ``min([ops.ssh_ca] ttl, the credential's remaining life)``, names
+        only declared principals, and carries the credential's id as its key id (what the KRL row revokes). The ledger
+        records ``certified`` with the id and serial -- never the key.
+
+        Raises:
+            ConsentRefused: no CA declared or keyed here, the credential does not verify (or expired), a principal is
+                undeclared, or *public* is not one key line.
+
+        """
+        ca = self.ca
+        if ca is None or not ca.key:
+            msg = 'this issuer declares no [ops.ssh_ca] with its key: it signs no ssh certificate'
+            raise ConsentRefused(msg)
+        given = cast('list[object]', principals) if isinstance(principals, list) else []
+        names = [name for name in given if isinstance(name, str)]
+        if not names or len(names) != len(given):
+            msg = 'ssh-cert names its principals as a non-empty list of account names'
+            raise ConsentRefused(msg)
+        if undeclared := sorted(set(names) - set(ca.principals)):
+            msg = f'principals {undeclared} are not in [ops.ssh_ca] principals {list(ca.principals)}'
+            raise ConsentRefused(msg)
+        if not isinstance(public, str):
+            msg = 'ssh-cert carries the public key as one OpenSSH line'
+            raise ConsentRefused(msg)
+        with exclusive(self.state):
+            now = self.now()
+            found = verify(credential, self.public(), now=now)
+            if (left := found.expires - now) <= 0:
+                msg = f'the credential expired {-left:.0f} s ago; a new code issues another'
+                raise ConsentRefused(msg)
+            key = _private_at(Path(ca.key), 'ssh CA', 'consent ca-keygen')
+            serial = secrets.randbits(63)
+            try:
+                cert = sign_certificate(key, public, key_id=found.id, principals=names, now=now,
+                                        ttl=min(ca.ttl, left), serial=serial)  # fmt: skip
+            except (CertRefused, ValueError) as bad:
+                msg = f'the public key is not one OpenSSH key line: {type(bad).__name__}'
+                raise ConsentRefused(msg) from bad
+            line = {'event': 'certified', 'id': found.id, 'action': found.action, 'subject': found.subject,
+                    'serial': serial, 'principals': sorted(names)}  # fmt: skip
+            self.ledger.parent.mkdir(parents=True, exist_ok=True)
+            with self.ledger.open('a', encoding='utf-8') as out:
+                out.write(json.dumps(line, sort_keys=True) + '\n')
+            return cert
 
     def spent(self, ids: object) -> list[str]:
         """Which of *ids* the ledger records a use of: what a runner asks before it deletes a local credential."""

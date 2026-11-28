@@ -22,32 +22,32 @@ import lab_commons.launch as _door
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from lab_commons.log import emit
 
-from dev_lab.ops import totp
+from dev_lab.ops import sshca, totp
 from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.client import Register, public_key, remote_register
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
 from dev_lab.ops.consent.issuer import Issuer, keygen
-from dev_lab.ops.consentrole import Consent
+from dev_lab.ops.consentrole import Consent, SshCa
 
 __all__ = ['VERBS', 'issuer', 'ready', 'run', 'visible']
 
 #: Every ``ops consent`` verb.
-VERBS = ('serve', 'enroll', 'keygen', 'ready')
+VERBS = ('serve', 'enroll', 'keygen', 'ca-keygen', 'ready')
 
 #: Raise one alert ``(title, detail)`` through the host's channels.
 type Alert = Callable[[str, str], object]
 
 
-def issuer(role: Consent, *, alert: Alert) -> Issuer:
-    """The issuer *role* declares; the lockout's start is alerted."""
+def issuer(role: Consent, *, alert: Alert, ca: SshCa | None = None) -> Issuer:
+    """The issuer *role* declares, signing ssh certificates under *ca* when declared; the lockout's start is alerted."""
 
     def locked(until: float) -> None:
         when = datetime.fromtimestamp(until, UTC).isoformat(timespec='seconds')
         alert('consent LOCKED OUT', f'{role.lockout_after} wrong codes; every code refused until {when}')
 
     return Issuer(Path(role.totp), Path(role.key), Path(role.state), role.issuer, time.time,
-                  role.lockout_after, role.lockout / 60, locked, role.max_grants)  # fmt: skip
+                  role.lockout_after, role.lockout / 60, locked, role.max_grants, ca)  # fmt: skip
 
 
 def ends(config: OpsConfig, *, alert: Alert) -> tuple[Ed25519PublicKey, Register]:
@@ -151,11 +151,20 @@ def run(config: OpsConfig, verb: str, *, force: bool, alert: Alert, show: Callab
     try:
         if verb == 'enroll':
             show(totp.uri(totp.enroll(Path(role.totp), force=force), issuer=role.issuer, account=role.account))
+        elif verb == 'ca-keygen':  # the PUBLIC line goes to every host: [ops.ssh_ca] public_key (dev_lab.ops.sshca)
+            if config.ssh_ca is None or not config.ssh_ca.key:
+                emit(f'[ops] {config.path} declares no [ops.ssh_ca] key = "<path>" for the CA key', err=True)
+                return 2
+            emit(sshca.public_line(keygen(Path(config.ssh_ca.key), force=force)))
         elif verb == 'keygen':  # the PUBLIC key goes to every verifier: [consent] public_key, or the package
             emit(public_text(keygen(Path(role.key), force=force).public_key()))
         else:
             line = sys.stdin.readline()
-            emit(serve.handle(issuer(role, alert=alert), line, derive=lambda argv: _derive(config, argv)))
+            emit(
+                serve.handle(
+                    issuer(role, alert=alert, ca=config.ssh_ca), line, derive=lambda argv: _derive(config, argv)
+                )
+            )
     except (ConsentRefused, totp.TotpRefused) as refused:
         emit(f'refused: {refused}', err=True)
         return 2

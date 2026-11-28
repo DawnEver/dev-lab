@@ -37,6 +37,8 @@ ONE protocol over the transport this machine declares it can reach the forge by 
 ``[devhost] forge_reach``; undeclared is ssh) -- :func:`ssh_send` to the table's ``endpoint``, or
 :func:`dev_lab.ops.httpsclient.https_send` to its ``https`` URL, signed by the same client key. It lives here so the
 consent client imports no ``dev_lab.dev`` client module (the former ``ops.consent -> dev.forgebreakglass`` cycle).
+:func:`ssh_send` presents a live issuer-signed certificate for the endpoint's account (:func:`live_certificate`)
+with ``-o CertificateFile=`` when this machine holds one (``dev_lab.ops.sshca``, #1058).
 """
 
 from __future__ import annotations
@@ -59,6 +61,7 @@ from dev_lab.ops.consent.actions import ACTIONS, read_answer
 from dev_lab.ops.consent.credential import FIELDS, ConsentRefused
 from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
 from dev_lab.ops.httpsclient import https_send
+from dev_lab.ops.sshca import CertRefused, admits
 from dev_lab.ops.totp import write_private
 
 __all__ = [
@@ -136,15 +139,44 @@ def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, st
     """
     identity = str(table['identity']) if table.get('identity') else None
     endpoint, line = str(table['endpoint']), json.dumps(request) + '\n'
+    cert = live_certificate(endpoint.partition('@')[0])
+    certificate = None if cert is None else str(cert)
     if table.get('known_hosts'):
-        return remote.piped(endpoint, line, identity=identity, known_hosts=str(table['known_hosts']), timeout_s=180)
+        return remote.piped(endpoint, line, identity=identity, known_hosts=str(table['known_hosts']), timeout_s=180,
+                            certificate=certificate)  # fmt: skip
     declared = section('ssh').get('host_keys')
     try:
         return remote.declared_piped(
-            endpoint, line, identity=identity, timeout_s=180, host_keys=declared if isinstance(declared, dict) else {}
+            endpoint,
+            line,
+            identity=identity,
+            timeout_s=180,
+            host_keys=declared if isinstance(declared, dict) else {},
+            certificate=certificate,
         )
     except remote.HostKeyUndeclared as refused:
         return 255, str(refused)
+
+
+#: The suffix of a certificate this machine keeps (``<credential id>-cert.pub``, beside the credential).
+CERT_SUFFIX: Final = '-cert.pub'
+
+
+def live_certificate(account: str, *, home: Path | None = None, now: float | None = None) -> Path | None:
+    """The newest kept certificate naming *account* that is live now (:func:`dev_lab.ops.sshca.admits`); else none.
+
+    An expired one is skipped, never deleted here: the keys still open the account during N-1, and at N the issuer's
+    next certificate replaces it.
+    """
+    clock = time.time() if now is None else now
+    live: list[Path] = []
+    for path in Path(state_dir(home)).glob(f'*{CERT_SUFFIX}'):
+        try:
+            admits(path.read_text(encoding='utf-8'), ca_public=None, account=account, now=clock)
+        except CertRefused, OSError:
+            continue
+        live.append(path)
+    return max(live, key=lambda path: path.stat().st_mtime, default=None)
 
 
 def reach(live: Mapping[str, Any] | None = None) -> tuple[str, ...]:

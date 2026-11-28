@@ -182,22 +182,33 @@ def test_they_are_forge_verbs() -> None:
 
 def test_ssh_send_goes_through_the_one_remote_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     """One transport: the consent/breakglass JSON line rides :func:`dev_lab.dev.remote.piped`, never its own ssh."""
-    seen: list[tuple[str, str, str | None, str | None]] = []
+    seen: list[tuple[str, str, str | None, str | None, str | None]] = []
 
     def piped(
-        target: str, line: str, *, identity: str | None, known_hosts: str | None, timeout_s: float
+        target: str,
+        line: str,
+        *,
+        identity: str | None,
+        known_hosts: str | None,
+        timeout_s: float,
+        certificate: str | None = None,
     ) -> tuple[int, str]:
-        seen.append((target, line, identity, known_hosts))
+        seen.append((target, line, identity, known_hosts, certificate))
         assert timeout_s > 0
         return 0, 'ok'
 
     monkeypatch.setattr(remote, 'piped', piped)
     monkeypatch.setattr(consent_door, 'section', lambda _name: {'host_keys': {'h': 'ssh-ed25519 AAAAkey'}})
+    monkeypatch.setattr(consent_door, 'live_certificate', lambda _account: None)
     assert ssh_send({'endpoint': 'c@h', 'identity': 'k'}, {'a': 1}) == (0, 'ok')
     assert ssh_send({'endpoint': 'c@h', 'known_hosts': 'kh'}, {'a': 1}) == (0, 'ok')
-    assert [row[:3] for row in seen] == [('c@h', '{"a": 1}\n', 'k'), ('c@h', '{"a": 1}\n', None)]
+    monkeypatch.setattr(consent_door, 'live_certificate', lambda account: Path(f'{account}-cert.pub'))
+    assert ssh_send({'endpoint': 'c@h', 'known_hosts': 'kh'}, {'a': 1}) == (0, 'ok')
+    line = '{"a": 1}\n'
+    assert [row[:3] for row in seen] == [('c@h', line, 'k'), ('c@h', line, None), ('c@h', line, None)]
     assert seen[0][3]  # SSH-HOST-KEY-DECLARED: the declared key's known_hosts, never ssh's own default
     assert seen[1][3] == 'kh'
+    assert [row[4] for row in seen] == [None, None, 'c-cert.pub']  # a live certificate rides the same transport
 
 
 def test_promote_trunk_sends_the_repo_sha_and_reason_and_no_credential(tmp_path: Path) -> None:

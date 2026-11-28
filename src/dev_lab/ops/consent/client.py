@@ -27,7 +27,7 @@ import json
 import sys
 import time
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from importlib import resources
 from pathlib import Path
 from typing import Any, Final
@@ -42,6 +42,7 @@ from dev_lab.dev.native_session import session_of
 from dev_lab.dev.taskledger import ledger, task_in
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
 from dev_lab.ops.consent.door import (
+    CERT_SUFFIX,
     Send,
     endpoint_send,
     handshake,
@@ -52,6 +53,7 @@ from dev_lab.ops.consent.door import (
 from dev_lab.ops.consent.issuer import requested
 from dev_lab.ops.consent.plan import load as load_plan
 from dev_lab.ops.consent.plan import request as plan_request
+from dev_lab.ops.sshca import CertRefused, admits
 from dev_lab.ops.totp import write_private
 
 __all__ = [
@@ -59,6 +61,7 @@ __all__ = [
     'TABLE',
     'Check',
     'Register',
+    'certify',
     'given_code',
     'grant',
     'grant_plan',
@@ -290,6 +293,46 @@ def _issued(
         write_private(target, json.dumps(credential, indent=1, sort_keys=True) + '\n')
         written.append(target)
     return written
+
+
+def certify(
+    credential_file: Path,
+    principals: Sequence[str],
+    *,
+    public_key_file: Path,
+    table: Mapping[str, Any] | None = None,
+    send: Send = endpoint_send,
+    home: Path | None = None,
+    now: float | None = None,
+) -> Path:
+    """Exchange the held credential *credential_file* for an ssh user certificate over *public_key_file*.
+
+    The issuer signs it (:meth:`~dev_lab.ops.consent.issuer.Issuer.certify`: no code, the credential is the proof);
+    it is checked here as sshd will check it (:func:`dev_lab.ops.sshca.admits`) for every principal asked, and kept
+    beside the credential as ``<id>-cert.pub``, where :func:`.door.live_certificate` finds it for the next ssh call.
+
+    Raises:
+        ConsentRefused: the issuer refused, or answered a certificate that does not admit a principal asked.
+
+    """
+    found = _endpoint(table)
+    credential = json.loads(credential_file.read_text(encoding='utf-8'))
+    public = public_key_file.read_text(encoding='utf-8').strip()
+    payload = {'verb': 'ssh-cert', 'credential': credential, 'public_key': public, 'principals': list(principals)}
+    status, said = send(found, payload)
+    if status != 0:
+        raise ConsentRefused(said)
+    cert = said.strip().splitlines()[-1] if said.strip() else ''
+    clock = time.time() if now is None else now
+    try:
+        for principal in principals:
+            admits(cert, ca_public=None, account=principal, now=clock)
+    except CertRefused as refused:
+        msg = f'the issuer answered a certificate sshd would refuse: {refused}'
+        raise ConsentRefused(msg) from refused
+    target = state_dir(home) / f'{credential["id"]}{CERT_SUFFIX}'
+    write_private(target, cert + '\n')
+    return target
 
 
 def preflight(

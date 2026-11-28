@@ -2,7 +2,8 @@
 
 A line is ``{"verb": "issue", "request": {...}, "code": "..."}``, ``{"verb": "issue-plan", "plan": {...}, "code":
 "..."}``, ``{"verb": "register", "credential": {...}, "amount": n}``, ``{"verb": "spent", "ids": [...]}`` or
-``{"verb": "fetch-unspent", "plan": "<digest>"}``, ``{"verb": "hello"}`` or ``{"verb": "subject", "action": A,
+``{"verb": "fetch-unspent", "plan": "<digest>"}``, ``{"verb": "ssh-cert", "credential": {...}, "public_key":
+"<key line>", "principals": [...]}``, ``{"verb": "hello"}`` or ``{"verb": "subject", "action": A,
 "argv": [...]}``.
 ``subject`` is a READ, no code: this host derives *A*'s subject by running its ops verb with ``--subject``
 (:func:`~dev_lab.ops.consent.door.read_argv` admits only the registry's read form; an acting flag is refused) and
@@ -68,9 +69,10 @@ def handle(issuer: Issuer, line: str, *, derive: Derive | None = None) -> str:
         amount = data.get('amount', 1)
         left = issuer.register(data.get('credential'), amount)
         return '' if left is None else str(left)
-    if verb == 'fetch-unspent':
-        return json.dumps(issuer.unspent(data.get('plan')), sort_keys=True)
-    if verb == 'spent':
-        return json.dumps(issuer.spent(data.get('ids')))
-    msg = 'verb must be hello, subject, issue, issue-plan, register, spent or fetch-unspent'
+    if verb in {'fetch-unspent', 'spent'}:  # the two ledger reads
+        found = issuer.unspent(data.get('plan')) if verb == 'fetch-unspent' else issuer.spent(data.get('ids'))
+        return json.dumps(found, sort_keys=True)
+    if verb == 'ssh-cert':  # the certificate line (:meth:`Issuer.certify`): no code, the credential is the proof
+        return issuer.certify(data.get('credential'), data.get('public_key'), data.get('principals'))
+    msg = 'verb must be hello, subject, issue, issue-plan, register, spent, fetch-unspent or ssh-cert'
     raise ConsentRefused(msg)

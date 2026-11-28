@@ -8,16 +8,21 @@ line that lets it run the serve verb as root, keeping only :data:`dev_lab.ops.ss
 from __future__ import annotations
 
 from dev_lab.ops.access import keys_file
+from dev_lab.ops.consentrole import SshCa
 from dev_lab.ops.sshkey import ENV
 
 __all__ = ['files', 'steps']
 
 
-def files(unit: str, account: str, keys: tuple[str, ...], serve: str) -> dict[str, str]:
-    """The sshd drop-in, keys file and sudoers line of *account*, whose sessions run *serve*; by root-relative path."""
+def files(unit: str, account: str, keys: tuple[str, ...], serve: str, ca: SshCa | None = None) -> dict[str, str]:
+    """The sshd drop-in, keys file and sudoers line of *account*, whose sessions run *serve*; by root-relative path.
+
+    *ca* is the declared ssh user CA: at N it closes the listed keys of an account it certifies (:mod:`.sshca`).
+    """
     listed = keys_file(account)
+    opens = listed if ca is None else ca.authorized(account, listed)
     sshd = (
-        f'Match User {account}\n    AuthorizedKeysFile {listed}\n'
+        f'Match User {account}\n    AuthorizedKeysFile {opens}\n'
         f'    ExposeAuthInfo yes\n    ForceCommand sudo -n {serve}\n'
         '    AllowTcpForwarding no\n    AllowAgentForwarding no\n    X11Forwarding no\n    PermitTTY no\n'
     )

@@ -1,4 +1,4 @@
-"""``python -m dev_lab.ops.consent preflight|grant <request.json>`` | ``receipts`` | ``plan`` | ``recover``: consent.
+"""``python -m dev_lab.ops.consent preflight|grant <request.json>`` | ``receipts|plan|recover|certify``: consent.
 
 ``preflight <request.json>`` proves, with no code, that the request's grant can succeed and writes its receipt
 (:func:`dev_lab.ops.consent.client.preflight`); exit 0 green -- only then is the user asked for the code -- 2 naming
@@ -11,6 +11,10 @@ re-run (the read a Stop hook takes before an assistant may ask the user for a co
 
 ``recover <plan.json> --digest D`` fetches again the plan's credentials the issuer granted and never registered (a
 lost or deleted one), with no code: re-delivery, never a new grant (:meth:`.issuer.Issuer.unspent`).
+
+``certify <credential.json> --principal P --public-key K`` exchanges a held, live credential for a short-lived ssh
+user certificate over the public key *K* (no code: the credential is the proof; :mod:`dev_lab.ops.sshca`), kept beside
+it; the next ssh call to an account it names presents it (``-o CertificateFile=``).
 
 ``grant`` grants one credential. ``plan`` prints what a plan's ONE code would open and consent to, and the digest to
 name, and OFFERS it for a code only when :func:`dev_lab.ops.consent.door.offer` passes (a green ``planrun
@@ -36,7 +40,7 @@ from typing import Any
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.ops.consent.client import TABLE, grant, preflight, recover
+from dev_lab.ops.consent.client import TABLE, certify, grant, preflight, recover
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import (
     CODE_PREFLIGHT_FRESH_S,
@@ -72,6 +76,10 @@ def main(
     fetching = verbs.add_parser('recover', help="fetch again a plan's granted, never-used credentials; no code")
     fetching.add_argument('plan', type=Path)
     fetching.add_argument('--digest', required=True, help="the plan's digest, as shown to the user")
+    certifying = verbs.add_parser('certify', help='exchange a held credential for a short-lived ssh certificate')
+    certifying.add_argument('credential', type=Path, help='the credential JSON a grant wrote')
+    certifying.add_argument('--principal', action='append', required=True, help='an account the certificate names')
+    certifying.add_argument('--public-key', type=Path, required=True, help='the ssh public key file it certifies')
     args = parser.parse_args(argv)
     if args.verb == 'receipts':
         return _receipts()
@@ -97,11 +105,15 @@ def main(
             said = '\n'.join(f'[consent] recovered: {path}' for path in written)
             emit(said or '[consent] nothing unspent to recover')
             return 0
-        written = grant(args.request, code=args.code)
+        if args.verb == 'certify':
+            kept = certify(args.credential, args.principal, public_key_file=args.public_key, table=table, send=send)
+            said = f'[consent] certified: {kept}'
+        else:
+            said = f'[consent] granted: {grant(args.request, code=args.code)}'
     except (ConsentRefused, OSError, ValueError) as refused:
         emit(f'[consent] refused: {refused}', err=True)
         return 2
-    emit(f'[consent] granted: {written}')
+    emit(said)
     return 0
 
 
