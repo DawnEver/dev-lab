@@ -354,9 +354,17 @@ def _is_refusal(text: str) -> bool:
     return _leads_with_rule(text) or any(pattern.search(text) for pattern in (_HOOK_ERROR, _HARNESS, _DOOR))
 
 
+def _family_lines(text: str) -> str:
+    """*text* with a family refusal's lines restored, its ``details:`` pointer at a line start.
+
+    A harness that escapes newlines or runs the pointer into the line before it (a Write-tool denial, #997) hid it.
+    """
+    return re.sub(r'[ \t]+(?=' + re.escape(DETAILS_PREFIX) + r')', '\n', text.replace('\\n', '\n'))
+
+
 def _post_tool(payload: dict) -> None:
-    text = _error_text(payload)
-    if not _is_refusal(text) or any(line.startswith(DETAILS_PREFIX) for line in text.splitlines()):
+    text = _family_lines(_error_text(payload))
+    if not _is_refusal(text) or any(line.lstrip().startswith(DETAILS_PREFIX) for line in text.splitlines()):
         return
     command = (payload.get('tool_input') or {}).get('command') or ''
     record(

@@ -159,6 +159,25 @@ def test_a_family_refusal_or_an_ordinary_failure_is_not_recorded_twice(tmp_path:
     assert not walls.ledger(tmp_path).exists()
 
 
+@pytest.mark.parametrize(
+    'error',
+    [
+        REMEDIED.replace('\n', '\\n'),  # the harness escaped the newlines
+        REMEDIED.replace('\ndetails: ', ' details: '),  # the harness ran the pointer into the door line
+        'Error: ' + REMEDIED,  # the harness prefixed the cause
+    ],
+)
+def test_a_family_refusal_through_a_write_tool_denial_is_never_door_less(tmp_path: Path, error: str) -> None:
+    """#997: a family refusal surfaced by a non-Bash tool, however the harness wraps it, records no door-less wall."""
+    payload = {'session_id': SESSION, 'cwd': str(tmp_path), 'tool_name': 'Write', 'tool_input': {}, 'error': error}
+    assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(payload))) == 0
+    assert not walls.ledger(tmp_path).exists() or all(one['remedy_present'] for one in _lines(tmp_path))
+    # Planted control: the same denial WITHOUT the family pointer is a door-less wall.
+    bare = {**payload, 'error': 'PreToolUse:Write hook error: OTHER-RULE: blocked'}
+    assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(bare))) == 0
+    assert [one['remedy_present'] for one in _lines(tmp_path)] == [False]
+
+
 def test_a_named_rule_in_a_foreign_denial_is_kept(tmp_path: Path) -> None:
     payload = {
         'session_id': SESSION,
