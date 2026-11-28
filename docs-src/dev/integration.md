@@ -175,7 +175,10 @@ the merge audit, the messages, not a draft. The merge decision (`reviewturn.revi
   push, a hand-added label, a serve tick); the judge (review bound to a host) judges only a head called due. A
   judge repo's head is due until the judge the base declares (`judge_login`, `judge_app`) approved it
   (`forgereview_gate.review_gate`, D226); a base declaring no judge identity is named on every ready head's
-  merge-ready line (`NO_JUDGE`), since no judge would ever review it.
+  merge-ready line (`NO_JUDGE`), since no judge would ever review it. The judge's review must ACTUALLY RUN on
+  every ready PR (D228), so a judge repo's head is due as soon as the PR is not a draft, whatever else is missing
+  (`Decision.early`: in parallel with its tests, inside an Actions job too, no label), and the judge also judges a
+  PR merged before its tick (`forgereview_bundle.merged_recently`), posting a COMMENT review after the merge.
 
 A push asks for nothing: a new head has no status, so it waits for the decision again, and a superseded head is
 never reviewed. A head whose PR already holds its one review is never reviewed again by this trigger: once called

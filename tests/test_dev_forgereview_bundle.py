@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import base64
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +76,10 @@ class FakeForge:
     repo: str = '/api/v1/repos/o/r'
     #: The GitHub App this judge authenticates as (:mod:`dev_lab.dev.forgeapp`), else ``None``: a login.
     app: App | None = None
+    #: PRs the forge holds MERGED (closed): listed by ``state=closed`` alone, never with the open ones.
+    merged: list[PullRequest] = field(default_factory=list)
+    #: Every commit the forge answers ``commits/{sha}`` for, with its parents (GitHub's merge-parent read).
+    commits: dict[str, list[str]] = field(default_factory=dict)
     #: Every check run at each head, whoever posted it.
     checks: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
@@ -84,7 +88,11 @@ class FakeForge:
         return self.diffs[self.pull.number]
 
     def _pulls(self) -> dict[int, PullRequest]:
-        return {one.number: one for one in [*self.others, self.pull]}
+        return {one.number: one for one in [*self.others, self.pull, *self.merged]}
+
+    def _listed(self, query: str) -> list[dict[str, Any]]:
+        closed = 'state=closed' in query
+        return [_raw(one) for one in self._pulls().values() if one.merged == closed]
 
     def pr_view(self, number: int) -> PullRequest:
         return self._pulls()[number]
@@ -100,7 +108,9 @@ class FakeForge:
 
     def call(self, method: str, path: str, body: dict[str, Any] | None = None, durable: object = None) -> Any:  # noqa: ANN401
         del durable
-        path = path.partition('?')[0]
+        path, _, query = path.partition('?')
+        if method == 'GET' and path == f'{self.repo}/pulls':
+            return self._listed(query)
         return self._post(path, body or {}) if method == 'POST' else self._get(path)
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -120,12 +130,15 @@ class FakeForge:
         answers: dict[str, Any] = {
             self.repo: {'default_branch': 'main'},
             f'{self.repo}/contents/pyproject.toml': manifest,
-            f'{self.repo}/pulls': [_raw(one) for one in self._pulls().values()],
         }
+        for sha, parents in self.commits.items():
+            answers[f'{self.repo}/commits/{sha}'] = {'sha': sha, 'parents': [{'sha': one} for one in parents]}
         for number, one in self._pulls().items():
             answers[f'{self.repo}/pulls/{number}'] = {'merge_base': self.merge_base}
-            compare = f'{self.repo}/compare/{one.base}...{one.head_sha}'
-            answers[compare] = {'merge_base_commit': {'sha': self.merge_base}}
+            for base in (one.base, *(parents[0] for parents in self.commits.values())):
+                answers[f'{self.repo}/compare/{base}...{one.head_sha}'] = {
+                    'merge_base_commit': {'sha': self.merge_base}
+                }
             answers[f'{self.repo}/pulls/{number}/reviews'] = list(self.reviews.get(number, []))
             answers[f'{self.repo}/issues/{number}/comments'] = []
             answers[f'{self.repo}/statuses/{one.head_sha}'] = list(self.statuses.get(one.head_sha, []))
@@ -143,7 +156,7 @@ def _raw(pull: PullRequest) -> dict[str, Any]:
     return {
         'number': pull.number, 'title': pull.title, 'state': 'open', 'body': pull.body, 'html_url': pull.url,
         'user': {'login': pull.author}, 'head': {'ref': pull.head, 'sha': pull.head_sha}, 'base': {'ref': pull.base},
-        'draft': False, 'labels': [],
+        'draft': False, 'labels': [], 'merged': pull.merged, 'merge_commit_sha': pull.merge_sha or None,
     }  # fmt: skip
 
 
@@ -234,6 +247,39 @@ def test_the_judge_approves_a_clean_head_once_reading_the_forges_diff(prepared: 
     assert read[0]['diff'] == forge.diff  # the FORGE's diff, never the producer's
     assert 'GIT_DIR' in read[0]  # no repository reachable through git's discovery
     assert _judged(prepared, _findings(None)) == ([], [])  # idempotent per head: nothing judged again
+
+
+def _merged(prepared: Prepared) -> PullRequest:
+    """PR #7 merged into ``main`` by a merge commit the forge holds, gone from the open listing."""
+    root, forge = prepared.root, prepared.forge
+    run_git(root, 'checkout', '-q', 'main')
+    run_git(root, 'merge', '-q', '--no-ff', '-m', 'merge #7', forge.pull.head_sha)
+    run_git(root, 'push', '-q', 'origin', 'main')
+    merge = git_out(root, 'rev-parse', 'HEAD')
+    forge.commits[merge] = [git_out(root, 'rev-parse', 'HEAD^1')]
+    merged = replace(forge.pull, state='closed', merged=True, merge_sha=merge)
+    forge.merged, forge.pull = [merged], replace(forge.pull, number=8, base='other')  # the open one: another base
+    return merged
+
+
+def test_a_ready_pr_merged_before_the_judges_tick_is_still_judged_after_its_merge(prepared: Prepared) -> None:
+    """D228: a ready PR the decision merged before the judge ran is judged after its merge, once.
+
+    The review must actually run on every ready PR and never holds the merge; no forge approves a closed PR, so
+    the verdict is a COMMENT review. PLANTED CONTROL: a merged head the decision never called due is not judged.
+    """
+    forge, merged = prepared.forge, _merged(prepared)
+    said, seen = _judged(prepared, _findings(None))
+    assert said == [f'#7 {merged.head_sha[:12]}: APPROVED'], said
+    assert len(seen) == 1
+    (review,) = forge.verdicts(7)
+    assert (review['state'], review['commit_id']) == ('COMMENT', merged.head_sha)
+    assert review['body'].startswith('**Post-merge advisory review** (verdict: APPROVED)')
+    assert _judged(prepared, _findings(None)) == ([], []), 'judged once per head'
+    forge.reviews.clear()
+    forge.statuses[merged.head_sha] = [{'id': 1, 'creator': None, 'context': REVIEW_CONTEXT, 'state': 'pending',
+                                        'description': 'waits: its test parts', 'target_url': ''}]  # fmt: skip
+    assert _judged(prepared, _findings(None)) == ([], []), 'a head never called due is never judged'
 
 
 def test_a_dismissed_verdict_is_judged_again(prepared: Prepared) -> None:

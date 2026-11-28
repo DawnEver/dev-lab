@@ -98,7 +98,7 @@ from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
 from dev_lab.dev.portmeasure import unmeasured
 from dev_lab.dev.reviewcap import unreviewed_waiver
-from dev_lab.dev.roles import REVIEW, TESTS, Unbound, roles_at
+from dev_lab.dev.roles import HOST, REVIEW, TESTS, Unbound, roles_at
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
@@ -136,6 +136,9 @@ class Decision:
     unreviewed: str = ''  # the unreviewed warning (:mod:`dev_lab.dev.reviewcap`) when the review was waived
     notes: tuple[str, ...] = ()
     waiting: bool = False  # every missing condition is a check not yet terminal: posted ``pending``, not ``failure``
+    #: The review is asked for NOW, whatever else is missing (D228): bound to a host, the judge reviews a ready (non-
+    #: draft) PR in parallel with its tests, so a PR merged by the same decision has still been called due.
+    early: bool = False
 
     @property
     def missing(self) -> tuple[str, ...]:
@@ -281,10 +284,9 @@ def hidden_reds(
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
+    by = roles_at(root).kind(REVIEW)
     try:
-        reviewed = review_gate(
-            client, base=policy.integration, by=roles_at(root).kind(REVIEW), number=number, head=head
-        )
+        reviewed = review_gate(client, base=policy.integration, by=by, number=number, head=head)
     except ValueError as config:  # a declaration that cannot gate is this PR's wait, never the tick's crash
 
         def reviewed(_statuses: Sequence[CommitStatus], why: str = str(config)) -> str:
@@ -315,4 +317,5 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
     if is_held(pull.labels):  # HOLD: a held PR never lands, on a forge that refuses its draft too
         others = (HELD.format(n=number), *others)
     waiting = found.waiting and len(others) == len(found.others)
-    return Decision(others, found.message, found.review, found.unreviewed, found.notes, waiting)
+    early = by == HOST and not pull.draft  # D228: the judge reviews every ready PR, not only one about to merge
+    return Decision(others, found.message, found.review, found.unreviewed, found.notes, waiting, early)

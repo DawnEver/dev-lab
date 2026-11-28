@@ -1,7 +1,10 @@
 """REVIEW RUNS LAST, ADVISORY: the merge decision asks for a head's review, and nothing else does.
 
 User ruling 2026-11-05 ("a PR is reviewed only when it is about to be merged into integrate/main"), and integrator
-ruling M8 2026-11-06: the one-shot review runs at the PR's first MERGE-READY head. The review is
+ruling M8 2026-11-06: the one-shot review runs at the PR's first MERGE-READY head. A review bound to a host (the
+judge) is the exception (D228, 2026-11-28): it must ACTUALLY RUN on every ready PR, and an advisory review asked for
+only by the decision that merges is asked too late -- so its head is due as soon as the PR is ready
+(:attr:`~dev_lab.dev.forgemerge.Decision.early`), in parallel with its tests. The review is
 the one merge condition that costs a model call, so :func:`review_turn` -- run on
 the decision of :mod:`dev_lab.dev.forgemerge` by ``forge merge ready`` and by the serve's integration tick -- says on
 the head's ``tests/review`` whether it waits (another condition missing) or is due (only the review missing). The
@@ -23,6 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from dev_lab.dev.forgemerge import Decision
+    from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
 
 __all__ = ['REVIEW_DUE_SAID', 'REVIEW_LABEL', 'review_turn']
@@ -48,15 +52,19 @@ def review_turn(
     it changes -- :data:`~dev_lab.dev.forgereview_claim.WAITS` naming every other missing condition, or, when none is
     missing, :data:`~dev_lab.dev.forgereview_claim.DUE` (the line ends :data:`REVIEW_DUE_SAID`). On Gitea DUE also
     applies :data:`REVIEW_LABEL` (:func:`_request`), and only outside an Actions job (*env*): Gitea starts no workflow
-    for its Actions user's event, so a DUE posted there would start nothing and stop the serve from asking.
+    for its Actions user's event, so a DUE posted there would start nothing and stop the serve from asking. An
+    :attr:`~dev_lab.dev.forgemerge.Decision.early` decision (a host-bound review of a ready PR, D228) posts DUE
+    whatever else is missing, with no label: the judge reads the status itself.
     """
     if decision.review is None:
         return ''
-    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
-    if latest is not None and latest.state == 'success' and not forge_posted(client)(latest):
-        latest = None  # a success the gate does not count is no review (dev-lab #38): the decision still asks for one
-    if latest is not None and not (latest.state == 'pending' and latest.description.startswith((WAITS, DUE))):
+    stands, latest = _standing(client, head)
+    if stands:
         return ''
+    if decision.early:  # the judge reads DUE itself: no label, no workflow, so inside an Actions job too
+        if latest is None or latest.description != DUE:
+            post_review(client, head, state='pending', description=DUE)
+        return REVIEW_DUE_SAID
     if decision.others:
         why = (WAITS + '; '.join(decision.others))[:DESCRIPTION]
         if latest is None or latest.description != why:
@@ -69,6 +77,20 @@ def review_turn(
         if client.backend is GITEA:
             _request(client, number)
     return REVIEW_DUE_SAID
+
+
+def _standing(client: Client, head: str) -> tuple[bool, CommitStatus | None]:
+    """Whether *head*'s latest ``tests/review`` is the review's own and stands, and that status (``None``: none).
+
+    Only the decision's own WAITS or DUE may be replaced; a success the gate does not count is no review (dev-lab
+    #38), so the decision still asks for one.
+    """
+    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+    if latest is not None and latest.state == 'success' and not forge_posted(client)(latest):
+        return False, None
+    if latest is not None and not (latest.state == 'pending' and latest.description.startswith((WAITS, DUE))):
+        return True, latest
+    return False, latest
 
 
 def _request(client: Client, number: int) -> None:

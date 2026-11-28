@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from _branch_repos import advance
 from _forge_state import StateForge
-from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry
+from _roles_fixtures import EVERY_CI, HPC_REPO, HPC_REVIEWED, carry
 from test_dev_forgereview import _DECLARED, FakeCommand, _can, _work
 
 from dev_lab.dev.ciworkflows import workflows
@@ -204,3 +204,53 @@ def test_on_github_a_users_success_is_no_review_and_the_decision_still_calls_it_
         status_post(forge, 'c' * 40, context=REVIEW_CONTEXT, state='success', description='clean')
         forge.login = ACTIONS_BOT
         assert review_turn(forge, number, 'c' * 40, decision, env={}) == said, (host, poster)
+
+
+# --- D228: a review bound to a host (the judge) is due as soon as the PR is ready -------------------------------
+
+_JUDGED = '[tool.dev_lab.review]\njudge_login = "forge-judge"\n'
+
+
+def _judged_pr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, parts: str) -> tuple[Path, StateForge, int, str]:
+    """A PR of a repo whose review the family binds to a host (as v1's: hpc merges, the judge reviews)."""
+    carry(monkeypatch, HPC_REPO)
+    work, forge, number, head = _pr(tmp_path, parts=parts)
+    forge.pyproject = _JUDGED  # the trusted declaration names the judge
+    return work, forge, number, head
+
+
+@pytest.mark.parametrize('actions', ['', 'true'])
+def test_a_ready_judged_pr_is_called_due_while_its_tests_are_still_red(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, actions: str
+) -> None:
+    """D228 and the 6b416f2a regression: the judge's review is asked for on every ready head, in parallel with tests.
+
+    Since 6b416f2a the host-bound reading was a constant None and no DUE was ever posted; and a DUE asked only by
+    the decision that merges comes too late for a review that never holds the merge. Inside a Gitea Actions job too:
+    the judge reads the status itself, no workflow is started (no label). PLANTED CONTROLS: a serve-reviewed repo's
+    red head still WAITS (test_a_red_test_head_waits_unreviewed_and_spends_nothing); a draft is never due; the
+    judge's approval at the head stands and is never re-asked.
+    """
+    if actions:
+        monkeypatch.setenv('GITEA_ACTIONS', actions)
+    work, forge, number, head = _judged_pr(tmp_path, monkeypatch, parts='failure')
+    said = ready(work, forge, number)
+    assert 'its test parts' in said, 'the merge still waits on its tests'
+    assert REVIEW_DUE_SAID in said
+    assert _review(forge, head) == ('pending', DUE)
+    assert forge.labeled == [], 'the judge reads DUE itself: no workflow is started'
+    forge.add_review(number, login='forge-judge', state='APPROVED', commit=head)
+    status_post(forge, head, context=REVIEW_CONTEXT, state='pending', description=WAITS + 'x')
+    ready(work, forge, number)
+    assert _review(forge, head) == ('pending', WAITS + 'x'), 'an approved head is reviewed: nothing is asked'
+
+
+def test_a_judged_draft_is_never_due(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """D53: a draft runs nothing, the integrator reviews it first. PLANTED CONTROL: the same PR made ready is due."""
+    work, forge, number, head = _judged_pr(tmp_path, monkeypatch, parts='success')
+    forge.pulls[number]['draft'] = True
+    ready(work, forge, number)
+    assert _review(forge, head) is None
+    forge.pulls[number]['draft'] = False
+    ready(work, forge, number)
+    assert _review(forge, head) == ('pending', DUE)

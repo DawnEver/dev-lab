@@ -175,9 +175,14 @@ def _changed(root: Path, old: str | None, new: str | None, path: str) -> Changed
 
 
 def prepare(root: Path, *, repo: str, pull: PullRequest) -> Bundle:
-    """The bundle of *pull*'s head against its merge base with ``origin/<pull.base>``, read from *root* (blobless)."""
+    """The bundle of *pull*'s head against its merge base with ``origin/<pull.base>``, read from *root* (blobless).
+
+    A MERGED pull's base already holds its head, so its merge base is taken with the merge's first parent -- the
+    base as the merge found it (D228: the judge also judges a PR merged before its tick).
+    """
     head = pull.head_sha
-    merge_base = _git(root, 'merge-base', f'origin/{pull.base}', head)[1].decode('ascii').strip()
+    target = f'{pull.merge_sha}^1' if pull.merged and pull.merge_sha else f'origin/{pull.base}'
+    merge_base = _git(root, 'merge-base', target, head)[1].decode('ascii').strip()
     rows = sorted(_raw(root, merge_base, head), key=lambda row: row[2])
     files = tuple(_changed(root, old, new, path) for old, new, path in rows)
     return Bundle(repo=repo, pr=pull.number, base_ref=pull.base, base_sha=merge_base, head_sha=head, files=files)

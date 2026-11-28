@@ -28,6 +28,13 @@ trusts NOTHING the producer wrote that it can read or derive from the forge (D3)
     the check run :data:`~dev_lab.dev.forgecontexts.JUDGE_CHECK` on the head, ``success`` or ``failure`` with the
     findings as its output -- the one verdict a ruleset can require from that App alone.
 
+  A PR MERGED into the trusted integration branch whose head was called due and holds no verdict of this
+  identity is judged all the same, after its merge (D228: the review must actually run on every ready PR,
+  and an advisory review never holds the merge, so a PR may land before the judge's tick): one page of the
+  most recently updated closed PRs is read (:func:`merged_recently`), its bundle cut at the merge's first
+  parent (:func:`~dev_lab.dev.reviewbundle.prepare`), and its verdict posted as a COMMENT review -- a forge
+  takes no approval of a closed PR -- or, for an App, the same check run.
+
   A bundle that fails verification -- one the forge's own diff or merge base disagrees with -- is
   ``REQUEST_CHANGES`` naming why; a failure to READ (a forge call, a fetch, the command) posts nothing and is
   retried on the next run, and one PR's failure never stops the PRs after it.
@@ -47,12 +54,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
+from urllib.parse import urlencode
 
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import reviewbundle, reviewforgediff
+from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev._forgebackends import GITHUB
 from dev_lab.dev.forgeapp import app_client, app_of
 from dev_lab.dev.forgeclient import client_for
@@ -89,6 +98,7 @@ if TYPE_CHECKING:
 __all__ = [
     'DEFAULT_TOKEN_FILE',
     'JUDGE_STATE_REL',
+    'MERGED_WINDOW',
     'Fetch',
     'Verdict',
     'fetch_from',
@@ -96,6 +106,7 @@ __all__ = [
     'judge_one',
     'judge_pending',
     'main',
+    'merged_recently',
     'post_verdict',
     'reviewed_by',
 ]
@@ -122,13 +133,41 @@ class Verdict:
 
 
 def reviewed_by(client: Client, pull: PullRequest, login: str) -> bool:
-    """Whether *login*'s verdict on *pull*'s head stands: an App's completed check run there, else its review."""
+    """Whether *login*'s verdict on *pull*'s head stands: an App's completed check run there, else its review.
+
+    A merged PR's verdict is a COMMENT review (:func:`post_verdict`): any undismissed review of *login* at its
+    head.
+    """
     if (app := app_of(client)) is not None:
         runs = app_verdicts(client, pull.head_sha)
         return any((run.get('app') or {}).get('id') == app.app_id and run.get('status') == 'completed'
                    for run in runs)  # fmt: skip
     rows = pages(client, f'{client.repo}/pulls/{pull.number}/reviews', {})
+    if pull.merged:
+        return any(
+            _object(row.get('user')).get('login') == login and row.get('commit_id') == pull.head_sha
+            and not row.get('dismissed') for row in map(_object, rows)
+        )  # fmt: skip
     return bool(standing_verdicts(rows, login=login, head=pull.head_sha))
+
+
+#: How many of the most recently updated closed PRs the judge reads for a merged head it has not judged yet:
+#: one page, read every tick, so a PR merged between two ticks is well inside it.
+MERGED_WINDOW: Final = 50
+
+
+def _object(answer: object) -> dict[str, Any]:
+    """A forge answer's JSON object, else empty."""
+    return cast('dict[str, Any]', answer) if isinstance(answer, dict) else {}
+
+
+def merged_recently(client: Client, integration: str) -> list[PullRequest]:
+    """The PRs merged into *integration* among the :data:`MERGED_WINDOW` most recently updated closed ones."""
+    order = {'sort': 'updated', 'direction': 'desc'} if client.backend is GITHUB else {'sort': 'recentupdate'}
+    query = {'state': 'closed', **order, client.backend.page_param: str(MERGED_WINDOW), 'page': '1'}
+    listed: object = client.call('GET', f'{client.repo}/pulls?{urlencode(query)}')
+    pulls = [pull_of(row) for row in map(_object, cast('list[object]', listed or [])) if row]
+    return [pull for pull in pulls if pull.merged and pull.base == integration]
 
 
 def _called_due(client: Client, head: str) -> bool:
@@ -142,9 +181,17 @@ def _called_due(client: Client, head: str) -> bool:
 
 
 def forge_merge_base(client: Client, pull: PullRequest) -> str:
-    """The merge base the FORGE computes for *pull*: Gitea's ``merge_base``, GitHub's compare ``merge_base_commit``."""
+    """The merge base the FORGE computes for *pull*: Gitea's ``merge_base``, GitHub's compare ``merge_base_commit``.
+
+    A merged PR's base on GitHub is its merge's first parent (the base now holds the head), the one
+    :func:`~dev_lab.dev.reviewbundle.prepare` cuts the bundle at; Gitea keeps the PR's own ``merge_base``.
+    """
     if client.backend is GITHUB:
-        answer: Any = client.call('GET', f'{client.repo}/compare/{pull.base}...{pull.head_sha}')
+        base = pull.base
+        if pull.merged and pull.merge_sha:
+            parents = _object(client.call('GET', f'{client.repo}/commits/{pull.merge_sha}')).get('parents')
+            base = str(_object(cast('list[object]', parents or [{}])[0]).get('sha') or '')
+        answer: Any = client.call('GET', f'{client.repo}/compare/{base}...{pull.head_sha}')
         found = ((answer or {}).get('merge_base_commit') or {}).get('sha') if isinstance(answer, dict) else None
     else:
         answer = client.call('GET', f'{client.repo}/pulls/{pull.number}')
@@ -268,7 +315,10 @@ def _reviewed(
 
 
 def post_verdict(client: Client, pull: PullRequest, verdict: Verdict) -> None:
-    """Post *verdict* on *pull*'s head: an App's :data:`JUDGE_CHECK` check run, else a PR review (forge spelling)."""
+    """Post *verdict* on *pull*'s head: an App's :data:`JUDGE_CHECK` check run, else a PR review (forge spelling).
+
+    A MERGED PR takes no approval or change request on either forge: its verdict is a COMMENT review saying so.
+    """
     if app_of(client) is not None:
         approved = verdict.event == _APPROVE
         output = {'title': 'approved' if approved else 'changes requested', 'summary': verdict.body[:_SUMMARY_MAX]}
@@ -277,7 +327,10 @@ def post_verdict(client: Client, pull: PullRequest, verdict: Verdict) -> None:
         client.call('POST', f'{client.repo}/check-runs', run)
         return
     event = 'APPROVE' if client.backend is GITHUB and verdict.event == _APPROVE else verdict.event
-    body = {'body': verdict.body, 'event': event, 'commit_id': pull.head_sha}
+    text = verdict.body
+    if pull.merged:
+        event, text = 'COMMENT', f'**Post-merge advisory review** (verdict: {verdict.event})\n\n{verdict.body}'
+    body = {'body': text, 'event': event, 'commit_id': pull.head_sha}
     client.call('POST', f'{client.repo}/pulls/{pull.number}/reviews', body)
 
 
@@ -297,9 +350,11 @@ def judge_pending(
     client: Client, *, runtimes: Mapping[str, Mapping[str, Any]], fetch: Fetch,
     run: Callable[[Sequence[str], Path, Mapping[str, str]], str] = run_command,
 ) -> list[str]:  # fmt: skip
-    """Judge every open head into the trusted integration branch called due with no verdict of ours; lines.
+    """Judge every head into the trusted integration branch called due with no verdict of ours; lines.
 
-    One PR's failure is its own line: the PRs after it are judged all the same.
+    Every open non-draft PR, then every PR merged recently (:func:`merged_recently`, D228): the review is
+    advisory, so a ready PR may merge before this tick, and is judged after its merge. One PR's failure is its
+    own line: the PRs after it are judged all the same.
     """
     integration = forge_integration(client)
     review = forge_review(client, integration)
@@ -311,8 +366,8 @@ def judge_pending(
     except DeclarationUnread as unread:
         return [f'{integration} declares review requirements that cannot be read: {unread}; it judges nothing']
     said = []
-    for pull in pr_list(client):
-        if pull.base != integration or pull.draft or not pull.head_sha:
+    for pull in (*pr_list(client), *merged_recently(client, integration)):
+        if pull.base != integration or (pull.draft and not pull.merged) or not pull.head_sha:
             continue
         try:
             if not _called_due(client, pull.head_sha) or reviewed_by(client, pull, me):
