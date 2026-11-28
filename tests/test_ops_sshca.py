@@ -25,8 +25,8 @@ from dev_lab.ops.consentrole import SshCa
 from dev_lab.ops.install import files, install
 from dev_lab.ops.totp import STEP
 
-_SSH_KEYGEN = shutil.which('ssh-keygen')
-needs_openssh = pytest.mark.skipif(_SSH_KEYGEN is None, reason='OpenSSH ssh-keygen is the reference and is absent')
+_SSH_KEYGEN = shutil.which('ssh-keygen') or ''
+needs_openssh = pytest.mark.skipif(not _SSH_KEYGEN, reason='OpenSSH ssh-keygen is the reference and is absent')
 WAVE = {'action': 'breakglass.wave', 'subject': 'dev-lab wave', 'params': {'hours': 4, 'max_merges': 3}}
 
 

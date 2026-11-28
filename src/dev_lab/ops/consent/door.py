@@ -169,8 +169,8 @@ def live_certificate(account: str, *, home: Path | None = None, now: float | Non
     next certificate replaces it.
     """
     clock = time.time() if now is None else now
-    live = []
-    for path in state_dir(home).glob(f'*{CERT_SUFFIX}'):
+    live: list[Path] = []
+    for path in Path(state_dir(home)).glob(f'*{CERT_SUFFIX}'):
         try:
             admits(path.read_text(encoding='utf-8'), ca_public=None, account=account, now=clock)
         except CertRefused, OSError:

@@ -28,7 +28,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, load_pem_private_key
@@ -270,10 +270,12 @@ class Issuer:
         if ca is None or not ca.key:
             msg = 'this issuer declares no [ops.ssh_ca] with its key: it signs no ssh certificate'
             raise ConsentRefused(msg)
-        if not isinstance(principals, list) or not principals or not all(isinstance(p, str) for p in principals):
+        given = cast('list[object]', principals) if isinstance(principals, list) else []
+        names = [name for name in given if isinstance(name, str)]
+        if not names or len(names) != len(given):
             msg = 'ssh-cert names its principals as a non-empty list of account names'
             raise ConsentRefused(msg)
-        if undeclared := sorted(set(principals) - set(ca.principals)):
+        if undeclared := sorted(set(names) - set(ca.principals)):
             msg = f'principals {undeclared} are not in [ops.ssh_ca] principals {list(ca.principals)}'
             raise ConsentRefused(msg)
         if not isinstance(public, str):
@@ -288,13 +290,13 @@ class Issuer:
             key = _private_at(Path(ca.key), 'ssh CA', 'consent ca-keygen')
             serial = secrets.randbits(63)
             try:
-                cert = sign_certificate(key, public, key_id=found.id, principals=principals, now=now,
+                cert = sign_certificate(key, public, key_id=found.id, principals=names, now=now,
                                         ttl=min(ca.ttl, left), serial=serial)  # fmt: skip
             except (CertRefused, ValueError) as bad:
                 msg = f'the public key is not one OpenSSH key line: {type(bad).__name__}'
                 raise ConsentRefused(msg) from bad
             line = {'event': 'certified', 'id': found.id, 'action': found.action, 'subject': found.subject,
-                    'serial': serial, 'principals': sorted(principals)}  # fmt: skip
+                    'serial': serial, 'principals': sorted(names)}  # fmt: skip
             self.ledger.parent.mkdir(parents=True, exist_ok=True)
             with self.ledger.open('a', encoding='utf-8') as out:
                 out.write(json.dumps(line, sort_keys=True) + '\n')
