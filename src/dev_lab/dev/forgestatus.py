@@ -50,6 +50,7 @@ from dev_lab.dev.failprint import Fingerprints, subjects_of
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgework import GITHUB, Client
 from dev_lab.dev.statuscontinuation import CONTINUATION, DESCRIPTION_LIMIT, continued, joined
 
@@ -188,24 +189,38 @@ def _post_one(
     return _status(client.call('POST', f'{client.repo}/statuses/{sha}', body, durable=durable))
 
 
+def _jsonable(status: CommitStatus) -> dict[str, object]:
+    """*status* as JSON-ready fields: ``created`` as ISO 8601 text (``None`` when the forge named no time)."""
+    fields = dataclasses.asdict(status)
+    fields['created'] = status.created.isoformat() if status.created is not None else None
+    return fields
+
+
 def status_list(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """The LATEST status per context on *sha*, sorted by context.
 
     Both forges' LIST endpoint, never GitHub's combined one: only the list records each status's ``creator``,
     which the review gate verifies (D11). The newest (highest ``id``) per context is kept.
     """
-    _commit(sha)
-    path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
-    ordered = sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id)
+    ordered = _every_status(client, sha)
     newest = {status.context: status for status in joined(ordered)}
     return tuple(sorted(newest.values(), key=lambda status: status.context))
 
 
 def status_history(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """EVERY status posted on *sha*, oldest first -- what a claim race is decided on (``id`` order)."""
+    return tuple(joined(_every_status(client, sha)))
+
+
+def _every_status(client: Client, sha: str) -> list[CommitStatus]:
+    """EVERY status posted on *sha*, oldest first, read across all pages.
+
+    The forge pages its listing newest first (GitHub: 30 a page). A part posted before a run of re-posted claims and
+    their continuations is on a later page, so one page hid every part of document-lab #158 (dev-lab#1102).
+    """
     _commit(sha)
     path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
-    return tuple(joined(sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id)))
+    return sorted((_status(item) for item in pages(client, path, {})), key=lambda status: status.id)
 
 
 def _git(root: Path, *args: str) -> str | None:
@@ -408,7 +423,7 @@ def main(
         emit(f'[forge] {unnamed}', err=True)
         return 2
     if args.json:
-        data = [dataclasses.asdict(status) for status in found]
+        data = [_jsonable(status) for status in found]
         emit(json.dumps(data[0] if args.verb == 'post' else data, indent=2))
     else:
         for status in found:

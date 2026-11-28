@@ -131,6 +131,33 @@ def test_github_reads_the_status_list_with_its_creator_newest_per_context(server
     assert one.creator == 'github-actions[bot]'
 
 
+def test_a_part_posted_before_a_page_of_reposted_claims_is_still_read(server) -> None:
+    """dev-lab#1102: the forge lists statuses newest first, a page at a time, so every page is read.
+
+    document-lab #158 held 107: merge-ready's re-posts and their continuations filled the first page, so tests/base,
+    posted earlier, was never read. PLANTED CONTROL: the first page alone holds no tests/base.
+    """
+    path = f'/repos/o/r/commits/{_SHA}/statuses'
+    claims = [
+        {
+            'id': 200 - index,
+            'context': 'tests/merge-ready' + ('#1' if index % 2 else ''),
+            'state': 'pending',
+            'description': f'waits {index}',
+        }
+        for index in range(50)
+    ]
+    base = {'id': 7, 'context': 'tests/base', 'state': 'success', 'description': 'scope=full ran=1 hands=-'}
+    assert all(item['context'] != 'tests/base' for item in claims), 'PLANTED CONTROL: page 1 hides the part'
+    answer('GET', f'{path}?per_page=50&page=1', (200, claims))
+    answer('GET', f'{path}?per_page=50&page=2', (200, [base]))
+    listed = status_list(client(Forge('github.com', 'o', 'r'), Loopback(server)), _SHA)
+    assert CommitStatus('tests/base', 'success', 'scope=full ran=1 hands=-', '') in listed
+    assert [one.context for one in listed] == ['tests/base', 'tests/merge-ready']
+    history = status_history(client(Forge('github.com', 'o', 'r'), Loopback(server)), _SHA)
+    assert history[0].context == 'tests/base', 'oldest first, across pages'
+
+
 # --------------------------------------------------------------------------------------------
 # which commit a verdict is about
 
@@ -223,6 +250,11 @@ def test_the_cli_posts_and_lists_with_json(server, tmp_path: Path, capsys) -> No
     answer('GET', f'/api/v1/repos/o/r/statuses/{_SHA}', (200, [{'id': 1, 'context': 'lab/test', 'status': 'pending'}]))
     assert main(['list', _SHA], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
     assert 'lab/test  pending' in capsys.readouterr().out
+    timed = {'id': 2, 'context': 'lab/test', 'status': 'success', 'created_at': '2026-11-28T00:44:03Z'}
+    answer('GET', f'/api/v1/repos/o/r/statuses/{_SHA}', (200, [timed]))
+    assert main(['list', _SHA, '--json'], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
+    (said,) = json.loads(capsys.readouterr().out)  # PLANTED: a status the forge timed, which --json once crashed on
+    assert said['created'] == '2026-11-28T00:44:03+00:00'
 
 
 def test_the_cli_reports_a_refusal_and_exits_nonzero(server, tmp_path: Path, capsys) -> None:
