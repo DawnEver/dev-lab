@@ -57,7 +57,7 @@ from dev_lab.dev.lockcheck import TOOLCHAIN
 from dev_lab.dev.roles import Unbound
 from dev_lab.dev.tickholder import Holder
 
-__all__ = ['account', 'announce_held', 'prep_build', 'tick']
+__all__ = ['account', 'announce_held', 'prep_build', 'prep_retry', 'tick']
 
 
 def account() -> str:
@@ -82,7 +82,9 @@ def _refresh(step: Step, spec: Deployment, home: Path, repo: Repo, submit: prep.
         return str(why)
     if prep.prepared(checkout, key):
         return ''
-    said = submit(checkout, key, python=spec.python, root=spec.root, script=prep.job_script(spec, repo))
+    said = submit(
+        checkout, key, python=spec.python, root=spec.root, script=prep.job_script(spec, repo), kit=prep.kit_of(spec)
+    )
     return f'its environment is not yet built for key {key[:12]} -- a Slurm prep job builds it, never the tick: {said}'
 
 
@@ -152,6 +154,39 @@ def _declared(name: str, path: Path) -> tuple[Deployment, Repo] | str:
     if spec is None or repo is None:
         return f'{name} is not a served repo of [deploy] in {path}'
     return spec, repo
+
+
+def prep_retry(
+    name: str,
+    *,
+    config: Path | None = None,
+    tools: Tools | None = None,
+    submit: prep.Submit = prep.submit,
+    say: Callable[[str], None] = emit,
+) -> int:
+    """ON the account (``prep-retry-here``): ask *name*'s prep job again over a failure, for its current key.
+
+    Nothing is built here (ONE-LOGIN-POLLER); an environment already current is said and nothing submitted.
+    2 refused, else 0.
+    """
+    found = _declared(name, config or config_path())
+    if isinstance(found, str):
+        say(f'prep-retry: refused -- {found}')
+        return 2
+    spec, repo = found
+    checkout = checkout_of(spec, repo)
+    try:
+        key = env_key(Step(tools or Tools(), dry=False), spec, repo, declared(checkout))
+    except REFUSALS as why:
+        say(f'prep-retry: {name}: refused -- {why}')
+        return 2
+    if prep.prepared(checkout, key):
+        say(f'prep-retry: {name}: its environment is current (key {key[:12]}); nothing submitted')
+        return 0
+    script = prep.job_script(spec, repo)
+    said = submit(checkout, key, python=spec.python, root=spec.root, script=script, kit=prep.kit_of(spec), retry=True)
+    say(f'prep-retry: {name}: key {key[:12]}: {said}')
+    return 2 if said == prep.ABSENT else 0
 
 
 def _ours(spec: Deployment, repo: Repo) -> bool | str:

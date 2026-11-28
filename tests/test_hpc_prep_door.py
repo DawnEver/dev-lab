@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from lab_commons import launch
 from lab_commons.hpc.builds import Builds
 
 from dev_lab.dev.hpcaccount import prep, tick
@@ -48,7 +49,7 @@ def test_an_environment_stamped_with_the_key_is_prepared(tmp_path: Path) -> None
 def test_a_lab_commons_without_the_prep_job_is_refused_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every wall teaches: the refusal names the missing function and the lane that provides it."""
     monkeypatch.setitem(sys.modules, 'lab_commons.hpc.prep', types.ModuleType('lab_commons.hpc.prep'))
-    said = prep.submit(Path('/r/repos/alpha'), 'k1', python='3.13', root='/r', script='true')
+    said = prep.submit(Path('/r/repos/alpha'), 'k1', python='3.13', root='/r', script='true', kit='c0ffee')
     assert said == prep.ABSENT
     assert 'submit_env_prep' in said
     assert 'pr/toolchain/arch-prep-job' in said
@@ -58,14 +59,47 @@ def test_the_prep_job_is_asked_with_the_checkout_key_python_root_and_script(monk
     asked: list[tuple[object, ...]] = []
     module = types.ModuleType('lab_commons.hpc.prep')
 
-    def submit_env_prep(checkout: Path, key: str, *, python: str, root: str, script: str) -> str:
-        asked.append((checkout, key, python, root, script))
+    def submit_env_prep(checkout: Path, key: str, *, python: str, root: str, script: str, kit: str, retry: bool) -> str:
+        asked.append((checkout, key, python, root, script, kit, retry))
         return 'submitted job 42'
 
     module.submit_env_prep = submit_env_prep  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, 'lab_commons.hpc.prep', module)
-    assert prep.submit(Path('/r/repos/alpha'), 'k1', python='3.13', root='/r', script='x') == 'submitted job 42'
-    assert asked == [(Path('/r/repos/alpha'), 'k1', '3.13', '/r', 'x')]
+    said = prep.submit(Path('/r/repos/alpha'), 'k1', python='3.13', root='/r', script='x', kit='c0ffee')
+    assert said == 'submitted job 42'
+    assert asked == [(Path('/r/repos/alpha'), 'k1', '3.13', '/r', 'x', 'c0ffee', False)]
+
+
+def test_a_failed_prep_job_line_names_its_retry_door(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every wall teaches: Ada 2026-11-28, a failed envprep job was reported every tick with no door to retry it.
+
+    PLANTED CONTROL: a submitted line, and a stale failure the job door resubmitted itself, name no door.
+    """
+    answer = ['job 600 failed: /r/jobs/envprep/k1/prep.log: FAILED: no cargo']
+    module = types.ModuleType('lab_commons.hpc.prep')
+    module.submit_env_prep = lambda *_a, **_kw: answer[0]  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, 'lab_commons.hpc.prep', module)
+    monkeypatch.setattr(prep.getpass, 'getuser', lambda: 'ezxmw9')
+    said = prep.submit(Path('/r/repos/alpha'), 'k1', python='3.13', root='/r', script='x', kit='c0ffee')
+    assert said.endswith('retry: python -m dev_lab.dev.hpcaccount prep-retry --account ezxmw9 alpha')
+    for quiet in ('submitted job 7', 'job 600 failed under kit old, not c0ffee: submitted job 7'):
+        answer[0] = quiet
+        assert prep.submit(Path('/r/repos/alpha'), 'k1', python='3', root='/r', script='x', kit='c0ffee') == quiet
+
+
+def test_the_kit_is_its_checkouts_commit(tmp_path: Path) -> None:
+    """What builds the env: the kit checkout's HEAD. PLANTED CONTROL: no checkout gives a stable placeholder."""
+    spec, _machine = _deployed(tmp_path, root=tmp_path.as_posix())
+    assert prep.kit_of(spec).startswith('unreadable:')
+    kit = deploy_spec.checkout_of(spec, spec.repos[0])
+    kit.mkdir(parents=True)
+    git = ['git', '-C', str(kit), '-c', 'user.name=t', '-c', 'user.email=t@t']
+    for argv in (['init', '-q'], ['commit', '-q', '--allow-empty', '-m', 'x']):
+        launch.run([*git, *argv], check=True)
+    head = launch.run(
+        [*git, 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True, encoding='utf-8'
+    ).stdout.strip()
+    assert prep.kit_of(spec) == head
 
 
 def _deployed(tmp_path: Path, root: str = '/r/src') -> tuple[deploy_spec.Deployment, Path]:
