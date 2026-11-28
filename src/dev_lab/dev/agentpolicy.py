@@ -129,6 +129,7 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(module_argv('sshhold', 'close'), MAIN, 'Ending a held login session.'),
     Door(module_argv('sshhold', 'status'), SUBAGENT, 'Read-only: the held login sessions and time left.'),
     Door(_forge('status', 'list'), SUBAGENT, 'Read-only: the commit statuses the forge holds for one commit.'),
+    Door(_forge('pr', 'list'), SUBAGENT, 'Read-only: the pull requests in one state, optionally of one head branch.'),
     Door(
         _forge('run', 'show'),
         SUBAGENT,
