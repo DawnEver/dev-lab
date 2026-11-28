@@ -26,7 +26,10 @@ Gitea renders no promoter: the host's ``dev_lab.ops`` promote role owns it.
 THE BRANCHES ARE THE REPO'S DECLARATION: :data:`INTEGRATION_PLACEHOLDER` in any string renders as the repo's
 ``[tool.dev_lab.integrator] integration`` (user ruling 2026-11-12: a one-branch repo merges into ``main``).
 THE INTERPRETER IS THE FAMILY'S: :data:`PYTHON_PLACEHOLDER` renders as
-:data:`dev_lab.dev.pythontoolchain.SYNC_FLAGS` (user ruling 2026-11-27), so no workflow types a Python version.
+:data:`dev_lab.dev.pythontoolchain.RUNNER_SYNC_FLAGS` (user ruling 2026-11-27), so no workflow types a Python version;
+:data:`MACOS_PLACEHOLDER` as :data:`~dev_lab.dev.pythontoolchain.MACOS_PROVISION`, the step installing the macOS
+interpreter. A job that syncs is refused at render unless that step precedes its first sync and every sync carries
+the flags (:func:`refuse_foreign_python`, dev-lab #1105): a macOS part runs on the interpreter its setup installed.
 
 SHARED STEPS ARE DECLARED ONCE. The top-level ``_steps`` table (the base's, the repo's ``[tool.dev_lab.ci._steps]``
 merged over it) names step lists; a step ``{ use-steps = "<name>" }`` in any job is replaced by that list at render,
@@ -103,7 +106,7 @@ from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
 from dev_lab.dev.nightlycron import scheduled
-from dev_lab.dev.pythontoolchain import SYNC_FLAGS
+from dev_lab.dev.pythontoolchain import MACOS_PROVISION, RUNNER_SYNC_FLAGS
 from dev_lab.dev.roles import HOST, REVIEW, ROLES_ENV, Roles, roles_at
 from dev_lab.dev.verifybox import wall_of
 
@@ -113,6 +116,7 @@ __all__ = [
     'GATES',
     'INTEGRATION_PLACEHOLDER',
     'LIGHT',
+    'MACOS_PLACEHOLDER',
     'PART_MARGIN_MIN',
     'PART_TIMEOUT_PLACEHOLDER',
     'PYTHON_PLACEHOLDER',
@@ -130,6 +134,7 @@ __all__ = [
     'part_timeout_minutes',
     'placed',
     'refuse_everything',
+    'refuse_foreign_python',
     'render',
     'repo_forge',
     'runner_labels',
@@ -153,8 +158,10 @@ GATES: Final = 'gates.yml'
 INTEGRATION_PLACEHOLDER: Final = '@integration@'
 #: In any base or layer string, the repo's declared extras as ` --extra <name>` words (empty when none), at render.
 EXTRAS_PLACEHOLDER: Final = '@extras@'
-#: In any base or layer string, the family interpreter's sync flags (:data:`SYNC_FLAGS`), at render.
+#: In any base or layer string, the family interpreter's sync flags (:data:`RUNNER_SYNC_FLAGS`), at render.
 PYTHON_PLACEHOLDER: Final = '@python@'
+#: In any base or layer string, the command installing the macOS interpreter (:data:`MACOS_PROVISION`), at render.
+MACOS_PLACEHOLDER: Final = '@macos-python@'
 #: A base value that IS this string renders as :func:`part_timeout_minutes` of the repo's selection wall (an int).
 PART_TIMEOUT_PLACEHOLDER: Final = '@part-timeout-minutes@'
 #: Minutes a part spends outside its selection wall: checkout, sync, posting and the log upload.
@@ -292,6 +299,7 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
             raise ValueError(msg)
         rendered = cast('dict[str, Any]', _named(workflow, integration, timeout, extras_words))
         refuse_everything(rendered, f'[tool.dev_lab.ci."{name}"]')
+        refuse_foreign_python(rendered, f'[tool.dev_lab.ci."{name}"]')
         out[name] = (WORKFLOW_DIRS[forge], rendered)
     for name, wheels in (
         (nativewheels.WORKFLOW, nativewheels.wheels_workflow(text, origin)),
@@ -362,14 +370,15 @@ def _named(value: object, integration: str, timeout: int, extras_words: str = ''
     """*value* with its placeholders rendered (integration branch, part timeout, declared extras, Python). PURE.
 
     :data:`INTEGRATION_PLACEHOLDER` in every string becomes *integration*, :data:`EXTRAS_PLACEHOLDER` the
-    *extras_words*, :data:`PYTHON_PLACEHOLDER` the family :data:`SYNC_FLAGS`; a string that IS
+    *extras_words*, :data:`PYTHON_PLACEHOLDER` the family :data:`RUNNER_SYNC_FLAGS`, :data:`MACOS_PLACEHOLDER`
+    :data:`MACOS_PROVISION`; a string that IS
     :data:`PART_TIMEOUT_PLACEHOLDER` becomes the int *timeout*.
     """
     if value == PART_TIMEOUT_PLACEHOLDER:
         return timeout
     if isinstance(value, str):
         named = value.replace(INTEGRATION_PLACEHOLDER, integration).replace(EXTRAS_PLACEHOLDER, extras_words)
-        return named.replace(PYTHON_PLACEHOLDER, SYNC_FLAGS)
+        return named.replace(PYTHON_PLACEHOLDER, RUNNER_SYNC_FLAGS).replace(MACOS_PLACEHOLDER, MACOS_PROVISION)
     if isinstance(value, dict):
         return {key: _named(item, integration, timeout, extras_words) for key, item in value.items()}
     if isinstance(value, list):
@@ -396,6 +405,24 @@ def refuse_everything(workflow: object, origin: str) -> None:
     elif isinstance(workflow, list):
         for item in workflow:
             refuse_everything(item, origin)
+
+
+def refuse_foreign_python(workflow: dict[str, Any], origin: str) -> None:
+    """MACOS-INTERPRETER (dev-lab #1105): every job that syncs installs the macOS interpreter first and syncs onto it.
+
+    A job's first ``uv sync`` must follow a step running :data:`MACOS_PROVISION`, and every sync must carry
+    :data:`RUNNER_SYNC_FLAGS`; otherwise a macOS runner would sync onto an interpreter nobody provisioned.
+    """
+    for job_name, job in workflow.get('jobs', {}).items():
+        runs = [str(step.get('run', '')) for step in job.get('steps', [])]
+        syncs = [at for at, run in enumerate(runs) if 'uv sync' in run]
+        door = f"use `{PYTHON_PLACEHOLDER}` and `{MACOS_PLACEHOLDER}` (the base's `setup` steps)"
+        if syncs and not any(MACOS_PROVISION in run for run in runs[: syncs[0]]):
+            msg = f'{origin} job {job_name}: MACOS-INTERPRETER -- no step installs it before it syncs; {door}'
+            raise ValueError(msg)
+        if bad := [runs[at] for at in syncs if RUNNER_SYNC_FLAGS not in runs[at]]:
+            msg = f'{origin} job {job_name}: MACOS-INTERPRETER -- {bad[0]!r} syncs without the family flags; {door}'
+            raise ValueError(msg)
 
 
 def light_gates(root: Path) -> bool:

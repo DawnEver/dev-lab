@@ -90,8 +90,13 @@
           }
         },
         {
+          "name": "Install the macOS interpreter and its Tk",
+          "if": "${{ runner.os == 'macOS' }}",
+          "run": "HOMEBREW_NO_AUTO_UPDATE=1 brew install python@3.14 python-tk@3.14"
+        },
+        {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --python 3.14 --managed-python --extra test --extra ops"
+          "run": "uv sync --frozen ${{ runner.os == 'macOS' && '--python \"$(brew --prefix python@3.14)/bin/python3.14\" --no-managed-python' || '--python 3.14 --managed-python' }} --extra test --extra ops"
         },
         {
           "name": "Install the normal measurement hooks",
@@ -135,8 +140,13 @@
           }
         },
         {
+          "name": "Install the macOS interpreter and its Tk",
+          "if": "${{ runner.os == 'macOS' }}",
+          "run": "HOMEBREW_NO_AUTO_UPDATE=1 brew install python@3.14 python-tk@3.14"
+        },
+        {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --python 3.14 --managed-python --extra test --extra ops"
+          "run": "uv sync --frozen ${{ runner.os == 'macOS' && '--python \"$(brew --prefix python@3.14)/bin/python3.14\" --no-managed-python' || '--python 3.14 --managed-python' }} --extra test --extra ops"
         },
         {
           "id": "pending",
@@ -184,13 +194,18 @@
           }
         },
         {
+          "name": "Install the macOS interpreter and its Tk",
+          "if": "${{ runner.os == 'macOS' }}",
+          "run": "HOMEBREW_NO_AUTO_UPDATE=1 brew install python@3.14 python-tk@3.14"
+        },
+        {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --python 3.14 --managed-python --extra test --extra ops"
+          "run": "uv sync --frozen ${{ runner.os == 'macOS' && '--python \"$(brew --prefix python@3.14)/bin/python3.14\" --no-managed-python' || '--python 3.14 --managed-python' }} --extra test --extra ops"
         },
         {
           "name": "Sync the part's extras",
           "shell": "bash",
-          "run": "uv sync --frozen --python 3.14 --managed-python $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part \"${{ matrix.part }}\")"
+          "run": "uv sync --frozen ${{ runner.os == 'macOS' && '--python \"$(brew --prefix python@3.14)/bin/python3.14\" --no-managed-python' || '--python 3.14 --managed-python' }} $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part \"${{ matrix.part }}\")"
         },
         {
           "name": "Produce and post the part",
@@ -242,8 +257,13 @@
           }
         },
         {
+          "name": "Install the macOS interpreter and its Tk",
+          "if": "${{ runner.os == 'macOS' }}",
+          "run": "HOMEBREW_NO_AUTO_UPDATE=1 brew install python@3.14 python-tk@3.14"
+        },
+        {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --python 3.14 --managed-python --extra test --extra ops"
+          "run": "uv sync --frozen ${{ runner.os == 'macOS' && '--python \"$(brew --prefix python@3.14)/bin/python3.14\" --no-managed-python' || '--python 3.14 --managed-python' }} --extra test --extra ops"
         },
         {
           "name": "Post every part no job settled",
@@ -278,8 +298,13 @@
           }
         },
         {
+          "name": "Install the macOS interpreter and its Tk",
+          "if": "${{ runner.os == 'macOS' }}",
+          "run": "HOMEBREW_NO_AUTO_UPDATE=1 brew install python@3.14 python-tk@3.14"
+        },
+        {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --python 3.14 --managed-python --extra test --extra ops"
+          "run": "uv sync --frozen ${{ runner.os == 'macOS' && '--python \"$(brew --prefix python@3.14)/bin/python3.14\" --no-managed-python' || '--python 3.14 --managed-python' }} --extra test --extra ops"
         },
         {
           "name": "tests/security",
@@ -314,8 +339,13 @@
           }
         },
         {
+          "name": "Install the macOS interpreter and its Tk",
+          "if": "${{ runner.os == 'macOS' }}",
+          "run": "HOMEBREW_NO_AUTO_UPDATE=1 brew install python@3.14 python-tk@3.14"
+        },
+        {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --python 3.14 --managed-python --extra test --extra ops"
+          "run": "uv sync --frozen ${{ runner.os == 'macOS' && '--python \"$(brew --prefix python@3.14)/bin/python3.14\" --no-managed-python' || '--python 3.14 --managed-python' }} --extra test --extra ops"
         },
         {
           "name": "head gates",
@@ -359,8 +389,13 @@
           }
         },
         {
+          "name": "Install the macOS interpreter and its Tk",
+          "if": "${{ runner.os == 'macOS' }}",
+          "run": "HOMEBREW_NO_AUTO_UPDATE=1 brew install python@3.14 python-tk@3.14"
+        },
+        {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --python 3.14 --managed-python --extra test --extra ops"
+          "run": "uv sync --frozen ${{ runner.os == 'macOS' && '--python \"$(brew --prefix python@3.14)/bin/python3.14\" --no-managed-python' || '--python 3.14 --managed-python' }} --extra test --extra ops"
         },
         {
           "id": "ready",
@@ -409,8 +444,13 @@
           }
         },
         {
+          "name": "Install the macOS interpreter and its Tk",
+          "if": "${{ runner.os == 'macOS' }}",
+          "run": "HOMEBREW_NO_AUTO_UPDATE=1 brew install python@3.14 python-tk@3.14"
+        },
+        {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --python 3.14 --managed-python --extra test --extra ops"
+          "run": "uv sync --frozen ${{ runner.os == 'macOS' && '--python \"$(brew --prefix python@3.14)/bin/python3.14\" --no-managed-python' || '--python 3.14 --managed-python' }} --extra test --extra ops"
         },
         {
           "name": "Promote main",
