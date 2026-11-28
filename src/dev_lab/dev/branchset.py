@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import fnmatch
+import re
 import subprocess
 import tomllib
 from collections.abc import Callable
@@ -74,7 +75,9 @@ __all__ = [
     'declared_branchset',
     'holders',
     'main',
+    'merge_branchset',
     'merge_candidates',
+    'migrate_text',
 ]
 
 _TABLE = '[tool.dev_lab.branchset]'
@@ -197,6 +200,50 @@ def branchset_at(root: Path, rev: str) -> BranchSet:
         msg = f'{rev}:pyproject.toml is not readable in {root}: {exc}'
         raise BranchSetNotDeclared(msg) from exc
     return branchset_from(text, f'{rev}:pyproject.toml')
+
+
+#: The door every retired-key refusal on a merge names (FORMATS-MIGRATE-ONCE, #1115).
+MIGRATE_DOOR: Final = 'python -m dev_lab.dev.branchset --migrate <checkout>'
+#: Each retired key the migration rewrites: its replacement and the unit its bare number was in.
+_MIGRATED: Final = {**_UNIT_RENAMED, 'grace_hours': Renamed('max_idle', 'h')}
+_HEADER = re.compile(r'^\s*\[')
+_RETIRED_LINE = re.compile(r'^(\s*)(' + '|'.join(map(re.escape, _MIGRATED)) + r')(\s*=\s*)([0-9.]+)(.*)$')
+
+
+def merge_branchset(base: str, base_label: str, head: Callable[[], str], head_label: str) -> BranchSet:
+    """The branch set a merge of *head* into *base* is judged by: the base's, unless the base declares a RETIRED key.
+
+    A base still carrying a retired key would refuse every merge into it -- including the PR whose head migrates
+    it (#1115). So only a retired base reads *head*: one that reads cleanly judges the merge (it IS the
+    migration), logged; a head retired too refuses naming the migration line and :data:`MIGRATE_DOOR`.
+    """
+    try:
+        return branchset_from(base, base_label)
+    except BranchSetKeyRetired as retired:
+        try:
+            declared = branchset_from(head(), head_label)
+        except BranchSetKeyRetired as also:
+            msg = f'{retired}; the head migrates nothing ({also}); migrate the base with {MIGRATE_DOOR}, then merge'
+            raise BranchSetKeyRetired(msg) from also
+        emit(f'{base_label} declares a retired key ({retired}); judging by {head_label}, which migrates it')
+        return declared
+
+
+def migrate_text(text: str) -> str:
+    """*text* with every retired key of its branchset table rewritten to the current spelling; idempotent."""
+    out: list[str] = []
+    inside = False
+    for line in text.splitlines(keepends=True):
+        if _HEADER.match(line):
+            inside = line.strip() == _TABLE
+        elif inside and (found := _RETIRED_LINE.match(body := line.rstrip('\r\n'))):
+            indent, key, eq, number, rest = found.groups()
+            ending = line[len(body) :]
+            renamed = _MIGRATED[key]
+            out.append(f'{indent}{renamed.key}{eq}"{number} {renamed.unit}"{rest}{ending}')
+            continue
+        out.append(line)
+    return ''.join(out)
 
 
 def branchset_from(text: str, manifest: str) -> BranchSet:
@@ -391,6 +438,17 @@ def _drop_tag(root: Path, row: Candidate, holders: tuple[str, ...]) -> str:
     return f'{"deleted " if done else "FAILED  "} tag     {row.name}  {hint}'
 
 
+def _migrate(checkout: Path) -> int:
+    """Rewrite *checkout*'s retired branchset keys in place (:func:`migrate_text`); the integrator commits it."""
+    manifest = checkout / 'pyproject.toml'
+    text = manifest.read_text(encoding='utf-8')
+    migrated = migrate_text(text)
+    if migrated != text:
+        manifest.write_bytes(migrated.encode('utf-8'))
+    emit(f'{manifest}: {"migrated; review and commit it" if migrated != text else "nothing retired"}')
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """List the merge-and-delete candidates; ``--apply`` deletes the deletable LOCAL ones. Exit 2: unread."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.branchset', description=main.__doc__)
@@ -401,8 +459,13 @@ def main(argv: list[str] | None = None) -> int:
         help='reclaim and delete landed LOCAL work, list unlanded work with its doors; origin gets its door',
     )
     parser.add_argument('--discard', metavar='BRANCH', help='remove ONE unlanded lane: its worktree and local branch')
+    parser.add_argument(
+        '--migrate', metavar='CHECKOUT', type=Path, help='rewrite retired branchset keys in CHECKOUT; commits nothing'
+    )
     parser.add_argument('--approved', default='', help="with --discard: the user's words approving it (required)")
     args = parser.parse_args(argv)
+    if args.migrate is not None:
+        return _migrate(args.migrate)
     top = git_out(args.root, 'rev-parse', '--show-toplevel')
     if top is None:
         emit(f'{args.root} is not inside a git checkout; run from the checkout or pass --root <checkout>')
@@ -423,10 +486,9 @@ def main(argv: list[str] | None = None) -> int:
     rows = merge_candidates(root, declared_branchset(root))
     if rows is None:
         emit(f'git could not read the branches of {root}; an unread repo is not a clean one')
-        return 2
-    for row in rows:
+    for row in rows or ():
         emit(f'{"delete" if row.deletable else "merge "}  {row.where:<7} {row.name}')
-    return 0
+    return 2 if rows is None else 0
 
 
 if __name__ == '__main__':
