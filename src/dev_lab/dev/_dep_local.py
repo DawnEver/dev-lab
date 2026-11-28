@@ -164,13 +164,8 @@ def keyed(prefix: str, key: str) -> str:
     return f'{key}+local:{text}'
 
 
-def overlays_for(root: Path, cli: Sequence[str], *, syncing: bool) -> tuple[Overlay, ...] | None:
-    """The siblings declared local for this sync (the machine file's, then *cli*'s), resolved.
-
-    ``()`` is the bare lock; ``None`` is a run that syncs nothing.
-    """
-    if not syncing:
-        return None
+def overlays_for(root: Path, cli: Sequence[str]) -> tuple[Overlay, ...]:
+    """The siblings declared local for this sync (the machine file's, then *cli*'s), resolved; ``()``: the bare lock."""
     names = declared(cli, section('dep'))
     if not names:
         return ()
@@ -181,7 +176,6 @@ def step(
     root: Path,
     cli: Sequence[str],
     *,
-    syncing: bool,
     uv: str,
     python: str,
     prefix: Path,
@@ -189,12 +183,12 @@ def step(
     env: dict[str, str],
 ) -> Callable[[], int]:
     """The overlay as the step the door runs after the sync, in its seat -- resolved NOW, so a refusal precedes it."""
-    overlays = overlays_for(root, cli, syncing=syncing)
+    overlays = overlays_for(root, cli)
     return functools.partial(install, overlays, uv=uv, python=python, prefix=prefix, root=root, run=run, env=env)
 
 
 def install(
-    overlays: Sequence[Overlay] | None,
+    overlays: Sequence[Overlay],
     *,
     uv: str,
     python: str,
@@ -206,11 +200,8 @@ def install(
     """Install *overlays* over the synced lock, then stamp and announce them -- or clear the stamp when there are none.
 
     Editable, and ``--no-deps``: a sibling needing a newer peer is a relock, never an overlay. The install resolves
-    from the index, so it goes through the ONE retry door (NETWORK-RETRY-THEN-REPORT). ``None`` (a run that synced
-    nothing) leaves the environment's overlay exactly as it was.
+    from the index, so it goes through the ONE retry door (NETWORK-RETRY-THEN-REPORT).
     """
-    if overlays is None:
-        return 0
     if overlays:
         argv = [uv, 'pip', 'install', '--python', python, '--no-deps']
         for overlay in overlays:

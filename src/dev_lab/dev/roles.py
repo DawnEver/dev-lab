@@ -77,6 +77,7 @@ __all__ = [
     'Roles',
     'Unbound',
     'accounts',
+    'binding',
     'bound_accounts',
     'executor_from',
     'host_refusals',
@@ -223,8 +224,14 @@ def bound_accounts(roles: Roles, layer: Mapping[str, Any]) -> frozenset[str] | N
     return frozenset(user for executor in bound for user in accounts(executor, layer))
 
 
-def _bound(layer: Mapping[str, Any], forge: str, repo: str, role: str) -> Executor:
-    table = layer['roles']
+def binding(layer: Mapping[str, Any], forge: str, repo: str, role: str) -> tuple[str, Executor]:
+    """Where *layer* binds *role* of *repo* on *forge* (the repo's override, else the forge's table) and to whom.
+
+    Raises:
+        Unbound: the role is unbound for the repo, or its value is none of the shapes.
+
+    """
+    table = layer.get('roles', {})
     override = table.get('repos', {}).get(repo, {})
     if role in override:
         where = f'[roles.repos."{repo}"] {role}'
@@ -237,7 +244,11 @@ def _bound(layer: Mapping[str, Any], forge: str, repo: str, role: str) -> Execut
             f'{repo} on {forge}: {role} is unbound -- bind it in [roles.{forge}] or [roles.repos."{repo}"] ({_SHAPES})'
         )
         raise Unbound(msg)
-    executor = executor_from(value, where)
+    return where, executor_from(value, where)
+
+
+def _bound(layer: Mapping[str, Any], forge: str, repo: str, role: str) -> Executor:
+    where, executor = binding(layer, forge, repo, role)
     if executor.kind not in TAKES[role]:
         msg = f'{where} = {executor}: {role} is performed by {list(TAKES[role])} alone'
         raise Unbound(msg)

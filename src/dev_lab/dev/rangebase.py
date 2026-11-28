@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.reviewgitauth import git_env
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -35,7 +37,8 @@ class NoMergeBaseError(RuntimeError):
 
 
 def _git(root: Path, *args: str) -> tuple[int, str, str]:
-    done = _door.run(['git', '-C', str(root), *args], capture_output=True, check=False, timeout=120)
+    # env: a held forge header (a review's partial clone fetches the objects merge-base walks), else inherited
+    done = _door.run(['git', '-C', str(root), *args], capture_output=True, check=False, timeout=120, env=git_env())
     return done.returncode, done.stdout.decode('utf-8', 'replace'), done.stderr.decode('utf-8', 'replace').strip()
 
 

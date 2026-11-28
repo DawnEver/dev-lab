@@ -19,7 +19,7 @@ ROOT = '/scratch/u1/lab'
 @pytest.mark.parametrize(('what', 'repo', 'wanted'), [
     ('processes', '', 'ps -u "$(id -un)"'),
     ('ticks', '', f'cd {ROOT}/serve'),
-    ('log', 'alpha', f'tail -n {look.LOG_LINES} {ROOT}/serve/alpha.log'),
+    ('log', '', f'tail -n {look.LOG_LINES} {ROOT}/serve/tick.log'),
     ('crontab', '', 'crontab -l'),
     ('stuck', 'ci/experiments/x', 'p="$HOME"/ci/experiments/x'),
 ])  # fmt: skip
@@ -28,8 +28,8 @@ def test_each_read_is_a_fixed_line(what: str, repo: str, wanted: str) -> None:
 
 
 @pytest.mark.parametrize(('what', 'repo'), [
-    ('rm', ''), ('run', ''), ('kill', ''), ('crontab -r', ''), ('log', '../../.ssh/authorized_keys'),
-    ('log', 'a;rm -rf ~'), ('log', ''), ('ticks', 'alpha'), ('stuck', ''), ('stuck', '../etc'),
+    ('rm', ''), ('run', ''), ('kill', ''), ('crontab -r', ''), ('log', 'alpha'),
+    ('log', 'a;rm -rf ~'), ('ticks', 'alpha'), ('stuck', ''), ('stuck', '../etc'),
     ('stuck', 'ci/../../x'), ('stuck', '/etc'), ('stuck', 'ci/$(rm -rf ~)'), ('stuck', 'a b'),
 ])  # fmt: skip
 def test_a_write_shaped_request_is_refused_naming_the_reads(what: str, repo: str) -> None:

@@ -15,25 +15,34 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, NoReturn
+from typing import Any, Final, cast
 
-from lab_commons.quantity import registry
+from dev_lab.dev._ir_catalogue import LOWER, Constant, Quantity, catalogue
+from dev_lab.dev._ir_errors import refuse
+from dev_lab.dev._ir_metadata import (
+    NUMERIC,
+    DefaultFrom,
+    check_default,
+    check_metadata,
+    default_from,
+    foreign,
+    rest,
+    string,
+)
 
 __all__ = [
+    'CONSTANTS_MODULE',
     'DTYPES',
     'IR',
     'Declaration',
     'Enum',
     'Field',
-    'IRSchemaError',
     'Module',
-    'Quantity',
     'Reader',
     'Record',
     'TypeRef',
     'load_module',
     'parse',
-    'refuse',
 ]
 
 #: Reads one repo-relative path to its text.
@@ -41,56 +50,34 @@ type Reader = Callable[[str], str]
 
 SCALARS: Final = frozenset({'bool', 'int', 'float', 'complex', 'str'})
 DTYPES: Final = ('bool', 'int32', 'int64', 'float32', 'float64', 'complex128')
-#: Pint's dimension names, in the catalogue's exponent order M L T I Theta N J.
-_DIMENSIONS: Final = ('[mass]', '[length]', '[time]', '[current]', '[temperature]', '[substance]', '[luminosity]')
-_UNIT_EPS: Final = 1e-12  # a coherent unit's base magnitude is exactly 1
-_POWER: Final = (1, 2, -3, 0, 0, 0, 0)
 _FIELD_KEYS: Final = frozenset(
-    {'type', 'optional', 'quantity', 'doc', 'dtype', 'shape', 'unique_by', 'csr_values', 'gauge_reference'}
-)
+    {
+        'type', 'optional', 'quantity', 'doc', 'dtype', 'shape', 'unique_by', 'csr_values', 'gauge_reference',
+        'default', 'default_consumer', 'default_from', 'nonempty', 'requires', 'minimum', 'maximum',
+    }
+)  # fmt: skip
+#: A record's own keys: its doc, its fields, and the surface metadata a reader desugars (docs-src/dev/ir-schema.md).
+_RECORD_KEYS: Final = frozenset({'doc', 'field', 'rest', 'string', 'array', 'fill', 'one_of'})
+#: Rust's reserved words: a field so spelled is emitted as a raw identifier (``r#use``), its wire name unchanged.
+RUST_KEYWORDS: Final = frozenset({
+    'as', 'async', 'await', 'break', 'const', 'continue', 'dyn', 'else', 'enum', 'extern', 'false', 'fn', 'for',
+    'if', 'impl', 'in', 'let', 'loop', 'match', 'mod', 'move', 'mut', 'pub', 'ref', 'return', 'static', 'struct',
+    'trait', 'true', 'type', 'unsafe', 'use', 'where', 'while', 'abstract', 'become', 'box', 'do', 'final', 'gen',
+    'macro', 'override', 'priv', 'try', 'typeof', 'unsized', 'virtual', 'yield', 'self', 'super', 'crate',
+})  # fmt: skip
+#: Keywords a raw identifier cannot spell: such a field becomes ``<name>_`` with a serde rename.
+_RUST_UNRAW: Final = frozenset({'self', 'super', 'crate'})
+#: The generated module holding the catalogue's constants (``_ir_constants.py``, Rust ``mod ir_constants``).
+CONSTANTS_MODULE: Final = 'constants'
 _UPPER: Final = re.compile(r'^[A-Z][A-Za-z0-9]*$')
-_LOWER: Final = re.compile(r'^[a-z][a-z0-9_]*$')
-_DOORS: Final = {
-    'IR-UNKNOWN-TYPE': 'fix the name or declare the target',
-    'IR-RECORD-CYCLE': 'break the cycle with an id: reference',
-    'IR-ID-WITHOUT-ID-FIELD': 'give the target record a field `id` of type id:<Record>',
-    'IR-UNIT-IN-SCHEMA': 'name a catalogue quantity; units live only in the catalogue',
-    'IR-UNKNOWN-QUANTITY': 'add the quantity to the catalogue',
-    'IR-QUANTITY-ON-NON-FLOAT': 'remove the quantity; only float and complex values carry one',
-    'IR-NON-SI-UNIT': 'use the coherent SI unit (no prefix, offset, gauge or dB)',
-    'IR-DIMENSION-MISMATCH': 'correct the catalogue row',
-    'IR-FIELD-SPEC': 'see docs-src/dev/ir-schema.md, "A schema file"',
-    'IR-NO-BOUNDARY': (
-        'declare `boundary = "<module>"` in [tool.dev_lab.ir_schema]: the consumer module whose to_si/from_si is its '
-        'one unit boundary (docs-src/dev/ir-schema.md, "Units cross once, at the boundary")'
-    ),
-    'IR-UNIT-LIBRARY': (
-        'generated code holds SI only and reads no unit; units cross at the declared `boundary` module, so fix the '
-        'generator template that names it'
-    ),
-}
-
-
-class IRSchemaError(ValueError):
-    """A refused IR declaration: ``<code>: <where>: <what> -- <door>``."""
-
-    def __init__(self, code: str, where: str, what: str) -> None:
-        """Refuse *what* at *where* under *code*, naming the code's door."""
-        super().__init__(f'{code}: {where}: {what} -- {_DOORS[code]}')
-        self.code = code
-
-
-def refuse(code: str, where: str, what: str) -> NoReturn:
-    """Raise the :class:`IRSchemaError` *code* at *where*."""
-    raise IRSchemaError(code, where, what)
 
 
 @dataclass(frozen=True)
 class TypeRef:
     """A field type: a kind, its qualified target, and a list's element type."""
 
-    kind: str  # bool int float complex str enum id record list array
-    target: str = ''  # 'module.Name' for enum/id/record
+    kind: str  # bool int float complex str enum id record list array foreign
+    target: str = ''  # 'module.Name' for enum/id/record; '<package>.<name>' for foreign
     item: TypeRef | None = None
 
 
@@ -105,9 +92,35 @@ class Field:
     doc: str = ''
     dtype: str = ''
     shape: tuple[int | str, ...] = ()
-    unique_by: str = ''
+    #: The listed record's key fields whose TUPLE is unique (one name: the single-key map).
+    unique_by: tuple[str, ...] = ()
     csr_values: str = ''
     gauge_reference: str = ''
+    #: An optional field's declared default, CARRIED for its named consumer and never filled by the reader (D135).
+    default: object = None
+    default_consumer: str = ''
+    #: A derived default, exclusive with :attr:`default`; resolved by the consumer, never by the reader.
+    default_from: DefaultFrom | None = None
+    #: A list that holds at least one entry.
+    nonempty: bool = False
+    #: The sibling field this optional field is written only beside.
+    requires: str = ''
+    #: Bounds AS WRITTEN: a bare number on a field without a quantity, ``"<number> <unit>"`` on one with a
+    #: quantity; :func:`dev_lab.dev.ircheck.bounds` gives them in absolute SI.
+    minimum: object = None
+    maximum: object = None
+
+    @property
+    def py_name(self) -> str:
+        """The generated Python attribute: a Python keyword gets a trailing ``_``; the wire name stays :attr:`name`."""
+        return f'{self.name}_' if keyword.iskeyword(self.name) else self.name
+
+    @property
+    def rust_name(self) -> str:
+        """The generated Rust field: a Rust keyword is raw (``r#use``); the wire name stays :attr:`name`."""
+        if self.name in _RUST_UNRAW:
+            return f'{self.name}_'
+        return f'r#{self.name}' if self.name in RUST_KEYWORDS else self.name
 
 
 @dataclass(frozen=True)
@@ -118,6 +131,16 @@ class Record:
     name: str
     fields: tuple[Field, ...]
     doc: str = ''
+    #: ``<package>.<name>`` of the foreign type every undeclared key is kept as (``rest = "foreign:..."``).
+    rest: str = ''
+    #: The field a bare string written for the record is.
+    string: str = ''
+    #: The fields, in order, an entry written as an array is.
+    array: tuple[str, ...] = ()
+    #: The numeric fields a bare number written for the record fills.
+    fill: tuple[str, ...] = ()
+    #: The optional fields of which exactly one is present.
+    one_of: tuple[str, ...] = ()
 
     def field(self, name: str) -> Field:
         """The field called *name*."""
@@ -134,16 +157,6 @@ class Enum:
 
 
 @dataclass(frozen=True)
-class Quantity:
-    """One catalogue quantity: its coherent SI unit, dimension and optional dB reference."""
-
-    name: str
-    unit: str
-    dimension: tuple[int, ...]
-    db: tuple[float, int] | None = None
-
-
-@dataclass(frozen=True)
 class Module:
     """One schema file: its records, enums and dim bounds."""
 
@@ -153,6 +166,7 @@ class Module:
     enums: dict[str, Enum]
     dims: dict[str, tuple[int | None, int | None]]
     python: str = ''  # the importable module holding its generated Python
+    terms: tuple[str, ...] = ()  # the terms files its enums read, repo-relative (a freshness source)
 
 
 @dataclass(frozen=True)
@@ -186,6 +200,7 @@ class IR:
     catalogue_source: str
     port_domains: dict[str, tuple[str, str]]
     external: dict[str, Module]
+    constants: dict[str, Constant]
 
     def record(self, qualified: str) -> Record:
         """The record named ``module.Name``."""
@@ -199,6 +214,10 @@ def _declaration(root: Path, read: Reader) -> Declaration | None:
     if table is None:
         return None
     major, minor, patch = (int(part) for part in table['version'].split('.'))
+    if CONSTANTS_MODULE in table['modules']:
+        refuse(
+            'IR-CONSTANT-SPEC', 'pyproject.toml [tool.dev_lab.ir_schema.modules]', f'{CONSTANTS_MODULE!r} is reserved'
+        )
     if not table.get('boundary'):
         refuse('IR-NO-BOUNDARY', 'pyproject.toml [tool.dev_lab.ir_schema]', 'no `boundary` module is declared')
     return Declaration(
@@ -219,20 +238,22 @@ def _type(text: str, module: str, where: str) -> TypeRef:
     if text in SCALARS or text == 'array':
         return TypeRef(text)
     head, _, rest = text.partition(':')
+    if head == 'foreign':
+        return TypeRef('foreign', foreign(text, where))
     if head == 'list' and rest:
         item = _type(rest, module, where)
         if item.kind in ('list', 'array'):
             refuse('IR-FIELD-SPEC', where, f'a list holds no {item.kind}; wrap it in a record')
         return TypeRef('list', item=item)
-    if head in ('enum', 'id', 'record') and rest:
-        return TypeRef(head, rest if '.' in rest else f'{module}.{rest}')
-    refuse('IR-UNKNOWN-TYPE', where, f'type {text!r} is not one of the declared types')
+    if head not in ('enum', 'id', 'record') or not rest:
+        refuse('IR-UNKNOWN-TYPE', where, f'type {text!r} is not one of the declared types')
+    return TypeRef(head, rest if '.' in rest else f'{module}.{rest}')
 
 
-def _field(module: str, record: str, name: str, row: dict) -> Field:
+def _field(module: str, record: str, name: str, row: dict[str, Any]) -> Field:
     where = f'{module}.{record}.{name}'
-    if not _LOWER.match(name) or keyword.iskeyword(name):
-        refuse('IR-FIELD-SPEC', where, 'a field name is lower_snake and not a Python keyword')
+    if not LOWER.match(name):
+        refuse('IR-FIELD-SPEC', where, 'a field name is lower_snake (a keyword is escaped in generated code)')
     extra = sorted(set(row) - _FIELD_KEYS)
     if extra:
         refuse('IR-FIELD-SPEC', where, f'unknown key {extra[0]!r} (a required field has no default)')
@@ -241,6 +262,8 @@ def _field(module: str, record: str, name: str, row: dict) -> Field:
     if is_array != ('dtype' in row) or is_array != ('shape' in row):
         refuse('IR-FIELD-SPEC', where, 'dtype and shape belong to, and complete, an array')
     shape = tuple(row.get('shape', ()))
+    check_default(row, where)
+    check_metadata(row, kind, where)
     if is_array and (row['dtype'] not in DTYPES or not all(isinstance(d, (int, str)) for d in shape)):
         refuse('IR-FIELD-SPEC', where, f'dtype one of {DTYPES}, shape of ints and dim names')
     return Field(
@@ -251,63 +274,108 @@ def _field(module: str, record: str, name: str, row: dict) -> Field:
         doc=row.get('doc', ''),
         dtype=row.get('dtype', ''),
         shape=shape,
-        unique_by=row.get('unique_by', ''),
+        unique_by=_names(row, 'unique_by', where),
         csr_values=row.get('csr_values', ''),
         gauge_reference=row.get('gauge_reference', ''),
+        default=cast('object', row.get('default')),
+        default_consumer=str(row.get('default_consumer', '')),
+        default_from=default_from(row, kind, where),
+        nonempty=bool(row.get('nonempty', False)),
+        requires=str(row.get('requires', '')),
+        minimum=row.get('minimum'),
+        maximum=row.get('maximum'),
     )
 
 
-def load_module(name: str, source: str, python: str = '') -> Module:
-    """One schema file, parsed but not yet resolved against its neighbors."""
+def _names(row: dict[str, Any], key: str, where: str) -> tuple[str, ...]:
+    """A key naming fields: one name or a list of distinct names (``unique_by``, ``array``, ``fill``, ``one_of``)."""
+    value: object = row.get(key, [])
+    listed = [value] if isinstance(value, str) else value
+    if not isinstance(listed, list) or not all(
+        isinstance(n, str) and LOWER.match(n) for n in cast('list[object]', listed)
+    ):
+        refuse('IR-FIELD-SPEC', where, f'`{key}` is a field name or a list of field names, got {value!r}')
+    names = tuple(str(n) for n in cast('list[object]', listed))
+    if len(set(names)) != len(names):
+        refuse('IR-FIELD-SPEC', where, f'`{key}` names a field twice: {list(names)!r}')
+    return names
+
+
+def _enum_values(where: str, row: dict[str, Any], read: Reader | None) -> tuple[str, ...]:
+    """An enum's values: listed (``values``), or the keys of a terms table (``terms`` file + dotted ``table``)."""
+    if ('values' in row) == ('terms' in row):
+        refuse('IR-FIELD-SPEC', where, 'an enum declares exactly one of `values` or `terms` + `table`')
+    if 'values' in row:
+        return tuple(str(v) for v in row['values'])
+    if not row.get('table') or read is None:
+        refuse('IR-FIELD-SPEC', where, '`terms = "<repo-relative toml>"` names its `table = "<dotted key>"`')
+    terms, table = str(row['terms']), str(row['table'])
+    node: Any = tomllib.loads(read(terms))
+    for key in table.split('.'):
+        node = cast('dict[str, Any]', node).get(key) if isinstance(node, dict) else None
+    if not isinstance(node, dict):
+        refuse('IR-FIELD-SPEC', where, f'{terms} has no table [{table}] to read the values from')
+    return tuple(str(key) for key in cast('dict[str, Any]', node))
+
+
+def load_module(
+    name: str, source: str, python: str = '', read: Reader | None = None, resolved: dict[str, list[str]] | None = None
+) -> Module:
+    """One schema file, parsed but not yet resolved against its neighbors.
+
+    *read* resolves a terms-table enum (``terms``); *resolved* gives an EXTERNAL module's enums as its generated
+    ``ENUM_VALUES`` holds them, since the owner's terms file is not in this tree.
+    """
     data = tomllib.loads(source)
-    enums = {}
+    enums: dict[str, Enum] = {}
     for enum_name, row in data.get('enum', {}).items():
-        values = tuple(row['values'])
-        bad = [v for v in values if not _LOWER.match(v) or keyword.iskeyword(v)]
+        if resolved is not None and enum_name in resolved:
+            values = tuple(resolved[enum_name])
+        else:
+            values = _enum_values(f'{name}.{enum_name}', row, read)
+        bad = [v for v in values if not LOWER.match(v) or keyword.iskeyword(v)]
         if not values or bad or len(set(values)) != len(values) or not _UPPER.match(enum_name):
             refuse('IR-FIELD-SPEC', f'{name}.{enum_name}', 'values: non-empty, unique, lower_snake')
         enums[enum_name] = Enum(name, enum_name, values)
-    records = {}
+    records: dict[str, Record] = {}
     for record_name, row in data.get('record', {}).items():
         if not _UPPER.match(record_name):
             refuse('IR-FIELD-SPEC', f'{name}.{record_name}', 'a record name is UpperCamel')
-        fields = tuple(_field(name, record_name, f, r) for f, r in row.get('field', {}).items())
-        records[record_name] = Record(name, record_name, fields, row.get('doc', ''))
+        records[record_name] = _record(name, record_name, row)
     dims = {d: (row.get('min'), row.get('max')) for d, row in data.get('dim', {}).items()}
-    return Module(name, source, records, enums, dims, python)
+    terms = tuple(sorted({row['terms'] for row in data.get('enum', {}).values() if 'terms' in row}))
+    return Module(name, source, records, enums, dims, python, terms)
 
 
-def _catalogue(source: str) -> tuple[dict[str, Quantity], dict[str, tuple[str, str]]]:
-    data = tomllib.loads(source)
-    quantities = {}
-    for name, row in data.get('quantity', {}).items():
-        where = f'quantity.{name}'
-        try:
-            ureg = registry()
-            unit = ureg.Unit(row['unit'])
-            base = ureg.Quantity(1.0, unit).to_base_units()
-        except Exception:  # noqa: BLE001 -- pint's refusals share no base; every one means "not coherent SI"
-            refuse('IR-NON-SI-UNIT', where, f'unit {row["unit"]!r}')
-        if abs(base.magnitude - 1.0) > _UNIT_EPS:
-            refuse('IR-NON-SI-UNIT', where, f'unit {row["unit"]!r} is not coherent SI')
-        dimension = tuple(int(x) for x in row['dimension'].split())
-        measured = tuple(int(unit.dimensionality.get(d, 0)) for d in _DIMENSIONS)
-        if dimension != measured:
-            refuse('IR-DIMENSION-MISMATCH', where, f'unit {row["unit"]} has dimension {measured}')
-        db = (float(row['db_reference']), int(row['db_scale'])) if 'db_reference' in row else None
-        quantities[name] = Quantity(name, row['unit'], dimension, db)
-    domains = {}
-    for name, row in data.get('port_domain', {}).items():
-        effort, flow = quantities[row['effort']], quantities[row['flow']]
-        if tuple(a + b for a, b in zip(effort.dimension, flow.dimension, strict=True)) != _POWER:
-            refuse('IR-DIMENSION-MISMATCH', f'port_domain.{name}', 'effort x flow is not a power')
-        domains[name] = (row['effort'], row['flow'])
-    return quantities, domains
+def _record(module: str, name: str, row: dict[str, Any]) -> Record:
+    """One record: its fields, then its record-level metadata checked against them."""
+    where = f'{module}.{name}'
+    if extra := sorted(set(row) - _RECORD_KEYS):
+        refuse('IR-FIELD-SPEC', where, f'unknown record key {extra[0]!r} (one of {sorted(_RECORD_KEYS)})')
+    fields = tuple(_field(module, name, f, r) for f, r in row.get('field', {}).items())
+    by_name = {f.name: f for f in fields}
+    named = {key: _names(row, key, where) for key in ('array', 'fill', 'one_of')}
+    for key, names in named.items():
+        if key in row and not names:
+            refuse('IR-FIELD-SPEC', where, f'`{key}` lists at least one field')
+        if missing := [n for n in names if n not in by_name]:
+            refuse('IR-FIELD-SPEC', where, f'`{key}` names {missing[0]!r}, which is no field of the record')
+    if bad := [n for n in named['fill'] if by_name[n].type.kind not in NUMERIC]:
+        refuse('IR-FIELD-SPEC', where, f'`fill` fills numbers; {bad[0]} is a {by_name[bad[0]].type.kind}')
+    if 'one_of' in row and len(named['one_of']) < 2:  # noqa: PLR2004 -- "one of" needs two to choose from
+        refuse('IR-FIELD-SPEC', where, '`one_of` names at least two fields')
+    if required := [n for n in named['one_of'] if not by_name[n].optional]:
+        refuse('IR-FIELD-SPEC', where, f'`one_of` chooses among optional fields; {required[0]} is required')
+    for f in fields:
+        if f.requires and (f.requires == f.name or f.requires not in by_name):
+            refuse('IR-FIELD-SPEC', f'{where}.{f.name}', f'`requires` names a sibling field, got {f.requires!r}')
+    rest_, string_ = rest(row, by_name, where), string(row, by_name, where)
+    return Record(module, name, fields, row.get('doc', ''), rest_, string_, *named.values())
 
 
 def _external(alias: str, module_name: str) -> Module:
     generated = importlib.import_module(module_name)
-    return load_module(alias, generated.SCHEMA_TOML, module_name)
+    return load_module(alias, generated.SCHEMA_TOML, module_name, resolved=generated.ENUM_VALUES)
 
 
 def parse(root: Path, read: Reader | None = None) -> IR | None:
@@ -321,10 +389,10 @@ def parse(root: Path, read: Reader | None = None) -> IR | None:
     if declaration is None:
         return None
     modules = {
-        name: load_module(name, read(path), f'{declaration.package}._ir_{name}')
+        name: load_module(name, read(path), f'{declaration.package}._ir_{name}', read)
         for name, path in declaration.modules.items()
     }
     external = {alias: _external(alias, target) for alias, target in declaration.external.items()}
-    catalogue = read(declaration.quantities)
-    quantities, domains = _catalogue(catalogue)
-    return IR(declaration, modules, quantities, catalogue, domains, external)
+    source = read(declaration.quantities)
+    quantities, domains, constants = catalogue(source)
+    return IR(declaration, modules, quantities, source, domains, external, constants)

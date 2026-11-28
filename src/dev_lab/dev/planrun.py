@@ -9,6 +9,7 @@ its digest -- topology.md 5.1)::
     python -m dev_lab.dev.planrun run --plan <plan.json> --digest <D> --steps <steps.json>   # after the code
     python -m dev_lab.dev.planrun subject --forge <host> --repo <owner/name> [--ref R]   # an ops.forge.protect grant
     python -m dev_lab.dev.planrun subject --config <host name> [--ref R]                # an ops.config grant
+    python -m dev_lab.dev.planrun subject --account <login> --dest <user@host>          # an ops.forge.account grant
 
 The STEPS FILE says what each grant of the plan runs, in the plan's order (one step per grant). A HOST step runs an
 ops verb on its grant's ``host`` (``config``/``python`` default the file's); a LOCAL step redeems its grant
@@ -107,6 +108,7 @@ from dev_lab.ops.consent.client import spent_ids
 from dev_lab.ops.consent.credential import SKEW_S, ConsentRefused
 from dev_lab.ops.consent.plan import Plan, parsed
 from dev_lab.ops.consent.plan import load as load_plan
+from dev_lab.ops.forgerequests import ACCOUNT_ACTION
 from dev_lab.ops.totp import write_private
 
 __all__ = ['main', 'run_plan']
@@ -134,7 +136,7 @@ def _local(plan: Plan, index: int, home: Path | None, now: float) -> Path | None
     for path in sorted(folder.glob('*.json')) if folder.is_dir() else ():
         try:
             data = json.loads(path.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
         if (
             isinstance(data, dict)
@@ -259,17 +261,30 @@ def _parser() -> argparse.ArgumentParser:
         verb.add_argument('--steps', type=Path, required=True)
     running.add_argument('--digest', required=True, help="the plan's digest, as shown to the user")
     deriving = verbs.add_parser(
-        'subject', help=f'print the {forgeprotection.ACTION} or {CONFIG_ACTION} subject, derived here'
+        'subject',
+        help=f'print the {forgeprotection.ACTION} or {CONFIG_ACTION} subject (derived here), or the {ACCOUNT_ACTION} '
+        "one (read through the issuer's read-only subject verb, no code)",
     )
     which = deriving.add_mutually_exclusive_group(required=True)
     which.add_argument('--forge', help=f'{forgeprotection.ACTION}: the public forge host whose declaration row applies')
     which.add_argument('--config', help=f'{CONFIG_ACTION}: the host whose reviewed file is hosts/<name>.toml')
+    which.add_argument('--account', metavar='LOGIN', help=f'{ACCOUNT_ACTION}: the login `forge account ensure` makes')
+    deriving.add_argument('--dest', help=f'{ACCOUNT_ACTION}: the forge host (user@host) its grant names')
     deriving.add_argument('--repo', help=f'{forgeprotection.ACTION}: owner/name')
     deriving.add_argument('--ref', help=f'protect: default {forgeprotection.DEFAULT_REF}; config: default main')
     return parser
 
 
 def _subject(args: argparse.Namespace, readers: Readers) -> str:
+    if args.account:
+        if not args.dest:
+            msg = '--account needs --dest user@host (the forge host the grant names)'
+            raise ConsentRefused(msg)
+        argv = ['forge', 'account', 'ensure', '--login', args.account]
+        subject, refusal = readers.issued(args.dest, ACCOUNT_ACTION, argv)
+        if refusal:
+            emit(f'planrun: as it stands {args.dest} would refuse it: {refusal}', err=True)
+        return subject
     if args.config:
         return config_subject(
             args.config, readers.text, readers.config_source(), args.ref or 'main', listed=readers.listed
@@ -287,7 +302,7 @@ def main(argv: Sequence[str] | None = None, *, readers: Readers | None = None) -
     if args.verb == 'subject':
         try:
             emit(_subject(args, readers or Readers()))
-        except UNREAD as refused:
+        except (*UNREAD, OSError) as refused:
             emit(f'planrun: refused: {refused}', err=True)
             return 2
         return 0

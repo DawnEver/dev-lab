@@ -68,6 +68,8 @@ WHAT IS HERE, one module per shared body:
 * :mod:`dev_lab.dev.famtests.layout` -- every top-level directory is declared and holds no forbidden suffix.
 * :mod:`dev_lab.dev.famtests.worktreeplace` -- no checkout of the repo lives outside
   ``<toplevel>/.claude/worktrees/``.
+* :mod:`dev_lab.dev.famtests.sharefolder` -- a declared synced share folder holds data and the command that
+  regenerates each figure, never a rendered image.
 * :mod:`dev_lab.dev.famtests.tempprefix` -- every ``tempfile`` entry in the shared temp dir carries
   :data:`lab_commons.temp.TEMP_PREFIX`, the only entries the sweep may remove.
 * :mod:`dev_lab.dev.famtests.remedypaths` -- a printed remedy names an ABSOLUTE interpreter, never a
@@ -134,6 +136,9 @@ WHAT IS HERE, one module per shared body:
   Its own-source arm takes the CONSUMER's file as a required argument, because the kit could only
   ever resolve its own module and both consumers were writing that other half by hand.
 
+* :mod:`dev_lab.dev.famtests.ruletext` -- an always-loaded page spells no bare ``python``/``py`` in a code
+  span: the page a turn copies verbatim never teaches the wall ``BARE-PYTHON`` hints (W8, dev-lab#646).
+
 * :mod:`dev_lab.dev.famtests.injectedwidth` -- every document an agent is handed fits the width,
   over :mod:`dev_lab.dev.docwidth`'s readings. The PAIR to ``trackedcjk``: each refuses the
   other's ledger shape, a ``path:line`` SITE here against a FILE there, which is what stops a
@@ -155,6 +160,8 @@ WHAT IS HERE, one module per shared body:
 
 * :mod:`dev_lab.dev.famtests.reviewcommand` -- the PR review command is the family's; a repo's
   ``[tool.dev_lab.review]`` declares only where it differs, never the same command or a retired capability.
+* :mod:`dev_lab.dev.famtests.secretlog` -- NEVER-LOG-SECRETS over the tracked corpus, adoptable with one test
+  before a repo has any other test code.
 * :mod:`dev_lab.dev.famtests.sharedsettings` -- a setting :mod:`lab_commons.config` owns in its
   ``[user]`` table is declared nowhere else: no consumer schema field, table key or own default.
 * :mod:`dev_lab.dev.famtests.venvspelling` -- ONE place may spell a venv interpreter, and the

@@ -39,6 +39,16 @@ THE_ONE_WRITER = 'src/lab_commons/log.py'
 #: The streams whose encoding this library never chooses -- it is the terminal's, or the pipe's.
 NOT_OURS = ('stdout', 'stderr')
 
+#: NAMED EXEMPTIONS {module: reason} (user ruling 2026-11-27, #1040): a module that cannot import ``emit`` because
+#: it never runs inside the kit. Each carries its reason; :data:`EXEMPTION_CEILING` keeps the set from growing
+#: into a waiver -- raising it is a ruling, not an edit.
+EXEMPT: dict[str, str] = {
+    'src/dev_lab/dev/hpcaccount/archivestream.py': (
+        'stdlib-only text streamed to a cluster interpreter, which has no lab_commons to import emit from'
+    ),
+}
+EXEMPTION_CEILING = 1
+
 #: RE-MEASURED 2026-09-19: 117 tracked modules under ``src/``, and BOTH NUMBERS STAY ON RECORD.
 #: The row above read "MEASURED 2026-09-18: 88" and the tree held 111 that day -- a stored reading
 #: that had already stopped agreeing with its derivation, which is precisely what
@@ -87,7 +97,9 @@ NOT_OURS = ('stdout', 'stderr')
 #: Re-taken 2026-10-22 at 362 (pr/no-ephemeral-refs merged: dev.ephemeralrefs, dev._rule_rows_citations): 320 -> 322.
 #: Re-taken 2026-10-22 at 240 when the split left lab-commons' trees behind: 322 -> 200.
 #: RE-MEASURED 2026-11-05: 402 modules (the judge, upgrade, mirrors and accounts modules of #99); headroom unchanged.
-MODULE_FLOOR = 370
+#: RE-MEASURED 2026-11-27 at 819 (the kit doubled since 11-05: hpcaccount, famtests, the split modules), so 370 no
+#: longer bound; re-taken the same 40 under: 370 -> 779, headroom unchanged.
+MODULE_FLOOR = 779
 MODULE_HEADROOM = 45
 
 
@@ -111,12 +123,20 @@ def _name(path: Path) -> str:
         return path.name
 
 
-def unowned_console_writes(paths: tuple[Path, ...]) -> tuple[str, ...]:
-    """Every site outside :data:`THE_ONE_WRITER` that writes text to a stream it did not open."""
+def refused_exemptions(exempt: dict[str, str], *, ceiling: int = EXEMPTION_CEILING) -> tuple[str, ...]:
+    """Why *exempt* is refused: an entry with no reason, or more entries than *ceiling*."""
+    out = [f'{name}: an exemption names its reason' for name, why in sorted(exempt.items()) if not why.strip()]
+    if len(exempt) > ceiling:
+        out.append(f'{len(exempt)} exemptions exceed the ceiling of {ceiling}: {", ".join(sorted(exempt))}')
+    return tuple(out)
+
+
+def unowned_console_writes(paths: tuple[Path, ...], *, exempt: dict[str, str] = EXEMPT) -> tuple[str, ...]:
+    """Every site outside :data:`THE_ONE_WRITER` and *exempt* that writes text to a stream it did not open."""
     out: list[str] = []
     for path in paths:
         name = _name(path)
-        if name == THE_ONE_WRITER:
+        if name == THE_ONE_WRITER or name in exempt:
             continue
         out.extend(
             f'{name}:{node.lineno}' for node in ast.walk(parse(path)) if _writes_a_stream(node) or _is_print(node)
@@ -129,6 +149,7 @@ def test_every_console_write_in_the_kit_goes_through_emit() -> None:
     modules = source_modules()
     assert_floor(len(modules), floor=MODULE_FLOOR, what='console-writer')
     assert_floor_still_binds(len(modules), floor=MODULE_FLOOR, headroom=MODULE_HEADROOM, what='console-writer')
+    assert refused_exemptions(EXEMPT) == ()
     sites = unowned_console_writes(modules)
     assert sites == (), (
         'these sites write text to a stream whose encoding the kit did not choose, so each of them '
@@ -148,3 +169,17 @@ def test_a_planted_raw_stream_write_is_refused(tmp_path: Path) -> None:
     found = unowned_console_writes((offender,))
     assert len(found) == 1
     assert found[0].endswith(':5')
+
+
+def test_planted_control_without_its_exemption_the_cluster_stream_is_named() -> None:
+    """The exemption is what passes ``archivestream``; the scan itself still sees its write."""
+    stream = next(path for path in source_modules() if _name(path) == 'src/dev_lab/dev/hpcaccount/archivestream.py')
+    assert unowned_console_writes((stream,)) == ()
+    assert 'src/dev_lab/dev/hpcaccount/archivestream.py:293' in unowned_console_writes((stream,), exempt={})
+
+
+def test_planted_control_an_exemption_without_a_reason_or_over_the_ceiling_is_refused() -> None:
+    assert refused_exemptions({'src/a.py': '  '}) == ('src/a.py: an exemption names its reason',)
+    over = {**EXEMPT, 'src/b.py': 'a second reason'}
+    assert len(refused_exemptions(over)) == 1
+    assert 'exceed the ceiling of 1' in refused_exemptions(over)[0]

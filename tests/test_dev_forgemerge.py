@@ -25,7 +25,7 @@ from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import ACTIONS_BOT
-from dev_lab.dev.lanepolicy import Policy
+from dev_lab.dev.lanepolicy import FAMILY_MERGE_SYSTEMS, Policy, policy_from
 from dev_lab.dev.reviewgate import github_posted, status_gate
 from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 
@@ -605,45 +605,85 @@ def test_a_stale_head_is_an_alarm_never_a_merge_wait(tmp_path: Path) -> None:
     assert 'alarms, never a merge condition: pr-current is failure: lacks integrate/main' in found.notes
 
 
-def test_a_hand_part_never_holds_the_merge_and_is_named(tmp_path: Path) -> None:
-    """USER RULING 2026-11-10: a part only a hand host produces is tested later, never a merge condition.
+#: document-lab#8's head: ``tests/base`` and ``tests/base@windows`` PASS, handing ``gpu ocr vendor windows``.
+_HANDS = 'scope=full ran=339 hands=gpu:1,ocr:1,vendor:3,windows:14'
+_BASE_ROWS = (
+    {'id': 7, 'context': 'tests/base', 'status': 'success', 'description': _HANDS},
+    {'id': 8, 'context': 'tests/base@windows', 'status': 'success', 'description': _HANDS},
+)
+_WINDOWS_ABSENT = {'id': 9, 'context': 'tests/windows', 'status': 'pending', 'description': 'absent: no job settled'}
+_WINDOWS_RED = {'id': 9, 'context': 'tests/windows', 'status': 'failure', 'description': 'scope=full ran=14 hands=-'}
+_WINDOWS_PASS = {**_WINDOWS_RED, 'status': 'success'}
 
-    document-lab#8: ``tests/base`` and ``tests/base@windows`` PASS handing ``gpu ocr vendor windows``, and
-    ``tests/windows`` is ``pending`` absent. Absent, unposted or RED, a hand part is NAMED in the decision's notes and
-    holds nothing -- forge code may be temporarily broken, and a later red is a finding. PLANTED CONTROLS: a red
-    hosted row, and a missing ``tests/base``, still hold it.
+
+def _judge_parts(work: Path, head: str, raw: list[dict[str, object]], policy: Policy = POLICY) -> Decision:
+    """*raw* (every gate green but the parts it names) judged under *policy*."""
+    gates = [r for r in _green() if r['context'] != 'tests/base']
+    return decide(
+        work, policy, branch='pr/x', number=8, head=head, statuses=_statuses([*gates, *raw]),
+        reviewed=status_gate(github_posted),
+    )  # fmt: skip
+
+
+def test_the_merge_systems_default_to_the_family_declaration_and_an_unknown_os_is_refused() -> None:
+    table = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
+    assert policy_from(table, 'here').merge_systems == FAMILY_MERGE_SYSTEMS == ('windows',)
+    assert policy_from(f'{table}merge_systems = []\n', 'here').merge_systems == ()
+    with pytest.raises(ValueError, match=r"merge_systems in here names \['solaris'\].*\['linux', 'macos', 'windows'\]"):
+        policy_from(f'{table}merge_systems = ["solaris"]\n', 'here')
+
+
+def test_windows_gates_the_merge_as_base_does(tmp_path: Path) -> None:
+    """USER RULING 2026-11-27 (dev-lab #1045): under the family's merge systems, Windows is a merge condition.
+
+    ``tests/windows`` RED or absent holds the merge as a red or absent ``tests/base`` does; a resource's part (``gpu``)
+    is still a hand part, named and never waited on. PLANTED CONTROL: the same head with ``tests/windows`` PASS merges.
     """
     work, head = _work(tmp_path)
-    gates = [r for r in _green() if r['context'] != 'tests/base']
-    hands = 'scope=full ran=339 hands=gpu:1,ocr:1,vendor:3,windows:14'
-    base = [
-        {'id': 7, 'context': 'tests/base', 'status': 'success', 'description': hands},
-        {'id': 8, 'context': 'tests/base@windows', 'status': 'success', 'description': hands},
-    ]
-    absent = {'id': 9, 'context': 'tests/windows', 'status': 'pending', 'description': 'absent: no job settled'}
-    red = {'id': 9, 'context': 'tests/windows', 'status': 'failure', 'description': 'scope=full ran=14 hands=-'}
+    red = _judge_parts(work, head, [*_BASE_ROWS, _WINDOWS_RED])
+    assert not red.ready, 'a PR whose tests/windows FAILs is not merge-ready'
+    assert any('tests/windows' in one for one in red.missing), red.missing
+    assert not _judge_parts(work, head, [*_BASE_ROWS, _WINDOWS_ABSENT]).ready, 'an absent tests/windows waits'
+    hosted_red = [_BASE_ROWS[0], {**_BASE_ROWS[1], 'status': 'failure'}, _WINDOWS_PASS]
+    assert not _judge_parts(work, head, hosted_red).ready, 'a red tests/base@windows holds the merge'
+    passed = _judge_parts(work, head, [*_BASE_ROWS, _WINDOWS_PASS])
+    assert passed.ready, passed.missing
+    (note,) = [one for one in passed.notes if one.startswith('hand parts, tested later')]
+    assert 'tests/gpu not posted' in note, note
+    assert 'tests/windows' not in note, note
 
-    def judge(raw: list[dict[str, object]]) -> Decision:
-        return decide(
-            work,
-            POLICY,
-            branch='pr/x',
-            number=8,
-            head=head,
-            statuses=_statuses(raw),
-            reviewed=status_gate(github_posted),
-        )
 
-    for hand in (absent, red):
-        found = judge([*gates, *base, hand])
+def test_a_repo_declaring_no_merge_system_tests_windows_later(tmp_path: Path) -> None:
+    """A repo may declare its merge systems (``[tool.dev_lab.integrator] merge_systems``); ``[]`` gates on base alone.
+
+    Then ``tests/windows`` and ``tests/base@windows`` are hand parts: absent or RED, NAMED in the notes, holding
+    nothing.
+    PLANTED CONTROL: a missing ``tests/base`` still holds it.
+    """
+    work, head = _work(tmp_path)
+    alone = dataclasses.replace(POLICY, merge_systems=())
+    for hand in (_WINDOWS_ABSENT, _WINDOWS_RED):
+        found = _judge_parts(work, head, [_BASE_ROWS[0], {**_BASE_ROWS[1], 'status': 'failure'}, hand], alone)
         assert found.ready, found.missing
         (note,) = [one for one in found.notes if one.startswith('hand parts, tested later')]
         assert 'tests/windows' in note, note
-        assert 'tests/gpu not posted' in note, note
-    assert 'tests/windows FAIL' in next(one for one in judge([*gates, *base, red]).notes if 'hand' in one)
-    hosted_red = [*gates, base[0], {**base[1], 'status': 'failure'}, red]
-    assert not judge(hosted_red).ready, 'PLANTED CONTROL: a red hosted row holds the merge'
-    assert not judge([*gates, base[1], absent]).ready, 'PLANTED CONTROL: a missing tests/base holds the merge'
+        assert 'tests/base@windows FAIL' in note, note
+    assert not _judge_parts(work, head, [_BASE_ROWS[1], _WINDOWS_ABSENT], alone).ready, 'CONTROL: base still gates'
+
+
+def test_macos_is_tested_later_under_the_family_default(tmp_path: Path) -> None:
+    """The family's merge systems name Windows alone: a red ``tests/base@macos`` is named, never waited on.
+
+    PLANTED CONTROL: a repo declaring macOS among its merge systems is held by the same red row.
+    """
+    work, head = _work(tmp_path)
+    macos_red = {'id': 10, 'context': 'tests/base@macos', 'status': 'failure', 'description': _HANDS}
+    raw = [*_BASE_ROWS, _WINDOWS_PASS, macos_red]
+    found = _judge_parts(work, head, raw)
+    assert found.ready, found.missing
+    assert any('tests/base@macos FAIL' in one for one in found.notes), found.notes
+    gating = dataclasses.replace(POLICY, merge_systems=('macos', 'windows'))
+    assert not _judge_parts(work, head, raw, gating).ready, 'CONTROL: a declared merge system gates'
 
 
 def test_an_environment_or_scheduling_result_never_holds_the_merge(tmp_path: Path) -> None:

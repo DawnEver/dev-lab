@@ -262,7 +262,7 @@ def public_names(
     if key not in _PUBLIC:
         try:
             _PUBLIC[key] = public_siblings(client_for(root, env=env, transport=transport, url=url))
-        except (OSError, NoCredential):
+        except OSError, NoCredential:
             _PUBLIC[key] = ()
     return _PUBLIC[key]
 

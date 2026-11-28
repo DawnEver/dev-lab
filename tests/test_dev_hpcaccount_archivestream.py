@@ -166,7 +166,8 @@ def test_the_streamed_file_runs_alone_and_ends_with_its_verdict(spec: dict[str, 
     env = {**os.environ, 'HOME': str(Path.home()), 'USERPROFILE': str(Path.home())}
     done = subprocess.run(
         [sys.executable, '-I', '-', json.dumps({**spec, 'mode': 'plan'})],
-        input=Path(archivestream.__file__).read_text(encoding='utf-8'), capture_output=True, text=True, env=env,
+        input=Path(archivestream.__file__).read_text(encoding='utf-8'), capture_output=True, text=True,
+        encoding='utf-8', env=env,
         check=True,
     )  # fmt: skip
     head, _, verdict = done.stdout.strip().splitlines()[-1].partition(' ')

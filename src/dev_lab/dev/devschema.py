@@ -7,14 +7,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Mapping
-from pathlib import Path
 from typing import Any, Final
 
 from lab_commons import config as machineconfig
 from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
 from dev_lab.dev import devservers, remote
-from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops import clientkeys
 
 __all__ = [
@@ -23,12 +21,12 @@ __all__ = [
     'CADENCE_BOUNDS',
     'CHANNELS_TABLE',
     'CPU_SHARES',
-    'DETECT_DOOR',
     'FAMILY_ONLY',
     'FORGE_REACH',
     'HELPERS',
     'HOOK_MODES',
     'HOST_ONLY',
+    'HPC_REACH',
     'MACHINE_TABLES',
     'RENAMED',
     'RESOURCES',
@@ -36,20 +34,15 @@ __all__ = [
     'SCHEMA',
     'SSH',
     'SSH_HOLD',
-    'UNFILLED',
     'VENDOR',
-    'HomeUnfilled',
     'app_tables',
     'channel_defects',
     'check',
     'check_family',
     'declared_channels',
-    'fill_remedy',
-    'home_of',
     'hpc_reach',
     'key_comment_defects',
     'ssh_defects',
-    'unfilled',
     'usable',
 ]  # fmt: skip
 
@@ -68,13 +61,19 @@ SCHEMA: Final = {
     'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
     'helpers': dict, 'channels': dict, 'bridge': dict, 'hooks': str, 'default': dict, 'apps': list,
     'client_keys': list, 'hostname': str, 'key_account': str, 'forge_reach': list, 'servers': dict,
-    'operates_servers': bool,
+    'operates_servers': bool, 'hpc_reach': dict,
 }  # fmt: skip
 #: ``[dev] forge_reach``: the transports this machine reaches the forge's approval doors (consent, break-glass) by,
 #: in its order of preference -- ``ssh`` (port 22) and/or ``https`` (443, :mod:`dev_lab.ops.httpsdoor`). Undeclared
 #: is ``["ssh"]``. Rendered as the machine file's ``[devhost] forge_reach``; read by
 #: :func:`dev_lab.ops.consent.door.endpoint_send`.
 FORGE_REACH: Final = ('ssh', 'https')
+#: ``[dev] hpc_reach = { <cluster> = "direct" | "vpn" }``: how this machine's network reaches each family
+#: ``[hpc.clusters]`` cluster's login hosts -- ``direct`` (its site network takes ssh from here) or ``vpn`` (only once
+#: the site VPN is connected). Rendered as the machine file's ``[hpc.cluster_reach.<cluster>]`` with the direct hosts
+#: (:func:`dev_lab.dev.devhost.render`); checked before every ssh to a login host by
+#: :func:`lab_commons.hpc.reach.require` (whose ``REACH`` this mirrors -- it cannot import dev-lab).
+HPC_REACH: Final = ('direct', 'vpn')
 #: ``[dev] bridge``: what the session bridge runs on this machine -- ``hpc`` (:data:`BRIDGE_HPC`), the HPC usage
 #: collector for the agents dashboard, rendered as the machine file's ``[bridge.hpc]``.
 BRIDGE: Final = {'hpc': dict}
@@ -95,8 +94,9 @@ FAMILY_ONLY: Final = ('default', 'apps', 'servers')
 #: ``client_keys`` -- the machine's ssh client public keys, from which a server derives who may reach its approval
 #: accounts (:mod:`dev_lab.ops.clientkeys`); ``hostname`` -- the machine's own host name, the part after ``@`` in
 #: every one of its key comments (:func:`key_comment_defects`); ``forge_reach`` -- the transports its own network lets
-#: it reach the forge by (:data:`FORGE_REACH`).
-HOST_ONLY: Final = ('channels', 'client_keys', 'hostname', 'forge_reach', 'operates_servers')
+#: it reach the forge by (:data:`FORGE_REACH`); ``hpc_reach`` -- how its network reaches each cluster
+#: (:data:`HPC_REACH`).
+HOST_ONLY: Final = ('channels', 'client_keys', 'hostname', 'forge_reach', 'operates_servers', 'hpc_reach')
 #: ``[dev]`` keys the family declares for every machine and a host may OVERRIDE with a different value: ``forges`` --
 #: the workstation login is one person's, so another person's machine names its own; ``key_account`` -- the account
 #: named before ``@`` in every client key comment, likewise one person's. A host restating the family's value is still
@@ -116,9 +116,6 @@ RESOURCES: Final = {
 }  # fmt: skip
 #: How a shared box splits its CPU: ``session-fair`` -- evenly among the ACTIVE login sessions (all of it when alone).
 CPU_SHARES: Final = ('session-fair',)
-#: The ONE placeholder for an install home not yet found on its machine: never a plausible path. configcheck accepts
-#: it; the session start names it first, the stop blocks once on it, and :func:`home_of` refuses it.
-UNFILLED: Final = 'FILL-ON-THIS-MACHINE'
 #: Keys the family and host ``[dev]`` must hold between them.
 REQUIRED: Final = ('ref',)
 #: The machine-file tables a host file may declare for its machine (each open: its consumer owns its keys;
@@ -138,8 +135,6 @@ RENAMED: Final = {
     'bridge.hpc': {'cadence_hours': Renamed('cadence', 'h')},
     'ssh.hold': {'max_hours': Renamed('ceiling', 'h'), 'idle_minutes': Renamed('idle', 'min')},
 }
-#: The door that finds this machine's vendor install homes.
-DETECT_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost detect'
 
 
 def _typed(
@@ -277,6 +272,8 @@ def _shape(table: Mapping[str, Any], where: str) -> list[str]:
     reach = table.get('forge_reach', list(FORGE_REACH[:1]))
     if not (isinstance(reach, list) and reach and len(set(reach)) == len(reach) and set(reach) <= set(FORGE_REACH)):
         found.append(f'{where}.forge_reach must list, once each and in preference order, some of {list(FORGE_REACH)}')
+    found += [f'{where}.hpc_reach.{cluster} = {by!r} must be one of {list(HPC_REACH)}'
+              for cluster, by in _table(table, 'hpc_reach').items() if by not in HPC_REACH]  # fmt: skip
     found += [f'{where}.{key} must be a non-empty name with no "@" or space' for key in ('hostname', 'key_account')
               if isinstance(table.get(key), str) and not _NAME.fullmatch(table[key])]  # fmt: skip
     found += _named_lists(table, 'detect', where, 'glob patterns')
@@ -342,6 +339,9 @@ def check(host: Mapping[str, Any], family: Mapping[str, Any] | None = None) -> l
     restated = _restated(host, shared)
     found += [f'{key} restates the family file; it lives there once' for key in restated]
     merged = {**shared.get('dev', {}), **host.get('dev', {})}
+    clusters = shared.get('hpc', {}).get('clusters', {})
+    found += [f'[dev].hpc_reach.{name} names no family [hpc.clusters] cluster; declared: {sorted(clusters)}'
+              for name in _table(host.get('dev', {}), 'hpc_reach') if name not in clusters]  # fmt: skip
     found += key_comment_defects(merged)
     found += [f'[dev].{key} is required (host or family file)' for key in REQUIRED if key not in merged]
     return found
@@ -387,40 +387,6 @@ def usable(dev: Mapping[str, Any]) -> tuple[int | None, int | None]:
     return resources.get(cores), None if size is None else int(parse(f'[dev.resources] {memory}', size, 'size'))
 
 
-def unfilled(dev: Mapping[str, Any]) -> list[str]:
-    """The vendors whose install home this machine has yet to fill: the placeholder, or seats with no home."""
-    return [
-        name
-        for name, vendor in dev.get('vendors', {}).items()
-        if vendor.get('home') == UNFILLED or (vendor.get('seats') and not vendor.get('home'))
-    ]
-
-
-def fill_remedy(names: list[str]) -> str:
-    """What a machine does about *names*: detect here, then propose the lines through a config-source PR."""
-    return (
-        f'install home not filled for {", ".join(names)} ({UNFILLED}): run {DETECT_DOOR} on this machine and open a '
-        "pull request on the config source replacing the placeholder in this machine's host file"
-    )
-
-
-class HomeUnfilled(LookupError):
-    """A code path needs a vendor's install home this machine has not filled."""
-
-
-def home_of(dev: Mapping[str, Any], vendor: str) -> Path:
-    """*vendor*'s declared install home.
-
-    Raises:
-        HomeUnfilled: it is the placeholder or absent -- never a fallback guess.
-
-    """
-    home = dev.get('vendors', {}).get(vendor, {}).get('home')
-    if not home or home == UNFILLED:
-        raise HomeUnfilled(fill_remedy([vendor]))
-    return Path(home)
-
-
 def declared_channels(live: Mapping[str, Any] | None = None) -> dict[str, str]:
     """Return this machine's session channels: source -> the user whose messages through it ARE the machine's user.
 
@@ -435,3 +401,9 @@ def declared_channels(live: Mapping[str, Any] | None = None) -> dict[str, str]:
     if defects := channel_defects(channels, f'[{CHANNELS_TABLE}].channels'):
         raise ValueError('; '.join(defects))
     return dict(channels)
+
+
+def _table(table: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    """*table*'s *key* when it is a table, else empty (its type is refused by :func:`_typed`)."""
+    value = table.get(key)
+    return value if isinstance(value, dict) else {}

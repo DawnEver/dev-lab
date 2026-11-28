@@ -1,18 +1,19 @@
-"""ONE CRON TICK of a served repo on a cluster account: ``python -m dev_lab.dev.hpcaccount tick <repo>``.
+"""ONE CRON TICK of the served repos on a cluster account: ``python -m dev_lab.dev.hpcaccount tick <repo>...``.
 
 THE HOST REFRESHES AND SERVES (incident 2026-10-13): a repo served from its OWN venv cannot update
 itself when the kit in that venv is too old to run -- the code that would update it is the code that
 fails. So the cron line runs THIS, from the host's dev-lab checkout
 (:func:`dev_lab.dev.hpcaccount.spec.tick_command`), and then THE HOST KIT's ``forge serve`` in the repo's
-checkout (:func:`~dev_lab.dev.hpcaccount.spec.host_serve_argv`); the repo's venv only runs its producers. Every
-step is the deploy's own and keyed (:func:`dev_lab.dev.hpcaccount.steps.update` and ``build``), so an
-unchanged tick only fetches.
+checkout (:func:`~dev_lab.dev.hpcaccount.spec.host_serve_argv`); the repo's venv only runs its producers.
 
-A NEED IS RE-ASSERTED EVERY TICK (Ada 2026-10-25: a tool the deploy proved was gone later, and every tick
-claimed parts its build could not make). Each repo's declared ``needs`` is probed by the deploy's own
-:func:`~dev_lab.dev.hpcaccount.checks.runs`, once per tool per tick, in the tick's own environment (the cron
-line already set it up); a repo lacking one is released unserved -- nothing claimed -- and a ``needs``
-alarm names the account and the tool.
+THE TICK NEVER BUILDS (ONE-LOGIN-POLLER, user ruling 2026-11-27): a login node runs one poller per account, and
+its tick does only git fetch, the forge, claims, Slurm's ``sbatch``/``squeue``/``sacct``/``scancel`` and reading
+what jobs wrote. So it fetches and checks out each repo (:func:`dev_lab.dev.hpcaccount.steps.update`), reads the
+key of its environment (:func:`~dev_lab.dev.hpcaccount.steps.env_key`, its committed lock among the inputs) and
+serves it only when the live environment is stamped with that key (:func:`dev_lab.dev.hpcaccount.prep.prepared`).
+A key that moved asks the PREP JOB for it (:func:`dev_lab.dev.hpcaccount.prep.submit`: the venv install, the
+native build, the ``needs`` probes and uv's pin all run there) and releases the repo unserved this tick, naming
+the key and what the job door said.
 
 ONLY A VERIFICATION ACCOUNT SERVES (user ruling 2026-11-06): a tick on an account whose ``[deploy] role`` is not
 ``"verification"`` -- a research account a stale cron line survived on -- refreshes, then refuses to serve, exit 2
@@ -22,8 +23,8 @@ naming the role; its own ``hpcaccount deploy`` removes the line (:func:`dev_lab.
 from __future__ import annotations
 
 import getpass
-import shutil
-from collections.abc import Callable, Iterable
+import shlex
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -31,16 +32,15 @@ from lab_commons.config import config_path
 from lab_commons.hpc.declared import REFUSALS
 from lab_commons.log import emit
 
-from dev_lab.dev._dep_project import follow_pin
-from dev_lab.dev.forgealarm import NEEDS, Alarm, sound
+from dev_lab.dev.forgealarm import Alarm, sound
 from dev_lab.dev.forgeclaim import this_machine, this_seat
 from dev_lab.dev.forgefleet import serve_off
 from dev_lab.dev.forgehosts import card_host, mark_held
 from dev_lab.dev.forgeoutbox import unprompted_client
-from dev_lab.dev.hpcaccount.checks import runs
+from dev_lab.dev.hpcaccount import prep
+from dev_lab.dev.hpcaccount.checks import ALWAYS, PINNED_RUST, follow_uv, runs, tool_plan
 from dev_lab.dev.hpcaccount.grantslice import RERENDER
 from dev_lab.dev.hpcaccount.spec import (
-    KIT,
     VERIFICATION,
     Deployment,
     Repo,
@@ -49,16 +49,15 @@ from dev_lab.dev.hpcaccount.spec import (
     load,
     served,
     serves_here,
+    uv_cache,
 )
-from dev_lab.dev.hpcaccount.steps import Step, Tools, build, declared, update
+from dev_lab.dev.hpcaccount.steps import Step, Tools, build, declared, env_key, prune_uv, update
 from dev_lab.dev.hpcaccount.tickwall import WALL, Wall, within
-from dev_lab.dev.lockcheck import uv_version
+from dev_lab.dev.lockcheck import TOOLCHAIN
 from dev_lab.dev.roles import Unbound
 from dev_lab.dev.tickholder import Holder
 
-__all__ = ['account', 'announce_held', 'follow_uv', 'tick']
-
-_runs = runs
+__all__ = ['account', 'announce_held', 'prep_build', 'prep_retry', 'tick']
 
 
 def account() -> str:
@@ -66,33 +65,83 @@ def account() -> str:
     return getpass.getuser()
 
 
-def follow_uv(name: str) -> str:
-    """On the kit's tick (the host checkout's one writer), move this account's uv to the pin; ``''`` once it is."""
-    if name != KIT:
-        return ''
-    uv = shutil.which('uv')
-    return follow_pin(uv, uv_version()) if uv else 'this account has no uv on PATH'
+def _refresh(step: Step, spec: Deployment, home: Path, repo: Repo, submit: prep.Submit) -> str:
+    """Fetch and check out *repo*'s ref, then serve only an environment built for its inputs; else why not.
 
-
-def _lacking(step: Step, needs: Iterable[str], probed: dict[str, bool]) -> list[str]:
-    """Each of *needs* whose ``--version`` does not exit 0 here; a tool already probed this tick is not re-run."""
-    for tool in needs:
-        if tool not in probed:
-            probed[tool] = _runs(step.tools.sh, ':', tool)
-    return [tool for tool in needs if not probed[tool]]
-
-
-def _refresh(step: Step, spec: Deployment, home: Path, repo: Repo, probed: dict[str, bool]) -> tuple[str, list[str]]:
-    """Fetch and check out *repo*'s ref, re-assert its needs, then bring its venv in step; why not, and what lacks."""
+    Nothing is built here (ONE-LOGIN-POLLER): an environment whose key moved is asked of the prep job.
+    """
     if rc := update(step, spec, home, repo):
-        return f'its checkout update exited {rc}', []
+        return f'its checkout update exited {rc}'
+    checkout = checkout_of(spec, repo)
     try:
-        if lacking := _lacking(step, declared(checkout_of(spec, repo)).needs, probed):
-            return f'{account()} lacks {", ".join(lacking)} (`--version` does not run in the tick environment)', lacking
+        builds = declared(checkout)
+        if not builds.install:
+            return 'it declares no [tool.lab_commons.hpc] install'
+        key = env_key(step, spec, repo, builds)
+    except REFUSALS as why:
+        return str(why)
+    if prep.prepared(checkout, key):
+        return ''
+    said = submit(
+        checkout, key, python=spec.python, root=spec.root, script=prep.job_script(spec, repo), kit=prep.kit_of(spec)
+    )
+    return f'its environment is not yet built for key {key[:12]} -- a Slurm prep job builds it, never the tick: {said}'
+
+
+_runs = runs
+
+
+def prep_build(name: str, *, home: Path, config: Path | None = None, tools: Tools | None = None) -> int:
+    """The prep job's body, ON A COMPUTE NODE: uv to its pin, *name*'s tools, its environment, the uv cache pruned.
+
+    The tools are ``uv``, ``rclone`` and the repo's ``needs``, each probed by its ``--version`` IN THE CHECKOUT on the
+    node (so its ``rust-toolchain.toml`` applies) and one that does not run installed through its one installer
+    (:func:`~dev_lab.dev.hpcaccount.checks.tool_plan`), else refused by name. A ``cargo`` need of a checkout pinning
+    its toolchain gets that toolchain (``rustup toolchain install`` reads the pin). Every tool is probed again after
+    the installs; then :func:`~dev_lab.dev.hpcaccount.steps.build`, the needs stamped as proven
+    (:func:`~dev_lab.dev.hpcaccount.prep.stamp_tools`, what admits a part needing them) and the account's ONE uv cache
+    pruned. 0 built (or already current); 2 refused, the reason printed -- the job's log is what the tick's next
+    submit names.
+    """
+    path = config or config_path()
+    try:
+        spec = load(path)
+    except ValueError as refused:
+        emit(f'[prep-build] refused: {refused}', err=True)
+        return 2
+    repo = next((one for one in spec.repos if one.name == name), None) if spec else None
+    if spec is None or repo is None:
+        emit(f'[prep-build] refused: {name} is not a repo of [deploy] in {path}', err=True)
+        return 2
+    step = Step(tools or Tools(), dry=False)
+    if lagging := follow_uv():
+        emit(f'[prep-build] {lagging}', err=True)
+    checkout = checkout_of(spec, repo)
+    here = f'cd {shlex.quote(str(checkout))}'  # a pinned toolchain applies in its checkout
+    try:
+        needs = declared(checkout).needs
+        installs, uninstallable = tool_plan(needs, found=lambda tool: _runs(step.tools.sh, here, tool))
+        cache = {'UV_CACHE_DIR': str(uv_cache(spec.root))}  # `uv tool install`: the ONE cache, not the user default
+        for tool, script in installs:
+            step.change(f'install {tool}: {script}', [*step.tools.sh, script], env=cache)
+        if 'cargo' in needs and (checkout / TOOLCHAIN).is_file():
+            step.change(f'install the toolchain {TOOLCHAIN} pins', [*step.tools.sh, f'{here} && {PINNED_RUST}'])
+        if lacking := [tool for tool in dict.fromkeys([*ALWAYS, *needs]) if not _runs(step.tools.sh, here, tool)]:
+            none = f' ({", ".join(uninstallable)} has no installer)' if uninstallable else ''
+            emit(
+                f'[prep-build] {name}: this node lacks {", ".join(lacking)}{none} -- ask for it on the compute nodes, '
+                'or link it into ~/.local/bin; the next tick asks again',
+                err=True,
+            )
+            return 2
         rc = build(step, spec, home, repo)
     except REFUSALS as why:
-        return str(why), []
-    return (f'its venv build exited {rc}' if rc else ''), []
+        emit(f'[prep-build] {name} refused: {why}', err=True)
+        return 2
+    if rc:
+        return rc
+    prep.stamp_tools(checkout, needs)
+    return prune_uv(step, spec)
 
 
 def _declared(name: str, path: Path) -> tuple[Deployment, Repo] | str:
@@ -105,6 +154,39 @@ def _declared(name: str, path: Path) -> tuple[Deployment, Repo] | str:
     if spec is None or repo is None:
         return f'{name} is not a served repo of [deploy] in {path}'
     return spec, repo
+
+
+def prep_retry(
+    name: str,
+    *,
+    config: Path | None = None,
+    tools: Tools | None = None,
+    submit: prep.Submit = prep.submit,
+    say: Callable[[str], None] = emit,
+) -> int:
+    """ON the account (``prep-retry-here``): ask *name*'s prep job again over a failure, for its current key.
+
+    Nothing is built here (ONE-LOGIN-POLLER); an environment already current is said and nothing submitted.
+    2 refused, else 0.
+    """
+    found = _declared(name, config or config_path())
+    if isinstance(found, str):
+        say(f'prep-retry: refused -- {found}')
+        return 2
+    spec, repo = found
+    checkout = checkout_of(spec, repo)
+    try:
+        key = env_key(Step(tools or Tools(), dry=False), spec, repo, declared(checkout))
+    except REFUSALS as why:
+        say(f'prep-retry: {name}: refused -- {why}')
+        return 2
+    if prep.prepared(checkout, key):
+        say(f'prep-retry: {name}: its environment is current (key {key[:12]}); nothing submitted')
+        return 0
+    script = prep.job_script(spec, repo)
+    said = submit(checkout, key, python=spec.python, root=spec.root, script=script, kit=prep.kit_of(spec), retry=True)
+    say(f'prep-retry: {name}: key {key[:12]}: {said}')
+    return 2 if said == prep.ABSENT else 0
 
 
 def _ours(spec: Deployment, repo: Repo) -> bool | str:
@@ -125,26 +207,25 @@ def tick(
     tools: Tools | None = None,
     run: Callable[..., Any] = within,
     alarm: Callable[[Alarm], object] = sound,
-    probed: dict[str, bool] | None = None,
+    submit: prep.Submit = prep.submit,
     wall: Wall | None = None,
 ) -> int:
     """One cron tick of served repo *name*: THE HOST refreshes, then serves it with its own kit.
 
     Runs from the host's dev-lab checkout, never the repo's venv (incident 2026-10-13: a repo venv
     whose old ``forge serve`` exited 2 every tick could never run the code that would update it). *name*
-    follows its declared ref and its venv is rebuilt where its inputs (its committed lock among them) moved
-    (:func:`dev_lab.dev.hpcaccount.steps.build`); a repo that cannot is RELEASED this tick with its reason,
-    exit 2, and is not served. A repo whose checkout declares no ``hpc`` producer is refreshed and not served.
-    One lacking a declared need also sounds a ``needs`` *alarm*; *probed* is the
-    tick's probe cache, shared by every repo one tick serves.
+    follows its declared ref and is served only from an environment built for its inputs (its committed lock among
+    them); one whose inputs moved is asked of the prep job (*submit*, :func:`dev_lab.dev.hpcaccount.prep.submit`)
+    and RELEASED this tick with its reason, exit 2, as is a repo that cannot be refreshed. A repo whose checkout
+    declares no ``hpc`` producer is refreshed and not served.
 
     With a *wall* (:mod:`dev_lab.dev.hpcaccount.tickwall`) each phase is named in the tick's holder record and the
     serve runs within what is left of it; a refresh that spent the whole wall serves nothing this tick.
 
-    THE SHARED KIT HAS ONE WRITER: dev-lab always has a line, served or not, so ITS OWN tick (under its own
-    ``flock``) is the only one that moves the host checkout; every other tick reads it. Measured 2026-10-19
-    (Ada): every repo's tick also updated it, each under only its own repo's flock, and concurrent ticks
-    collided on ``.git/index.lock``. Serving is the host kit's ``forge serve`` in the repo's
+    THE SHARED KIT HAS ONE WRITER: only the kit's own refresh moves the host checkout, and the account's one tick
+    holds the one lock (ONE-LOGIN-POLLER); every other repo's refresh reads it. Measured 2026-10-19 (Ada): every
+    repo's tick also updated it, each under only its own repo's flock, and concurrent ticks collided on
+    ``.git/index.lock``. Serving is the host kit's ``forge serve`` in the repo's
     checkout (:func:`~dev_lab.dev.hpcaccount.spec.host_serve_argv`), never the repo venv's.
     """
     found = _declared(name, config or config_path())
@@ -155,12 +236,7 @@ def tick(
     step = Step(tools or Tools(), dry=False)
     if wall is not None:
         wall.phase(f'refreshing {name}')
-    if lagging := follow_uv(name):
-        alarm(Alarm(NEEDS, repo.url, f'{account()} runs a uv that is not the pin', lagging, about='uv'))
-    why, lacking = _refresh(step, spec, home, repo, {} if probed is None else probed)
-    if lacking:
-        alarm(Alarm(NEEDS, repo.url, f'{account()} lacks {", ".join(lacking)}: {name} is not served', why))
-    if why:
+    if why := _refresh(step, spec, home, repo, submit):
         emit(f'[tick] {name} released, not served this tick: {why}', err=True)
         return 2
     if spec.role != VERIFICATION:

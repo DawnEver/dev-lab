@@ -12,9 +12,10 @@ A layer with no ``[deploy]`` host, or whose host is not one of its grant's login
 others still deploy (exit 2).
 
 AN ACCOUNT WITH NO KIT VENV IS FIRST INSTALLED (:func:`first_install`): a key-only account has no other door, so
-when ``~/<root>/dev-lab/.venv`` has no interpreter, uv is installed into ``~/.local/bin`` if absent, the
-kit is cloned where missing (only the kit: a forge-hosted repo needs the reader credential placed later), and the
-kit is ``uv sync --frozen``-ed; a kit with its venv skips the step.
+when ``~/<root>/dev-lab/.venv`` has no interpreter, the kit is cloned where missing (only the kit: a forge-hosted
+repo needs the reader credential placed later), then ONE Slurm job, waited for (``sbatch --wait``, :func:`in_job`),
+installs uv into ``~/.local/bin`` if absent and ``uv sync --frozen``-s the kit: nothing is built on the login node
+(ONE-LOGIN-POLLER, user ruling 2026-11-27). A kit with its venv skips the step.
 
 THE ROLE IS THE WORKSTATION'S (user rulings 2026-11-09): each grant's ``role`` and the ``[hpc.roles]`` table
 (:mod:`dev_lab.dev.hpcaccount.division`) are passed to the account's deploy, which refuses when its own ``[deploy]
@@ -26,7 +27,9 @@ one is live, else ONE detached ``ssh -o BatchMode=yes <user>@<declared host>``),
 refreshed that checkout (:func:`refresh_kit`; with the layer's kit ref, a direct fast-forward under the tick's lock,
 since the tick reads the stale machine file), so a fix to the deploy reaches an account that never ticks --
 and writes everything it prints to one log
-per account (``~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log``). The deploy is safe to repeat.
+per account (``~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log``). The deploy is safe to repeat. Then it
+WAITS for each account and says its outcome as it ends -- ``<user>: exit N`` and its log's tail, also appended to
+the log (:func:`~dev_lab.dev.hpcaccount.transport.outcomes`); a remote that does not exit 0 makes the run exit 1.
 
 THE ACCOUNT RENDERS ITS OWN LAYER FIRST (user ruling 2026-11-15: FAMILY -> ACCOUNT -> LOCAL, one road). Its machine
 file is the render of the config source's ``family.toml`` and ``hosts/<cluster>-<user>.toml``
@@ -47,6 +50,7 @@ import argparse
 import json
 import shlex
 import sys
+import time
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -70,14 +74,16 @@ from dev_lab.dev.devsource import config_source
 from dev_lab.dev.hpcaccount.cimark import paused_guard
 from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleetguard import deploy_root, serving_twice_refusal, stale_render
-from dev_lab.dev.hpcaccount.spec import KIT, paths_of_root, uv_cache
-from dev_lab.dev.hpcaccount.transport import describe, start
+from dev_lab.dev.hpcaccount.grantslice import grant_slice
+from dev_lab.dev.hpcaccount.spec import KIT, TICK_LOCK, paths_of_root, uv_cache
+from dev_lab.dev.hpcaccount.transport import Started, describe, outcomes, start
 from dev_lab.dev.machinehome import default_layout
+from dev_lab.dev.pythontoolchain import SYNC_FLAGS, VERSION, minor_check
 from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
     'KIND', 'ConfigSource', 'Target', 'account_clone', 'account_host', 'config_source_of', 'declared_target',
-    'deploy_command', 'deploy_fleet', 'first_install', 'in_checkout', 'layer_refusal', 'layer_target', 'main',
+    'deploy_command', 'deploy_fleet', 'first_install', 'in_checkout', 'in_job', 'layer_refusal', 'layer_target', 'main',
     'refresh_kit', 'render_command',
 ]  # fmt: skip
 
@@ -93,8 +99,9 @@ _MACHINE_HOME, _CONFIG_UNDER_HOME = default_layout()
 _MACHINE_FILE: Final = f'"${{{CONFIG_ENV}:-${{{hostenv.HOME_ENV}:-$HOME/{_MACHINE_HOME}}}/{_CONFIG_UNDER_HOME}}}"'
 _READ_DEPLOY: Final = f'f={_MACHINE_FILE}; echo "# $f"; ' + 'sed -n \'/^\\[deploy\\]/,/^\\[/p\' "$f" 2>/dev/null; true'
 
-#: Runs one deploy on a dest: ``(dest, command, log) -> object`` (:func:`dev_lab.dev.hpcaccount.transport.start`).
-Launch = Callable[[str, str, IO[Any]], object]
+#: Runs one deploy on a dest: ``(dest, command, log) ->`` its exit status or the process still running
+#: (:func:`dev_lab.dev.hpcaccount.transport.start`), whose outcome :func:`~.transport.outcomes` waits for.
+Launch = Callable[[str, str, IO[Any]], int | Started]
 
 
 @dataclass(frozen=True)
@@ -270,34 +277,22 @@ def account_clone(target: Target, source: ConfigSource) -> PurePosixPath:
 
 
 def in_checkout(target: Target, argv: Sequence[str]) -> str:
-    """The shell line that runs ``python <argv>`` in *target*'s declared dev-lab checkout, with its venv."""
-    kit = repo_dir(target, KIT)  # every cluster login host is POSIX
-    return f'cd {kit} && {shell_interpreter(".")} {shlex.join(argv)}'
+    """The shell line that runs ``python <argv>`` in *target*'s declared dev-lab checkout, with its venv.
 
-
-def grant_slice(grant: Grant) -> dict[str, Any]:
-    """*grant* as the ``[hpc]`` slice its account's own machine file holds: its cluster, its grant, its role reached."""
-    account: dict[str, Any] = {'billed': grant.billed}
-    if grant.budget is not None:
-        hours = grant.budget.core_time / 3600
-        account['budget'] = {'core_time': f'{hours:g} h', 'since': grant.budget.since, 'until': grant.budget.until}
-    cluster: dict[str, Any] = {'hosts': list(grant.hosts), 'slurm_accounts': {grant.slurm_account: account}}
-    optional = {
-        'partitions': list(grant.partitions), 'qos': dict(grant.qos), 'setup': list(grant.setup),
-        'architecture': grant.architecture, 'root': grant.root,
-    }  # fmt: skip
-    cluster.update({key: value for key, value in optional.items() if value})
-    row = {'user': grant.user, 'cluster': grant.cluster_name, 'slurm_account': grant.slurm_account, 'role': grant.role}
-    row.update({key: value for key, value in (('owner', grant.owner), ('priority', grant.priority)) if value})
-    return {'reach': [grant.role], 'clusters': {grant.cluster_name: cluster}, 'grant': [row]}
+    The venv's minor is checked first (:func:`~dev_lab.dev.pythontoolchain.minor_check` against the family
+    :data:`VERSION`): measured 2026-11-27, a 3.13 venv under a checkout of 3.14 code crashed drift with a
+    SyntaxError that named nothing.
+    """
+    kit, python = repo_dir(target, KIT), shell_interpreter('.')  # every cluster login host is POSIX
+    return f'cd {kit} && {python} -c {shlex.quote(minor_check(VERSION))} && {python} {shlex.join(argv)}'
 
 
 def deploy_command(grant: Grant, target: Target, source: ConfigSource, division: Division | None = None) -> str:
     """The shell line that runs *grant*'s own deploy on its DECLARED host (:mod:`dev_lab.dev.hpcaccount.transport`).
 
     After the kit's tick the account renders its own layer from *source* (:func:`render_command`); only a render that
-    succeeds deploys. The deploy is passed its declared ``[hpc]`` slice (:func:`grant_slice`); with *division*, also
-    the role and its table.
+    succeeds deploys. The deploy is passed its declared ``[hpc]`` slice
+    (:func:`~dev_lab.dev.hpcaccount.grantslice.grant_slice`); with *division*, also the role and its table.
     """
     deploy = ['-m', 'dev_lab.dev.hpcaccount', 'deploy', '--grant-table', json.dumps(grant_slice(grant), sort_keys=True)]
     if division is not None and (role := division.role_of(grant.user)):
@@ -305,7 +300,7 @@ def deploy_command(grant: Grant, target: Target, source: ConfigSource, division:
     refreshed = f'{first_install(grant, target)} && {refresh_kit(grant, target)}'
     reader = division.config_reader(grant.user) if division is not None else ''
     deployed = in_checkout(target, deploy)
-    if grant.setup:  # the venvs it builds compile in the cluster's declared environment, as its ticks run
+    if grant.setup:  # the deploy runs in the cluster's declared environment, as its ticks run
         deployed = f'( {" && ".join([*grant.setup, deployed])} )'
     named = division is not None and division.named_reader(grant.user) == reader != ''
     rendered = render_command(grant, target, source, reader=reader, named=named)
@@ -321,7 +316,8 @@ def first_install(grant: Grant, target: Target) -> str:
 
     A key-only account has no door for a first install (raw ssh is refused), and every later step runs the kit's
     venv python. So, only when that interpreter is missing: uv into ``~/.local/bin`` unless one is on PATH, each
-    declared repo cloned at its ref where its checkout is absent, then ``uv sync --frozen`` in the kit.
+    declared repo cloned at its ref where its checkout is absent, then ``uv sync --frozen`` in the kit -- uv's install
+    and the sync in ONE Slurm job, waited for (:func:`in_job`), never on the login node (ONE-LOGIN-POLLER).
     """
     root = PurePosixPath(paths_of_root(target.root).root) / 'repos'
     kit = root / KIT
@@ -330,11 +326,14 @@ def first_install(grant: Grant, target: Target) -> str:
         for name, url, ref in target.repos
         if name == KIT
     ]
+    synced = ' && '.join([
+        f'export PATH="$HOME/.local/bin:$PATH" UV_CACHE_DIR={_cache(target)}',
+        f'{{ command -v uv >/dev/null || curl -LsSf {UV_INSTALLER} | env UV_NO_MODIFY_PATH=1 sh; }}',
+        f'cd {kit}', f'uv sync --frozen {SYNC_FLAGS}',
+    ])  # fmt: skip
     steps = [
         f'echo "[first-install] {grant.user}: no kit venv in {kit}"',
-        f'export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0 UV_CACHE_DIR={_cache(target)}',
-        f'{{ command -v uv >/dev/null || curl -LsSf {UV_INSTALLER} | env UV_NO_MODIFY_PATH=1 sh; }}',
-        f'mkdir -p {root}', *clones, f'( cd {kit} && uv sync --frozen )',
+        'export GIT_TERMINAL_PROMPT=0', f'mkdir -p {root}', *clones, in_job(grant, target, 'first-install', synced),
     ]  # fmt: skip
     body = ' && '.join([*grant.setup, *steps])
     return f'{{ [ -x {shell_interpreter(str(kit))} ] || ( {body} ); }}'
@@ -355,7 +354,7 @@ def refresh_kit(grant: Grant, target: Target) -> str:
     ref = next((ref for name, _url, ref in target.repos if name == KIT), '')
     tick = f'{cache} ; {in_checkout(target, ["-m", "dev_lab.dev.hpcaccount", "tick", KIT])} ; {recorded}'
     if ref:
-        tick = f'{cache} ; {_move_kit(kit, ref)} ; {recorded}'
+        tick = f'{cache} ; {_move_kit(grant, target, kit, ref)} ; {recorded}'
     return f'bash -lc {shlex.quote("; ".join([*grant.setup, tick]))}' if grant.setup else tick
 
 
@@ -364,23 +363,40 @@ def _cache(target: Target) -> str:
     return shlex.quote(PurePosixPath(uv_cache(target.root).as_posix()).as_posix())
 
 
-def _move_kit(kit: PurePosixPath, ref: str) -> str:
+def in_job(grant: Grant, target: Target, name: str, script: str) -> str:
+    """The shell line running *script* as ONE Slurm job of *grant*, waited for: the login node builds nothing.
+
+    ONE-LOGIN-POLLER (user ruling 2026-11-27): every venv install and sync runs in a Slurm job (compute nodes reach
+    HTTPS, so downloads too). ``sbatch --wait`` returns the job's exit code; its log is
+    ``<root>/serve/<name>-<jobid>.log``.
+    """
+    serve = PurePosixPath(paths_of_root(target.root).root) / 'serve'
+    flags = ['--wait', '--quiet', f'--job-name=lab-{name}', f'--output={serve}/{name}-%j.log']
+    flags += [f'--account={grant.slurm_account}'] if grant.slurm_account else []
+    flags += [f'--partition={grant.partitions[0]}'] if grant.partitions else []
+    submit = ' '.join(shlex.quote(flag) for flag in flags)
+    return f'mkdir -p {shlex.quote(str(serve))} && sbatch {submit} --wrap {shlex.quote(script)}'
+
+
+def _move_kit(grant: Grant, target: Target, kit: PurePosixPath, ref: str) -> str:
     """The kit fast-forwarded to its LAYER-declared *ref* and its own venv re-synced, under the cron tick's lock.
 
     Never through the kit's tick: that reads the account's machine file, which is the stale thing this deploy is
     about to render over (2026-11-20: a retired key crashed it before it refreshed; an old root sent it to another
-    checkout). The lock is the cron tick's, so the kit keeps one writer at a time.
+    checkout). The lock is the cron tick's, so the kit keeps one writer; the sync runs in a Slurm job (:func:`in_job`)
+    on the family interpreter (``SYNC_FLAGS``): a venv on another minor is rebuilt by uv, never kept (ezxmw9's 3.13
+    venv under 3.14 code, 2026-11-27).
     """
     remote = f'refs/remotes/origin/{ref}'
     python = shell_interpreter('.')
+    sync = f'UV_PROJECT_ENVIRONMENT="${{py%/bin/python}}" uv sync --frozen {SYNC_FLAGS}'  # another minor: rebuilt
     body = ' && '.join([
         f'git fetch -q origin {shlex.quote(f"+refs/heads/{ref}:{remote}")}',
         f'git checkout -q -B {shlex.quote(ref)} {shlex.quote(remote)}',
-        f'py={python}',
-        'UV_PROJECT_ENVIRONMENT="${py%/bin/python}" uv sync --frozen',
+        in_job(grant, target, 'kit-sync', f'cd {kit} && py={python} && {sync}'),
     ])  # fmt: skip
     serve = kit.parent.parent / 'serve'  # <root>/repos/dev-lab -> <root>/serve: the cron tick's own lock
-    lock = serve / f'{KIT}.lock'
+    lock = serve / TICK_LOCK  # the account's one tick lock (ONE-LOGIN-POLLER)
     return (
         f'( export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0; mkdir -p {serve}; cd {kit} && '
         f'flock -w 600 {lock} bash -c {shlex.quote(body)} )'
@@ -409,8 +425,12 @@ def deploy_fleet(
     say: Callable[[str], None],
     launch: Launch = start,
     division: Division | None = None,
+    nap: Callable[[float], None] = time.sleep,
 ) -> int:
-    """Start each account's deploy on its declared host; 2 when any account was refused."""
+    """Start each account's deploy on its declared host, then say each outcome as it ends (:func:`outcomes`).
+
+    2 when any account was refused, else 1 when any remote did not exit 0, else 0. *nap* is the wait between polls.
+    """
     if why := serving_twice_refusal(grants, accounts, division):
         say(f'deploy-fleet: refused -- {why}')
         return 2
@@ -424,6 +444,7 @@ def deploy_fleet(
         say('deploy-fleet: refused -- the machine file declares no [[hpc.grant]]')
         return 2
     refused = 0
+    started: list[tuple[str, Path, int | Started]] = []
     for user in accounts or sorted(fleet):
         grant = fleet[user]
         path = dated_log(home, f'{user}.log', base=_BASE, kind=KIND)
@@ -441,12 +462,13 @@ def deploy_fleet(
         if not dry_run:
             with path.open('a', encoding='utf-8') as log:
                 try:
-                    launch(dest, command, log)
+                    started.append((user, path, launch(dest, command, log)))
                 except (RuntimeError, OSError) as failed:  # HoldRefused is a RuntimeError
                     log.write(f'[deploy-fleet] {user}: refused before the deploy ran -- {failed}\n')
                     say(f'{user}: refused -- {failed}')
                     refused += 1
-    return 2 if refused else 0
+    broke = outcomes(started, say, kind=KIND, nap=nap)
+    return 2 if refused else 1 if broke else 0
 
 
 def _log_line(path: Path, line: str, *, dry_run: bool) -> None:

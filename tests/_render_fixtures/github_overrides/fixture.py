@@ -6,21 +6,19 @@ from dev_lab.dev.famconfig import Delta
 
 #: The fixture's ``pyproject.toml``: its ``[tool.dev_lab.ci]`` declarations.
 PYPROJECT = """\
-# A GitHub repo layering its own job permissions over the base CI, its own ignore lines, and its native wheels.
+# A GitHub repo layering its own job permissions over the base CI, its own ignore lines, and native wheels.
 [project]
 name = "overrides"
 
-[tool.maturin]
-module-name = "overrides._native"
+[build-system]
+requires = ["maturin>=1.7"]
+build-backend = "maturin"
+
+[tool.dev_lab.native]
+wheels = ["linux", "windows", "macos"]
 
 [tool.dev_lab.ci."ci.yml".jobs.review.permissions]
 issues = "read"
-
-[tool.dev_lab.wheels]
-targets = ["linux-x86_64", "windows-x86_64", "macos-universal2"]
-python = ["3.12", "3.15"]
-abi3 = "3.12"
-release = { rolling = "wheels", versioned = true }
 """
 #: The executor kind each role binds, as :data:`~dev_lab.dev.roles.ROLES_ENV` carries them.
 ROLES = {'merge': 'ci', 'promote': 'ci', 'prune': 'ci', 'review': 'ci', 'tests': 'ci'}

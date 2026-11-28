@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 from types import SimpleNamespace
@@ -14,7 +15,8 @@ from dev_lab.dev.agentpolicy import exits_of
 from dev_lab.dev.diskusage import MMLSQUOTA
 from dev_lab.dev.hpcaccount import storage
 from dev_lab.dev.hpcaccount.fleet import Target
-from dev_lab.dev.hpcaccount.storage import UNREACHABLE, retention_fleet
+from dev_lab.dev.hpcaccount.storage import retention_fleet
+from dev_lab.dev.pythontoolchain import VERSION, minor_check
 from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
@@ -27,14 +29,16 @@ _QUOTA = 'Disk quotas for user alice\n  /home  29G  30G  30G  999k* 1000k 1000k'
 
 
 def _line(argv: str) -> str:
-    """The remote line in the account's dev-lab checkout, run by its current environment (the one resolver)."""
-    return f'export LAB_ROOT=/r/src && cd /r/src/repos/dev-lab && {shell_interpreter(".")} {argv}'
+    """The remote line in the account's dev-lab checkout, run by its current environment after its minor check."""
+    python = shell_interpreter('.')
+    checked = f'{python} -c {shlex.quote(minor_check(VERSION))}'
+    return f'export LAB_ROOT=/r/src && cd /r/src/repos/dev-lab && {checked} && {python} {argv}'
 
 
 def _account(*, ticks: str = '2', unreachable: bool = False, seen: list[str]) -> Runner:
     def shell(cmd: str, _stdin: str | None = None) -> str:
         if unreachable:
-            msg = 'no login host answered'
+            msg = 'no login host answered -- this machine reaches ada only over VPN: connect the VPN'
             raise Unreachable(msg)
         seen.append(cmd)
         if 'sed -n' in cmd:
@@ -119,12 +123,12 @@ def test_tick_lines_are_read_on_the_declared_deploy_host_not_the_first_that_answ
     assert not any(cmd.startswith('crontab') for cmd in seen)
 
 
-def test_an_unreachable_cluster_is_one_line_naming_the_door() -> None:
+def test_an_unreachable_cluster_is_one_line_naming_the_runners_door() -> None:
+    """The door is the runner's (lab_commons.hpc.reach names the VPN), said as it is -- never a generic guess."""
     code, said, _ = _run(down=('alice',))
     assert code == 2
-    assert f'alice: refused -- {UNREACHABLE}' in said
+    assert 'alice: refused -- no login host answered -- this machine reaches ada only over VPN: connect the VPN' in said
     assert any(line.startswith('bob: retention') for line in said)  # the rest still run
-    assert 'VPN' in UNREACHABLE
 
 
 def test_an_account_outside_the_fleet_refuses_the_whole_run() -> None:

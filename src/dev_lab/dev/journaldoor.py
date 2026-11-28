@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None, *, stdin: BinaryIO | None = None, stdout
     try:
         payload = json.loads((stdin or sys.stdin.buffer).read().decode('utf-8'))
         reason = refusal(payload) if isinstance(payload, dict) else None
-    except (ValueError, OSError, RuntimeError):
+    except ValueError, OSError, RuntimeError:
         return 0
     if reason is None:
         return 0

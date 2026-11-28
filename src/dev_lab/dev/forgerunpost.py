@@ -19,7 +19,7 @@ from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgeclaim import Claim, forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerunstate import Killed, Run, save
-from dev_lab.dev.forgestatus import status_post
+from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_post
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import PartRefusal, part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, owned, release_reason
@@ -29,10 +29,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from datetime import timedelta
 
-__all__ = ['DESCRIPTION_MAX', 'killed', 'lost', 'orphaned', 'release', 'release_reason_for', 'report', 'step']
+__all__ = ['killed', 'lost', 'orphaned', 'release', 'release_reason_for', 'report', 'step']
 
 #: A status description is short on every forge.
-DESCRIPTION_MAX: Final = 140
 
 
 def report(client: Client, run: Run, progress: str, lease: timedelta, say: Callable[[str], None]) -> Run:
@@ -137,7 +136,7 @@ def killed(client: Client, run: Run, jobs: Sequence[Killed], say: Callable[[str]
             f'{worst.used_mb}/{worst.asked_mb} MB' if state == 'OUT_OF_MEMORY' else f'{worst.used_s}/{worst.asked_s} s'
         )
         words.append(f'{len(some)} {state} (worst {worst.job} used/asked {used})')
-    description = f'{"; ".join(words)}; next ask learned'[:DESCRIPTION_MAX]
+    description = f'{"; ".join(words)}; next ask learned'[:DESCRIPTION_LIMIT]
     try:
         status_post(client, run.sha, context=f'slurm/{run.platform}', state='failure', description=description)
     except ForgeCallFailed as failed:  # a missed report is not a dead run

@@ -23,7 +23,7 @@ def head_advice(head: str, root: Path) -> tuple[str, ...]:
     """A checkout on a task branch is told its PR heads are ``pr/<task>/<feature>`` (:func:`taskledger.task_of`)."""
     try:
         task = taskledger.task_of(root)
-    except (ValueError, LookupError):
+    except ValueError, LookupError:
         return ()
     said = None if task is None else taskledger.head_advice(head, taskledger.slug_of(task))
     return () if said is None else (said,)

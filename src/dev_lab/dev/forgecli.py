@@ -1,7 +1,8 @@
 """``python -m dev_lab.dev.forge <noun> <verb>`` -- the one noun dispatch over the ``forge*`` doors.
 
-``status`` for commit statuses, ``issue claim|status|comments|comments-since`` for derived issue
-state and comment reads, ``auth`` for the token, ``protect plan|check|apply`` for the declared branch protection,
+``status`` for commit statuses, ``issue claim|status|comments|comments-since|comment-view|view --comments``
+for derived issue state and comment reads, ``auth`` for the token, ``protect plan|check|apply`` for the declared
+branch protection,
 ``publish`` for the status outbox, ``records`` for
 run records, ``run show <sha>`` for what a cluster run published (each round's losses, the final
 failing ids), ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
@@ -79,6 +80,7 @@ from dev_lab.dev import (
     prsuperseded,
     pushwatch,
     servelock,
+    standby,
     walls,
 )
 from dev_lab.dev.forge import Transport, forge_transport
@@ -86,8 +88,10 @@ from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed, within
 from dev_lab.dev.forgefeedstatus import unheard_notice
 from dev_lab.dev.forgelabels import LabelMissing, relabel
+from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest
 from dev_lab.dev.labsession import ENV
+from dev_lab.dev.native_session import session_of
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -136,7 +140,7 @@ PR_VERBS: dict[str, Callable[[list[str]], int]] = {
 }
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.
-ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since'})
+ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since', 'comment-view'})
 
 
 def main(argv: Sequence[str]) -> int:
@@ -158,13 +162,20 @@ def _route(args: list[str]) -> int:
         return NOUNS[args[0]](args[1:])
     if args[:1] == ['pr'] and args[1:2] and args[1] in PR_VERBS:
         return PR_VERBS[args[1]](args[2:])
-    if args[:1] == ['issue'] and args[1:2] and args[1] in ISSUE_VERBS:
+    if args[:1] == ['issue'] and ((args[1:2] and args[1] in ISSUE_VERBS) or _threaded(args)):
         return forgeissue.main(args[1:])
     return issue_and_pr(args)
 
 
-def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
-    verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
+def _threaded(args: Sequence[str]) -> bool:
+    """``issue view N --comments``: the issue WITH its thread is :mod:`forgeissue`'s; the bare view stays here."""
+    return args[1:2] == ['view'] and '--comments' in args
+
+
+def _dispatch(
+    client: Client, args: argparse.Namespace, root: Path
+) -> Issue | PullRequest | Comment | tuple[Issue | PullRequest, ...]:
+    verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue | PullRequest, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit, labels=args.label),
         ('issue', 'view'): lambda: client.issue_view(args.number),
         ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind, args.label),
@@ -174,13 +185,23 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
         ('pr', 'create'): lambda: client.pr_create(
             args.title, _declared_body(args), head=args.head, base=args.base, draft=not args.ready
         ),
+        ('pr', 'list'): lambda: _pulls(client, args),
         ('pr', 'view'): lambda: client.pr_view(args.number),
         ('pr', 'close'): lambda: forgepr.pr_close(client, args.number, args.reason),
+        ('pr', 'retarget'): lambda: forgepr.pr_retarget(
+            client, args.number, args.base, allowed=forgepr.declared_bases(root), reason=args.reason
+        ),
         ('pr', 'edit'): lambda: forgepr.pr_edit(
             client, args.number, body=forgepr.edit_text(args) if args.body_file else None, append=args.append_line
         ),
     }
     return verbs[args.noun, args.verb]()
+
+
+def _pulls(client: Client, args: argparse.Namespace) -> tuple[PullRequest, ...]:
+    """The first *args.limit* pulls in *args.state* (every page read), only those from *args.head* when it is named."""
+    listed = pr_list(client, state=args.state)
+    return tuple(pull for pull in listed if args.head in {None, pull.head})[: args.limit]
 
 
 def _relabeled(client: Client, args: argparse.Namespace) -> Issue:
@@ -189,7 +210,16 @@ def _relabeled(client: Client, args: argparse.Namespace) -> Issue:
     return client.issue_view(args.number)
 
 
-def _show(args: argparse.Namespace, result: Issue | PullRequest | Comment | tuple[Issue, ...], root: Path) -> None:
+def _labels(args: argparse.Namespace) -> Sequence[str]:
+    """The labels an issue verb names: ``label --add`` and ``list``/``create --label``; the other verbs name none."""
+    if args.verb == 'label':
+        return args.add
+    return args.label if args.verb in {'list', 'create'} else ()
+
+
+def _show(
+    args: argparse.Namespace, result: Issue | PullRequest | Comment | tuple[Issue | PullRequest, ...], root: Path
+) -> None:
     """Print *result* (JSON with ``--json``); an issue verb that subscribed a task nobody hears says so."""
     items = result if isinstance(result, tuple) else (result,)
     if args.json:
@@ -198,9 +228,14 @@ def _show(args: argparse.Namespace, result: Issue | PullRequest | Comment | tupl
     else:
         for item in items:
             emit(_render(item))
-    labels = getattr(args, 'add', None) or getattr(args, 'label', ())
-    if args.noun == 'issue' and (said := unheard_notice(root, labels)):
+    if args.noun == 'issue' and (said := unheard_notice(root, _labels(args))):
         emit(f'[forge] {said}', err=True)  # TASK-HEARS-ITS-FORGE-EVENTS: a subscription nobody hears is said
+
+
+def _record_standby(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str] | None) -> None:
+    """A standby comment this session posted is recorded for the stop hook (STANDBY-IS-RESTING)."""
+    if isinstance(result, Comment) and standby.posted(args.body) and (who := session_of(env)):
+        walls.standby(root, issue=result.url, session=who)
 
 
 def _declared_body(args: argparse.Namespace) -> str:
@@ -213,6 +248,8 @@ def _declared_body(args: argparse.Namespace) -> str:
 def _render(item: Issue | PullRequest | Comment) -> str:
     if isinstance(item, Comment):
         return item.url
+    if isinstance(item, PullRequest):
+        return f'#{item.number} [{item.state}] {item.head} -> {item.base}  {item.title}  {item.url}'
     return f'#{item.number} [{item.state}] {item.title}  {item.url}'
 
 
@@ -223,7 +260,7 @@ READ_BUDGET_S: Final = 45.0
 
 
 def _budgeted(noun: str, verb: str) -> bool:
-    return noun == 'issue' or (noun, verb) == ('pr', 'view')
+    return noun == 'issue' or (noun, verb) in {('pr', 'view'), ('pr', 'list')}
 
 
 def issue_and_pr(
@@ -236,7 +273,7 @@ def issue_and_pr(
 ) -> int:
     """``python -m dev_lab.dev.forge issue|pr <verb> ...`` (:mod:`forgework`); exit 1 with netverb's remedy.
 
-    An issue verb and ``pr view`` end within *budget_s* (:data:`READ_BUDGET_S`), naming the cause.
+    An issue verb, ``pr view`` and ``pr list`` end within *budget_s* (:data:`READ_BUDGET_S`), naming the cause.
     """
     parser = _forgecli_args.parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
@@ -256,7 +293,7 @@ def issue_and_pr(
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
             emit('\n'.join(f'[forge] {line}' for line in lines), err=True)
             args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
-        result = _dispatch(client, args)
+        result = _dispatch(client, args, root)
         if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
             emit(f'[forge] {forgemergecall.auto_merge(client, result.number)}', err=True)
             if head := result.head_sha or pushwatch.pushed_sha(root, f'refs/remotes/origin/{result.head}'):
@@ -269,6 +306,7 @@ def issue_and_pr(
         emit(f'[forge] {stopped}', err=True)
         return 1
     forgetask.record(args, result, root)
+    _record_standby(args, result, root, env)
     _show(args, result, root)
     if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
         emit(forgedraft.opened_line(result))  # the exact next step for a draft, on stdout (D53)

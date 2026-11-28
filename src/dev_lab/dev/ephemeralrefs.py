@@ -189,7 +189,7 @@ def _python_pieces(text: str) -> list[tuple[int, str, bool]]:
             if tok.type == tokenize.COMMENT
         )
         tree = ast.parse(text)
-    except (SyntaxError, tokenize.TokenError):
+    except SyntaxError, tokenize.TokenError:
         return out
     # A literal joined onto a base (`tmp_path / '<dir>/x'`) is relative to THAT base, not the repo.
     joined = {id(node.right) for node in ast.walk(tree) if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)}
@@ -332,7 +332,7 @@ def citations_in(root: Path, names: Iterable[str]) -> tuple[list[Citation], int]
         file = root / name
         try:
             text = file.read_text(encoding='utf-8')
-        except (UnicodeDecodeError, OSError):
+        except UnicodeDecodeError, OSError:
             continue
         pieces = _pieces(name, text)
         read += 1

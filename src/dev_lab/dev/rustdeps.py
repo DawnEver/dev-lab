@@ -16,9 +16,10 @@ with the workspace's features. Refused, by manifest and name:
 * an external crate no ``[rust.external]`` row names, one the row does not allow in this crate, one of another
   kind (a ``normal`` row grants ``[dependencies]`` and ``[dev-dependencies]``, its ``dev_crates`` only the
   latter; ``build`` and ``dev`` only their own), or one missing a feature the row requires;
-* in the crate's ``src/`` (``#[cfg(test)]`` items, ``tests/``, ``benches/`` and ``build.rs`` are not judged), a
-  restricted ``[rust.std]`` path -- ``use`` trees expanded, ``core``/``alloc`` read as ``std``, the longest row
-  wins -- or token (``unsafe``, ``extern "C"``) outside the row's crates;
+* in the crate's ``src/`` (``#[cfg(test)]`` items, ``tests/`` and ``benches/`` are not judged), a restricted
+  ``[rust.std]`` path -- ``use`` trees expanded, ``core``/``alloc`` read as ``std``, the longest row wins -- or token
+  (``unsafe``, ``extern "C"``) outside the row's crates; a ``kind = "build"`` row judges the crate's ``build.rs``
+  (Cargo's default name; a custom ``build =`` path is not seen) instead, and a normal row never does;
 * a holder naming a crate neither in the tree nor declared by a layout.toml ``<crate dir>/Cargo.toml`` row (a crate
   not created yet is allowed, and named for its declared path like one that exists).
 
@@ -140,7 +141,7 @@ def _features(key: str, spec: object, workspace: Mapping[str, Any]) -> set[str]:
 
 
 def _allowed(grant: Grant, crate: str) -> bool:
-    return ALL in grant.holders or crate in grant.holders
+    return ALL in grant.holders or _norm(crate) in {_norm(h) for h in grant.holders}
 
 
 def _only(grant: Grant) -> str:
@@ -148,15 +149,16 @@ def _only(grant: Grant) -> str:
 
 
 def _external(crate: Crate, kind: str, real: str, have: set[str], decl: Declared) -> str | None:
-    grant = decl.external.get(real)
+    row = next((k for k in decl.external if _norm(k) == real), None)  # Cargo: '-' and '_' name one package
     head = f'{crate.manifest_path}: crate {crate.name} depends on {real} ({kind})'
-    if grant is None:
+    if row is None:
         return f'{head}, which no [rust.external] row names'
+    grant = decl.external[row]
     if kind not in _GRANTS[grant.kind]:
-        return f'{head}, but [rust.external] {real} is kind {grant.kind}'
-    tests_only = kind == 'dev' and (ALL in grant.dev_holders or crate.name in grant.dev_holders)
+        return f'{head}, but [rust.external] {row} is kind {grant.kind}'
+    tests_only = kind == 'dev' and (ALL in grant.dev_holders or crate.name in {_norm(h) for h in grant.dev_holders})
     if not tests_only and not _allowed(grant, crate.name):
-        return f'{head}, but [rust.external] {real} allows it only in {_only(grant)}'
+        return f'{head}, but [rust.external] {row} allows it only in {_only(grant)}'
     if missing := sorted(set(grant.features) - have):
         return f'{head} without the required feature(s) {missing} ({grant.reason})'
     return None
@@ -169,11 +171,20 @@ def _under(path: str, key: str) -> bool:
 
 
 def _std_problems(root: Path, decl: Declared, crate: Crate, files: Iterable[str]) -> list[str]:
-    paths = [k for k in decl.std if '::' in k]
-    tokens = [k for k in decl.std if '::' not in k]
-    prefix = f'{crate.directory}/src/' if crate.directory else 'src/'
+    """``src/`` against the normal ``[rust.std]`` rows, ``build.rs`` against the build rows."""
+    files = tuple(files)
+    base = f'{crate.directory}/' if crate.directory else ''
+    source = sorted(f for f in files if f.startswith(f'{base}src/') and f.endswith('.rs'))
+    build = [f for f in files if f == f'{base}build.rs']
+    return _std_hits(root, decl, crate, source, 'normal') + _std_hits(root, decl, crate, build, 'build')
+
+
+def _std_hits(root: Path, decl: Declared, crate: Crate, files: Iterable[str], kind: str) -> list[str]:
+    rows = {k: g for k, g in decl.std.items() if g.kind == kind}
+    paths = [k for k in rows if '::' in k]
+    tokens = [k for k in rows if '::' not in k]
     out: list[str] = []
-    for rel in sorted(f for f in files if f.startswith(prefix) and f.endswith('.rs')):
+    for rel in files:
         code = rustsource.code_of((root / rel).read_text(encoding='utf-8'))
         hits: dict[str, set[str]] = {}
         for used in rustsource.paths_used(code):
@@ -183,9 +194,9 @@ def _std_problems(root: Path, decl: Declared, crate: Crate, files: Iterable[str]
         hits.update({k: {k} for k in tokens if rustsource.has_token(code, k)})
         out += [
             f'{rel}: crate {crate.name} uses {", ".join(sorted(used))}, but [rust.std] {key} allows it only in '
-            f'{_only(decl.std[key])}'
+            f'{_only(rows[key])}'
             for key, used in sorted(hits.items())
-            if not _allowed(decl.std[key], crate.name)
+            if not _allowed(rows[key], crate.name)
         ]
     return out
 
@@ -203,7 +214,7 @@ def _stale_rows(decl: Declared, found: Mapping[str, Crate], layout: Layout | Non
     return [
         f'dependencies.toml [rust.{table}] {key} names crate {name}, {nowhere}'
         for table, key, name in named
-        if name != ALL and name not in found and name not in planned
+        if name != ALL and _norm(name) not in found and name not in planned
     ]
 
 

@@ -55,7 +55,7 @@ def answered(host: str, digest: str) -> str:
     path = _path(host)
     try:
         record = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return ''
     path.unlink(missing_ok=True)
     if record.get('digest') != digest:

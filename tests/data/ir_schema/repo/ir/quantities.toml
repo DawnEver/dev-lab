@@ -38,3 +38,20 @@ flow = "current"
 [port_domain.translational]
 effort = "force"
 flow = "velocity"
+
+# value: a number, or an expression over numbers, pi and e (+ - * / **); unit: coherent SI ("1": dimensionless).
+[constant.mu0]
+value = "4e-7 * pi"
+unit = "H/m"
+citation = "pre-2019 SI definition of the ampere (CGPM 1948); FEMM and JMAG both hard-code it"
+reason = "the exact pre-2019 value, not CODATA 2018's measured 1.25663706212e-6: pointwise FEMM/JMAG agreement"
+[constant.boltzmann]
+value = 1.380649e-23
+unit = "J/K"
+citation = "SI Brochure, 9th edition (BIPM 2019), Table 1"
+reason = "exact by the 2019 SI definition"
+[constant.turns_ratio]
+value = 2
+unit = "1"
+citation = "fixture: a dimensionless constant"
+reason = "exercises the dimensionless unit"

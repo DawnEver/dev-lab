@@ -114,7 +114,7 @@ def _row(raw: dict) -> Row | None:
         return Row(forge, str(raw.get('branch') or ''), int(raw.get('number') or 0), str(raw.get('sha') or ''),
                    float(raw.get('at') or 0.0), str(raw.get('done') or ''), acks,
                    str(raw.get('reason') or ''))  # fmt: skip
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         return None
 
 
@@ -123,7 +123,7 @@ def rows(session: str) -> dict[str, Row]:
     path = _path(session)
     try:
         table = json.loads(path.read_text(encoding='utf-8')) if path is not None else {}
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     found = (_row(raw) for raw in table.values() if isinstance(raw, dict)) if isinstance(table, dict) else ()
     return {row.key: row for row in found if row is not None}
@@ -271,7 +271,7 @@ def record_pushed(
     try:
         policy = load_policy(root)
         targets = {policy.integration, policy.trunk}
-    except (OSError, ValueError):  # no declaration: no branch is known to be a target, so every one is recorded
+    except OSError, ValueError:  # no declaration: no branch is known to be a target, so every one is recorded
         targets = set()
     refs = [ref for ref in pushed_refs(lines) if ref.branch and not ref.deleted and str(ref.branch) not in targets]
     what = 'push of ' + ' '.join(str(ref.branch) for ref in refs)
@@ -296,7 +296,7 @@ def heard(session: str) -> set[str]:
     path = _heard_path(session)
     try:
         found = json.loads(path.read_text(encoding='utf-8')) if path is not None else []
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return set()
     return {str(line) for line in found} if isinstance(found, list) else set()
 
@@ -337,7 +337,7 @@ def watching(session: str) -> bool:
     try:
         held = json.loads(marker.read_text(encoding='utf-8')) if marker is not None else None
         return isinstance(held, dict) and still_the_same_process(int(held['pid']), held.get('created'))
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         return False
 
 

@@ -88,9 +88,9 @@ def main(
             plan = parsed(json.loads(args.plan.read_text(encoding='utf-8')))
             left = offer(plan, section(TABLE) if table is None else table, send=send)
             emit(f'[consent] offered: ask the user for the one code now -- `sshhold open --plan --code` sends it '
-                 f'on a green recorded within {CODE_PREFLIGHT_FRESH_S:.0f} s and refuses it unspent on an older '
-                 f'one; this recorded green is valid {left:.0f} s more, and past that, re-run preflight BEFORE '
-                 'asking')  # fmt: skip
+                 f'at once on a green recorded within {CODE_PREFLIGHT_FRESH_S:.0f} s, else re-runs this preflight '
+                 f'itself first and sends it only if green; this recorded green is valid {left:.0f} s more, and '
+                 'past that, re-run preflight BEFORE asking')  # fmt: skip
             return 0
         if args.verb == 'recover':
             written = recover(args.plan, args.digest)

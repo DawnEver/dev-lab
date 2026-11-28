@@ -308,7 +308,7 @@ def _covered(
     except DeclarationInvalid as invalid:
         said = f"{found.description} | the head's own table is DeclarationInvalid: {invalid}"
         return Judgment('failure', said[:DESCRIPTION_LIMIT])
-    except (ValueError, OSError, subprocess.CalledProcessError):
+    except ValueError, OSError, subprocess.CalledProcessError:
         return found
     said = f"all covered by the head's new exemptions: {RELEASE_DOOR.format(pr=number)} | {found.description}"
     return Judgment('failure', said[:DESCRIPTION_LIMIT])

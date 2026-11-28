@@ -91,7 +91,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen"
+          "run": "uv sync --frozen --python 3.14 --managed-python"
         },
         {
           "name": "Install the normal measurement hooks",
@@ -136,7 +136,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen"
+          "run": "uv sync --frozen --python 3.14 --managed-python"
         },
         {
           "id": "pending",
@@ -185,12 +185,12 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen"
+          "run": "uv sync --frozen --python 3.14 --managed-python"
         },
         {
           "name": "Sync the part's extras",
           "shell": "bash",
-          "run": "uv sync --frozen $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part \"${{ matrix.part }}\")"
+          "run": "uv sync --frozen --python 3.14 --managed-python $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part \"${{ matrix.part }}\")"
         },
         {
           "name": "Produce and post the part",
@@ -243,7 +243,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen"
+          "run": "uv sync --frozen --python 3.14 --managed-python"
         },
         {
           "name": "Post every part no job settled",
@@ -279,7 +279,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen"
+          "run": "uv sync --frozen --python 3.14 --managed-python"
         },
         {
           "name": "tests/security",
@@ -315,7 +315,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen"
+          "run": "uv sync --frozen --python 3.14 --managed-python"
         },
         {
           "name": "head gates",
@@ -430,7 +430,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen"
+          "run": "uv sync --frozen --python 3.14 --managed-python"
         },
         {
           "id": "ready",
@@ -479,7 +479,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen"
+          "run": "uv sync --frozen --python 3.14 --managed-python"
         },
         {
           "id": "ready",
@@ -529,18 +529,11 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen"
+          "run": "uv sync --frozen --python 3.14 --managed-python"
         },
         {
           "name": "Promote main",
           "run": "uv run --no-sync python -m dev_lab.dev.integrate promote --newest \"$HEAD_SHA\""
-        },
-        {
-          "name": "Build the native wheels of the promoted main",
-          "run": "gh workflow run wheels.yml --repo \"$GITHUB_REPOSITORY\" --ref main",
-          "env": {
-            "GH_TOKEN": "${{ github.token }}"
-          }
         },
         {
           "name": "Delete the branches integration now contains",
@@ -551,8 +544,7 @@
       "permissions": {
         "contents": "write",
         "statuses": "write",
-        "pull-requests": "write",
-        "actions": "write"
+        "pull-requests": "write"
       }
     }
   }

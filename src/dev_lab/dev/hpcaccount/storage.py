@@ -21,7 +21,8 @@ grant's own login hosts (never an agent's own ssh -- HPC-THROUGH-THE-DOOR):
 
 A verification account needs this session's integrator role, exactly as every verb (HPC-ACCESS-BY-ROLE, through
 :func:`~dev_lab.dev.hpcaccount.division.reached_machine`). An account whose login hosts do not answer is refused in
-one line naming the door: the cluster is reached only from its site network (join it, or its VPN, and re-run).
+one line naming its door: the runner's own (over a VPN, :func:`lab_commons.hpc.reach.unreachable` names the VPN and
+the direct hosts).
 Exit 2 when any account was refused.
 """
 
@@ -38,16 +39,17 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Final
 
-from lab_commons.hpc.cluster import Runner, Unreachable
+from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 from lab_commons.hpc.layout import ROOT_VAR
 from lab_commons.log import emit
 
 from dev_lab.dev import accountsweep, quotawatch
 from dev_lab.dev.diskusage import MMLSQUOTA, parse_mmlsquota, parse_quota
+from dev_lab.dev.hpcaccount.cronline import MARK
 from dev_lab.dev.hpcaccount.division import division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout, repo_dir
-from dev_lab.dev.hpcaccount.spec import KIT, MARK
+from dev_lab.dev.hpcaccount.spec import KIT
 from dev_lab.dev.hpcaccount.transport import grant_runner, host_runner
 from dev_lab.dev.oldcopies import STRAYS_IN_HOME, STRAYS_IN_ROOT
 from dev_lab.dev.retentionrust import RULE_REGISTRY
@@ -58,7 +60,6 @@ __all__ = [
     'CENSUS_DEEP',
     'QUOTA',
     'SWEEP_SOURCE',
-    'UNREACHABLE',
     'census_rows',
     'retention_command',
     'retention_fleet',
@@ -89,10 +90,6 @@ QUOTA: Final = (
 USAGE: Final = (
     '( for tool in ' + ' '.join(MMLSQUOTA) + '; do command -v "$tool" >/dev/null 2>&1 && '
     '{ "$tool" 2>/dev/null; exit 0; }; done; quota -w 2>/dev/null; true )'
-)
-#: The remedy of a cluster whose login hosts do not answer: it is reached only from its own network.
-UNREACHABLE: Final = (
-    'no login host answered -- the cluster is reached only from its site network: join it (or its VPN), then re-run'
 )
 
 #: The level below the home's own entries.
@@ -289,8 +286,6 @@ def retention_fleet(
             )
         except subprocess.TimeoutExpired as slow:
             ok, lines = False, [f'{user}: refused -- {_too_slow(slow)}']
-        except Unreachable:
-            ok, lines = False, [f'{user}: refused -- {UNREACHABLE}']
         except (RuntimeError, OSError, ValueError, IndexError, tomllib.TOMLDecodeError) as failed:
             ok, lines = False, [f'{user}: refused -- {failed}']
         for line in lines:

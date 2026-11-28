@@ -192,10 +192,11 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 1. The plan names `hosts: [...]` and each grant its `host`, one of them -- a grant naming another host is refused;
    the digest covers both, so the user approves where each grant runs (`dev_lab.ops.consent.plan`). The old
    `{"host", "grants"}` shape is refused by name with its one-time migration, never upgraded on read.
-2. `sshhold open --plan` grants first (the issuer), then opens every host's session concurrently with the same code,
-   each started inside ONE TOTP step of it; a host that fails or misses the window is reported, never retried with
-   the code, and is re-opened alone with a new code (`dev_lab.dev.sshholdplan.open_planned`). Granting spends
-   nothing. A plan host already held is reused: the code goes to the issuer alone.
+2. `sshhold open --plan` opens every unheld host's session first, concurrently, then grants (the issuer) with the
+   same code (issue #1072: granting first spent the code before a login that then failed). A host that fails is
+   reported, never retried with the code, and the code is then never sent to the issuer: the same command with a
+   new code reuses the hosts that opened (`dev_lab.dev.sshholdplan.open_planned`). A plan host already held is
+   reused: with every host held the code goes to the issuer alone.
 3. `grant_plan` checks the session host is one of the plan's hosts; `planrun` runs each step on its grant's host,
    first asking every pending host to answer -- one that does not stops the run before any step, so no grant on
    another host is spent -- and resumes per plan digest; `recover` stays per plan digest.
@@ -230,7 +231,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 |---|---|---|---|
 | machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`ceiling`, `idle`: durations); the session bridge's interpreter is DERIVED from `[repos] dev-lab` (its `.venv` pointer, `devprofile.bridge_python`), never set | `lab_commons.config`, `lab_commons.home` |
 | family layer | `family.toml` in the host-configuration repo | `[[hpc.grant]]`, AI spend caps, the review month -- a machine file restating a key is refused | `lab_commons.config` `[family]` |
-| repo declarations | each `pyproject.toml` | `[tool.dev_lab.integrator]`, `.review`, `.protection`, `.ci`, `.wheels` | `dev_lab.dev.lanepolicy`, `forgeprotect`, `ciworkflows`, `nativewheels` (rendered by `nativewheeljobs`) |
+| repo declarations | each `pyproject.toml` | `[tool.dev_lab.integrator]`, `.review`, `.protection`, `.ci` | `dev_lab.dev.lanepolicy`, `forgeprotect`, `ciworkflows` |
 | host file | `/etc/dev-lab/supervise.toml`, reviewed as `hosts/<server>.toml` | `[ops.*]`, `[components.*]`, `[alerts]`, `[cycle]` | `dev_lab.ops.config`, `dev_lab.supervise.config` |
 
 - A host file changes only through `config apply` (`dev_lab.ops.configdoor`): routine keys (`configdoor.ROUTINE`)

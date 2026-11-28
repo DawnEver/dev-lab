@@ -84,7 +84,7 @@ def lines_for(
         cached = json.loads(file.read_text(encoding='utf-8'))
         if clock() - float(cached['at']) < CACHE_S:
             return list(cached['lines'])
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         pass  # no cache yet, or an unreadable one: ask the forge
     found: list[list[str]] = []
 
@@ -146,7 +146,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         stdin = '' if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
         if text := report(root, pushed(stdin.splitlines()), os.environ.get(ENV, '')):
             emit(text, err=True)
-    except (Exception, SystemExit):  # noqa: BLE001, S110 -- a notice must never fail a git verb
+    except Exception, SystemExit:  # noqa: BLE001, S110 -- a notice must never fail a git verb
         pass
     return 0
 

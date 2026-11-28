@@ -214,7 +214,7 @@ def _comments(text: str) -> dict[int, str]:
         for token in tokenize.generate_tokens(io.StringIO(text).readline):
             if token.type == tokenize.COMMENT:
                 found[token.start[0]] = token.string
-    except (tokenize.TokenError, IndentationError):
+    except tokenize.TokenError, IndentationError:
         pass
     return found
 

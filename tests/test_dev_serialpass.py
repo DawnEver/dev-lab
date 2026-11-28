@@ -7,6 +7,8 @@ removed: then no serial stage runs at all, so the split is the marker's doing an
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from typing import TYPE_CHECKING
 
 import pytest
@@ -170,6 +172,12 @@ def test_real_whitespace_skip_identity_keeps_the_exact_allowance_and_semantic_ce
         '[tool.pytest.ini_options]\nmarkers = ["femm: declared resource"]\n',
         encoding='utf-8',
     )
+    # An untargeted run also judges the checkout (`baselines verify` and the family checks read git's tracked
+    # files), so the sandbox is a checkout with its files committed.
+    git = shutil.which('git') or 'git'
+    commit = ('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'plant')
+    for args in (('init', '-q'), ('add', '-A'), commit):
+        subprocess.run([git, '-C', str(tmp_path), *args], check=True, capture_output=True)
     monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
     monkeypatch.setattr(verifysteps, 'LINT_STEPS', ())
     verdict = verifysteps.run_verify(tmp_path, hooks=False)

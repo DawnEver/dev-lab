@@ -7,7 +7,7 @@ tree unjudged. The write hook sees an AGENT's tool call and never the driver wri
 admit per writer; it refuses every agent Write/Edit there, whatever the suffix, naming the driver as the door.
 
 Split out of :mod:`dev_lab.dev.layout` (MODULE-SIZE-ALARM) along its own seam: that module judges a tree against the
-rows; this one owns the one refusal the scan's vendor exemption leaves to the write hook.
+rows; this one owns the refusals the scan's vendor and doc-site exemptions leave to the write hook.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from dev_lab.dev._layout_table import RULE_ID, declared_at
 from dev_lab.dev.codeplace import LAYOUT_FILE
 from dev_lab.dev.disclosure import details_for
 
-__all__ = ['refuse_vendor_job', 'vendor_refusal']
+__all__ = ['doc_site_refusal', 'refuse_vendor_job', 'vendor_refusal']
 
 
 def refuse_vendor_job(path: Path) -> str | None:
@@ -40,4 +40,13 @@ def vendor_refusal(root: Path, rel: str) -> str:
         f"of {root.name}/{LAYOUT_FILE}) is emitted by the program's driver at run time; an agent never "
         f"hand-writes a vendor job. Change the program's driver (or its template) and rerun the job.\n"
         f'{details_for(RULE_ID)}'
+    )
+
+
+def doc_site_refusal(root: Path, rel: str) -> str:
+    """Why an agent never writes *rel* (inside a site named in ``doc_sites`` of the checkout *root*), and the door."""
+    return (
+        f'{RULE_ID}: {rel} -- a doc site (output/docs/<site>/, named in doc_sites of {root.name}/{LAYOUT_FILE}) is '
+        f'written by its builder (pdoc, cargo doc); an agent never hand-writes one. Change the docstrings or the '
+        f'builder and rebuild the site.\n{details_for(RULE_ID)}'
     )

@@ -69,8 +69,8 @@ BUDGETS: Final[dict[str, Budget]] = {
         max_lines=1,
         max_line_chars=285,
         reason='a refusal names, per need, the exact unified door command with its flags (user ruling 2026-11-10); '
-        'RECURSIVE-DELETE names five doors and measured 285 (2026-11-21: scratch clear now names its <NAME>, '
-        'as refusals.md and its test do) -- cut below that, a door loses its flag',
+        'MAIN-ONLY-DOOR measured 285 (2026-11-27); RECURSIVE-DELETE names five doors and never-a-worktree/ask-the-user '
+        'in 269, venvprune and the egg-info permission in its doc -- cut below that, a door loses its flag',
     ),
 }
 
@@ -110,7 +110,7 @@ def problems(text: str, surface: str) -> list[str]:
     """Every way *text* breaks the budget declared for *surface*; empty when it fits."""
     budget = BUDGETS[surface]
     lines = text.rstrip('\n').split('\n')
-    found = []
+    found: list[str] = []
     if len(lines) > budget.max_lines:
         found.append(f'{len(lines)} lines > {budget.max_lines}')
     found.extend(
@@ -135,7 +135,7 @@ def unreasoned_relaxations(budgets: dict[str, Budget]) -> list[str]:
 
 def anchors(markdown: str) -> set[str]:
     """The heading anchors of *markdown*, slugged as the docs site and the forge both slug them."""
-    slugs = set()
+    slugs: set[str] = set()
     for line in markdown.splitlines():
         heading = re.match(r'^#{1,6}\s+(.*?)\s*$', line)
         if heading:
@@ -144,13 +144,18 @@ def anchors(markdown: str) -> set[str]:
     return slugs
 
 
+def _resolves(target: tuple[str, str] | None, root: Path) -> bool:
+    """Whether *target*'s page is a file under *root* holding its anchor."""
+    if target is None:
+        return False
+    page = root / target[0]
+    return page.is_file() and target[1] in anchors(page.read_text(encoding='utf-8'))
+
+
 def unresolved_pointers(texts: dict[str, str], root: Path) -> list[str]:
     """The keys of *texts* whose ``details:`` pointer names no file or no anchor under *root*."""
-    bad = []
+    bad: list[str] = []
     for key, text in texts.items():
-        target = pointer(text)
-        page = root / target[0] if target else None
-        readable = page is not None and page.is_file()
-        if not readable or target[1] not in anchors(page.read_text(encoding='utf-8')):
+        if not _resolves(pointer(text), root):
             bad.append(key)
     return bad

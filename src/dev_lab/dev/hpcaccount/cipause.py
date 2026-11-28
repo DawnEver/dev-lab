@@ -13,7 +13,7 @@ removes ONLY this tool's marked crontab lines (:func:`~dev_lab.dev.hpcaccount.st
 line kept. Running jobs are never touched: this module runs no Slurm command at all.
 
 ``ci-resume [--config <machine file>] [--dry-run]``: refuse without the marker; rewrite the lines the deploy writes
-from the account's declaration (:func:`~dev_lab.dev.hpcaccount.spec.cron_lines`, never a stale saved text), verify
+from the account's declaration (:func:`~dev_lab.dev.hpcaccount.cronline.cron_lines`, never a stale saved text), verify
 ``crontab -l`` holds each, and delete the marker.
 
 ``--credential <id> --cluster <name>`` (either verb): redeem a granted :data:`~dev_lab.dev.hpcaccount.cicron.ACTION`
@@ -34,9 +34,10 @@ from lab_commons.log import emit
 from dev_lab.dev import harness
 from dev_lab.dev.hpcaccount import cicron, deploy
 from dev_lab.dev.hpcaccount.cimark import RESUME_DOOR, marker
+from dev_lab.dev.hpcaccount.cronline import MARK, cron_lines
 from dev_lab.dev.hpcaccount.drift import DISCARD, account_drift, unrenderable
 from dev_lab.dev.hpcaccount.grantslice import grant_setup, refused_with_door
-from dev_lab.dev.hpcaccount.spec import MARK, Deployment, cron_lines, load, ticked
+from dev_lab.dev.hpcaccount.spec import Deployment, load, role_serves
 from dev_lab.dev.hpcaccount.steps import Step, Tools, crontab
 
 __all__ = ['ci_pause', 'ci_resume', 'main_pause', 'main_resume']
@@ -72,7 +73,7 @@ def _serving(machine: Path) -> Deployment | str:
         return refused_with_door(refused)
     if spec is None:
         return f'no [deploy] in {machine}: deploy it with python -m dev_lab.dev.hpcaccount deploy-fleet'
-    if not ticked(spec):
+    if not role_serves(spec):
         return f'its [deploy] role {spec.role!r} does not serve: no CI cron by design, nothing to pause'
     return spec
 

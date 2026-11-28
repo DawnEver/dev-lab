@@ -15,7 +15,10 @@ that does not is a mechanism gap. A gap nobody records is met again next session
 * ``walls stop`` -- the ``Stop``/``SubagentStop`` hook: while this session's ledger holds a wall with no remedy
   that no ``walls close`` line answers, the stop is refused ONCE, naming the walls and the gap loop;
 * ``walls close --rule R --by <sha|issue|path>`` -- the gap is closed (a row, a remedy, a test committed) or
-  recorded (an issue, a memory task); the line names which.
+  recorded (an issue, a memory task); the line names which;
+* :func:`standby` -- the forge door's record of a standby this session posted (:mod:`dev_lab.dev.standby`): while
+  the latest is newer than the checkout's last commit, the session is at rest and ``walls stop`` neither blocks nor
+  nags (STANDBY-IS-RESTING, v1 ruling D218).
 
 A line never holds the command: only a sha256 prefix of it (:data:`DIGEST_CHARS`), because a refused command is
 exactly the one that may carry a token. It keeps the refusal's CAUSE line instead (:func:`cause_line`: the first line
@@ -31,11 +34,14 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final, TextIO
 
+from lab_commons import launch
 from lab_commons.log import emit
 
 from dev_lab.dev import metrics
@@ -63,7 +69,9 @@ __all__ = [
     'record',
     'refused',
     'refused_text',
+    'resting',
     'rule_of',
+    'standby',
 ]
 
 RULE: Final = 'WALLS-ARE-RECORDED'
@@ -98,6 +106,8 @@ _TARGET_HEADER: Final = re.compile(r'^\[targets .*\]$')
 _HOOK_RULE_LINE: Final = re.compile(r'(?m)^\s*(?:REFUSED:\s*)?([A-Z][A-Z0-9]+(?:-[A-Z0-9]+)+):')
 #: The longest cause line kept; a refusal's cause is one sentence, a longer line is output.
 CAUSE_CHARS: Final = 240
+#: The most the stop hook waits on git for the last commit's time (HOOK-UNDER-FIVE-SECONDS).
+_GIT_TIMEOUT_S: Final = 3.0
 #: Masked in a cause line: address-shaped and token-shaped runs (crude by design: a precise redactor misses).
 _ADDRESS: Final = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
 #: A token carries a digit and a lower-case letter; an upper-case RULE-ID of any length is never one.
@@ -248,6 +258,32 @@ def close(root: Path, *, rule: str, by: str, session: str | None = None) -> Path
     return _append(root, {'ts': _now(), 'session': _session(session), 'rule': rule, 'closed_by': by.strip()})
 
 
+def standby(root: Path, *, issue: str, session: str | None = None) -> Path:
+    """Record that *session* posted a standby on *issue* (its URL) now; the ledger file."""
+    return _append(root, {'ts': _now(), 'session': _session(session), 'standby': issue})
+
+
+def _last_commit(cwd: Path) -> datetime | None:
+    """The committer time of *cwd*'s HEAD, or ``None`` when no commit is readable."""
+    try:
+        done = launch.run(
+            [shutil.which('git') or 'git', '-C', str(cwd), 'log', '-1', '--format=%cI'],
+            capture_output=True, text=True, encoding='utf-8', check=False, timeout=_GIT_TIMEOUT_S,
+        )  # fmt: skip
+        return datetime.fromisoformat(done.stdout.strip()) if done.returncode == 0 and done.stdout.strip() else None
+    except OSError, subprocess.TimeoutExpired, ValueError:
+        return None
+
+
+def resting(root: Path, session: str) -> bool:
+    """Whether *session*'s latest posted standby is newer than the last commit at *root* (STANDBY-IS-RESTING)."""
+    posted = [str(line['ts']) for line in _read(root, session) if line.get('session') == session and 'standby' in line]
+    if not posted:
+        return False
+    commit = _last_commit(root)
+    return commit is None or datetime.fromisoformat(max(posted)) > commit
+
+
 def _dirs(path: Path) -> list[Path]:
     try:
         return sorted(Path(entry.path) for entry in os.scandir(path) if entry.is_dir())
@@ -319,9 +355,17 @@ def _is_refusal(text: str) -> bool:
     return _leads_with_rule(text) or any(pattern.search(text) for pattern in (_HOOK_ERROR, _HARNESS, _DOOR))
 
 
+def _family_lines(text: str) -> str:
+    """*text* with a family refusal's lines restored, its ``details:`` pointer at a line start.
+
+    A harness that escapes newlines or runs the pointer into the line before it (a Write-tool denial, #997) hid it.
+    """
+    return re.sub(r'[ \t]+(?=' + re.escape(DETAILS_PREFIX) + r')', '\n', text.replace('\\n', '\n'))
+
+
 def _post_tool(payload: dict) -> None:
-    text = _error_text(payload)
-    if not _is_refusal(text) or any(line.startswith(DETAILS_PREFIX) for line in text.splitlines()):
+    text = _family_lines(_error_text(payload))
+    if not _is_refusal(text) or any(line.lstrip().startswith(DETAILS_PREFIX) for line in text.splitlines()):
         return
     command = (payload.get('tool_input') or {}).get('command') or ''
     record(
@@ -338,7 +382,10 @@ def _stop(payload: dict) -> dict[str, str] | None:
     if payload.get('stop_hook_active'):
         return None
     session = str(payload.get('session_id') or '')
-    found = open_walls(Path(payload.get('cwd') or Path.cwd()), session)
+    root = Path(payload.get('cwd') or Path.cwd())
+    if resting(root, session):
+        return None  # STANDBY-IS-RESTING: a posted standby newer than the last commit is a resting state
+    found = open_walls(root, session)
     if not found:
         return None
     return {

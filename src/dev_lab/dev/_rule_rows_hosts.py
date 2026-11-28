@@ -7,6 +7,20 @@ from __future__ import annotations
 
 ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
+        'ONE-LOGIN-POLLER',
+        (
+            # Why: user ruling 2026-11-27 (Gitea collaboration architecture v2) -- an HPC login node is shared, and
+            # one tick per repo per account, each building venvs there, was the load the cluster refused.
+            'An HPC login node runs exactly ONE cron poller per account and nothing else unapproved. Its one tick '
+            'does only git fetch, the forge, claims, sbatch/squeue/sacct/scancel, reading what jobs wrote and '
+            'deciding merges; every build (venv, native, needs probes) runs in a Slurm prep job. `deploy`, '
+            '`ci-resume` and `look crontab` refuse a crontab holding more than one marked line or any unmarked family '
+            'line, naming each. The door: `hpcaccount deploy` writes the one line; an unmarked family line is '
+            "deleted by the account's holder."
+        ),
+        ('tests/test_hpc_one_login_poller.py',),
+    ),
+    (
         'SCHEDULER-ONLY-FOR-SERVING',
         (
             # Why: user, 2026-11-20 -- "why would a research host need cron?"; a crontab call on a research deploy
@@ -40,5 +54,18 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             '`endpoint` -- is refused by `configcheck` (`machineroutes`), naming both machines.'
         ),
         ('tests/test_dev_machineroutes.py',),
+    ),
+    (
+        'GITHUB-TESTS-ON-ACTIONS',
+        (
+            # Why: user ruling 2026-11-27, repeated many times before it became a mechanism -- "A GitHub repo is
+            # ALWAYS tested only by GitHub Actions".
+            'A repo hosted on github.com is tested by GitHub Actions alone: no host -- HPC account, ops host or '
+            'workstation -- produces a test part of it. `configcheck` refuses a family `tests` binding off "ci" '
+            'for one and an account`s `[deploy] repos` row that would serve one (`githubtests`); `rolecheck` '
+            'refuses such a repo whose tests are off "ci" or whose required part GitHub Actions does not post. '
+            'The door: its parts come from GitHub Actions -- declare them in [tool.dev_lab.parts] hosted.'
+        ),
+        ('tests/test_dev_githubtests.py', 'tests/test_dev_roles.py'),
     ),
 )

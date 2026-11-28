@@ -5,14 +5,18 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import metrics, walls
+from dev_lab.dev import metrics, standby, walls
 from dev_lab.dev.datedlog import date_parts
 
 SESSION = 'session-a'
+GIT = shutil.which('git') or 'git'
 REMEDIED = (
     'GIT-STASH: refused; a stash hides work from every scan.\nCommit on a lane instead.\n'
     'details: docs-src/dev/refusals.md#git-stash'
@@ -155,6 +159,25 @@ def test_a_family_refusal_or_an_ordinary_failure_is_not_recorded_twice(tmp_path:
     assert not walls.ledger(tmp_path).exists()
 
 
+@pytest.mark.parametrize(
+    'error',
+    [
+        REMEDIED.replace('\n', '\\n'),  # the harness escaped the newlines
+        REMEDIED.replace('\ndetails: ', ' details: '),  # the harness ran the pointer into the door line
+        'Error: ' + REMEDIED,  # the harness prefixed the cause
+    ],
+)
+def test_a_family_refusal_through_a_write_tool_denial_is_never_door_less(tmp_path: Path, error: str) -> None:
+    """#997: a family refusal surfaced by a non-Bash tool, however the harness wraps it, records no door-less wall."""
+    payload = {'session_id': SESSION, 'cwd': str(tmp_path), 'tool_name': 'Write', 'tool_input': {}, 'error': error}
+    assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(payload))) == 0
+    assert not walls.ledger(tmp_path).exists() or all(one['remedy_present'] for one in _lines(tmp_path))
+    # Planted control: the same denial WITHOUT the family pointer is a door-less wall.
+    bare = {**payload, 'error': 'PreToolUse:Write hook error: OTHER-RULE: blocked'}
+    assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(bare))) == 0
+    assert [one['remedy_present'] for one in _lines(tmp_path)] == [False]
+
+
 def test_a_named_rule_in_a_foreign_denial_is_kept(tmp_path: Path) -> None:
     payload = {
         'session_id': SESSION,
@@ -248,3 +271,46 @@ def test_a_foreign_denial_keeps_its_cause_line(tmp_path: Path) -> None:
 def test_a_hook_rows_wall_is_the_rule_its_refusal_names(output: str, declared: str, rule: str) -> None:
     """#870: a row id (`milestone-base`) is a table key; the rule its refusal line names is what a reader looks up."""
     assert walls.hook_rule('milestone-base', output, declared) == rule
+
+
+def _committed(root: Path, when: str) -> None:
+    env = {**os.environ, 'GIT_COMMITTER_DATE': when, 'GIT_AUTHOR_DATE': when}
+    for argv in (
+        ['init', '-q'],
+        ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'c'],
+    ):
+        subprocess.run([GIT, '-C', str(root), *argv], check=True, env=env, capture_output=True, timeout=60)
+
+
+@pytest.mark.parametrize(
+    ('body', 'expected'),
+    [
+        ('standby: queue empty -- waiting on the integrator', True),
+        ('[g · claude · lane]\n\n  standby: blocked on #42', True),
+        ('the lane is on standby: no', False),
+        ('Standby: capitalized is not the marker', False),
+    ],
+)
+def test_a_standby_is_a_line_that_starts_with_the_one_family_marker(body: str, *, expected: bool) -> None:
+    assert standby.MARKER == 'standby:'
+    assert standby.posted(body) is expected
+
+
+def test_a_fresh_standby_is_a_resting_state_the_stop_neither_blocks_nor_nags(tmp_path: Path) -> None:
+    """STANDBY-IS-RESTING, planted both ways: the same unmet stop blocks without the standby and rests with it."""
+    _committed(tmp_path, '2020-01-01T00:00:00+00:00')
+    walls.record(tmp_path, rule='SOME-DOOR', command='x', remedy=False, session=SESSION)
+    assert _stop(tmp_path) is not None
+    walls.standby(tmp_path, issue='https://f.example/o/r/issues/15', session='another-session')
+    assert _stop(tmp_path) is not None
+    walls.standby(tmp_path, issue='https://f.example/o/r/issues/15', session=SESSION)
+    assert walls.resting(tmp_path, SESSION)
+    assert _stop(tmp_path) is None
+
+
+def test_a_standby_older_than_the_last_commit_is_not_a_resting_state(tmp_path: Path) -> None:
+    walls.record(tmp_path, rule='SOME-DOOR', command='x', remedy=False, session=SESSION)
+    walls.standby(tmp_path, issue='https://f.example/o/r/issues/15', session=SESSION)
+    _committed(tmp_path, '2090-01-01T00:00:00+00:00')
+    assert not walls.resting(tmp_path, SESSION)
+    assert _stop(tmp_path) is not None

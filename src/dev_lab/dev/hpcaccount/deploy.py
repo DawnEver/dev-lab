@@ -6,7 +6,8 @@ a tracked file, since the forge, its repos and the login host are private to the
     [deploy]
     host = "<login host>"          # serving: the ONE node whose cron serves it; research: any grant login host
     root = "<absolute root>"       # the cluster's declared root: <root>/repos/<name> (lab_commons.hpc.layout)
-    python = "3.13"                # a uv-managed CPython: manylinux wheels run on an old glibc
+    python = "<x.y>"               # a uv-managed CPython (manylinux wheels run on an old glibc); default and
+                                   # the only one a family repo installs on: the family Python (pythontoolchain)
     slurm_account = "<account>"    # only when sacctmgr names several
     partitions = ["<partition>", ...]
     role = "verification"          # or "research": only a verification account serves (user ruling 2026-11-06)
@@ -20,8 +21,7 @@ a tracked file, since the forge, its repos and the login host are private to the
 
 The first run DECLARES it with ``--host <host> --repo <name>=<url>@<ref> ... --partition <p> ... --role <r>`` (written
 once; a later run with flags that disagree is refused, naming the file); every later run reads it.
-``dev-lab`` (the kit) is always among the repos: every tick RUNS it and its own line is the one writer of
-its checkout; whether this account also serves dev-lab's queue is that entry's ``serve``.
+``dev-lab`` (the kit) is always among the repos: every tick RUNS from it.
 
 STEPS, each one reporting, each one safe to repeat: refuse an undeclared ``role``; refuse off the declared host;
 check the account BEFORE anything changes (:mod:`dev_lab.dev.hpcaccount.account`: git's credential helper and
@@ -31,27 +31,26 @@ credential that may push or administer a forge-hosted repo, or is not the role's
 ``[[hpc.grant]]`` when it has none; prove the serve's git (``git merge-tree --write-tree``, git >= 2.38) on a toy
 repository -- IN the tick's environment (cron's PATH, then this account's grant ``setup``, which every cron line runs
 before its tick) -- or refuse naming that environment; state the quota and refuse what cannot fit
-(:mod:`dev_lab.dev.hpcaccount.headroom`); clone or update each checkout; install ``uv`` and
-every declared ``needs`` whose ``--version`` does not run in the tick's environment, or refuse naming it;
-make the login shell's PATH name the tick's user installs (one marked line in the files bash reads, written
-once, the file backed up first); build each ``.venv`` with the repo's own ``[tool.lab_commons.hpc] install``
-(and its ``native`` build) -- exactly what its committed lock pins, nothing installed over it -- skipped when
-the key of its inputs (the lock's hash among them) is unchanged; warn, naming the recipe, when a repo declares an rclone
-artifact store this account's remote cannot reach (:func:`lab_commons.hpc.rclone.probe`; parts with outputs
-are then not claimed here); build and install the family's pinned FEMM 5 where the machine file declares
-``[capabilities.femm]`` (:mod:`dev_lab.dev.hpcaccount.femm`; a refused install is reported, the deploy finishes and
-exits 2); replace this tool's marked crontab lines (one per served repo and the kit, every
-``[schedule] tick`` at a minute offset derived per account, each tick under its own lock and wall,
-:mod:`dev_lab.dev.hpcaccount.tickwall`)
-and touch no other line; run one tick of each and print it. ``--dry-run`` reads but changes nothing;
+(:mod:`dev_lab.dev.hpcaccount.headroom`); clone or update each checkout; make the login shell's PATH name the
+tick's user installs (one marked line in the files bash reads, written once, the file backed up first); for each
+repo whose environment is not stamped with the key of its inputs (the lock's hash among them), ask its Slurm PREP JOB
+(:mod:`dev_lab.dev.hpcaccount.prep`) -- NOTHING IS BUILT ON THE LOGIN NODE (ONE-LOGIN-POLLER, user ruling
+2026-11-27): the venv, the native build, the ``needs`` probes and uv's pin all run in that job; warn, naming the
+recipe, when a repo declares an rclone artifact store this account's remote cannot reach
+(:func:`lab_commons.hpc.rclone.probe`; parts with outputs are then not claimed here); where the machine file
+declares ``[capabilities.femm]`` and the family's pinned FEMM 5 is not installed, ask a Slurm job to build it
+(``hpcaccount femm-build``, :mod:`dev_lab.dev.hpcaccount.femm`); replace this tool's marked crontab lines with the
+account's ONE line (ONE-LOGIN-POLLER: one tick of every ticked repo, every ``[schedule] tick`` at a minute offset
+derived per account, under one lock and wall, :mod:`dev_lab.dev.hpcaccount.tickwall`) and touch no other line -- the
+cron runs the first tick. ``--dry-run`` reads but changes nothing;
 ``--remove`` deletes the marked lines only. A ``research`` account gets every step but the serve: its marked
 lines are removed (each printed) and none is written (:func:`dev_lab.dev.hpcaccount.spec.ticked`). No credential is
 ever printed.
 
 A REFUSAL BELONGS TO THE REPO THAT EARNED IT (incident 2026-10-13: one repo still declaring a retired
 ``[tool.lab_commons.<table>]`` stopped the whole deploy at ``[tools]``, so the host served none of three).
-From ``[checkouts]`` on, every per-repo step handles each repo on its own: a repo whose step fails, whose
-need cannot be installed, or whose declaration is refused (``REFUSALS`` of :mod:`lab_commons.hpc.declared`:
+From ``[checkouts]`` on, every per-repo step handles each repo on its own: a repo whose step fails, or whose
+declaration is refused (``REFUSALS`` of :mod:`lab_commons.hpc.declared`:
 ``RetiredTable``, ``OutdatedKit``, ``InvalidDeclaration``) is reported with its reason and skipped by every
 later step -- it gets no
 crontab line, and the line it had is removed, so a broken line never runs. The deploy finishes for the
@@ -63,6 +62,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import shutil
 import socket
 import sys
@@ -80,33 +80,24 @@ from lab_commons.hpc.rclone import declared_remote, probe
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev.hpcaccount import femm, headroom
+from dev_lab.dev import forgerunstate
+from dev_lab.dev.hpcaccount import femm, headroom, prep
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
-from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, follow_uv, merge_tree_refusal, runs, tool_plan
+from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, merge_tree_refusal
 from dev_lab.dev.hpcaccount.cimark import paused_refusal
+from dev_lab.dev.hpcaccount.cronline import cron_lines
 from dev_lab.dev.hpcaccount.declaration import parser, resolve, store
 from dev_lab.dev.hpcaccount.deployhost import host_refusal
 from dev_lab.dev.hpcaccount.division import account_role
 from dev_lab.dev.hpcaccount.grantslice import Unreadable, grant_setup, machine_table
-from dev_lab.dev.hpcaccount.spec import (
-    Deployment,
-    Repo,
-    checkout_of,
-    cron_lines,
-    tick_command,
-    tick_dirs,
-    tick_environment,
-    ticked,
-    uv_cache,
-)
-from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, login, prune_uv, update
-from dev_lab.dev.hpcaccount.tickwall import HELD
+from dev_lab.dev.hpcaccount.spec import KIT, Deployment, Repo, checkout_of, load, tick_dirs, tick_environment
+from dev_lab.dev.hpcaccount.steps import Step, Tools, crontab, declared, env_key, login, update
+from dev_lab.dev.venvpointer import shell_interpreter
 
-__all__ = ['deploy', 'main', 'slurm_dirs']
+__all__ = ['deploy', 'femm_in_job', 'main', 'slurm_dirs']
 
 
 _which = shutil.which
-_runs = runs
 
 
 def _proves(git: Sequence[str], scratch: Path) -> str:
@@ -194,55 +185,35 @@ def slurm_dirs() -> list[str] | str:
     return [str(Path(where).parent) for where in found.values() if where is not None]
 
 
-def _tools(
-    step: Step, spec: Deployment, home: Path, refused: Refused, *, slurm: Sequence[str], setup: Sequence[str]
-) -> int:
-    """``uv`` and each repo's ``needs``; a repo whose declaration, or a need of which, is refused is refused alone."""
-    emit("[tools] uv, rclone and every declared `needs`, by `<tool> --version` in the tick's environment")
-    needs: dict[str, tuple[str, ...]] = {}
-    for repo in _healthy(spec, refused):
-        try:
-            needs[repo.name] = () if step.dry else declared(checkout_of(spec, repo)).needs
-        except REFUSALS as why:
-            _refuse(refused, repo, str(why))
-    environment = tick_environment(home, spec.root, slurm, setup, spec.env)
-    wanted = [need for each in needs.values() for need in each]
-    if not step.dry and (lagging := follow_uv()):
-        emit(f'[tools] {lagging}', err=True)
-    installs, failed = tool_plan(wanted, found=lambda tool: _runs(step.tools.sh, environment, tool))
-    for tool, script in installs:
-        cache = {'UV_CACHE_DIR': str(uv_cache(spec.root))}  # `uv tool install`: the ONE cache, not the user default
-        if step.change(f'install {tool}: {script}', [*step.tools.sh, script], env=cache):
-            failed.append(tool)
-    remedy = (
-        f'does not run (`--version`) in the tick environment (`{environment}`) and is not installable here; '
-        'ask for it on the login node, or link it into ~/.local/bin, and re-run'
-    )
-    if 'uv' in failed:  # every tick needs it: no repo can be served
-        emit(f'deploy refused: uv {remedy}', err=True)
-        return 2
-    for repo in _healthy(spec, refused):
-        if lacking := [need for need in needs.get(repo.name, ()) if need in failed]:
-            _refuse(refused, repo, f'{", ".join(lacking)} {remedy}')
-    return 0
-
-
 #: Every deploy phase, in order. The SERVING phases exist only to tick a verification account's queue: the scheduler
-#: (cron) and what it alone needs -- the serve tick's git, a tick now. Rule ``SCHEDULER-ONLY-FOR-SERVING``.
+#: (cron) and what it alone needs -- the serve tick's git. Rule ``SCHEDULER-ONLY-FOR-SERVING``. No phase builds on the
+#: login node (ONE-LOGIN-POLLER): ``prep`` and ``femm`` only ask Slurm jobs for what is not built yet.
 PHASES: Final = (
-    'credentials', 'reader', 'grant', 'store', 'serve-git', 'headroom', 'checkouts', 'tools', 'login', 'venvs',
-    'artifacts', 'femm', 'cron', 'tick',
+    'credentials', 'reader', 'grant', 'store', 'runs', 'serve-git', 'headroom', 'checkouts', 'login', 'prep',
+    'artifacts', 'femm', 'cron',
 )  # fmt: skip
-SERVING_PHASES: Final = frozenset({'serve-git', 'cron', 'tick'})
+SERVING_PHASES: Final = frozenset({'serve-git', 'cron'})
 
 
 def phases_of(*, serves: bool) -> tuple[str, ...]:
     """The deploy phases of a role that *serves* (its ``[hpc.roles]`` ``serves``), in order.
 
-    A role that does not serve has none of :data:`SERVING_PHASES` -- no scheduler, no tick (user, 2026-11-20: a
-    research host needs no cron).
+    A role that does not serve has none of :data:`SERVING_PHASES` -- no scheduler (user, 2026-11-20: a research host
+    needs no cron).
     """
     return PHASES if serves else tuple(name for name in PHASES if name not in SERVING_PHASES)
+
+
+def runs(step: Step) -> int:
+    """The account's forge run files migrated once (FORMATS-MIGRATE-ONCE): a retired key renamed to its successor.
+
+    The deploy is the fleet's one door onto an account, so it runs :func:`dev_lab.dev.forgerunstate.migrate` there;
+    a dry run only names what it would rename. Each file is said; a clash is named and left for a person.
+    """
+    emit(f'[runs] the forge run files carry no retired key ({forgerunstate.directory()})')
+    for line in forgerunstate.migrate(apply=not step.dry):
+        emit(f'  {line}')
+    return 0
 
 
 def _cron(
@@ -255,8 +226,10 @@ def _cron(
     slurm: Sequence[str],
     setup: Sequence[str],
 ) -> int:
-    """One marked line per repo not refused; a refused repo's line is removed, so a broken line never runs."""
-    emit(f'[cron] one marked line per served repo ({spec.role} account: {"serves" if serves else "never serves"})')
+    """The one marked line, ticking every repo not refused: a refused repo is left out, so a broken one never runs."""
+    emit(
+        f'[cron] the one marked line, every served repo ({spec.role} account: {"serves" if serves else "never serves"})'
+    )
     if not step.dry:
         (home / '.cache').mkdir(parents=True, exist_ok=True)
     healthy = replace(spec, repos=tuple(_healthy(spec, refused)))
@@ -267,25 +240,29 @@ def _cron(
     return rc
 
 
-def _tick(
-    step: Step,
-    spec: Deployment,
-    home: Path,
-    repo: Repo,
-    *,
-    serves: bool,
-    slurm: Sequence[str] = (),
-    setup: Sequence[str] = (),
-) -> int:
-    if repo not in ticked(spec, serves=serves):
-        emit(f'  {repo.name}: not served by this {spec.role} account, not ticked')
+def _prep(step: Step, spec: Deployment, _home: Path, repo: Repo, submit: prep.Submit) -> int:
+    """Ask *repo*'s Slurm prep job when its environment is not built for its inputs; nothing is built here.
+
+    A repo declaring no install is refused (it could never be served); what the job door said is printed, never a
+    refusal of the deploy: the tick serves the repo once the job published its environment.
+    """
+    checkout = checkout_of(spec, repo)
+    if step.dry:
+        step.change(f'{repo.name}: its prep job, when its environment is not built for its inputs', [])
         return 0
-    command = tick_command(spec, home, repo, log=False, slurm=slurm, setup=setup)
-    rc = step.change(f'tick {repo.name}: {command}', [*step.tools.sh, command])
-    if not step.dry:
-        busy = ' (held: another tick of this host runs -- the line above names it)' if rc == HELD else ''
-        emit(f'  tick {repo.name} exited {rc}{busy}')
-    return 0  # a red tick is reported, never a reason to undo the deployment
+    builds = declared(checkout)
+    if not builds.install:
+        emit(f'  {repo.name} declares no [tool.lab_commons.hpc] install; refused', err=True)
+        return 2
+    key = env_key(step, spec, repo, builds)
+    if prep.prepared(checkout, key):
+        emit(f'  {repo.name}: its environment is current (key {key[:12]})')
+        return 0
+    said = submit(
+        checkout, key, python=spec.python, root=spec.root, script=prep.job_script(spec, repo), kit=prep.kit_of(spec)
+    )
+    emit(f'  {repo.name}: not built for key {key[:12]}: {said}')
+    return 0
 
 
 def _artifacts(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
@@ -298,24 +275,48 @@ def _artifacts(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
     return 0  # a warning, never a refusal: most parts declare no large outputs
 
 
-def _femm(step: Step, spec: Deployment, home: Path, path: Path, failed: list[str], *, slurm: Sequence[str]) -> int:
-    """FEMM 5 where the machine file at *path* declares it, built in the tick's environment, its grant setup too.
+def _femm(step: Step, spec: Deployment, path: Path, submit: prep.Submit) -> int:
+    """Where the machine file at *path* declares ``[capabilities.femm]`` and FEMM 5 is not installed, ask its job.
 
-    The grant setup is read here, not taken from ``serve-git``: an account that never serves has no such phase, and
-    its build needs the compiler that setup loads all the same. A refusal is recorded in *failed*, never stops the
-    deploy: the repos are served whatever FEMM's install did.
+    The build runs in a Slurm job (``hpcaccount femm-build``, :func:`femm_in_job`), never on the login node.
     """
     try:
         machine = machine_table(path) if path.is_file() else {}
-        setup = grant_setup(path, step.read([*step.tools.id, '-un']).stdout.strip()) if machine else ()
     except Unreadable as broken:
         emit(f'  femm: refused -- {broken}', err=True)
-        failed.append('femm')
         return 0
-    environment = tick_environment(home, spec.root, slurm, setup, spec.env)
-    if femm.install(step, machine, environment=environment, tools_root=machinehome.tools(), home=home):
-        failed.append('femm')
+    if 'femm' not in machine.get('capabilities', {}):
+        emit('  femm: not declared')
+        return 0
+    final = femm.install_dir(machinehome.tools())
+    if final.is_dir():
+        emit(f'  femm: {final} installed')
+        return 0
+    kit = checkout_of(spec, next(one for one in spec.repos if one.name == KIT))
+    if step.dry:
+        step.change(f'femm: its Slurm build job, into {final}', [])
+        return 0
+    script = f'cd {shlex.quote(str(kit))} && {shell_interpreter(".")} -m dev_lab.dev.hpcaccount femm-build'
+    emit(f'  femm: {submit(kit, f"femm-{final.name}", python=spec.python, root=spec.root, script=script)}')
     return 0
+
+
+def femm_in_job(home: Path, *, config: Path | None = None, tools: Tools | None = None) -> int:
+    """The FEMM job's body, ON A COMPUTE NODE: build and install FEMM 5 where the machine file declares it."""
+    path = config or config_path()
+    step = Step(tools or Tools(), dry=False)
+    try:
+        spec = load(path)
+        machine = machine_table(path) if path.is_file() else {}
+        setup = grant_setup(path, step.read([*step.tools.id, '-un']).stdout.strip()) if machine else ()
+    except (Unreadable, ValueError) as broken:
+        emit(f'femm-build: refused -- {broken}', err=True)
+        return 2
+    if spec is None:
+        emit(f'femm-build: refused -- {path} declares no [deploy]', err=True)
+        return 2
+    environment = tick_environment(home, spec.root, (), setup, spec.env)
+    return femm.install(step, machine, environment=environment, tools_root=machinehome.tools(), home=home)
 
 
 def _sound(url: str, subject: str, body: str) -> object:
@@ -324,15 +325,10 @@ def _sound(url: str, subject: str, body: str) -> object:
     return _door.run(argv, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
 
 
-def _report(spec: Deployment, refused: Refused, host: str, alarm: AlarmSink, failed: Sequence[str] = ()) -> int:
-    """0 when every repo is served and every declared install done; else name each refusal and return 2.
-
-    A refused repo alarms its owner; a refused capability install (*failed*) was named in its phase with its log.
-    """
-    if failed:
-        emit(f'deploy refused to install: {", ".join(failed)} (each named above with its log)', err=True)
+def _report(spec: Deployment, refused: Refused, host: str, alarm: AlarmSink) -> int:
+    """0 when every repo is deployed; else name each refusal, alarm its owner and return 2."""
     if not refused:
-        return 2 if failed else 0
+        return 0
     for repo in spec.repos:
         if why := refused.get(repo.name):
             alarm(repo.url, f'the deploy on {host} refused {repo.name}; it is not served there', why)
@@ -365,6 +361,7 @@ def deploy(
     api: ApiCheck | None = None,
     role: RoleCheck | None = None,
     alarm: AlarmSink = _sound,
+    submit: prep.Submit = prep.submit,
 ) -> int:
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy and refused repos)."""
     args = parser(__doc__.splitlines()[0]).parse_args(list(argv))
@@ -390,7 +387,6 @@ def deploy(
         emit(f'deploy refused: {slurm}', err=True)
         return 2
     refused: Refused = {}
-    failed: list[str] = []  # the capabilities whose install was refused: reported in their phase, exit 2 at the end
     setup: list[str] = []  # the grant's setup lines: every tick runs inside them
     artifacts = '[artifacts] the rclone remote, where a repo declares one'
     every: dict[str, Callable[[], int]] = {
@@ -398,31 +394,27 @@ def deploy(
         'reader': lambda: reader(spec, home, role or role_of, semantics=semantics),
         'grant': lambda: grant(step, path, args.grant_table),
         'store': lambda: store(step, spec, path),
+        'runs': lambda: runs(step),
         'serve-git': lambda: _serve_git(step, home, path, slurm, setup, root=spec.root, env=spec.env),
         'headroom': lambda: headroom.check(step, spec, home),
         'checkouts': lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),
-        'tools': lambda: _tools(step, spec, home, refused, slurm=slurm, setup=setup),
         'login': lambda: login(step, home, spec.root),
-        'venvs': lambda: (
-            _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused)
-            or prune_uv(step, spec)
-        ),
-        'artifacts': lambda: _each(step, spec, home, artifacts, _artifacts, refused=refused),
-        'femm': lambda: _femm(step, spec, home, path, failed, slurm=slurm),
-        'cron': lambda: _cron(step, spec, home, refused, serves=serves, slurm=slurm, setup=setup),
-        'tick': lambda: _each(
+        'prep': lambda: _each(
             step,
             spec,
             home,
-            '[tick] one now, per repo',
-            lambda *a: _tick(*a, serves=serves, slurm=slurm, setup=setup),
+            '[prep] each environment built for its inputs, else its Slurm prep job asked',
+            lambda *a: _prep(*a, submit=submit),
             refused=refused,
         ),
+        'artifacts': lambda: _each(step, spec, home, artifacts, _artifacts, refused=refused),
+        'femm': lambda: _femm(step, spec, path, submit),
+        'cron': lambda: _cron(step, spec, home, refused, serves=serves, slurm=slurm, setup=setup),
     }
     for name in phases_of(serves=serves):
         if rc := every[name]():
             return rc
-    return _report(spec, refused, short, alarm, failed)
+    return _report(spec, refused, short, alarm)
 
 
 def main(argv: Sequence[str]) -> int:

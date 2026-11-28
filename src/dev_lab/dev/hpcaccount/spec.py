@@ -1,4 +1,4 @@
-"""The cluster deployment's DATA: the ``[deploy]`` declaration, and the crontab lines derived from it.
+"""The cluster deployment's DATA: the ``[deploy]`` declaration and what derives from it.
 
 AN ACCOUNT HAS A ROLE (user ruling 2026-11-06), declared ONCE as ``[deploy] role`` in its own machine file -- the
 table its deploy, its tick, its host card and the workstation's ``deploy-fleet`` all read: ``"verification"`` (a
@@ -7,7 +7,8 @@ never a serve cron). Undeclared, nothing is ticked and the deploy refuses (:func
 DOES is the workstation's data (:mod:`dev_lab.dev.hpcaccount.division`, user ruling 2026-11-09), passed by
 ``deploy-fleet``; a hand-run deploy falls back to its shipped defaults.
 
-Pure: parse, render, derive. :mod:`dev_lab.dev.hpcaccount.deploy` runs the steps.
+Pure: parse, render, derive (the crontab lines: :mod:`dev_lab.dev.hpcaccount.cronline`).
+:mod:`dev_lab.dev.hpcaccount.deploy` runs the steps.
 """
 
 from __future__ import annotations
@@ -16,7 +17,6 @@ import argparse
 import re
 import shlex
 import sys
-import zlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +29,7 @@ from lab_commons.quantity import Renamed, refuse_renamed
 
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
 from dev_lab.dev.hpcaccount.grantslice import granted_root, machine_table
+from dev_lab.dev.pythontoolchain import VERSION
 from dev_lab.dev.roles import HPC, ROLES, Roles, Unbound, roles_at, roles_of_url
 from dev_lab.dev.venvpointer import shell_interpreter
 
@@ -38,21 +39,21 @@ __all__ = [
     'DEFAULT_TICK',
     'DEFAULT_TICK_WALL',
     'KIT',
-    'MARK',
     'RESEARCH',
+    'TICK_LOCK',
+    'TICK_LOG',
     'VERIFICATION',
     'Deployment',
     'Repo',
     'checkout_of',
-    'cron_lines',
     'host_serve_argv',
     'load',
-    'merge_crontab',
     'parse',
     'parse_repo',
     'paths_of',
     'render',
     'role_refusal',
+    'role_serves',
     'schedule_tick',
     'served',
     'serves_here',
@@ -64,10 +65,13 @@ __all__ = [
     'uv_cache',
 ]
 
-#: Every crontab line this tool owns ends with this comment plus the repo's name.
-MARK: Final = '# lab-commons-deploy:'
+#: The account's ONE tick lock and log (ONE-LOGIN-POLLER, user ruling 2026-11-27).
+TICK_LOCK: Final = 'tick.lock'
+TICK_LOG: Final = 'tick.log'
 
-DEFAULT_PYTHON: Final = '3.13'
+#: ``[deploy] python`` when undeclared: the family Python (user ruling 2026-11-27), whose ``requires-python`` every
+#: served repo declares -- a cluster venv on any other minor would not install them.
+DEFAULT_PYTHON: Final = VERSION
 
 #: ``[schedule] tick`` when undeclared, in seconds -- the same default the host card is judged stale against.
 DEFAULT_TICK: Final = 5 * 60
@@ -320,38 +324,30 @@ def parse_repo(text: str) -> Repo:
     return Repo(name, url, ref)
 
 
-def cron_lines(
-    spec: Deployment,
-    home: Path,
-    *,
-    serves: bool | None = None,
-    slurm: Sequence[str] = (),
-    setup: Sequence[str] = (),
-) -> list[str]:
-    """One marked line per served repo and the kit, every ``[schedule] tick``, each tick under its own lock.
-
-    The minute offset is derived from *home* (one per account), so accounts sharing a forge tick staggered
-    rather than in lockstep; an unserved repo other than the kit gets no line (:class:`Repo`).
-    """
-    step = spec.tick // 60
-    minute = f'{zlib.crc32(str(home).encode()) % step}-59/{step}'
-    return [
-        f'{minute} * * * * {tick_command(spec, home, repo, log=True, slurm=slurm, setup=setup)} {MARK}{repo.name}'
-        for repo in ticked(spec, serves=serves)
-    ]
-
-
 def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
-    """The repos this account TICKS: every declared one, each refreshed and served where a role is bound here.
+    """The repos this account TICKS: exactly those it serves (:func:`served`), never one hosted on github.com.
 
-    A tick serves a repo only where the family binds one of its roles to this account (:func:`serves_here`).
+    ONE-LOGIN-POLLER (user ruling 2026-11-27): an account keeps only the Gitea repos it serves, so its one poller
+    refreshes nothing it does not serve; a repo on github.com is tested by GitHub Actions alone
+    (GITHUB-TESTS-ON-ACTIONS) and is never ticked, whatever its binding says.
 
     Only an account whose role SERVES ticks -- *serves* as the workstation's role table says, else the shipped
     default for its role (:data:`dev_lab.dev.hpcaccount.division.DEFAULT_ROLES`); undeclared ticks nothing.
     """
-    if not (DEFAULT_ROLES.get(spec.role, {}).get('serves', False) if serves is None else serves):
+    if not (role_serves(spec) if serves is None else serves):
         return ()
-    return spec.repos
+    from dev_lab.dev.githubtests import on_github  # noqa: PLC0415 -- githubtests imports this module (accounthost)
+
+    here = served(spec)
+    return tuple(repo for repo in spec.repos if repo.name in here and not on_github(repo.url))
+
+
+def role_serves(spec: Deployment) -> bool:
+    """Whether *spec*'s role serves by the shipped default (:data:`~dev_lab.dev.hpcaccount.division.DEFAULT_ROLES`).
+
+    A role question only: a serving account whose served repos are not yet cloned still serves, and ticks nothing.
+    """
+    return bool(DEFAULT_ROLES.get(spec.role, {}).get('serves', False))
 
 
 def served(spec: Deployment) -> frozenset[str]:
@@ -404,37 +400,37 @@ def serves_here(spec: Deployment, repo: Repo) -> bool:
     return _bound_here(spec, roles_at(checkout))
 
 
-def merge_crontab(current: str, lines: Sequence[str]) -> str:
-    """*current* without any line this tool marked, plus *lines*; every other line kept in place."""
-    kept = [line for line in current.splitlines() if MARK not in line]
-    text = '\n'.join([*kept, *lines])
-    return text + '\n' if text else ''
-
-
 def tick_command(
-    spec: Deployment, home: Path, repo: Repo, *, log: bool, slurm: Sequence[str] = (), setup: Sequence[str] = ()
+    spec: Deployment,
+    home: Path,
+    repos: Sequence[Repo],
+    *,
+    log: bool,
+    slurm: Sequence[str] = (),
+    setup: Sequence[str] = (),
 ) -> str:
-    """The shell command of one tick of *repo*: :func:`tick_environment`, then the HOST's ``hpcaccount tick``.
+    """The shell command of ONE tick of *repos*: :func:`tick_environment`, then the HOST's ``hpcaccount tick``.
 
-    The tick takes its own lock, ``<serve>/<repo>.lock``, and runs within ``[schedule] tick_wall``
+    The tick takes the account's one lock, ``<serve>/tick.lock``, and runs within ``[schedule] tick_wall``
     (:mod:`dev_lab.dev.hpcaccount.tickwall`): the lock names its holder, which ``flock -n`` could not.
 
-    It runs from the kit (dev-lab) checkout's venv, never the repo's: the host refreshes the repo (and
-    itself), then serves it with its own kit (:func:`host_serve_argv`), so a stale repo venv blocks nothing.
-    With a grant *setup* the whole tick runs in ONE ``bash -lc`` (``module`` is a login-shell function), so
-    every tool it loads runs inside the environment that loaded it -- a module's binary does not run outside
-    it (Ada 2026-10-17: git 2.42 alone wants ``libiconv.so.2``).
+    It runs from the kit (dev-lab) checkout's venv, never a repo's: the host refreshes each repo, then serves it
+    with its own kit (:func:`host_serve_argv`), so a stale repo venv blocks nothing. With a grant *setup* the whole
+    tick runs in ONE ``bash -lc`` (``module`` is a login-shell function), so every tool it loads runs inside the
+    environment that loaded it -- a module's binary does not run outside it (Ada 2026-10-17: git 2.42 alone wants
+    ``libiconv.so.2``).
     """
     serve = Path(paths_of(spec, serves=True).root) / 'serve'
     lab = next(one for one in spec.repos if one.name == KIT)
+    names = ' '.join(shlex.quote(repo.name) for repo in repos)
     command = (
         f'{tick_environment(home, spec.root, slurm, setup, spec.env)}; '
         f'cd {shlex.quote(str(checkout_of(spec, lab)))} && '
-        f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)} '
-        f'--lock {shlex.quote(str(serve / f"{repo.name}.lock"))} --wall-minutes {spec.tick_wall // 60}'
+        f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {names} '
+        f'--lock {shlex.quote(str(serve / TICK_LOCK))} --wall-minutes {spec.tick_wall // 60}'
     )
     command = f'bash -lc {shlex.quote(command)}' if setup else command
-    return command + (f' >> {shlex.quote(str(serve / f"{repo.name}.log"))} 2>&1' if log else '')
+    return command + (f' >> {shlex.quote(str(serve / TICK_LOG))} 2>&1' if log else '')
 
 
 def tick_environment(

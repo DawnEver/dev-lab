@@ -9,7 +9,7 @@ import pytest
 
 from dev_lab.dev import forgeclaim
 from dev_lab.dev.forgeclaim import CLAIMED, MINE, STALE, Claim, Work, assess, claim, holder, publish
-from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, CommitStatus
 
 NOW = datetime(2026, 11, 12, 12, 0, tzinfo=UTC)
 LEASE = timedelta(hours=6)
@@ -102,7 +102,7 @@ def test_progress_too_long_for_a_description_is_cut_at_a_word_never_mid_word() -
     """Seen: ``lost 4649: forge run s`` -- the forge's 140 characters cut the progress inside a word."""
     words = 'running 1/1 done 0/1; 4649 ids lost over 3 rounds; ' + 'word ' * 20
     said = Claim('login2', 'alice', NOW, 'ada/alice', words.strip()).description()
-    assert len(said) <= forgeclaim.DESCRIPTION_LIMIT
+    assert len(said) <= DESCRIPTION_LIMIT
     assert said.split(' -- ', 1)[1] in words, 'every word kept is whole'
     assert words.startswith(said.split(' -- ', 1)[1] + ' ')
     assert Claim.parse(said) is not None

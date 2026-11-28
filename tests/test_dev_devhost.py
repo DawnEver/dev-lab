@@ -12,7 +12,7 @@ import pytest
 from _arch_corpus import module_names
 from _ops_fixtures import git
 
-from dev_lab.dev import devdeclared, devhost, devschema, devsource, opsserver, vendordetect, venvfollow
+from dev_lab.dev import devdeclared, devhost, devschema, devsource, opsserver, vendordetect, vendorhome, venvfollow
 from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -309,22 +309,22 @@ def test_a_resources_type_defect_is_refused(tmp_path: Path) -> None:
 def test_a_vendor_with_seats_and_no_home_is_named_with_the_detect_door(tmp_path: Path) -> None:
     clone = _clone(tmp_path, HOST.replace('home = "C:/Program Files/SolverX"\n', ''))
     live = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
-    assert devhost.drift(live) == [devschema.fill_remedy(['solverx'])]
+    assert devhost.drift(live) == [vendorhome.fill_remedy(['solverx'])]
     line = devhost.notice(live)
     assert line is not None
     assert line.startswith('HOST-CONFIG FIRST:')
-    assert devschema.DETECT_DOOR in line
+    assert vendorhome.DETECT_DOOR in line
 
 
 def _unfilled_machine(tmp_path: Path) -> dict:
-    clone = _clone(tmp_path, HOST.replace('"C:/Program Files/SolverX"', f'"{devschema.UNFILLED}"'))
+    clone = _clone(tmp_path, HOST.replace('"C:/Program Files/SolverX"', f'"{vendorhome.UNFILLED}"'))
     return tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
 
 
 def test_the_placeholder_passes_configcheck_and_is_named_by_render_and_drift(tmp_path: Path) -> None:
-    clone = _clone(tmp_path, HOST.replace('"C:/Program Files/SolverX"', f'"{devschema.UNFILLED}"'))
+    clone = _clone(tmp_path, HOST.replace('"C:/Program Files/SolverX"', f'"{vendorhome.UNFILLED}"'))
     assert check_host(clone / 'hosts/ws.toml', clone / 'family.toml') == []
-    assert devhost.drift(_unfilled_machine(tmp_path))[0] == devschema.fill_remedy(['solverx'])
+    assert devhost.drift(_unfilled_machine(tmp_path))[0] == vendorhome.fill_remedy(['solverx'])
 
 
 def test_the_session_start_verb_says_the_unfilled_home_and_a_render_says_nothing(
@@ -332,11 +332,11 @@ def test_the_session_start_verb_says_the_unfilled_home_and_a_render_says_nothing
 ) -> None:
     """The notice the Stop hook once blocked on is said at session start, as context, never a block."""
     unfilled, rendered = tmp_path / 'unfilled.toml', tmp_path / 'rendered.toml'
-    clone = _clone(tmp_path, HOST.replace('"C:/Program Files/SolverX"', f'"{devschema.UNFILLED}"'))
+    clone = _clone(tmp_path, HOST.replace('"C:/Program Files/SolverX"', f'"{vendorhome.UNFILLED}"'))
     unfilled.write_text(devhost.render(clone, 'ws', tomllib.loads(LOCAL)), encoding='utf-8')
     assert devhost.main(['--machine', str(unfilled), 'session-start']) == 0
     said = capsys.readouterr().out
-    assert devschema.DETECT_DOOR in said
+    assert vendorhome.DETECT_DOOR in said
     assert 'decision' not in said, 'a notice, never a block'
     rendered.write_text(devhost.render(_clone(tmp_path / 'b'), 'ws', tomllib.loads(LOCAL)), encoding='utf-8')
     assert devhost.main(['--machine', str(rendered), 'session-start']) == 0
@@ -354,11 +354,11 @@ def test_the_machine_notice_has_one_trigger_once_per_session() -> None:
 
 
 def test_a_path_needing_an_unfilled_home_refuses_with_the_remedy() -> None:
-    with pytest.raises(devschema.HomeUnfilled, match='detect'):
-        devschema.home_of({'vendors': {'solverx': {'seats': 1, 'home': devschema.UNFILLED}}}, 'solverx')
-    with pytest.raises(devschema.HomeUnfilled):
-        devschema.home_of({'vendors': {'solverx': {'seats': 1}}}, 'solverx')
-    assert devschema.home_of({'vendors': {'solverx': {'home': 'C:/x'}}}, 'solverx') == Path('C:/x')
+    with pytest.raises(vendorhome.HomeUnfilled, match='detect'):
+        vendorhome.home_of({'vendors': {'solverx': {'seats': 1, 'home': vendorhome.UNFILLED}}}, 'solverx')
+    with pytest.raises(vendorhome.HomeUnfilled):
+        vendorhome.home_of({'vendors': {'solverx': {'seats': 1}}}, 'solverx')
+    assert vendorhome.home_of({'vendors': {'solverx': {'home': 'C:/x'}}}, 'solverx') == Path('C:/x')
 
 
 def test_a_session_fair_box_is_sized_live_and_its_share_is_a_declared_enum(tmp_path: Path) -> None:
@@ -387,6 +387,47 @@ def test_a_host_declaring_no_hpc_renders_a_reach_of_none(tmp_path: Path) -> None
         devhost.render(_clone(tmp_path, HOST.replace('hpc = ["research"]\n', '')), 'ws', tomllib.loads(LOCAL))
     )
     assert rendered['hpc']['reach'] == []
+
+
+def _reach(by: str) -> str:
+    return HOST.replace('hpc = ["research"]\n', f'hpc = ["research"]\nhpc_reach = {{ c = "{by}" }}\n')
+
+
+def test_a_declared_hpc_reach_renders_with_the_direct_machines(tmp_path: Path) -> None:
+    """User ruling 2026-11-27: a vpn machine's render names the machines that reach the cluster directly."""
+    clone = _clone(tmp_path, _reach('vpn'))
+    _write(clone, 'hosts/near.toml', _reach('direct'))
+    _write(clone, 'hosts/far.toml', _reach('vpn'))
+    assert check_host(clone / 'hosts/ws.toml', clone / 'family.toml') == []
+    live = tomllib.loads(LOCAL)
+    rendered = tomllib.loads(devhost.render(clone, 'ws', live))
+    assert rendered['hpc']['cluster_reach'] == {'c': {'reach': 'vpn', 'direct': ['near']}}
+    assert tomllib.loads(devhost.render(clone, 'near', live))['hpc']['cluster_reach']['c']['reach'] == 'direct'
+
+
+def test_an_undeclared_hpc_reach_renders_none(tmp_path: Path) -> None:
+    """PLANTED CONTROL: undeclared renders nothing, so lab_commons.hpc.reach refuses the ssh by name."""
+    assert 'cluster_reach' not in tomllib.loads(devhost.render(_clone(tmp_path), 'ws', tomllib.loads(LOCAL)))['hpc']
+
+
+@pytest.mark.parametrize(
+    ('declared', 'defect'),
+    [
+        ('{ c = "campus" }', "hpc_reach.c = 'campus' must be one of ['direct', 'vpn']"),
+        ('{ nowhere = "direct" }', 'hpc_reach.nowhere names no family [hpc.clusters] cluster'),
+        ('"direct"', 'hpc_reach'),
+    ],
+)
+def test_configcheck_refuses_a_bad_hpc_reach_by_name(tmp_path: Path, declared: str, defect: str) -> None:
+    clone = _clone(tmp_path, HOST.replace('hpc = ["research"]\n', f'hpc = ["research"]\nhpc_reach = {declared}\n'))
+    found = check_host(clone / 'hosts/ws.toml', clone / 'family.toml')
+    assert any(defect in line for line in found), found
+
+
+def test_the_family_may_not_declare_an_hpc_reach(tmp_path: Path) -> None:
+    clone = _clone(tmp_path)
+    _write(clone, 'family.toml', FAMILY.replace('[dev]\n', '[dev]\nhpc_reach = { c = "direct" }\n', 1))
+    assert any('hpc_reach is one machine fact' in line for line in check_family(clone / 'family.toml'))
 
 
 DATED = """\

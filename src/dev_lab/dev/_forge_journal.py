@@ -172,7 +172,7 @@ class Journal:
         for path in self.directory.glob('*.json') if self.directory.is_dir() else ():
             try:
                 found.append(Write.from_json(json.loads(path.read_text(encoding='utf-8'))))
-            except (ValueError, KeyError, TypeError):
+            except ValueError, KeyError, TypeError:
                 continue
         return tuple(sorted(found, key=lambda write: (write.queued_at, write.key)))
 

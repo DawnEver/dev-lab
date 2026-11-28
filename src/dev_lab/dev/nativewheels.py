@@ -1,229 +1,262 @@
-"""``[tool.dev_lab.wheels]``: an OPT-IN workflow building a repo's native (maturin) wheels and sdist from its trunk.
+"""NATIVE WHEELS ARE OPT-IN (#981): one wheel per declared OS, built from ``main`` on GitHub, for EXTERNAL users.
 
-WHO IT IS FOR (user ruling, dev-lab #981): a family repo builds its Rust extension from source; an EXTERNAL user
-installs a prebuilt wheel, or builds the sdist with Rust. A repo that declares the table renders :data:`WORKFLOW`;
-one that does not renders nothing. Declared, read and refused here; :mod:`dev_lab.dev.nativewheeljobs` renders
-the jobs (and their trigger) and :mod:`dev_lab.dev.ciworkflows` places them.
+A repo with a native extension declares the systems in its ``pyproject.toml`` -- the single source::
 
-THE DECLARATION (:data:`SHAPE`): ``targets`` (each a key of :data:`TARGETS`: OS and machine, so the runner, the Rust
-target and the manylinux flag have one source), ``python`` (the interpreters each wheel is tested on, ``"3.X"``) and
-``abi3`` are required. ABI3 IS THE FAMILY'S WAY (user ruling D19): ``abi3 = "3.X"`` is the minimum Python the
-wheel's ``cp3X-abi3`` tag targets, so ONE wheel per target is built on that interpreter and tested on every
-``python``; the extension crate enables pyo3's matching ``abi3-py3X`` feature, and a build whose wheel is not
-``cp3X-abi3`` fails naming both. ``abi3 = false`` is the option for a crate that cannot be abi3: one wheel per
-(target, version). Never defaulted: the floor is a fact of the crate, so it is declared.
-``manylinux`` is the Linux wheel's platform policy (:data:`MANYLINUX`, whose images carry the newest interpreters).
-The import every test runs is ``[tool.maturin] module-name``, never typed twice.
+    [tool.dev_lab.native]
+    wheels = ["linux", "windows", "macos"]
 
-RELEASES (user ruling D34; GitHub Releases only, never PyPI: D19) are the optional ``release`` table: ``versioned =
-true`` publishes ``v<version>`` once per package version, ``rolling = "<tag>"`` a PRERELEASE recreated at every
-trunk build, so GitHub never shows it as the latest. The version is the one maturin writes into the sdist's
-``PKG-INFO``: the repo's single declared source (a Cargo workspace, or the pyproject) is read by maturin alone. A
-versioned release is never overwritten: a re-run on its own commit leaves it as it is, and a trunk build of an
-already released version from ANOTHER commit is refused naming both commits, unless ``existing = "keep"`` (one of
-:data:`EXISTING`) declares that such a build leaves the release as it is. Without ``release`` the wheels and the
-sdist are the run's artifacts only. Releases are published from the trunk (``[tool.dev_lab.integrator] trunk``)
-only.
+and :mod:`dev_lab.dev.ciworkflows` renders :data:`WORKFLOW` beside the base workflows. A repo without the
+declaration renders nothing. Family repos keep depending on each other by ``git+https://`` (built from source with
+the pinned toolchain); these wheels are for consumers outside the family.
+
+* Trigger: each push to ``main``, a version tag (``v*``), and ``workflow_dispatch``.
+* Build: per the repo's ``[build-system] build-backend`` -- ``maturin`` builds with ``PyO3/maturin-action`` (the
+  toolchain from the repo's ``rust-toolchain.toml``), any other backend with ``pypa/cibuildwheel``. One wheel per
+  OS across Python versions means pyo3 ``abi3``: a built wheel that is not ``abi3`` fails the job by name.
+* Smoke: each wheel installs into a clean venv of the family Python (:data:`dev_lab.dev.pythontoolchain.VERSION`,
+  the one interpreter its ``requires-python`` admits) and imports the extension (``[tool.maturin] module-name``, else
+  the project name as a module).
+* Publish: the wheels and the sdist go to the rolling prerelease :data:`ROLLING` (replaced on each push to
+  ``main``) and, on a tag, to that tag's release. PyPI stays out of scope until a repo asks.
+
+GitHub only: Gitea runners carry no macOS or Windows host, so a Gitea repo declaring wheels is refused by name.
+
+VENDORED WHEELS (FAM-16): a third-party package the family pins at a commit that only builds from source (a C
+extension: every consumer would need a compiler) is declared once, in the repo that builds family wheels::
+
+    [tool.dev_lab.native.vendor.triangle]
+    git = "https://github.com/drufat/triangle"
+    rev = "<40-hex commit>"
+
+and renders :data:`VENDOR_WORKFLOW`: ``pypa/cibuildwheel`` builds that commit (submodules included) for the family
+Python on every :data:`RUNNERS` system, runs the package's own cibuildwheel test, and publishes to the release
+:func:`vendor_release` names. That release is IMMUTABLE: an existing asset is never replaced, since a consumer's lock
+pins its hash. A consumer reads it as a uv flat index (``[[tool.uv.index]] format = "flat"``, url
+``https://github.com/<owner>/<repo>/releases/expanded_assets/<release>``) and pins the distribution's version.
 """
 
 from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import dataclass
 from typing import Any, Final, cast
 
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, Policy, policy_from
+from dev_lab.dev.pythontoolchain import VERSION
 
-__all__ = [
-    'EXISTING',
-    'MANYLINUX',
-    'SHAPE',
-    'TABLE',
-    'TARGETS',
-    'WORKFLOW',
-    'Target',
-    'Wheels',
-    'declared',
-]
+__all__ = ['ROLLING', 'RUNNERS', 'VENDOR_WORKFLOW', 'WORKFLOW', 'vendor_release', 'vendor_workflow', 'wheels_workflow']
 
-#: The ``[tool.dev_lab.<TABLE>]`` a repo opts in with.
-TABLE: Final = 'wheels'
-#: The workflow file the declaration renders.
+#: The workflow file a declaring repo renders.
 WORKFLOW: Final = 'wheels.yml'
-#: The Linux platform policy when none is declared: the maintained manylinux images carry the newest interpreters.
-MANYLINUX: Final = '2_28'
-#: What a trunk build does when its ``v<version>`` is released from another commit: fail naming both commits (the
-#: first, the default), or leave the release as it is.
-EXISTING: Final = ('refuse', 'keep')
+#: The rolling prerelease every push to ``main`` replaces.
+ROLLING: Final = 'main-latest'
+#: Each declarable system and the GitHub runner building its one wheel (manylinux x86_64, Windows x64, macOS arm64).
+RUNNERS: Final = {'linux': 'ubuntu-latest', 'windows': 'windows-latest', 'macos': 'macos-latest'}
+#: The workflow file a repo declaring ``[tool.dev_lab.native.vendor]`` renders.
+VENDOR_WORKFLOW: Final = 'vendor-wheels.yml'
+_CIBUILDWHEEL: Final = 'pypa/cibuildwheel@v3.2.1'
+_COMMIT: Final = re.compile(r'[0-9a-f]{40}')
+_UPLOAD: Final = """\
+gh release view "$RELEASE" >/dev/null 2>&1 || gh release create "$RELEASE" --target "$GITHUB_SHA" \\
+  --title "$RELEASE" --notes "Wheels of $DIST at $REV, built by GitHub Actions (FAM-16)."
+have=$(gh release view "$RELEASE" --json assets --jq '.assets[].name')
+for wheel in dist/*.whl; do
+  name=$(basename "$wheel")
+  if printf '%s\\n' "$have" | grep -qxF "$name"; then echo "kept $name: a published wheel is immutable"
+  else gh release upload "$RELEASE" "$wheel"; fi
+done
+"""
 
-
-@dataclass(frozen=True)
-class Target:
-    """One wheel platform: the hosted runner that builds and tests it, and maturin's Rust target."""
-
-    runner: str
-    rust: str
-
-    @property
-    def linux(self) -> bool:
-        """Whether maturin builds it in a manylinux container: there the interpreter is the image's, by version."""
-        return '-linux-' in self.rust
-
-
-#: Every target a repo may declare, by name. Each runs natively on its runner, so its wheel is tested where it built.
-TARGETS: Final = {
-    'linux-x86_64': Target('ubuntu-latest', 'x86_64-unknown-linux-gnu'),
-    'linux-aarch64': Target('ubuntu-24.04-arm', 'aarch64-unknown-linux-gnu'),
-    'windows-x86_64': Target('windows-latest', 'x86_64-pc-windows-msvc'),
-    'windows-arm64': Target('windows-11-arm', 'aarch64-pc-windows-msvc'),
-    'macos-arm64': Target('macos-latest', 'aarch64-apple-darwin'),
-    'macos-x86_64': Target('macos-15-intel', 'x86_64-apple-darwin'),
-    'macos-universal2': Target('macos-latest', 'universal2-apple-darwin'),
-}
-
-#: The one shape of the table, said in every refusal.
-SHAPE: Final = (
-    f'[tool.dev_lab.{TABLE}] targets = [<one or more of {sorted(TARGETS)}>], python = ["3.X", ...], '
-    'abi3 = "3.X" (the minimum Python of the cp3X-abi3 tag, at most the oldest python) or false (one wheel per '
-    f'version), optionally manylinux = "<policy, {MANYLINUX} when omitted>" and release = {{ rolling = "<the '
-    'prerelease tag recreated at every trunk build, not v<digit>...>", versioned = <true: v<version> published '
-    f'once per version>, existing = <with versioned, one of {list(EXISTING)}: what a trunk build of a version '
-    f'released from another commit does, "{EXISTING[0]}" when omitted> }} (rolling, versioned or both)'
+_ABI3_CHECK: Final = (
+    'for wheel in dist/*.whl; do case "$wheel" in *abi3*) ;; *) echo "::error::$wheel is not abi3 -- '
+    'one wheel per OS needs pyo3 abi3 at the requires-python floor ([tool.dev_lab.native], #981)"; exit 1;; '
+    'esac; done'
 )
 
-_KEYS: Final = frozenset({'targets', 'python', 'abi3', 'manylinux', 'release'})
-_RELEASE_KEYS: Final = frozenset({'rolling', 'versioned', 'existing'})
-_VERSION: Final = re.compile(r'3\.\d+')
-_TAG: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]*')
-#: The tags a versioned release owns: a rolling tag among them would be taken for a version.
-_VERSIONED_TAG: Final = re.compile(r'v\d.*')
-_POLICY: Final = re.compile(r'[A-Za-z0-9_]+')
-_MODULE: Final = re.compile(r'[A-Za-z_]\w*(\.[A-Za-z_]\w*)*')
 
-
-@dataclass(frozen=True)
-class Wheels:
-    """A repo's wheels declaration, checked: what :func:`workflow` renders."""
-
-    targets: tuple[str, ...]
-    python: tuple[str, ...]
-    module: str
-    trunk: str
-    #: The minimum Python of the ``cp3X-abi3`` tag; ``''``: one wheel per version.
-    abi3: str = ''
-    manylinux: str = MANYLINUX
-    #: The prerelease tag recreated at every trunk build; ``''``: none.
-    rolling: str = ''
-    #: Whether ``v<version>`` is published once per package version.
-    versioned: bool = False
-    #: With :attr:`versioned`, one of :data:`EXISTING`.
-    existing: str = EXISTING[0]
-
-
-def _minor(version: str) -> int:
-    """The minor of a ``3.X`` *version*: what orders two of them."""
-    return int(version.split('.')[1])
-
-
-def _strings(value: object) -> list[str]:
-    """*value* when it is a non-empty list of distinct strings, else ``[]``."""
-    if not isinstance(value, list):
-        return []
-    items = cast('list[object]', value)
-    strings = [one for one in items if isinstance(one, str)]
-    return strings if strings and len(strings) == len(items) == len(set(strings)) else []
-
-
-def _release_malformed(value: object) -> str:
-    """Why the ``release`` *value* is refused; ``''`` when it has its part of :data:`SHAPE`."""
-    if not isinstance(value, dict):
-        return 'release is not a table'
-    release = cast('dict[str, Any]', value)
-    rolling, versioned = release.get('rolling', ''), release.get('versioned', False)
-    named = isinstance(rolling, str) and bool(_TAG.fullmatch(rolling))
-    wrong = {
-        f'release has unknown key(s) {sorted(set(release) - _RELEASE_KEYS)}': not set(release) <= _RELEASE_KEYS,
-        'release.rolling is not a tag name (letters, digits, ., _, -)': 'rolling' in release and not named,
-        f'release.rolling = {rolling!r} is a v<digit> tag, which the versioned release owns': named
-        and bool(_VERSIONED_TAG.fullmatch(rolling)),
-        'release.versioned is not true or false': not isinstance(versioned, bool),
-        f'release.existing is not one of {list(EXISTING)}': release.get('existing', EXISTING[0]) not in EXISTING,
-        'release.existing is declared without versioned = true': 'existing' in release and versioned is not True,
-        'release declares neither rolling nor versioned = true': not rolling and versioned is not True,
-    }
-    return next((why for why, bad in wrong.items() if bad), '')
-
-
-def _malformed(table: dict[str, Any]) -> str:
-    """Why *table* is refused; ``''`` when it has :data:`SHAPE`."""
-    targets, python, abi3 = _strings(table.get('targets')), _strings(table.get('python')), table.get('abi3')
-    manylinux = table.get('manylinux', MANYLINUX)
-    wrong = {
-        f'unknown key(s) {sorted(set(table) - _KEYS)}': not set(table) <= _KEYS,
-        f'targets is not a non-empty list of distinct names from {sorted(TARGETS)}': (
-            not targets or not set(targets) <= set(TARGETS)
-        ),
-        'python is not a non-empty list of distinct "3.X" versions': (
-            not python or not all(_VERSION.fullmatch(one) for one in python)
-        ),
-        'abi3 is neither a "3.X" floor nor false': abi3 is not False
-        and not (isinstance(abi3, str) and _VERSION.fullmatch(abi3)),
-        'manylinux is not a policy name (letters, digits, _)': (
-            not isinstance(manylinux, str) or not _POLICY.fullmatch(manylinux)
-        ),
-    }
-    if why := next((why for why, bad in wrong.items() if bad), ''):
-        return why
-    if 'release' in table and (why := _release_malformed(table['release'])):
-        return why
-    if isinstance(abi3, str) and _minor(abi3) > min(map(_minor, python)):
-        return f'abi3 = "{abi3}" is above the oldest python, on which its abi3 wheel does not install'
-    return ''
-
-
-def declared(text: str, origin: str) -> Wheels | None:
-    """The ``[tool.dev_lab.wheels]`` pyproject *text* declares, checked; ``None`` when it declares none.
+def wheels_workflow(text: str, origin: str) -> dict[str, Any] | None:
+    """The wheels workflow pyproject *text* declares, or ``None`` with no ``[tool.dev_lab.native] wheels``. PURE.
 
     Raises:
-        ValueError: the table is malformed, or ``[tool.maturin]`` names no ``module-name`` to import; *origin* names
-            the text in the refusal.
+        TypeError: ``wheels`` is not a list.
+        ValueError: ``wheels`` is not a non-empty list of :data:`RUNNERS` keys; *origin* names the text.
 
     """
     data = tomllib.loads(text)
-    value: object = declared_table(data, TABLE)
-    if value is None:
+    systems = declared_table(data, 'native', {}).get('wheels')
+    if systems is None:
         return None
-    table = cast('dict[str, Any]', value) if isinstance(value, dict) else None
-    why = 'not a table' if table is None else _malformed(table)
-    if table is None or why:
-        msg = f'{origin}: [tool.dev_lab.{TABLE}] = {value!r}: {why}; write {SHAPE}'
+    if not isinstance(systems, list):
+        msg = f'{origin}: [tool.dev_lab.native] wheels must be a list of systems from {sorted(RUNNERS)}'
+        raise TypeError(msg)
+    systems = [str(name) for name in cast('list[object]', systems)]
+    if not systems:
+        msg = f'{origin}: [tool.dev_lab.native] wheels names no system -- name some of {sorted(RUNNERS)} or drop it'
         raise ValueError(msg)
-    module: object = data.get('tool', {}).get('maturin', {}).get('module-name')
-    if not isinstance(module, str) or not _MODULE.fullmatch(module):
-        msg = (
-            f'{origin}: [tool.dev_lab.{TABLE}] tests each wheel by importing its extension, and [tool.maturin] '
-            f'module-name = {module!r} names none: declare the dotted module maturin builds (e.g. "package._native")'
-        )
+    if unknown := [name for name in systems if name not in RUNNERS]:
+        msg = f'{origin}: [tool.dev_lab.native] wheels names {unknown}; the systems are {sorted(RUNNERS)}'
         raise ValueError(msg)
-    abi3: str | bool = table['abi3']
-    release = cast('dict[str, Any]', table.get('release', {}))
-    return Wheels(
-        targets=tuple(_strings(table['targets'])),
-        python=tuple(sorted(_strings(table['python']), key=_minor)),
-        module=module,
-        trunk=_trunk(text, origin),
-        abi3=abi3 if isinstance(abi3, str) else '',
-        manylinux=str(table.get('manylinux', MANYLINUX)),
-        rolling=str(release.get('rolling', '')),
-        versioned=release.get('versioned', False) is True,
-        existing=str(release.get('existing', EXISTING[0])),
+    maturin = data.get('build-system', {}).get('build-backend') == 'maturin'
+    module = data.get('tool', {}).get('maturin', {}).get('module-name') or data['project']['name'].replace('-', '_')
+    return {
+        'name': 'Wheels',
+        'on': {'push': {'branches': ['main'], 'tags': ['v*']}, 'workflow_dispatch': {}},
+        'permissions': {'contents': 'read'},
+        'jobs': {'build': _build(systems, module, maturin=maturin), 'publish': _publish()},
+    }
+
+
+def _build(systems: list[str], module: str, *, maturin: bool) -> dict[str, Any]:
+    """The matrix job: build one wheel on each system's runner, refuse a non-abi3 wheel, smoke-import it, upload."""
+    if maturin:
+        built = [
+            {
+                'uses': 'PyO3/maturin-action@v1',
+                'with': {'command': 'build', 'args': '--release --out dist', 'manylinux': 'auto'},
+            },
+            {
+                'if': "runner.os == 'Linux'",
+                'uses': 'PyO3/maturin-action@v1',
+                'with': {'command': 'sdist', 'args': '--out dist'},
+            },
+        ]
+    else:
+        built = [{'uses': 'pypa/cibuildwheel@v2.22', 'with': {'output-dir': 'dist'}}]
+    smoke = (
+        'python -m venv .smoke && py=.smoke/bin/python && { [ -x "$py" ] || py=.smoke/Scripts/python.exe; } && '
+        f'"$py" -m pip install dist/*.whl && "$py" -c "import {module}"'
     )
+    return {
+        'strategy': {'fail-fast': False, 'matrix': {'include': [{'os': RUNNERS[name]} for name in systems]}},
+        'runs-on': '${{ matrix.os }}',
+        'steps': [
+            {'uses': 'actions/checkout@v4'},
+            {'uses': 'actions/setup-python@v5', 'with': {'python-version': VERSION}},
+            *built,
+            {'name': 'Refuse a wheel that is not abi3', 'shell': 'bash', 'run': _ABI3_CHECK},
+            {'name': 'Smoke-import the wheel in a clean venv', 'shell': 'bash', 'run': smoke},
+            {
+                'uses': 'actions/upload-artifact@v4',
+                'with': {'name': 'wheels-${{ matrix.os }}', 'path': 'dist/*'},
+            },
+        ],
+    }
 
 
-def _trunk(text: str, origin: str) -> str:
-    """The trunk pyproject *text* declares; the family's when it declares no ``[tool.dev_lab.integrator]``."""
-    if not declared_table(tomllib.loads(text), 'integrator', {}):
-        return Policy(FAMILY_INTEGRATION).trunk
-    return policy_from(text, origin).trunk
+def _publish() -> dict[str, Any]:
+    """The release job: every artifact to :data:`ROLLING` on ``main``, to the tag's own release on a tag."""
+    rolling = (
+        f'gh release delete {ROLLING} --yes --cleanup-tag || true\n'
+        f'gh release create {ROLLING} dist/* --prerelease --target "$GITHUB_SHA" '
+        f'--title "{ROLLING}" --notes "Wheels built from main at $GITHUB_SHA."'
+    )
+    return {
+        'needs': 'build',
+        'runs-on': 'ubuntu-latest',
+        'permissions': {'contents': 'write'},
+        'env': {'GH_TOKEN': '${{ github.token }}', 'GH_REPO': '${{ github.repository }}'},
+        'steps': [
+            {'uses': 'actions/download-artifact@v4', 'with': {'path': 'dist', 'merge-multiple': True}},
+            {
+                'name': f'Replace the rolling {ROLLING} prerelease',
+                'if': "github.ref == 'refs/heads/main'",
+                'run': rolling,
+            },
+            {
+                'name': 'Publish the tag release',
+                'if': "startsWith(github.ref, 'refs/tags/')",
+                'run': 'gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "$GITHUB_REF_NAME"',
+            },
+        ],
+    }
+
+
+def vendor_release(dist: str, rev: str) -> str:
+    """The release holding the wheels of *dist* built at commit *rev*: one per pin, never rewritten. PURE."""
+    return f'vendor-{dist}-{rev[:12]}'
+
+
+def _vendored(text: str, origin: str) -> dict[str, tuple[str, str]]:
+    """Each ``[tool.dev_lab.native.vendor.<dist>]`` row as ``dist -> (git, rev)``; a malformed row is refused."""
+    rows = cast('dict[str, dict[str, object]]', declared_table(tomllib.loads(text), 'native', {}).get('vendor', {}))
+    out: dict[str, tuple[str, str]] = {}
+    for dist, row in rows.items():
+        where = f'{origin}: [tool.dev_lab.native.vendor.{dist}]'
+        git, rev = row.get('git'), row.get('rev')
+        if not isinstance(git, str) or not git.startswith('https://github.com/'):
+            msg = f'{where} names no git URL -- set git = "https://github.com/<owner>/<repo>"'
+            raise ValueError(msg)
+        if not isinstance(rev, str) or not _COMMIT.fullmatch(rev):
+            msg = f'{where} rev must be a full 40-hex commit (its release is immutable per pin), got {rev!r}'
+            raise ValueError(msg)
+        out[dist] = (git, rev)
+    return out
+
+
+def vendor_workflow(text: str, origin: str) -> dict[str, Any] | None:
+    """The vendored-wheels workflow pyproject *text* declares, or ``None`` with no vendor row. PURE.
+
+    Raises:
+        ValueError: a row lacks its GitHub ``git`` URL or a full 40-hex ``rev``; *origin* names the text.
+
+    """
+    vendored = sorted(_vendored(text, origin).items())
+    if not vendored:
+        return None
+    builds = [
+        {'dist': dist, 'repository': git.removeprefix('https://github.com/'), 'rev': rev, 'os': runner}
+        for dist, (git, rev) in vendored
+        for runner in RUNNERS.values()
+    ]
+    pins = [{'dist': dist, 'rev': rev, 'release': vendor_release(dist, rev)} for dist, (_, rev) in vendored]
+    checkout = {'repository': '${{ matrix.repository }}', 'ref': '${{ matrix.rev }}', 'submodules': 'recursive'}
+    build = {
+        'strategy': {'fail-fast': False, 'matrix': {'include': builds}},
+        'runs-on': '${{ matrix.os }}',
+        'steps': [
+            {'uses': 'actions/checkout@v4', 'with': {**checkout, 'path': 'src'}},
+            {'uses': 'actions/setup-python@v5', 'with': {'python-version': VERSION}},
+            {
+                'uses': _CIBUILDWHEEL,
+                'with': {'package-dir': 'src', 'output-dir': 'dist'},
+                # The test is an import of the built wheel: an upstream pyproject's own test-command may name a
+                # test tree its pinned commit lacks (Actions run 46093742941), so it is overridden, never inherited.
+                'env': {
+                    'CIBW_BUILD': f'cp{VERSION.replace(".", "")}-*',
+                    'CIBW_ARCHS': 'native',
+                    'CIBW_TEST_COMMAND': 'python -c "import ${{ matrix.dist }}"',
+                    'CIBW_TEST_REQUIRES': '',
+                },
+            },
+            {
+                'uses': 'actions/upload-artifact@v4',
+                'with': {'name': 'vendor-${{ matrix.dist }}-${{ matrix.os }}', 'path': 'dist/*.whl'},
+            },
+        ],
+    }
+    publish = {
+        'needs': 'build',
+        'runs-on': 'ubuntu-latest',
+        'strategy': {'matrix': {'include': pins}},
+        'permissions': {'contents': 'write'},
+        'env': {
+            'GH_TOKEN': '${{ github.token }}',
+            'GH_REPO': '${{ github.repository }}',
+            'DIST': '${{ matrix.dist }}',
+            'REV': '${{ matrix.rev }}',
+            'RELEASE': '${{ matrix.release }}',
+        },
+        'steps': [
+            {
+                'uses': 'actions/download-artifact@v4',
+                'with': {'path': 'dist', 'pattern': 'vendor-${{ matrix.dist }}-*', 'merge-multiple': True},
+            },
+            {'name': 'Publish each missing wheel to the pin release', 'shell': 'bash', 'run': _UPLOAD},
+        ],
+    }
+    return {
+        'name': 'Vendored wheels',
+        'on': {'push': {'branches': ['main'], 'paths': ['pyproject.toml']}, 'workflow_dispatch': {}},
+        'permissions': {'contents': 'read'},
+        'jobs': {'build': build, 'publish': publish},
+    }

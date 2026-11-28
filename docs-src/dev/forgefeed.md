@@ -26,7 +26,7 @@ A task hears what it subscribes to without anyone relaying it (`TASK-HEARS-ITS-F
   it); with none there the start is refused naming the bootstrap and `forgefeed start`. A `task:<slug>` label
   written while no hearer runs says so with that door. `python -m dev_lab.dev.forgefeed status [<slug>]` answers
   whether the hearer runs (pid, interpreter, last tick) and which open issues carry `task:<slug>`.
-- **A forge read is bounded.** `forge issue ...` and `forge pr view` end within 45 s, naming what each attempt
+- **A forge read is bounded.** `forge issue ...` and the forge's `pr view` read end within 45 s, naming what each attempt
   measured, instead of sitting through the retry loop's 96 s in silence.
 
 Detail: the module doc of `dev_lab.dev.forgefeed`; the PR record is `dev_lab.dev.sessionprs`; the task of a checkout

@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _venv_fake import uv_child
 
 from dev_lab.dev import _dep_project, commonsfloor, dep
 from dev_lab.dev._deny_rows import NETWORK_VERB_PATTERN
@@ -82,9 +83,9 @@ def test_the_named_heal_runs_from_a_foreign_kit_against_a_skewed_checkout(
     monkeypatch.setattr(dep, '_snapshot', lambda python: (str(Path(python or '').parent.parent), 'key'))
     calls: list[tuple[str, ...]] = []
 
-    def run(command, **_kwargs: object) -> SimpleNamespace:
+    def run(command, **kwargs: object) -> SimpleNamespace:
         calls.append(tuple(str(part) for part in command))
-        return SimpleNamespace(returncode=0, stdout='', stderr='')
+        return uv_child([str(part) for part in command], kwargs)
 
     assert dep.main(['--lock-upgrade', str(root), '--upgrade-package', 'lab-commons'], cwd=tmp_path, run=run) == 0
     (lock,) = [call for call in calls if call[1:2] == ('lock',)]

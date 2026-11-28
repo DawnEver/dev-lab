@@ -116,7 +116,7 @@ def _origin(path: Path) -> str | None:
     if not path.is_dir():
         return None
     answer = _door.run(['git', '-C', str(path), 'remote', 'get-url', 'origin'],
-                       capture_output=True, text=True, check=False, timeout=30)  # fmt: skip
+                       capture_output=True, text=True, encoding='utf-8', check=False, timeout=30)  # fmt: skip
     return answer.stdout.strip() or None if answer.returncode == 0 else None
 
 
@@ -197,7 +197,7 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
     try:
         read = _live(None) if live is None else live
         lines = listing(read) + stale_origins(read)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     return '\n'.join(lines) or None
 

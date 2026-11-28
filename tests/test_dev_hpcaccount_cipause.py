@@ -20,9 +20,11 @@ from lab_commons.hpc.grants import declared_grants
 from dev_lab.dev import devhost, forgeslurm
 from dev_lab.dev.devdeclared import layered
 from dev_lab.dev.hpcaccount import account, cimark, cipause, deploy, drift, tick
-from dev_lab.dev.hpcaccount.fleet import account_host, grant_slice
-from dev_lab.dev.hpcaccount.grantslice import REDEPLOY_DOOR, grant_setup, render_grant, without_hpc
-from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, load
+from dev_lab.dev.hpcaccount import spec as spec_module
+from dev_lab.dev.hpcaccount.cronline import MARK, TICK_LINE, cron_lines
+from dev_lab.dev.hpcaccount.fleet import account_host
+from dev_lab.dev.hpcaccount.grantslice import REDEPLOY_DOOR, grant_setup, grant_slice, render_grant, without_hpc
+from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.hpcaccount.steps import Step
 from dev_lab.dev.roles import machine_layer
 
@@ -32,6 +34,12 @@ MINE: Final = '0 1 * * * echo mine\n'
 @pytest.fixture(autouse=True)
 def _slurm(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(deploy, 'slurm_dirs', lambda: ['/opt/slurm/bin'])
+
+
+@pytest.fixture(autouse=True)
+def _serves_every_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every declared repo is served here: its one cron line ticks them all (ticked follows served)."""
+    monkeypatch.setattr(spec_module, 'served', lambda spec: frozenset(repo.name for repo in spec.repos))
 
 
 def _account(tmp_path: Path, mine: str = '', extra: str = '', family: str = FAMILY) -> tuple[Path, Path, list[str]]:
@@ -101,7 +109,7 @@ def test_resume_restores_exactly_the_declared_lines_and_clears_the_marker(tmp_pa
     lines = _cron(tmp_path).splitlines()
     assert lines[0] == MINE.strip()
     assert len(lines) == 2
-    assert lines[1].endswith(f'{MARK}dev-lab')
+    assert lines[1].endswith(f'{MARK}{TICK_LINE}')
     assert not cimark.marker((home.parent / 'root').as_posix()).exists()
 
 
@@ -205,8 +213,7 @@ def test_the_deployed_machine_file_alone_names_its_root_to_every_verb_on_the_acc
 def _ticked(tmp_path: Path, machine: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[int, list[Path]]:
     """One tick of ``dev-lab`` on the account of *machine*, its refresh done; the exit and where it served."""
     monkeypatch.setenv(CONFIG_ENV, str(machine))
-    monkeypatch.setattr(tick, '_refresh', lambda *_a: ('', []))
-    monkeypatch.setattr(tick, 'follow_uv', lambda _name: '')
+    monkeypatch.setattr(tick, '_refresh', lambda *_a: '')
     served: list[Path] = []
 
     def run(_argv: list[str], *, cwd: Path, **_kw: object) -> SimpleNamespace:
@@ -228,7 +235,12 @@ def test_the_grant_stays_in_the_family_file_and_the_tick_serves_through_it(
     """
     mine, other = (tmp_path / 'mine-root').as_posix(), (tmp_path / 'other-root').as_posix()
     machine = _deployed(tmp_path / 'a', mine, other)
-    assert tomllib.loads(machine.read_text(encoding='utf-8'))['hpc'] == {'reach': ['verification']}, 'no leaf written'
+    # No family leaf is written; the machine's own derived reach (an account reaches its cluster direct) is.
+    reach = {'c1': {'reach': 'direct', 'direct': []}}
+    assert tomllib.loads(machine.read_text(encoding='utf-8'))['hpc'] == {
+        'reach': ['verification'],
+        'cluster_reach': reach,
+    }, 'no leaf written'
     checkout = Path(mine, 'repos', 'dev-lab')
     checkout.mkdir(parents=True)
     (checkout / 'pyproject.toml').write_text('', encoding='utf-8')
@@ -251,7 +263,7 @@ def test_the_grant_stays_in_the_family_file_and_the_tick_serves_through_it(
     assert 'restates a key the family layer holds' in err
     assert 'deploy-fleet' in err
     healed = tomllib.loads(devhost.render(Path(held['family']['source']), HOST, held))
-    assert healed['hpc'] == {'reach': ['verification']}, 'the next render drops the stale slice'
+    assert healed['hpc'] == {'reach': ['verification'], 'cluster_reach': reach}, 'the next render drops the stale slice'
 
 
 def test_an_unreadable_declaration_refuses_pause_and_resume_by_name_never_a_traceback(

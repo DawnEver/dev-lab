@@ -14,6 +14,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
     'devschema',
+    'vendorhome',  # a vendor's install home, split from devschema at the module-size band (2026-11-28)
     'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrollment (2026-11-16)
     'devservers',  # ORIGINAL: every workstation renders the family servers as [[server]] rows (2026-11-25)
+    'vendorrow',  # ORIGINAL: 2026-11-27, a user-confirmed vendor location written on a config-source PR branch
 )

@@ -133,7 +133,12 @@ def _commit(root: Path, rows: list[Row], message: str) -> str:
     _git(root, 'add', '-A')
     _git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', message)
     return subprocess.run(
-        [_GIT, '-C', str(root), 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True, timeout=60
+        [_GIT, '-C', str(root), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        timeout=60,
     ).stdout.strip()
 
 
@@ -189,3 +194,61 @@ def test_baselines_verify_is_its_own_verify_step_red_by_name(tmp_path: Path) -> 
     (tmp_path / 'tests' / 'golden.csv').write_text('1\n', encoding='utf-8')
     _git(tmp_path, 'add', 'tests/golden.csv')
     assert baselines.step(tmp_path).failures == ('baselines verify',)
+
+
+_REFS = 'data/cases/ipm/references.lock'
+
+
+def _declare(root: Path, locks: list[str]) -> None:
+    quoted = ', '.join(f'"{one}"' for one in locks)
+    (root / 'pyproject.toml').write_text(f'[tool.dev_lab.baselines]\nlocks = [{quoted}]\n', encoding='utf-8')
+
+
+def _ref_lock(root: Path, deviation: float) -> None:
+    lock = root / _REFS
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(f'{{"name": "torque", "deviation": {deviation}}}\n', encoding='utf-8', newline='\n')
+
+
+def test_the_declared_locks_default_to_the_baselines_lock_and_read_the_declaration(tmp_path: Path) -> None:
+    assert baselines.declared_locks(tmp_path) == (str(baselines.LOCK),)
+    _declare(tmp_path, ['tests/baselines.lock', 'data/cases/**/references.lock'])
+    assert baselines.declared_locks(tmp_path) == ('tests/baselines.lock', 'data/cases/**/references.lock')
+
+
+@pytest.mark.parametrize(
+    ('path', 'matched'),
+    [
+        ('data/cases/ipm/references.lock', True),
+        ('data/cases/a/b/references.lock', True),
+        ('data/cases/references.lock', True),
+        ('data/other/ipm/references.lock', False),  # PLANTED CONTROL: outside the declared tree
+        ('data/cases/ipm/references.lock.bak', False),
+    ],
+)
+def test_a_declared_glob_matches_by_path_segment(path: str, matched: bool) -> None:  # noqa: FBT001
+    assert baselines.lock_matches(path, ('data/cases/**/references.lock',)) is matched
+
+
+def test_the_commit_msg_row_judges_every_declared_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """FAM-02: a rewritten row of a DECLARED lock quotes its numbers, qualified by the lock's directory.
+
+    PLANTED CONTROL: the same rewrite in an UNDECLARED repo passes, so the declaration is what reaches it.
+    """
+    _git(tmp_path, 'init', '-q')
+    monkeypatch.chdir(tmp_path)
+    _ref_lock(tmp_path, 0.021)
+    _git(tmp_path, 'add', '-A')
+    _git(tmp_path, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--no-verify', '-m', 'add')
+    _ref_lock(tmp_path, 0.011)
+    _git(tmp_path, 'add', '-A')
+    message = tmp_path / 'MSG'
+    message.write_text('refresh torque\n', encoding='utf-8')
+    assert baselines.main(['check-message', str(message)]) == 0
+    _declare(tmp_path, ['data/cases/**/references.lock'])
+    assert baselines.main(['check-message', str(message)]) == 1
+    assert "rewrites baseline 'data/cases/ipm/torque'" in capsys.readouterr().err
+    message.write_text('refresh torque\n\nbaseline data/cases/ipm/torque: old 0.021 new 0.011\n', encoding='utf-8')
+    assert baselines.main(['check-message', str(message)]) == 0

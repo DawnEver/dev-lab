@@ -61,10 +61,12 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
+from dev_lab.dev._hook_admit import refusal, write_targets
 from dev_lab.dev._netverb_argv import NotANetworkVerb, spelled
 from dev_lab.dev._netverb_rows import REMEDIES, ROWS
 from dev_lab.dev.bounded import run_bounded
 from dev_lab.dev.pushwatch import heard_line, pushed_head
+from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'DEFAULT_ATTEMPTS',
@@ -402,6 +404,19 @@ def _attempt(
     return Attempt(index, done.returncode, output, classify(output))
 
 
+def _unwired_push(command: Sequence[str], cwd: Path) -> str | None:
+    """HOOKS-ARE-WIRED: the refusal of a push from a checkout whose declared stages are not live, before the forge.
+
+    This door is how an agent pushes; a push it ran from an unwired tree shipped with no pre-push stage (v1 FAM-14).
+    """
+    from dev_lab.dev.hook_install import unwired  # noqa: PLC0415
+
+    for tree in write_targets(shlex.join(command), cwd):
+        if tree.is_dir() and unwired(tree):
+            return refusal(tree.resolve(), running_interpreter())
+    return None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """``python -m dev_lab.dev.netverb [options] -- <command>`` -- the shell caller's door.
 
@@ -422,6 +437,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         command = spelled(args.command)
     except NotANetworkVerb as refused:
         emit(str(refused), err=True)
+        return 2
+    if unwired_refusal := _unwired_push(command, Path(args.cwd or Path.cwd())):
+        emit(unwired_refusal, err=True)
         return 2
     report = run_network_verb(
         command, attempts=args.attempts, backoff_s=args.backoff, timeout=args.timeout, cwd=args.cwd

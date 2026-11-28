@@ -69,7 +69,7 @@ def _git_out(root: Path, *args: str) -> str:
             check=False,
             timeout=_GIT_TIMEOUT_S,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return ''
     return probe.stdout.strip() if probe.returncode == 0 else ''
 
@@ -89,7 +89,7 @@ def _is_ancestor(root: Path, ref: str) -> bool:
             check=False,
             timeout=_GIT_TIMEOUT_S,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return False
     return probe.returncode == 0
 

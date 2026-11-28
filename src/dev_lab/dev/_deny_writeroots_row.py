@@ -55,10 +55,13 @@ WRITES_STAY_IN_THE_TREE: dict[str, object] = {
         'Copy-Item a.py %TEMP%\\a.py',
         'echo x > ~/loose.txt',
         'echo x > $CLAUDE_JOB_DIR/tmp/a.txt',
+        # #1006's planted control: a real write inside a command substitution, its `)` no part of the path.
+        'x=$(cmd > /c/elsewhere/f)',
         'echo x > ../sibling/a.txt',
         'echo x > "D:/Sync/OneDrive - <org>/meeting/fig.png"',
         'cp fig.png $OneDriveCommercial/share/',
         'Set-Content -Path $env:OneDrive\notes.txt x',
+        "timeout 5m bash -c 'cmd > /tmp/x.log 2>&1' &",
     ),
     'permits': (
         'cat /tmp/probe.py',
@@ -69,5 +72,10 @@ WRITES_STAY_IN_THE_TREE: dict[str, object] = {
         'echo x 2>/dev/null',
         'cat "D:/Sync/OneDrive - <org>/meeting/data.csv"',
         'echo onedrive > output/logs/26/11/23/sync/note.txt',
+        "timeout 5m bash -c 'cmd > output/logs/26/11/27/run/x.log 2>&1' &",
+        # #1006: a discard closing a command substitution was read as the path '/dev/null)'.
+        'x=$(cmd 2>/dev/null)',
+        'x=$(cmd 2>/dev/null); y=$(cmd2 >/dev/null)',
+        'x=$(cmd 2>NUL)',
     ),
 }

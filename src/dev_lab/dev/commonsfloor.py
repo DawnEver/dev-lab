@@ -66,7 +66,7 @@ def _sibling_interpreters(checkout: Path) -> list[Path]:
             check=False,
             timeout=30,
         ).stdout
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return []
     trees = [Path(line.removeprefix('worktree ')) for line in listed.splitlines() if line.startswith('worktree ')]
     return [found for tree in trees if (found := tree.joinpath('.venv', *_VENV_PYTHON)).is_file()]
@@ -78,7 +78,7 @@ def _passes_floor(python: Path) -> bool:
         ran = subprocess.run(
             [str(python), '-I', '-c', 'import dev_lab.dev.dep'], capture_output=True, check=False, timeout=60
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return False
     return ran.returncode == 0
 
@@ -112,7 +112,7 @@ def locked_commons(checkout: Path) -> str | None:
     """The lab-commons version *checkout*'s ``uv.lock`` pins, or ``None`` when it has no readable lock or pin."""
     try:
         lock = tomllib.loads((checkout / 'uv.lock').read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError, tomllib.TOMLDecodeError:
         return None
     return next((str(row.get('version')) for row in lock.get('package', []) if row.get('name') == 'lab-commons'), None)
 

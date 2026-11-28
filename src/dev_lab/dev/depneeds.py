@@ -145,16 +145,16 @@ def _names(requirements: list[str]) -> list[str]:
 def task_extras(root: Path) -> tuple[str, ...] | None:
     """The extras the task *root*'s branch works on asks for through its declared needs (D79), else ``None``.
 
-    An explicit ``--extra`` still overrides. No task branch (:func:`dev_lab.dev.taskledger.task_of`), or a task
-    declaring no needs, keeps the repo's declared extras (``None`` lets
-    :func:`~dev_lab.dev._dep_project.read_project` read them).
+    An explicit ``--extra`` replaces these, still added to the declared extras. No task branch
+    (:func:`dev_lab.dev.taskledger.task_of`), or a task declaring no needs, keeps the repo's declared extras
+    (``None`` lets :func:`~dev_lab.dev._dep_project.read_project` read them).
     """
     try:
         task = taskledger.task_of(root)
         if task is None:
             return None
         needs = task_needs(taskledger.ledger(), task)
-    except (OSError, ValueError, LookupError):
+    except OSError, ValueError, LookupError:
         return None
     return extras_for(root, needs) if needs else None
 

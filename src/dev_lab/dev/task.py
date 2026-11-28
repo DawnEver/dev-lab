@@ -24,7 +24,6 @@ Every refusal is a :class:`TaskRefused` (or a ``LookupError`` from the ledger re
 from __future__ import annotations
 
 import argparse
-import contextlib
 import hashlib
 import re
 import shutil
@@ -35,7 +34,8 @@ from typing import Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import taskauthority, taskjournal
+from dev_lab.dev import taskauthority, taskjournal, taskpublish
+from dev_lab.dev._task_distill import undistilled, undistilled_door
 from dev_lab.dev._task_io import (
     Branches,
     Forge,
@@ -102,8 +102,6 @@ VERBS: Final = (
     ('show', 'agent', '[<slug>]', 'TASK.md and the whole journal (an archived task too)'),
     ('migrate', 'owner', '<checkout>... [--dry-run]', 'the one-time move of retired stores; open tasks get issues'),
 )
-_CITE: Final = 'tasks/{slug}/JOURNAL.md#D'
-_DISTILL_HOMES: Final = (('.claude', 'memory'), ('.claude', 'rules'), ('docs-src',))
 
 
 def append(
@@ -207,18 +205,6 @@ def open_task(
     return root / slug
 
 
-def _cited(cwd: Path, slug: str) -> set[int]:
-    tops = [p for p in (Path(cwd).resolve(), *Path(cwd).resolve().parents) if (p / '.git').exists()][:1]
-    cite = re.compile(re.escape(_CITE.format(slug=slug)) + r'(\d+)\b')
-    found: set[int] = set()
-    for top in tops:
-        for home in _DISTILL_HOMES:
-            for doc in top.joinpath(*home).rglob('*.md'):
-                with contextlib.suppress(OSError):
-                    found.update(int(n) for n in cite.findall(doc.read_text(encoding='utf-8').replace('\\', '/')))
-    return found
-
-
 def close(
     slug: str, reason: str = '', *, cwd: Path, journal_only: Sequence[int] = (), forge: Forge | None = None,
     date: str | None = None, branches: Branches | None = None, say: Callable[[str], None] = emit, dry_run: bool = False,
@@ -242,13 +228,8 @@ def close(
             listed = '\n'.join(f'  {line}' for line in unmerged)
             msg = f'{len(unmerged)} pr/{slug}/* branch(es) not merged:\n{listed}\n{TASK_HEAD_DOORS.format(door=DOOR)}'
             raise TaskRefused(msg)
-        missing = [n for n, _, _ in found.journal.decisions if n not in _cited(cwd, slug) and n not in journal_only]
-        if missing:
-            msg = (
-                f'{", ".join(f"D{n}" for n in missing)} not distilled.\nDoor: cite {_CITE.format(slug=slug)}<n> from a '
-                'memory entry, a rule or a doc of this checkout, or keep it in the journal only (--journal-only D<n>)'
-            )
-            raise TaskRefused(msg)
+        if missing := undistilled(cwd, slug, (n for n, _, _ in found.journal.decisions), journal_only):
+            raise TaskRefused(undistilled_door(slug, missing))
         kept = (
             f' (kept in the journal only: {", ".join(f"D{n}" for n in sorted(journal_only))})' if journal_only else ''
         )
@@ -292,7 +273,7 @@ def _help() -> str:
     return '\n'.join([head, *rows])
 
 
-def _dry(said: str, dry: bool) -> str:  # noqa: FBT001 -- the one flag every writing verb threads
+def _dry(said: str, *, dry: bool) -> str:
     """*said*, marked as a dry run when nothing was written."""
     return f'[task] dry-run, nothing written:\n{said}' if dry else said
 
@@ -305,18 +286,18 @@ def _run(args: argparse.Namespace, cwd: Path) -> str:  # noqa: C901, PLR0911, PL
             if not words or not re.fullmatch(r'O?\d+', words[0]):
                 raise _usage(verb)
             line = append(slug, verb, ' '.join(words[1:]) or 'done', item=int(words[0].lstrip('O')), dry_run=dry)
-            return _dry(line, dry)
-        return _dry(append(slug, verb, ' '.join(words), dry_run=dry), dry)
+            return _dry(line, dry=dry)
+        return _dry(append(slug, verb, ' '.join(words), dry_run=dry), dry=dry)
     if verb == 'amend':
         if args.line is None or len(words) != 1 or not args.reason:
             raise _usage(verb)
-        return _dry(amend(bound(cwd, args.task), args.line, words[0], reason=args.reason, dry_run=dry), dry)
+        return _dry(amend(bound(cwd, args.task), args.line, words[0], reason=args.reason, dry_run=dry), dry=dry)
     if verb == 'open':
         if len(words) < _SLUG_AND_GOAL:
             raise _usage(verb)
         where = open_task(words[0], ' '.join(words[1:]), dry_run=dry)
         if dry:
-            return _dry(f'[task] would open {words[0]} at {where.as_posix()} (the grant is live)', dry)
+            return _dry(f'[task] would open {words[0]} at {where.as_posix()} (the grant is live)', dry=dry)
         return f'[task] opened {words[0]} at {where.as_posix()}; work on it on a branch pr/{words[0]}/<feature>'
     if verb == 'close':
         if not words:
@@ -324,13 +305,13 @@ def _run(args: argparse.Namespace, cwd: Path) -> str:  # noqa: C901, PLR0911, PL
         only = [int(n.strip().lstrip('D')) for n in (args.journal_only or '').split(',') if n.strip()]
         where = close(words[0], ' '.join(words[1:]), cwd=cwd, journal_only=only, dry_run=dry)
         if dry:
-            return _dry(f'[task] would close {words[0]} and archive it to {where.as_posix()}', dry)
+            return _dry(f'[task] would close {words[0]} and archive it to {where.as_posix()}', dry=dry)
         return f'[task] closed {words[0]}; archived to {where.as_posix()}'
     if verb == 'request':
         if len(words) < _SLUG_AND_GOAL or words[0] not in {'open', 'close'}:
             raise _usage(verb)
         if dry:
-            return _dry(f'[task] would record a request to {words[0]} {slug_of(words[1])}', dry)
+            return _dry(f'[task] would record a request to {words[0]} {slug_of(words[1])}', dry=dry)
         code = taskauthority.request(ledger(), words[0], slug_of(words[1]), ' '.join(words[2:]))
         return (
             f'[task] ask the user to reply `approve {code}`; then run python -m dev_lab.dev.task {words[0]} {words[1]}'
@@ -361,10 +342,22 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
         said = _run(args, cwd or Path.cwd())
     except (TaskRefused, taskjournal.RepeatedId, taskauthority.AuthorityRefused, LookupError) as refused:
         emit(f'[task] {refused}', err=True)
+        _warn_ahead()
         return 1
     if said:
         emit(said)
+    _warn_ahead()
     return 0
+
+
+def _warn_ahead() -> None:
+    """Name a ledger clone ahead of its origin (v1 FAM-15); silent when in sync or when no ledger resolves."""
+    try:
+        root = ledger()
+    except LookupError:
+        return
+    if said := taskpublish.ahead_warning(root):
+        emit(said, err=True)
 
 
 if __name__ == '__main__':

@@ -10,6 +10,7 @@ import gzip
 import json
 from typing import Any
 
+from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forgestatus import known_reds, status_show
 
 _SHA = 'a' * 40
@@ -19,7 +20,7 @@ _RECORD_URL = 'https://forge.example.org/attachments/record.json.gz'
 class _Client:
     """The two calls ``status show`` makes: the status list, and the record behind one of them."""
 
-    backend = 'gitea'
+    backend = GITEA
     repo = '/api/v1/repos/o/r'
 
     def __init__(self, statuses: list[dict[str, Any]], record: dict[str, Any] | None) -> None:
@@ -29,7 +30,7 @@ class _Client:
 
     def call(self, method: str, path: str) -> list[dict[str, Any]]:
         assert method == 'GET'
-        assert path.endswith(f'/statuses/{_SHA}'), path
+        assert path.split('?', maxsplit=1)[0].endswith(f'/statuses/{_SHA}'), path
         return self._statuses
 
     def download(self, url: str) -> bytes:
@@ -111,7 +112,7 @@ class _Pair(_Client):
 
     def call(self, method: str, path: str) -> list[dict[str, Any]]:
         assert method == 'GET'
-        if path.endswith(f'/statuses/{_BASE}'):
+        if path.split('?', maxsplit=1)[0].endswith(f'/statuses/{_BASE}'):
             return [_status('failure', url=_BASE_URL)]
         return super().call(method, path)
 
