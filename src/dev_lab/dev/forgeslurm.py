@@ -74,6 +74,7 @@ from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Draining, Killed, Run, Stalled, Standing, Started, Unrecorded
 from dev_lab.dev.forgescope import ReachedFiles
 from dev_lab.dev.forgestuck import parse_duration, remote_path
+from dev_lab.dev.hpcaccount.prep import proven
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.slurmkilled import KILLED_FIELDS, killed_jobs
@@ -426,7 +427,10 @@ class SlurmCluster:
         return list(ids)
 
     def standing(self) -> Standing:
-        """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota."""
+        """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota.
+
+        The supply also lists the needs this checkout's prep job proved on a compute node (:func:`proven`).
+        """
         read: list[tuple[Snapshot, str]] = []
         probed: list[tuple[Grant, Snapshot]] = []
         for grant in self.machine.grants:
@@ -437,6 +441,8 @@ class SlurmCluster:
         left = quotawatch.admitted_files(usage, policy := quotawatch.declared_lines())
         account = SlurmAccount(read, files=math.inf if left is None else left)
         supply = Engine({self.scope: [account, account_seats(cached())]}).available(self.scope)
+        # a need is never probed on the login node: the prep job proved it on a compute node (hpcaccount.prep.TOOLS)
+        supply = replace(supply, listed=supply.present | proven(self.root))
         snapshot, qos = read[0]
         shell = self.connect(self.machine.grants[0])
         facts: dict[str, object] = {

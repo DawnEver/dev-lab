@@ -21,6 +21,8 @@ from typing import Any, cast
 
 import pytest
 from lab_commons.compute import learned, measured
+from lab_commons.compute.admission import admit
+from lab_commons.compute.model import Job
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import records
 from lab_commons.hpc import run as hpc_run
@@ -58,6 +60,7 @@ from dev_lab.dev.forgecoalesce import DRAINING
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, CommitStatus
 from dev_lab.dev.forgework import GITEA
+from dev_lab.dev.hpcaccount import prep
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart, PartRefusal, part_context
 from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, owner_of, release_reason
@@ -1329,6 +1332,26 @@ def test_the_standing_carries_the_most_any_grant_gives(tmp_path: Path, monkeypat
     assert cluster.standing().ceiling_gb == 240.0
     monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: _snapshot_untagged())
     assert cluster.standing().ceiling_gb is None
+
+
+def test_a_cargo_part_is_admitted_once_the_prep_job_stamped_cargo_proven(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ada 2026-11-28: every v1 cargo part waited ``not admitted: lacking cargo`` -- the supply never named it.
+
+    The supply lists the needs the prep job proved on a compute node (``hpcaccount.prep.TOOLS``); the login node
+    probes none. PLANTED CONTROL: before the stamp, the same part waits ``lacking cargo``.
+    """
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: _snapshot_untagged())
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(user='alice', slurm_account='a')])
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _g: lambda *_a: '', lambda: None)
+    part = Job('repo', 'a' * 40, 'tests/cargo', frozenset({'cargo'}))
+    assert admit(part, {}, cluster.standing().supply).why == 'lacking cargo'
+    (tmp_path / '.venv').mkdir()
+    prep.stamp_tools(tmp_path, ['cargo'])
+    supply = cluster.standing().supply
+    assert admit(part, {}, supply).admitted
+    assert {'cargo', 'cpu'} <= supply.present, 'the measured names stay listed beside it'
 
 
 def _snapshot_untagged() -> Snapshot:

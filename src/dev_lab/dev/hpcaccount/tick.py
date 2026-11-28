@@ -23,6 +23,7 @@ naming the role; its own ``hpcaccount deploy`` removes the line (:func:`dev_lab.
 from __future__ import annotations
 
 import getpass
+import shlex
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -37,7 +38,7 @@ from dev_lab.dev.forgefleet import serve_off
 from dev_lab.dev.forgehosts import card_host, mark_held
 from dev_lab.dev.forgeoutbox import unprompted_client
 from dev_lab.dev.hpcaccount import prep
-from dev_lab.dev.hpcaccount.checks import follow_uv, runs, tool_plan
+from dev_lab.dev.hpcaccount.checks import ALWAYS, PINNED_RUST, follow_uv, runs, tool_plan
 from dev_lab.dev.hpcaccount.grantslice import RERENDER
 from dev_lab.dev.hpcaccount.spec import (
     VERIFICATION,
@@ -52,6 +53,7 @@ from dev_lab.dev.hpcaccount.spec import (
 )
 from dev_lab.dev.hpcaccount.steps import Step, Tools, build, declared, env_key, prune_uv, update
 from dev_lab.dev.hpcaccount.tickwall import WALL, Wall, within
+from dev_lab.dev.lockcheck import TOOLCHAIN
 from dev_lab.dev.roles import Unbound
 from dev_lab.dev.tickholder import Holder
 
@@ -90,10 +92,14 @@ _runs = runs
 def prep_build(name: str, *, home: Path, config: Path | None = None, tools: Tools | None = None) -> int:
     """The prep job's body, ON A COMPUTE NODE: uv to its pin, *name*'s tools, its environment, the uv cache pruned.
 
-    The tools are ``uv``, ``rclone`` and the repo's ``needs``, each probed by its ``--version`` on the node and one
-    that does not run installed through its one installer (:func:`~dev_lab.dev.hpcaccount.checks.tool_plan`), else
-    refused by name; then :func:`~dev_lab.dev.hpcaccount.steps.build` and the account's ONE uv cache pruned.
-    0 built (or already current); 2 refused, the reason printed -- the job's log is what the tick's next submit names.
+    The tools are ``uv``, ``rclone`` and the repo's ``needs``, each probed by its ``--version`` IN THE CHECKOUT on the
+    node (so its ``rust-toolchain.toml`` applies) and one that does not run installed through its one installer
+    (:func:`~dev_lab.dev.hpcaccount.checks.tool_plan`), else refused by name. A ``cargo`` need of a checkout pinning
+    its toolchain gets that toolchain (``rustup toolchain install`` reads the pin). Every tool is probed again after
+    the installs; then :func:`~dev_lab.dev.hpcaccount.steps.build`, the needs stamped as proven
+    (:func:`~dev_lab.dev.hpcaccount.prep.stamp_tools`, what admits a part needing them) and the account's ONE uv cache
+    pruned. 0 built (or already current); 2 refused, the reason printed -- the job's log is what the tick's next
+    submit names.
     """
     path = config or config_path()
     try:
@@ -108,19 +114,21 @@ def prep_build(name: str, *, home: Path, config: Path | None = None, tools: Tool
     step = Step(tools or Tools(), dry=False)
     if lagging := follow_uv():
         emit(f'[prep-build] {lagging}', err=True)
+    checkout = checkout_of(spec, repo)
+    here = f'cd {shlex.quote(str(checkout))}'  # a pinned toolchain applies in its checkout
     try:
-        needs = declared(checkout_of(spec, repo)).needs
-        installs, lacking = tool_plan(needs, found=lambda tool: _runs(step.tools.sh, ':', tool))
+        needs = declared(checkout).needs
+        installs, uninstallable = tool_plan(needs, found=lambda tool: _runs(step.tools.sh, here, tool))
         cache = {'UV_CACHE_DIR': str(uv_cache(spec.root))}  # `uv tool install`: the ONE cache, not the user default
-        lacking += [
-            tool
-            for tool, script in installs
-            if step.change(f'install {tool}: {script}', [*step.tools.sh, script], env=cache)
-        ]
-        if lacking:
+        for tool, script in installs:
+            step.change(f'install {tool}: {script}', [*step.tools.sh, script], env=cache)
+        if 'cargo' in needs and (checkout / TOOLCHAIN).is_file():
+            step.change(f'install the toolchain {TOOLCHAIN} pins', [*step.tools.sh, f'{here} && {PINNED_RUST}'])
+        if lacking := [tool for tool in dict.fromkeys([*ALWAYS, *needs]) if not _runs(step.tools.sh, here, tool)]:
+            none = f' ({", ".join(uninstallable)} has no installer)' if uninstallable else ''
             emit(
-                f'[prep-build] {name}: this node lacks {", ".join(lacking)} and has no installer for it -- ask for it '
-                'on the compute nodes, or link it into ~/.local/bin; the next tick asks again',
+                f'[prep-build] {name}: this node lacks {", ".join(lacking)}{none} -- ask for it on the compute nodes, '
+                'or link it into ~/.local/bin; the next tick asks again',
                 err=True,
             )
             return 2
@@ -128,7 +136,10 @@ def prep_build(name: str, *, home: Path, config: Path | None = None, tools: Tool
     except REFUSALS as why:
         emit(f'[prep-build] {name} refused: {why}', err=True)
         return 2
-    return rc or prune_uv(step, spec)
+    if rc:
+        return rc
+    prep.stamp_tools(checkout, needs)
+    return prune_uv(step, spec)
 
 
 def _declared(name: str, path: Path) -> tuple[Deployment, Repo] | str:

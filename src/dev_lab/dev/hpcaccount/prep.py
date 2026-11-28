@@ -12,8 +12,17 @@ environment stamped with the current key (:data:`~dev_lab.dev.hpcaccount.steps.S
 
 WHAT THE JOB RUNS is this kit's own verb, ``python -m dev_lab.dev.hpcaccount prep-build <repo>``
 (:func:`dev_lab.dev.hpcaccount.tick.prep_build`, the line :func:`job_script` writes): uv to its pin, the repo's
-``needs`` probed, then :func:`~dev_lab.dev.hpcaccount.steps.build` -- built beside the live env and published only
-once it succeeded, so the stamp moves last. The job SUBMISSION is lab-commons' (``lab_commons.hpc.prep``); the
+``needs`` installed and probed, then :func:`~dev_lab.dev.hpcaccount.steps.build` -- built beside the live env and
+published only once it succeeded, so the stamp moves last.
+
+THE TOOLS STAMP (:data:`TOOLS`) is how a need proven on a compute node reaches ADMISSION. The prep job writes, into the
+live environment beside its key stamp, each declared ``need`` whose ``--version`` ran on the node in the checkout (so a
+``rust-toolchain.toml`` pin applies); the serve's Slurm supply (:meth:`dev_lab.dev.forgeslurm.SlurmCluster.standing`)
+lists them as present (:func:`proven`). Measured 2026-11-28 (Ada, ezxmw9): every v1 ``cargo`` part waited
+``not admitted: lacking cargo`` -- an account's supply named no tool a probe on the login node could not see, and that
+node never runs one. An environment without the stamp is not :func:`prepared`, so the next tick asks the job again.
+
+The job SUBMISSION is lab-commons' (``lab_commons.hpc.prep``); the
 interface needed, by name:
 
     ``submit_env_prep(checkout: Path, key: str, *, python: str, root: str, script: str) -> str``
@@ -28,7 +37,7 @@ from __future__ import annotations
 
 import importlib
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Final
 
@@ -36,7 +45,7 @@ from dev_lab.dev import venvpointer
 from dev_lab.dev.hpcaccount.spec import KIT, Deployment, Repo, checkout_of
 from dev_lab.dev.hpcaccount.steps import STAMP
 
-__all__ = ['ABSENT', 'Submit', 'job_script', 'prepared', 'submit']
+__all__ = ['ABSENT', 'TOOLS', 'Submit', 'job_script', 'prepared', 'proven', 'stamp_tools', 'submit']
 
 #: ``(checkout, key, python=, root=, script=) -> one line``: submit (or find in flight) the prep job of *key*.
 type Submit = Callable[..., str]
@@ -52,10 +61,28 @@ ABSENT: Final = (
 )
 
 
+#: The live environment's list of the needs its prep job proved on a compute node, one per line.
+TOOLS: Final = '.lab-prep-tools'
+
+
 def prepared(checkout: Path, key: str) -> bool:
-    """Whether *checkout*'s live environment is stamped with *key* (built for the current inputs)."""
-    stamp = venvpointer.current(checkout) / STAMP
-    return stamp.is_file() and stamp.read_text(encoding='utf-8') == key
+    """Whether *checkout*'s live environment is stamped with *key* and carries its prep job's :data:`TOOLS` stamp."""
+    live = venvpointer.current(checkout)
+    stamp = live / STAMP
+    return stamp.is_file() and stamp.read_text(encoding='utf-8') == key and (live / TOOLS).is_file()
+
+
+def stamp_tools(checkout: Path, tools: Iterable[str]) -> None:
+    """Record *tools* as proven on a compute node in *checkout*'s live environment (the prep job, after its build)."""
+    (venvpointer.current(checkout) / TOOLS).write_text(''.join(f'{tool}\n' for tool in sorted(set(tools))), 'utf-8')
+
+
+def proven(checkout: Path) -> frozenset[str]:
+    """The needs *checkout*'s prep job proved on a compute node; none before it stamped them; never probed."""
+    stamp = venvpointer.current(checkout) / TOOLS
+    if not stamp.is_file():
+        return frozenset()
+    return frozenset(line.strip() for line in stamp.read_text(encoding='utf-8').splitlines()) - {''}
 
 
 def job_script(spec: Deployment, repo: Repo) -> str:
